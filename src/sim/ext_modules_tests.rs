@@ -203,3 +203,60 @@ fn a_rust_built_module_runs() {
         "{log:?}"
     );
 }
+
+/// A save carries each module's memory, globals and stream; the loaded match
+/// runs its modules on exactly as the live one does.
+#[test]
+fn a_saved_match_resumes_its_modules_exactly() {
+    use crate::sim::snapshot::GameSnapshot;
+    let Some(mut live) = scenario() else { return };
+    let house = neutral_index(&live);
+    live.runtime
+        .simulation
+        .install_ext_module(ModuleSource::Map, &paying_module(house_ref(house)))
+        .expect("module installs");
+    for _ in 0..20 {
+        live.tick();
+    }
+    let rules = &live.runtime.resources.rules;
+    let bytes = GameSnapshot::save_validated(
+        live.sim(),
+        0,
+        rules.simulation_config_hash(),
+        "ext modules",
+        0,
+    );
+    let mut loaded = GameSnapshot::load(&bytes).expect("save loads").sim;
+    loaded
+        .restore_after_snapshot_load()
+        .expect("modules restore");
+    loaded.rebuild_caches_after_load(
+        live.sim().resolved_terrain().expect("terrain").clone(),
+        Default::default(),
+        rules,
+    );
+    loaded
+        .restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+        .expect("map authority restores");
+    loaded.resolve_type_handles(rules);
+    let mut resumed = scenario().expect("second load");
+    resumed.runtime.simulation = loaded;
+    let digests = |scene: &HeadlessScenario| {
+        scene
+            .sim()
+            .ext_modules
+            .checksum_digests()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(digests(&resumed), digests(&live));
+    for _ in 0..40 {
+        live.tick();
+        resumed.tick();
+        assert_eq!(digests(&resumed), digests(&live));
+    }
+    assert_eq!(credits(&resumed, house), credits(&live, house));
+    assert_eq!(
+        resumed.sim().ext_modules().status(),
+        live.sim().ext_modules().status()
+    );
+}

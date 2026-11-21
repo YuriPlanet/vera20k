@@ -42,6 +42,21 @@ pub const IMPORTS: &[(&str, &str)] = &[
     ),
 ];
 
+/// Bytes in one Wasm memory page.
+pub const PAGE_BYTES: usize = 65_536;
+
+/// A module's state between calls (RFC section 4): its memory and mutable
+/// globals. Saves carry it beside the module bytes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ModuleState {
+    /// Memory size in pages.
+    pub pages: u32,
+    /// Pages that are not all zero: (page index, [`PAGE_BYTES`] bytes).
+    pub nonzero_pages: Vec<(u32, Vec<u8>)>,
+    /// The raw bits of each mutable global, in global index order.
+    pub globals: Vec<u64>,
+}
+
 /// Operations charged for each host call, on top of the call's own work.
 pub const HOST_CALL_COST: u64 = 50;
 

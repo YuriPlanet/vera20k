@@ -12,13 +12,13 @@ use std::sync::OnceLock;
 
 use wasmparser::{Payload, TypeRef, Validator, WasmFeatures};
 use wasmtime::{
-    Caller, Config, Engine, Extern, Instance, Linker, Memory, Module, Store, StoreLimits,
-    StoreLimitsBuilder, Trap, TypedFunc,
+    Caller, Config, Engine, Extern, Global, Instance, Linker, Memory, Module, Store, StoreLimits,
+    StoreLimitsBuilder, Trap, TypedFunc, Val, ValType,
 };
 
 use crate::{
-    ActionParams, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError,
-    SIM_IMPORT_MODULE, SimHost, Status,
+    ActionParams, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError, ModuleState,
+    PAGE_BYTES, SIM_IMPORT_MODULE, SimHost, Status,
 };
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
@@ -77,9 +77,16 @@ unsafe impl Sync for Ctx {}
 
 /// One loaded simulation module.
 pub struct SimModule {
+    /// The module as supplied, before load-time rewriting; saves carry it.
+    bytes: Vec<u8>,
     store: Store<Ctx>,
     memory: Option<Memory>,
     exports: [Option<TypedFunc<(), ()>>; 3],
+    /// Every mutable global, in global index order (exported at load time).
+    globals: Vec<Global>,
+    /// Their raw bits after the latest call, so a save or hash reads them
+    /// without a mutable store.
+    global_bits: Vec<u64>,
 }
 
 impl SimModule {
@@ -87,9 +94,11 @@ impl SimModule {
     /// modules with a `start` section are rejected.
     pub fn load(bytes: &[u8], limits: Limits) -> Result<Self, LoadError> {
         check(bytes)?;
+        let (rewritten, mutable_globals) =
+            export_mutable_globals(bytes).map_err(LoadError::Invalid)?;
         let engine = engine();
         let module =
-            Module::new(engine, bytes).map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
+            Module::new(engine, &rewritten).map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let ctx = Ctx {
             host: None,
             limits: StoreLimitsBuilder::new()
@@ -115,11 +124,121 @@ impl SimModule {
         for (slot, export) in exports.iter_mut().zip(Export::ALL) {
             *slot = typed_export(&instance, &mut store, export)?;
         }
-        Ok(Self {
+        let globals = mutable_globals
+            .iter()
+            .map(|index| {
+                instance
+                    .get_global(&mut store, &global_export_name(*index))
+                    .ok_or_else(|| LoadError::Invalid(format!("global {index} was not exported")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut module = Self {
+            bytes: bytes.to_vec(),
             store,
             memory,
             exports,
-        })
+            globals,
+            global_bits: Vec::new(),
+        };
+        module.read_globals();
+        Ok(module)
+    }
+
+    /// Loads `bytes` and puts back a state taken with [`SimModule::state`].
+    /// No module code runs: initialization ran before the save.
+    pub fn restore(bytes: &[u8], limits: Limits, state: &ModuleState) -> Result<Self, LoadError> {
+        let invalid = |why: String| LoadError::Invalid(format!("saved module state: {why}"));
+        let mut module = Self::load(bytes, limits)?;
+        if state.globals.len() != module.globals.len() {
+            return Err(invalid(format!(
+                "{} globals saved, module has {}",
+                state.globals.len(),
+                module.globals.len()
+            )));
+        }
+        match module.memory {
+            Some(memory) => {
+                let have = memory.size(&module.store);
+                let want = u64::from(state.pages);
+                if want < have {
+                    return Err(invalid(format!(
+                        "{want} pages saved, module starts with {have}"
+                    )));
+                }
+                memory
+                    .grow(&mut module.store, want - have)
+                    .map_err(|e| invalid(format!("memory cannot grow to {want} pages: {e}")))?;
+                let data = memory.data_mut(&mut module.store);
+                data.fill(0);
+                for (page, bytes) in &state.nonzero_pages {
+                    let start = *page as usize * PAGE_BYTES;
+                    let Some(target) = data.get_mut(start..start + PAGE_BYTES) else {
+                        return Err(invalid(format!("page {page} is outside {want} pages")));
+                    };
+                    if bytes.len() != PAGE_BYTES {
+                        return Err(invalid(format!("page {page} holds {} bytes", bytes.len())));
+                    }
+                    target.copy_from_slice(bytes);
+                }
+            }
+            None if state.pages == 0 && state.nonzero_pages.is_empty() => {}
+            None => return Err(invalid("memory saved for a module without memory".into())),
+        }
+        for (global, bits) in module.globals.clone().iter().zip(&state.globals) {
+            let value = match global.ty(&module.store).content() {
+                ValType::I32 => Val::I32(*bits as u32 as i32),
+                ValType::I64 => Val::I64(*bits as i64),
+                ValType::F32 => Val::F32(*bits as u32),
+                ValType::F64 => Val::F64(*bits),
+                other => return Err(invalid(format!("global of type {other}"))),
+            };
+            global
+                .set(&mut module.store, value)
+                .map_err(|e| invalid(format!("global cannot be set: {e}")))?;
+        }
+        module.read_globals();
+        Ok(module)
+    }
+
+    /// The module as supplied to [`SimModule::load`].
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// The raw bits of every mutable global after the latest call.
+    pub fn globals(&self) -> &[u64] {
+        &self.global_bits
+    }
+
+    /// The state a save needs: memory pages that are not all zero, and the
+    /// mutable globals.
+    pub fn state(&self) -> ModuleState {
+        let memory = self.memory();
+        ModuleState {
+            pages: (memory.len() / PAGE_BYTES) as u32,
+            nonzero_pages: memory
+                .chunks(PAGE_BYTES)
+                .enumerate()
+                .filter(|(_, page)| page.iter().any(|b| *b != 0))
+                .map(|(index, page)| (index as u32, page.to_vec()))
+                .collect(),
+            globals: self.global_bits.clone(),
+        }
+    }
+
+    fn read_globals(&mut self) {
+        let globals = self.globals.clone();
+        self.global_bits = globals
+            .iter()
+            .map(|global| match global.get(&mut self.store) {
+                Val::I32(v) => u64::from(v as u32),
+                Val::I64(v) => v as u64,
+                Val::F32(bits) => u64::from(bits),
+                Val::F64(bits) => bits,
+                // MVP globals hold only numbers; `check` admits no other.
+                _ => 0,
+            })
+            .collect();
     }
 
     pub fn has_export(&self, export: Export) -> bool {
@@ -154,6 +273,7 @@ impl SimModule {
         data.host = None;
         let fault = data.fault.take();
         let used = budget.saturating_sub(self.store.get_fuel().unwrap_or(0));
+        self.read_globals();
         match result {
             Ok(()) => Ok(used),
             Err(e) => Err(fault.unwrap_or_else(|| match e.downcast_ref::<Trap>() {
@@ -382,4 +502,81 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         },
     ));
     linker
+}
+
+fn global_export_name(index: u32) -> String {
+    format!("__vera_g{index}")
+}
+
+/// RFC section 3 step 4: export every mutable global (a compiler's stack
+/// pointer, for instance) as `__vera_g<index>`, so saves and the state hash
+/// can read and write it. Returns the rewritten module and the mutable
+/// globals' indices. Sections are copied unchanged apart from the export
+/// section.
+fn export_mutable_globals(bytes: &[u8]) -> Result<(Vec<u8>, Vec<u32>), String> {
+    use wasm_encoder::{ExportKind, ExportSection, RawSection};
+    use wasmparser::ExternalKind;
+
+    let mut mutable = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        if let Payload::GlobalSection(reader) = payload.map_err(|e| e.to_string())? {
+            for (index, global) in reader.into_iter().enumerate() {
+                if global.map_err(|e| e.to_string())?.ty.mutable {
+                    mutable.push(index as u32);
+                }
+            }
+        }
+    }
+    let ours = |section: &mut ExportSection| {
+        for index in &mutable {
+            section.export(&global_export_name(*index), ExportKind::Global, *index);
+        }
+    };
+    let mut out = wasm_encoder::Module::new();
+    let mut exported = false;
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        let payload = payload.map_err(|e| e.to_string())?;
+        if let Payload::ExportSection(reader) = &payload {
+            let mut section = ExportSection::new();
+            for export in reader.clone() {
+                let export = export.map_err(|e| e.to_string())?;
+                if export.name.starts_with("__vera_g") {
+                    return Err(format!("exports reserved name {}", export.name));
+                }
+                let kind = match export.kind {
+                    ExternalKind::Func => ExportKind::Func,
+                    ExternalKind::Table => ExportKind::Table,
+                    ExternalKind::Memory => ExportKind::Memory,
+                    ExternalKind::Global => ExportKind::Global,
+                    other => return Err(format!("export {} of kind {other:?}", export.name)),
+                };
+                section.export(export.name, kind, export.index);
+            }
+            ours(&mut section);
+            out.section(&section);
+            exported = true;
+            continue;
+        }
+        let Some((id, range)) = payload.as_section() else {
+            continue;
+        };
+        // The export section (7) precedes start, element, data count, code
+        // and data.
+        if !exported && matches!(id, 8 | 9 | 10 | 11 | 12) {
+            let mut section = ExportSection::new();
+            ours(&mut section);
+            out.section(&section);
+            exported = true;
+        }
+        out.section(&RawSection {
+            id,
+            data: &bytes[range],
+        });
+    }
+    if !exported {
+        let mut section = ExportSection::new();
+        ours(&mut section);
+        out.section(&section);
+    }
+    Ok((out.finish(), mutable))
 }

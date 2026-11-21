@@ -138,3 +138,35 @@ fn load_rejects_start_sections_foreign_imports_and_simd() {
         assert!(matches!(load(wat), Err(LoadError::Invalid(_))), "{wat}");
     }
 }
+
+#[test]
+fn a_restored_module_continues_exactly_where_the_save_left_it() {
+    // An unexported mutable global (like a compiler's stack pointer) and a
+    // memory write two pages in, both changing every call.
+    let wat = r#"(module (memory (export "memory") 1)
+      (global $n (mut i64) (i64.const 0))
+      (func (export "on_frame")
+        (global.set $n (i64.add (global.get $n) (i64.const 3)))
+        (if (i32.eqz (i32.wrap_i64 (i64.rem_u (global.get $n) (i64.const 2))))
+          (then (drop (memory.grow (i32.const 1)))))
+        (i64.store (i32.const 70000) (global.get $n))))"#;
+    let bytes = wat::parse_str(wat).expect("test WAT parses");
+    let mut live = SimModule::load(&bytes, Limits::MAP).expect("module loads");
+    for _ in 0..3 {
+        live.call(Export::Frame, 10_000, &mut Recorder::default())
+            .ok();
+    }
+    let state = live.state();
+    assert_eq!(state.globals, vec![9]);
+    let mut restored =
+        SimModule::restore(live.bytes(), Limits::MAP, &state).expect("state restores");
+    assert_eq!(restored.memory(), live.memory());
+    for module in [&mut live, &mut restored] {
+        module
+            .call(Export::Frame, 10_000, &mut Recorder::default())
+            .ok();
+    }
+    assert_eq!(restored.globals(), live.globals());
+    assert_eq!(restored.memory(), live.memory());
+    assert_eq!(live.globals(), &[12]);
+}

@@ -251,6 +251,11 @@ impl Simulation {
         }
         self.trigger_runtime
             .fold_match_checksum(self.session.binary_frame() as i32, &mut checksum);
+        // Wasm extension modules (RFC 0001 section 15.1, item 7); none in
+        // stock play, so the stock checksum is unchanged.
+        for digest in self.ext_modules.checksum_digests() {
+            checksum.fold_value(digest);
+        }
         Ok(MultiplayerChecksumFrame {
             value: checksum.value(),
             ..frame

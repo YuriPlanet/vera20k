@@ -14,12 +14,14 @@
 //! - the log;
 //! - the atomic `AddMoney` action.
 //!
+//! Saves carry each module's bytes, memory pages that are not all zero,
+//! mutable globals, random stream and status. A load puts them back
+//! ([`Simulation::restore_ext_modules`]) without running module code. The
+//! presentation copy carries no modules (RFC 15.1, item 8).
+//!
 //! Residuals before this leaves preview:
-//! - Module memory is not saved. Saves and the presentation copy carry no
-//!   modules.
-//! - The state hash folds all of a module's memory every hash (not a 1/15
-//!   page rotation), and the multiplayer frame checksum does not include
-//!   modules.
+//! - The state hash and the multiplayer frame checksum read all of a
+//!   module's memory each time, not the RFC's 1/15 page rotation.
 //! - A fault is logged, not shown to players.
 //! - House references use a provisional encoding ([`house_ref`]).
 //! - Modules come only from [`Simulation::install_ext_module`]. Map packs and
@@ -27,7 +29,9 @@
 
 use std::hash::{Hash, Hasher};
 
-use vera20k_wasm_ext::{ActionParams, Export, Fault, Invalid, Limits, SimHost, SimModule, Status};
+use vera20k_wasm_ext::{
+    ActionParams, Export, Fault, Invalid, Limits, ModuleState, SimHost, SimModule, Status,
+};
 
 use crate::sim::houses::Houses;
 use crate::sim::rng::SimRng;
@@ -59,7 +63,9 @@ pub const fn house_ref(index: usize) -> i64 {
 }
 
 /// Where a module came from (RFC section 2); mod modules run first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum ModuleSource {
     Mod,
     Map,
@@ -76,12 +82,65 @@ struct Slot {
     last_frame_ops: u64,
 }
 
+impl ModuleSource {
+    const fn limits(self) -> Limits {
+        match self {
+            Self::Mod => Limits::MOD,
+            Self::Map => Limits::MAP,
+        }
+    }
+}
+
+/// One module as a save holds it.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedSlot {
+    source: ModuleSource,
+    bytes: Vec<u8>,
+    state: ModuleState,
+    rng: SimRng,
+    started: bool,
+    disabled: Option<String>,
+    last_frame_ops: u64,
+}
+
 /// The loaded simulation modules, in run order.
 #[derive(Default)]
 pub struct ExtModules {
     slots: Vec<Slot>,
+    /// Modules read from a save, instantiated by
+    /// [`Simulation::restore_ext_modules`]. Deserializing never compiles a
+    /// module, so describing the save layout stays data-only.
+    pending: Vec<SavedSlot>,
     /// Log lines from modules, drained by the caller.
     log: Vec<String>,
+}
+
+impl serde::Serialize for ExtModules {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.slots.len()))?;
+        for slot in &self.slots {
+            seq.serialize_element(&SavedSlot {
+                source: slot.source,
+                bytes: slot.module.bytes().to_vec(),
+                state: slot.module.state(),
+                rng: slot.rng.clone(),
+                started: slot.started,
+                disabled: slot.disabled.clone(),
+                last_frame_ops: slot.last_frame_ops,
+            })?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ExtModules {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self {
+            pending: Vec::deserialize(deserializer)?,
+            ..Self::default()
+        })
+    }
 }
 
 /// The presentation copy excludes module state (RFC 15.1, item 8).
@@ -113,6 +172,21 @@ impl ExtModules {
         std::mem::take(&mut self.log)
     }
 
+    /// One 32-bit FNV-1a digest per module over its memory and globals, for
+    /// the multiplayer frame checksum. Byte-wise, so 32- and 64-bit
+    /// platforms agree. Residual: it reads all memory each frame instead of
+    /// the RFC's 1/15 page rotation.
+    pub(crate) fn checksum_digests(&self) -> impl Iterator<Item = u32> + '_ {
+        self.slots.iter().map(|slot| {
+            let mut digest = 0x811C_9DC5u32;
+            let globals = slot.module.globals().iter().flat_map(|g| g.to_le_bytes());
+            for byte in globals.chain(slot.module.memory().iter().copied()) {
+                digest = (digest ^ u32::from(byte)).wrapping_mul(0x0100_0193);
+            }
+            digest
+        })
+    }
+
     pub fn hash_state(&self, hasher: &mut impl Hasher) {
         b"ext-modules-v1".hash(hasher);
         for slot in &self.slots {
@@ -120,6 +194,7 @@ impl ExtModules {
             slot.started.hash(hasher);
             slot.disabled.is_some().hash(hasher);
             slot.rng.hash_state(hasher);
+            slot.module.globals().hash(hasher);
             slot.module.memory().hash(hasher);
         }
     }
@@ -228,11 +303,7 @@ impl Simulation {
     /// Loads a module and runs its `vera_init`. An error means the module
     /// cannot run and the match should not start (RFC section 3).
     pub fn install_ext_module(&mut self, source: ModuleSource, bytes: &[u8]) -> Result<(), String> {
-        let limits = match source {
-            ModuleSource::Mod => Limits::MOD,
-            ModuleSource::Map => Limits::MAP,
-        };
-        let module = SimModule::load(bytes, limits).map_err(|e| e.to_string())?;
+        let module = SimModule::load(bytes, source.limits()).map_err(|e| e.to_string())?;
         // The module's own stream (RFC section 4): from the scenario seed and
         // the slot, so module draws never move a native stream.
         let rng = SimRng::new(self.session.seed() ^ (0x5645_5241_0000_0000 | source as u64));
@@ -258,6 +329,24 @@ impl Simulation {
                 Err(format!("vera_init {fault}"))
             }
         }
+    }
+
+    /// Instantiates the modules a save carried and puts back their state.
+    /// An error means this game cannot continue the save.
+    pub(crate) fn restore_ext_modules(&mut self) -> Result<(), String> {
+        for saved in std::mem::take(&mut self.ext_modules.pending) {
+            let module = SimModule::restore(&saved.bytes, saved.source.limits(), &saved.state)
+                .map_err(|e| format!("{:?} module: {e}", saved.source))?;
+            self.ext_modules.slots.push(Slot {
+                source: saved.source,
+                module,
+                rng: saved.rng,
+                started: saved.started,
+                disabled: saved.disabled,
+                last_frame_ops: saved.last_frame_ops,
+            });
+        }
+        Ok(())
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -291,7 +380,7 @@ impl Simulation {
     }
 
     fn call_ext_module(&mut self, index: usize, export: Export, budget: u64) -> Result<u64, Fault> {
-        let ExtModules { slots, log } = &mut self.ext_modules;
+        let ExtModules { slots, log, .. } = &mut self.ext_modules;
         let slot = &mut slots[index];
         let mut host = Host {
             session: &self.session,

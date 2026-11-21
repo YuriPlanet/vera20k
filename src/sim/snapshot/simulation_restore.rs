@@ -104,6 +104,10 @@ impl Simulation {
     /// order.
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
+        // Wasm extension modules come back with their memory and globals;
+        // no module code runs.
+        self.restore_ext_modules()
+            .map_err(SnapshotRestoreError::ExtModule)?;
         for (_, entity) in self.substrate.entities.iter_sorted() {
             if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {

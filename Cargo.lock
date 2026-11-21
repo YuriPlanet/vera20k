@@ -3778,6 +3778,8 @@ dependencies = [
 name = "vera20k-wasm-ext"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "wasm-encoder 0.245.1",
  "wasmparser 0.245.1",
  "wasmtime",
  "wat",
@@ -3879,6 +3881,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef64dbcc55df09c7e5a46182d181c2cfa3e925f3da937ea764728b4bbb9dcbf"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-encoder"
+version = "0.245.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f9dca005e69bf015e45577e415b9af8c67e8ee3c0e38b5b0add5aa92581ed5c"
+dependencies = [
+ "leb128fmt",
+ "wasmparser 0.245.1",
 ]
 
 [[package]]
@@ -3999,7 +4011,7 @@ dependencies = [
  "serde_derive",
  "smallvec",
  "target-lexicon",
- "wasm-encoder",
+ "wasm-encoder 0.263.0",
  "wasmparser 0.263.0",
  "wasmprinter",
  "wasmtime-internal-component-util",
@@ -4117,7 +4129,7 @@ dependencies = [
  "leb128fmt",
  "memchr",
  "unicode-width",
- "wasm-encoder",
+ "wasm-encoder 0.263.0",
 ]
 
 [[package]]
