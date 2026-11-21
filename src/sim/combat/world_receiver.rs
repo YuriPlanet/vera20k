@@ -598,7 +598,7 @@ pub(crate) fn collect_area(
             .cell_target_detaches
             .append(&mut cliff_effects.cell_target_detaches);
     }
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    for (dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()) {
         // Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): the
         // cell's CellChainReact precedes its Reduce_Tiberium (the prelude).
         if rules.ares() {
