@@ -278,6 +278,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.vsync = vsync;
         App::sync_present_mode(self);
     }
+    fn store_high_refresh_rate_in_battle(&mut self, enabled: bool) {
+        self.persistence.options_profile.high_refresh_rate_in_battle = enabled;
+    }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;
