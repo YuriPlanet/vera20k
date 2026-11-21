@@ -18,12 +18,12 @@ use super::state::{
 use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
 use crate::skirmish_modes::SkirmishGameMode;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::list::ListScrollPart;
+use crate::ui::shell::descriptor::DialogResourceId;
+use vera20k_gui::shell::list::ListScrollPart;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The chooser's dialog in the shell controller.
-pub const DIALOG: DialogId = DialogId(0x006B);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x006B);
 
 const MODE_LIST: u16 = 0x6EB;
 const MAP_LIST: u16 = 0x553;
@@ -126,7 +126,9 @@ pub fn sync_page(
     page::sync_rects(gui, root, |id| match id {
         MODE_LIST => Some(surface(layout.mode_list)),
         MAP_LIST => Some(surface(layout.map_list)),
-        MAP_SEARCH => None,
+        // Shown (so it takes typing) but with an empty rect, so presses
+        // never reach it; the host paints the search line itself.
+        MAP_SEARCH => Some(RectPx::default()),
         _ => layout.rects.get(id),
     });
     // The search as the chooser keeps it, the caret after it.
@@ -336,7 +338,6 @@ pub fn poll(
 pub fn hover_target(
     gui: &Gui,
     modal: &ChooseMapModalState,
-    layout: &ChooseMapModalLayout,
     x: i32,
     y: i32,
 ) -> Option<ChooseMapHoverTarget> {
@@ -348,11 +349,7 @@ pub fn hover_target(
         MAP_LIST => ChooseMapHoverTarget::MapList0x553,
         MODE_LIST => {
             // The game-type row the list has under the pointer.
-            let view = gui.list_view(node)?;
-            let rect = gui.tree().screen_rect(node).ok()?;
-            let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.scale);
-            let row = view.geometry(rect, metrics).row_at(view.rows, view.top, x, y);
-            match row.and_then(|row| modal.mode_rows().get(row)) {
+            match gui.list_row_at(node, x, y).and_then(|row| modal.mode_rows().get(row)) {
                 Some(mode) => ChooseMapHoverTarget::ModeListRow0x6eb { mode: *mode },
                 None => ChooseMapHoverTarget::ModeList0x6eb,
             }

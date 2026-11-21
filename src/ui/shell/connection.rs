@@ -14,12 +14,12 @@
 
 use vera20k_gui::{NodeKind, NodeSpec};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 use crate::ui::lan_shell::LanChatLine;
 
-pub const DIALOG: DialogId = DialogId(0xEA);
+pub const DIALOG: DialogResourceId = DialogResourceId(0xEA);
 
 /// Physical row slots. VERA pages the complete local-first node snapshot.
 pub const CONNECTION_ROWS: usize = 8;

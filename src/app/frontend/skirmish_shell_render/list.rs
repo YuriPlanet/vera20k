@@ -2,7 +2,7 @@
 //! child (`0x0061C690`) on the Skirmish-family atlas.
 use super::*;
 use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::list::{
+use vera20k_gui::shell::list::{
     ListFrameTone, ListScrollPart, ShellListGeometry, list_frame_lines, scrollbar_edge_lines,
     scrollbar_interior,
 };

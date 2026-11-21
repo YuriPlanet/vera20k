@@ -12,12 +12,12 @@
 
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{BoxParts, message_box_parts};
 use crate::ui::shell::page::PageEvent;
 
-const DIALOG: DialogId = DialogId(0x120);
+const DIALOG: DialogResourceId = DialogResourceId(0x120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurrenderButton {

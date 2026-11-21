@@ -11,12 +11,12 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, dlu_rect};
-use crate::ui::shell::list::list_box_rect;
+use vera20k_gui::shell::list::list_box_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
-pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
+pub const MOVIE_LIST_DIALOG: DialogResourceId = DialogResourceId(0x0129);
 
 /// Play Movie button `0x745`.
 pub const PLAY_MOVIE_CONTROL: u16 = 0x0745;
@@ -97,7 +97,7 @@ pub fn set_family_list(
 
 /// The family page `dialog`'s `List` node, wherever its instance sits on
 /// the stack.
-pub fn find_family_list(controller: &DialogController, dialog: DialogId) -> Option<NodeId> {
+pub fn find_family_list(controller: &DialogController, dialog: DialogResourceId) -> Option<NodeId> {
     let root = controller.root_in(dialog)?;
     let gui = controller.gui();
     gui.tree()
@@ -109,7 +109,7 @@ pub fn find_family_list(controller: &DialogController, dialog: DialogId) -> Opti
 }
 
 /// The row the family page `dialog`'s list has selected.
-pub fn family_list_selected(controller: &DialogController, dialog: DialogId) -> Option<usize> {
+pub fn family_list_selected(controller: &DialogController, dialog: DialogResourceId) -> Option<usize> {
     controller
         .gui()
         .list_view(find_family_list(controller, dialog)?)?
@@ -121,7 +121,7 @@ pub fn family_list_selected(controller: &DialogController, dialog: DialogId) -> 
 /// window follows `rect`.
 pub fn family_list_node(
     controller: &mut DialogController,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     rect: RectPx,
     (rows, selected, top): (usize, Option<usize>, usize),
 ) -> Option<NodeId> {

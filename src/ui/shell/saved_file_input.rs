@@ -202,7 +202,7 @@ pub fn update<I: Clone + PartialEq>(
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+    use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
     use crate::ui::skirmish_shell::{SavedSeedBrowserRow, SavedSeedPrompt, SavedSeedPromptPurpose};
     use std::path::PathBuf;
 

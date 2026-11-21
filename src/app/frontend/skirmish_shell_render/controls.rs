@@ -12,7 +12,7 @@ use crate::render::skirmish_shell_chrome::{
 };
 use crate::rules::ruleset::RuleSet;
 use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
+use vera20k_gui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
     DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
     checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
@@ -129,7 +129,7 @@ pub(super) fn push_new_edit(
     texts: &mut Vec<ShellTextDraw>,
     atlas: &SkirmishShellChromeAtlas,
     font: &BitFont,
-    edit: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    edit: &vera20k_gui::shell::new_edit::NewEdit,
     composition: Option<(&[u16], usize)>,
     rect: RectPx,
     caret_visible: bool,
@@ -161,7 +161,7 @@ pub(super) fn push_framed_edit(
     texts: &mut Vec<ShellTextDraw>,
     atlas: &SkirmishShellChromeAtlas,
     font: &BitFont,
-    edit: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    edit: &vera20k_gui::shell::new_edit::NewEdit,
     composition: Option<(&[u16], usize)>,
     (frame, field): (RectPx, RectPx),
     (caret, rgb, text_depth): (bool, [f32; 3], f32),
@@ -217,7 +217,7 @@ pub(super) fn push_new_edit_caret(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     font: &BitFont,
-    editor: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    editor: &vera20k_gui::shell::new_edit::NewEdit,
     text: RectPx,
     depth: f32,
     scale: ShellScale,
@@ -494,12 +494,12 @@ pub(super) enum ControlPaint {
     /// A checkbox in dual-state mode (message 0x4E5) or disabled: Diplomacy
     /// 0x73's Allies and Chat boxes.
     StatefulCheckbox {
-        face: crate::ui::shell::button::CheckboxFace,
+        face: vera20k_gui::shell::button::CheckboxFace,
         disabled: bool,
         rect: RectPx,
     },
     /// A trackbar window with its thumb's window-relative left edge
-    /// ([`crate::ui::shell::trackbar::thumb_left`]). `plaque` is off where
+    /// ([`vera20k_gui::shell::trackbar::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
     /// `disabled` is the window's `WS_DISABLED` style (`0x0061E0B0`).
     Trackbar {
@@ -535,9 +535,9 @@ pub(super) fn paint_control(
     match paint {
         ControlPaint::Checkbox { checked, rect } => {
             let face = if checked {
-                crate::ui::shell::button::CheckboxFace::Checked
+                vera20k_gui::shell::button::CheckboxFace::Checked
             } else {
-                crate::ui::shell::button::CheckboxFace::Unchecked
+                vera20k_gui::shell::button::CheckboxFace::Unchecked
             };
             paint_checkbox_face(out, chrome, face, false, rect, scale);
         }
@@ -708,7 +708,7 @@ pub(super) fn push_opponent_scrollbar_instances(
     shell: &SkirmishShellState,
     maps: &[MapMenuEntry],
     // The arrow its gui List draws pushed.
-    pressed: Option<crate::ui::shell::list::ListScrollPart>,
+    pressed: Option<vera20k_gui::shell::list::ListScrollPart>,
 ) {
     if let Some(geometry) = opponent_scroll_geometry(layout, shell, maps) {
         super::list::paint_list(
@@ -1633,12 +1633,12 @@ const DISABLED_OVERLAY_KEEP: f32 = (255 - 0x60) as f32 / 256.0;
 fn paint_checkbox_face(
     out: &mut Vec<SpriteInstance>,
     chrome: &ControlChrome,
-    face: crate::ui::shell::button::CheckboxFace,
+    face: vera20k_gui::shell::button::CheckboxFace,
     disabled: bool,
     rect: RectPx,
     scale: ShellScale,
 ) {
-    use crate::ui::shell::button::CheckboxFace;
+    use vera20k_gui::shell::button::CheckboxFace;
     let entry = match face {
         CheckboxFace::Unchecked => chrome.checkbox_unchecked_cue_i,
         CheckboxFace::Checked => chrome.checkbox_checked_cce_i,
@@ -1667,14 +1667,14 @@ fn paint_checkbox_face(
 pub(super) fn list_view_controls(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
-    geometry: crate::ui::shell::list::ShellListGeometry,
-    (selected, top, pressed): (Option<usize>, usize, Option<crate::ui::shell::list::ListScrollPart>),
+    geometry: vera20k_gui::shell::list::ShellListGeometry,
+    (selected, top, pressed): (Option<usize>, usize, Option<vera20k_gui::shell::list::ListScrollPart>),
     scale: ShellScale,
 ) {
     // Frame lines and scrollbar geometry are shared with all native lists.
     // Their backing remains the composed parent. Its one-RGB565-unit darkening
     // is a small presentation residual until the common atlas carries it.
-    for (line, tone) in crate::ui::shell::list::list_frame_lines(scale.base_rect(geometry.outer)) {
+    for (line, tone) in vera20k_gui::shell::list::list_frame_lines(scale.base_rect(geometry.outer)) {
         push_solid_rect(
             out,
             atlas,
@@ -1756,9 +1756,9 @@ pub(super) fn push_popup_instances(
     push_ownerdraw_two_pixel_bevel_frame(out, atlas, rect, frame_depth);
 }
 pub(super) fn dropdown_scroll_part(
-    part: crate::ui::shell::list::ListScrollPart,
+    part: vera20k_gui::shell::list::ListScrollPart,
 ) -> DropdownScrollbarPart {
-    use crate::ui::shell::list::ListScrollPart;
+    use vera20k_gui::shell::list::ListScrollPart;
     match part {
         ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
         ListScrollPart::Down => DropdownScrollbarPart::DownArrow,

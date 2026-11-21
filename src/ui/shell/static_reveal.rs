@@ -6,7 +6,7 @@
 //! successfully presented count and one dirty paint. The app layer commits the
 //! dirty paint only after swapchain presentation.
 
-use crate::time::{Duration, Instant};
+use vera20k_gui::time::{Duration, Instant};
 
 /// Native kind-1 timer interval of the right-panel heading `0x694`
 /// (`0x1e` milliseconds).
@@ -87,7 +87,7 @@ impl PresentedKind1Static {
         &self.text
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub fn params(&self) -> Kind1Params {
         self.params
     }
@@ -328,12 +328,12 @@ fn next_deadline_after(deadline: Instant, now: Instant, interval: Duration) -> I
         .unwrap_or_else(|| now.checked_add(interval).unwrap_or(deadline))
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 pub mod tests {
     use super::*;
 
     fn native_params(dialog: u64, control: u64) -> Kind1Params {
-        let cases = crate::fixtures::native_static_timer_cases();
+        let cases = vera20k_gui::fixtures::native_static_timer_cases();
         let case = cases
             .iter()
             .find(|case| case["dialog_id"] == dialog && case["control_id"] == control)

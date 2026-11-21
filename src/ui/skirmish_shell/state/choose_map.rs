@@ -13,7 +13,7 @@ use crate::map::skirmish_scenarios::{
     upsert_random_map_sentinel,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::static_reveal::DialogStatics;
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
@@ -109,7 +109,7 @@ impl ChooseMapPrompt {
     /// greyed while a download runs.
     pub fn shell_box(&self, body: String, ok: String, cancel: String) -> ShellBox {
         use crate::ui::shell::modal::control::{CANCEL, OK};
-        ShellBox::new(crate::ui::shell::descriptor::DialogId(0x120), body)
+        ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0x120), body)
             .button(OK, ok)
             .button(CANCEL, cancel)
             .disabled(OK, !self.button_enabled(ChooseMapPromptButton::Ok))
@@ -1542,7 +1542,7 @@ mod tests {
         // VERA: the map rows start 20 px lower, under the search box.
         assert_eq!(maps.row(0), RectPx::new(339, 148, 195, 19));
         assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(534));
-        let lines = crate::ui::shell::list::list_frame_lines(layout.mode_list);
+        let lines = vera20k_gui::shell::list::list_frame_lines(layout.mode_list);
         let left = lines.iter().map(|(r, _)| r.x).min();
         let right = lines.iter().map(|(r, _)| r.x + r.w - 1).max();
         let top = lines.iter().map(|(r, _)| r.y).min();

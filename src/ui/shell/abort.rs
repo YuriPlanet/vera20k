@@ -7,11 +7,11 @@
 
 use vera20k_gui::{NodeKind, NodeSpec};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
-pub const DIALOG: DialogId = DialogId(0xB6);
+pub const DIALOG: DialogResourceId = DialogResourceId(0xB6);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortButton {

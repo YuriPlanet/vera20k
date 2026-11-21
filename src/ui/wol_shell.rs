@@ -14,7 +14,7 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
@@ -23,7 +23,7 @@ use crate::ui::shell::menu_page::{
 };
 use crate::ui::shell::modal::ShellBox;
 
-pub const WOL_WELCOME_DIALOG: DialogId = DialogId(0x010E);
+pub const WOL_WELCOME_DIALOG: DialogResourceId = DialogResourceId(0x010E);
 pub const QUICK_MATCH: u16 = 0x06E0;
 pub const QUICK_COOP: u16 = 0x0771;
 pub const CUSTOM_MATCH: u16 = 0x06E1;
@@ -329,12 +329,12 @@ fn button_node(id: u16) -> NodeSpec {
 /// `0x126` with Yes (6) and No (7) on the CE/120 rects. Its loop
 /// (`0x007759E0`) dispatches without `IsDialogMessage`, so it takes no keys.
 pub fn message_box(body: String, ok: String) -> ShellBox {
-    ShellBox::new(DialogId(0x00D0), body).button(BOX_OK, ok)
+    ShellBox::new(DialogResourceId(0x00D0), body).button(BOX_OK, ok)
 }
 
 /// [`message_box`]'s style 4: Yes and No.
 pub fn yes_no_box(body: String, yes: String, no: String) -> ShellBox {
-    ShellBox::new(DialogId(0x0126), body)
+    ShellBox::new(DialogResourceId(0x0126), body)
         .button(BOX_YES, yes)
         .button(BOX_NO, no)
 }
@@ -346,7 +346,7 @@ pub const BOX_NO: u16 = 7;
 /// The wait box `0xC4`'s Disconnect and WOL Check Status.
 pub const WAIT_DISCONNECT: u16 = 0x058D;
 pub const WAIT_CHECK_STATUS: u16 = 0x058E;
-pub const WAIT_DIALOG: DialogId = DialogId(0x00C4);
+pub const WAIT_DIALOG: DialogResourceId = DialogResourceId(0x00C4);
 
 /// The wait box `0xC4` (`0x00792BE0`, proc `0x00792CF0`): created hidden
 /// (fShow 0); its init arms timer `0x45` for `[0x84A248]` = 7000 ms, whose

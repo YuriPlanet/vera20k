@@ -13,9 +13,11 @@
 | `gui` | `Gui`、输入与事件类型、对话框栈 |
 | `node` | `Tree`、`NodeId`、`NodeKind`、`Prop`、`Value`、`Refused` |
 | `spec` | `NodeSpec` 与 `create_tree`、`find_id`、`id_of` |
-| `shell` | 公开的零售外壳几何与行为辅助：`geom`（DLU→像素、`ShellScale`、`RectPx`=`Rect`）、`layout`、`descriptor`（对话框 id）、`list`（列表与滚动条几何）、`combobox`（下拉窗）、`new_edit`（NewEdit 文本、光标与横向滚动）、`trackbar`、`button`、`paging`、`static_reveal`、`warning_monitor` |
+| `shell` | 公开的控件几何与行为辅助：`geom`（`RectPx`=`Rect`、`ShellScale`、`ScaledRects` 与 `scaled_rects!`）、`list`（列表与滚动条几何）、`combobox`（下拉窗）、`new_edit`（NewEdit 文本、光标与横向滚动）、`trackbar`、`button` |
 | `time` | 宿主时钟（原生 `std::time`，浏览器 `web-time`） |
 | `widget`（私有） | 各种控件对按下、拖动、释放、滚轮、按键和计时器的反应 |
+
+尤里的复仇前端自己的布局知识不在库里，而在引擎的 `src/ui/shell/`：`geom`（DLU→像素、右侧面板与 SDBTNANM 按钮列）、`descriptor`（对话框资源 id `DialogResourceId` 与锚定规则）、`layout`（布局过程与状态行）、`paging`、`static_reveal`、`warning_monitor`。
 
 ## 2. 树与节点
 
@@ -42,17 +44,19 @@
 | `Default`、`Cancel` | Button | Enter / Escape 激活它（IDOK / IDCANCEL）；可以隐藏，代表没有按钮承载的命令 |
 | `Checked` | Checkbox | 勾选 |
 | `Pos`、`Min`、`Max`、`Step`、`ShowValue`、`ScaleScreen` | Trackbar（`Pos`、`Max` 也用于 ScrollBar） | 值与范围 |
-| `Items`、`RowCount`、`Selected`、`Top`、`VisibleRows`、`RowHeight` | List、Combo、ScrollBar | 行、选择、首行 |
+| `Items`、`RowCount`、`Selected`、`Top`、`VisibleRows` | List、Combo（`RowCount`、`VisibleRows` 也用于 ScrollBar 的滑块） | 行、选择、首行 |
+| `RowHeight` | List、Combo | 行高（ScrollBar 不接受） |
 | `NoSelectionFill`、`MultiSelect`、`SelectedRows`、`WheelStep` | List | 聊天记录、多选、每格滚轮行数（缺省 3） |
 | `Open`、`OpenAnywhere`、`PopupBottom`、`PopupWiden`、`PopupFlipBelow`、`PopupRect`、`PopupHidden`、`Swatches` | Combo | 下拉窗 |
 | `MaxLen`、`MaxBytes`、`ByteOnly`、`Rejected`、`Allowed`、`Password`、`SelectOnFocus`、`AllSelected`、`Caret` | Edit | 输入过滤与光标；`Top` 为首个可见单元 |
 | `KeepsBlink` | Edit | Tab 给它焦点时不重启光标闪烁 |
 | `TabStop` | 可交互节点 | Tab 停靠点（`Edit` 缺省是，其它种类需设置） |
 | `PressThrough` | 全部 | 悬停，但按下与释放落到下面的节点 |
+| `Draggable`、`DragThreshold`、`DropTarget` | 全部 | 按下可拖起、拖起前的像素距离、接收被拖节点（§4.1） |
 
 ## 3. 对话框栈
 
-- `push_dialog(root, DialogKind::Page | Modal)`：`root` 必须是已有的 `Dialog` 节点。只有栈顶对话框接收输入；`Modal` 消费所有未命中的输入。
+- `push_dialog(root, DialogKind::Page | Modal)`：`root` 必须是已有的 `Dialog` 节点。只有栈顶对话框接收输入；`Modal` 消费所有未命中的输入。根节点设了 `Rect` 的 `Modal` 在矩形外被按下时发 `PressedOutside { dialog }`。
 - `pop_dialog`（同时删除节点）、`raise_dialog`、`top_dialog`、`dialog_root`、`dialogs`。
 - 每个对话框保存自己的指针状态：捕获、悬停、焦点、打开的下拉窗。被模态框盖住的页面保留自己的按下外观与焦点。`reset_pointer`、`drop_pointer_in`、`cancel_pointer` 丢弃捕获与悬停。
 - `set_dialog_scale(id, ShellScale)`：把设备坐标映射回 800×600 的原生控件算术。
@@ -75,18 +79,21 @@
 - 组合框：按箭头区打开下拉窗（`ComboOpened`），下拉窗打开时先接收该对话框的全部指针输入；选中行发 `Changed { Int }` 并关闭（`ComboClosed`）。
 - 编辑框：按下取得焦点并重启光标闪烁；不按位置放置光标。
 - 悬停变化发 `Hovered { entered }`。
+- 拖动：按下 `Draggable` 节点（且这次按下不是被已打开的下拉窗接收）开始一次拖动；指针在任一轴上离开按下点达到该节点的 `DragThreshold`（像素，0 为第一次移动）后才算拖起：关闭打开的下拉窗（无事件）并发 `DragStarted`，此后每次移动发 `DragMoved { x, y, target }`，`target` 为指针下树序第一个可见的 `DropTarget` 节点（它不必接收按下）。松开时若已拖起，先发 `Dropped { node, target }`，再照常处理松开；未拖起的按下照常是一次点击。`drop_pointer_in` / `cancel_pointer` 结束拖动。宿主用 `drag()`（`DragView { node, at, carrying, target }`）绘制被拖的内容，并自行决定目标是否接受。
+- 模态框外按下：栈顶为 `Modal` 且其根节点设了 `Rect` 时，按在该矩形外发 `PressedOutside { dialog }`（点外面关闭的框）。
 
 ### 4.2 滚轮
 
-落在悬停的 `List` 上时滚动 `WheelStep` 行；否则未消费（模态框除外）。宿主附加入口：`wheel_list(node, lines)`（不论指针位置）、`wheel_popup(rows, x, y)`（打开的下拉窗）。
+落在悬停的 `List` 上时滚动 `WheelStep` 行；否则未消费（模态框除外）。宿主附加入口：`wheel_list(node, lines, now)`（不论指针位置，按该列表所在对话框的缩放）、`wheel_popup(rows, x, y, now)`（打开的下拉窗）。
 
 ### 4.3 键盘
 
-- 焦点只落在 `Edit` 上。编辑键与文字给焦点编辑框，按 `MaxLen`、`MaxBytes`（宿主用 `set_byte_len` 给出代码页长度）、`ByteOnly`、`Rejected`、`Allowed` 过滤；文字变化发 `TextChanged`。
+- 焦点只落在 `Edit` 上。隐藏或禁用（含祖先）的焦点编辑框保留焦点，但不接收按键与文字。编辑键与文字给焦点编辑框，按 `MaxLen`、`MaxBytes`（宿主用 `set_byte_len` 给出代码页长度）、`ByteOnly`、`Rejected`、`Allowed` 过滤；文字变化发 `TextChanged`。
+- 下拉窗打开时它先拿到 `Enter` 与 `Escape`：`Enter` 选中热行并关闭（`ComboClosed`、`Changed`），不再激活 `Default` 按钮；`Escape` 只关闭它（无事件）。
 - `Enter`：焦点编辑框先发 `Submitted`，然后激活对话框树序第一个 `Default` 按钮（须启用，可隐藏）。
-- `Escape`：下拉窗打开时只关闭它（无事件）；否则焦点编辑框先发 `Cancelled`，然后激活 `Cancel` 按钮。
-- `Tab` / `BackTab`：在栈顶对话框内可见、启用的停靠点之间按树序前进 / 后退并循环（GetNextDlgTabItem）；没有焦点时两者都去第一个停靠点。停到非 `Edit` 时焦点离开编辑框。发 `FocusMoved { from, to }`。
-- 下拉窗的键盘（宿主选用）：`key_popup(key)`：上下移动热行，Enter 选中，Escape 关闭。
+- `Escape`：焦点编辑框先发 `Cancelled`，然后激活 `Cancel` 按钮。
+- `Tab` / `BackTab`：从焦点编辑框，或上次 Tab 停到的非编辑框停靠点，在栈顶对话框内可见、启用的停靠点之间按树序前进 / 后退并循环（GetNextDlgTabItem）；两者都没有时去第一个停靠点。停到非 `Edit` 时焦点离开编辑框，下一次 Tab 从该停靠点继续；宿主设置焦点时忘掉它。焦点编辑框本身不是停靠点时 Tab 不动。发 `FocusMoved { from, to }`。
+- 下拉窗的键盘（宿主选用）：`key_popup(key, now)`：上下移动热行，Enter 选中，Escape 关闭（发 `ComboClosed`）。
 - 消费：编辑框接受的键、激活了按钮、移动了焦点，或栈顶为 `Modal`。
 
 ### 4.4 焦点与光标
@@ -97,13 +104,17 @@
 
 ## 5. 事件
 
-`drain_events()` 按发生顺序返回 `UiEvent`：`Activated`、`Hovered`、`Pressed`、`Changed { value, final_ }`、`ListSelected`、`ListDoubleClicked`、`Scrolled { top }`、`ComboOpened`、`ComboClosed`、`TextChanged`、`Submitted`、`Cancelled`、`FocusMoved`。宿主自己调用 `set` 不产生事件。音效由宿主根据事件播放。
+`drain_events()` 按发生顺序返回 `UiEvent`：`Activated`、`Hovered`、`Pressed`、`Changed { value, final_ }`、`ListSelected`、`ListDoubleClicked`、`Scrolled { top }`、`ComboOpened`、`ComboClosed`、`TextChanged`、`Submitted`、`Cancelled`、`FocusMoved`、`PressedOutside`、`DragStarted`、`DragMoved`、`Dropped`。宿主自己调用 `set` 不产生事件。音效由宿主根据事件播放。
+
+未取走的事件会合并（`append_events`，引擎的 `DialogController` 积攒时也用它）：尚未取走的进入悬停在离开时与之抵消；同一节点紧挨着的 `Scrolled` 只留最新的（首行从节点读）。其它事件不合并。
 
 ## 6. 读取与宿主辅助
 
-- 状态：`pressed`、`hovered`、`pressed_in`、`hovered_in`、`dragging`、`shows_pressed`、`popup`。
+- 状态：`pressed`、`hovered`、`pressed_in`、`hovered_in`、`dragging`、`drag`、`shows_pressed`、`popup`。
 - 列表：`list_view`（`ListView { rows, top, selected, pressed }`）、`list_geometry`、`list_row_at`、`selected_rows` / `set_selected_rows`、`log_rows(node, rows, dropped)`（聊天记录：在末尾时跟随新行，否则保持显示同样的行）。
 - 下拉窗：`combo_drop_down(node)`（`ComboDropDown` 几何、热行、按下的滚动条部件）、`open_popup(node, top)`、`close_popup`（宿主操作，无事件）。
+- 滚动条：`scrollbar_view(node)`（`ScrollBarView { bar, thumb, held }`，按所在对话框的缩放）。
+- 编辑框：`edit_state(node)`（`NewEdit`：文字、光标、`Top`、遮罩，是否持有栈顶焦点）、`set_edit_state(node, &NewEdit)`（写回文字、光标、`Top`，无事件）。
 - 命中：`hit_at(root, x, y, press)`，供宿主在下拉窗下方做悬停与状态行判断。
 
 ## 7. 引擎侧接入（vera20k）

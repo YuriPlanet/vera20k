@@ -230,11 +230,11 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) 
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::shell::descriptor::{HEADING_ANCHOR, MONITOR_ANCHOR};
-    use crate::shell::geom::SDBTNANM_CELL_W_NARROW;
+    use crate::ui::shell::descriptor::{HEADING_ANCHOR, MONITOR_ANCHOR};
+    use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
 
     const SNAP: AnchorRule = AnchorRule::OwnerDrawButtonSnap {
         cell_w: SDBTNANM_CELL_W_NARROW,
@@ -260,14 +260,23 @@ mod tests {
     fn anchor_rules_reproduce_main_menu_rects_800x600() {
         let placer = Placer::new(800, 600);
         // Snap button: flush-right 156-cell, first row at y=199.
-        assert_eq!(placer.at(SNAP, 425, 125, 108, 23), RectPx::new(644, 199, 156, 42));
+        assert_eq!(
+            placer.at(SNAP, 425, 125, 108, 23),
+            RectPx::new(644, 199, 156, 42)
+        );
         // Exit: same column, in the final tile immediately above the bottom cap.
         assert_eq!(placer.rule(BOTTOM_ROW), RectPx::new(644, 535, 156, 42));
         // Title: compatibility +1w/+1h, right-anchor (635,2,163,17),
         // then the title finalizer adds +7y/+1h.
-        assert_eq!(placer.at(HEADING_ANCHOR, 425, 1, 108, 10), RectPx::new(635, 9, 163, 18));
+        assert_eq!(
+            placer.at(HEADING_ANCHOR, 425, 1, 108, 10),
+            RectPx::new(635, 9, 163, 18)
+        );
         // 0x71C monitor window: +1w/+1h, x = 800 - 37 - 93.
-        assert_eq!(placer.at(MONITOR_ANCHOR, 447, 29, 61, 33), RectPx::new(670, 47, 93, 55));
+        assert_eq!(
+            placer.at(MONITOR_ANCHOR, 447, 29, 61, 33),
+            RectPx::new(670, 47, 93, 55)
+        );
     }
 
     #[test]
@@ -286,9 +295,15 @@ mod tests {
     /// Re-anchor is oversized-screen aware: 1024x768 reproduces the 0xE2 cells.
     #[test]
     fn snap_and_bottom_row_track_supported_screen_sizes() {
-        assert_eq!(Placer::new(640, 480).rule(BOTTOM_ROW), RectPx::new(484, 409, 156, 42));
+        assert_eq!(
+            Placer::new(640, 480).rule(BOTTOM_ROW),
+            RectPx::new(484, 409, 156, 42)
+        );
         let at_1024 = Placer::new(1024, 768);
-        assert_eq!(at_1024.at(SNAP, 425, 125, 108, 23), RectPx::new(756, 283, 156, 42));
+        assert_eq!(
+            at_1024.at(SNAP, 425, 125, 108, 23),
+            RectPx::new(756, 283, 156, 42)
+        );
         assert_eq!(at_1024.rule(BOTTOM_ROW), RectPx::new(756, 619, 156, 42));
     }
 }

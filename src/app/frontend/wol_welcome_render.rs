@@ -29,7 +29,7 @@ use crate::render::shell_paint::{
     push_entry_scaled,
 };
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
@@ -100,7 +100,7 @@ enum Body {
 /// The page being painted: its dialog, right panel, status line, the page
 /// whose captions its buttons show, and its body.
 struct Painted {
-    dialog: DialogId,
+    dialog: DialogResourceId,
     page: MenuPageLayout,
     status_help: RectPx,
     spec: &'static MenuPageSpec,
@@ -108,7 +108,7 @@ struct Painted {
 }
 
 /// The shell's Sound Options over WOL Options.
-const SOUND_DIALOG: DialogId = SHELL_SOUND_PAGE.dialog;
+const SOUND_DIALOG: DialogResourceId = SHELL_SOUND_PAGE.dialog;
 
 /// The WOL pages' slides.
 const SLIDES: [ShellSlideKind; 11] = [

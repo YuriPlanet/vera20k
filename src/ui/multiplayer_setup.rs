@@ -8,16 +8,16 @@ use crate::util::time::Instant;
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::LanChatState;
-use crate::ui::shell::combobox::ComboPopup;
+use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
 use crate::ui::shell::layout::Placer;
 use crate::ui::shell::layout_data;
-use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageEvent};
-use crate::ui::shell::trackbar::{TrackbarPress, TrackbarRange};
+use vera20k_gui::shell::trackbar::{TrackbarPress, TrackbarRange};
 use crate::ui::skirmish_shell::SkirmishStatics;
 
 pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
@@ -401,7 +401,7 @@ impl SetupDialog {
 }
 
 pub(crate) const HOST_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xBC),
+    dialog: DialogResourceId(0xBC),
     title_key: "GUI:HostScreen",
     stacked: &[
         MenuPageButtonSpec::new(START, 147, "GUI:StartGame", "STT:HostButtonGo"),
@@ -410,7 +410,7 @@ pub(crate) const HOST_PAGE: MenuPageSpec = MenuPageSpec {
     back: MenuPageButtonSpec::new(BACK, 346, "GUI:Back", "STT:HostButtonBack"),
 };
 pub(crate) const GUEST_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xBD),
+    dialog: DialogResourceId(0xBD),
     title_key: "GUI:JoinScreen",
     stacked: &[MenuPageButtonSpec::new(
         ACCEPT,
@@ -424,7 +424,7 @@ pub(crate) const GUEST_PAGE: MenuPageSpec = MenuPageSpec {
 const WOL_BACK: MenuPageButtonSpec =
     MenuPageButtonSpec::new(BACK, 257, "GUI:Back", "STT:WOLNewGameCancel");
 pub(crate) const WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xC2),
+    dialog: DialogResourceId(0xC2),
     title_key: "GUI:HostScreen",
     stacked: &[
         MenuPageButtonSpec::new(START, 156, "GUI:StartGame", "STT:HostButtonGo"),
@@ -434,7 +434,7 @@ pub(crate) const WOL_HOST_PAGE: MenuPageSpec = MenuPageSpec {
     back: WOL_BACK,
 };
 pub(crate) const WOL_GUEST_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xC9),
+    dialog: DialogResourceId(0xC9),
     title_key: "GUI:JoinScreen",
     stacked: &[
         MenuPageButtonSpec::new(ACCEPT, 156, "GUI:Accept", "STT:GuestButtonAccept"),
@@ -635,20 +635,24 @@ pub(crate) struct DragRow {
     pub(crate) may_watch: bool,
 }
 
-/// The host's drag of a roster row: pressed on `row`, carried once the
-/// pointer leaves the press by [`ROW_DRAG_START`], over the box whose header
-/// is page row `target`.
+/// The host's drag of a roster row, as the room's widgets hold it
+/// ([`row_drag`]): pressed on `row`, carried once the pointer leaves the
+/// press by [`ROW_DRAG_START`], over the box whose header is page row
+/// `target` when that box takes the row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RowDrag {
     pub(crate) row: u8,
-    from: (i32, i32),
     pub(crate) at: (i32, i32),
     pub(crate) carrying: bool,
     pub(crate) target: Option<usize>,
 }
 /// How far, in window pixels, the pointer moves before a pressed row is
-/// carried; a shorter press stays a click on its cell.
+/// carried; a shorter press stays a click on its cell (the cells'
+/// `DragThreshold`).
 const ROW_DRAG_START: i32 = 6;
+/// VERA's roster's group boxes, a row's drop targets: the box whose header
+/// is page row `row` is `GROUP_BOX + row`.
+pub(crate) const GROUP_BOX: u16 = 0x7F40;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
@@ -856,8 +860,6 @@ pub(crate) struct MultiplayerSetupState {
     /// put another row under its control, and a list whose row moved away
     /// closes, so a pick never changes whoever took its place.
     pub(crate) popup_row: Option<u8>,
-    /// The host's drag of a roster row, while the button is down.
-    pub(crate) row_drag: Option<RowDrag>,
     pub(crate) statics: SkirmishStatics,
     pub(crate) shown: bool,
     accept_flash_started: Option<Instant>,
@@ -879,7 +881,6 @@ impl Default for MultiplayerSetupState {
             parked_chat: None,
             notice: None,
             popup_row: None,
-            row_drag: None,
             statics: SkirmishStatics::default(),
             shown: false,
             accept_flash_started: None,
@@ -913,48 +914,6 @@ impl MultiplayerSetupState {
             page.saturating_sub(1)
         };
         self.first_visible_row = pages.get(page).copied().unwrap_or(0);
-        self.cancel_pointer();
-    }
-    /// The host presses roster row `row` at `x`, `y`: it may drag it.
-    pub(crate) fn press_row(&mut self, row: u8, x: i32, y: i32) {
-        self.row_drag = Some(RowDrag {
-            row,
-            from: (x, y),
-            at: (x, y),
-            carrying: false,
-            target: None,
-        });
-    }
-    /// The pointer moves with a row pressed: once it has left the press the
-    /// row is carried, over the box `target` gives. True when the carry
-    /// starts now, which closes the list the press opened.
-    pub(crate) fn drag_row(
-        &mut self,
-        x: i32,
-        y: i32,
-        target: impl FnOnce(u8) -> Option<usize>,
-    ) -> bool {
-        let Some(drag) = self.row_drag.as_mut() else {
-            return false;
-        };
-        drag.at = (x, y);
-        let starts = !drag.carrying
-            && (x - drag.from.0).abs().max((y - drag.from.1).abs()) >= ROW_DRAG_START;
-        drag.carrying |= starts;
-        if starts {
-            self.popup_row = None;
-        }
-        drag.target = if drag.carrying {
-            target(drag.row)
-        } else {
-            None
-        };
-        starts
-    }
-    /// The button comes up: the row and the box it was carried to.
-    pub(crate) fn drop_row(&mut self) -> Option<(u8, usize)> {
-        let drag = self.row_drag.take()?;
-        Some((drag.row, drag.target?))
     }
     /// The place VERA's roster shows, of the last `max_top`.
     pub(crate) fn roster_top(&self, max_top: usize) -> usize {
@@ -975,6 +934,7 @@ impl MultiplayerSetupState {
         x: i32,
         y: i32,
         lines: f32,
+        now: u64,
     ) -> bool {
         let Some(roster) = layout.roster_scroll(view) else {
             return false;
@@ -988,7 +948,7 @@ impl MultiplayerSetupState {
         } else {
             step
         };
-        if gui.wheel_popup(-step, x, y) {
+        if gui.wheel_popup(-step, x, y, now) {
             return true;
         }
         // Over the roster (its area node `area`), its cells or the gaps
@@ -1021,17 +981,13 @@ impl MultiplayerSetupState {
     }
     pub(crate) fn show_game_options(&mut self, open: bool) {
         self.game_options = open;
-        self.cancel_pointer();
     }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
         if !enabled {
             self.accept_flash_started = None;
             return false;
         }
-        crate::ui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
-    }
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.row_drag = None;
+        vera20k_gui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
     }
 }
 
@@ -1432,12 +1388,6 @@ impl MultiplayerSetupLayout {
             ));
         }
     }
-    /// The page row of the header whose box in VERA's roster holds `x`, `y`.
-    pub(crate) fn group_box_at(&self, x: i32, y: i32) -> Option<usize> {
-        self.group_boxes
-            .iter()
-            .position(|rect| rect.is_some_and(|rect| rect.contains(x, y)))
-    }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
     pub(crate) fn arrange_extended_rows(&mut self) {
@@ -1578,11 +1528,11 @@ pub(crate) const ROSTER_SCROLL: u16 = 0x7F17;
 pub(crate) const ROSTER_AREA: u16 = 0x7F18;
 /// The boxes over VERA's room in the shell controller, which take the
 /// room's input while they are open.
-pub(crate) const GAME_OPTIONS_BOX: DialogId = DialogId(GAME_OPTIONS);
-pub(crate) const MAP_OFFER_BOX: DialogId = DialogId(MAP_OFFER_DOWNLOAD);
+pub(crate) const GAME_OPTIONS_BOX: DialogResourceId = DialogResourceId(GAME_OPTIONS);
+pub(crate) const MAP_OFFER_BOX: DialogResourceId = DialogResourceId(MAP_OFFER_DOWNLOAD);
 /// The shared message box (`0x005D3490`) over the room, which owns all
 /// input while it runs.
-pub(crate) const NOTICE_BOX: DialogId = DialogId(0xCE);
+pub(crate) const NOTICE_BOX: DialogResourceId = DialogResourceId(0xCE);
 
 fn node(kind: NodeKind, id: u16) -> NodeSpec {
     NodeSpec::new(kind).id(i32::from(id))
@@ -1642,6 +1592,10 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         // shows only while it holds a picture.
         .child(crate::ui::shell::menu_page::hover_target(MAP_PREVIEW, ""))
         .child(node(NodeKind::Text, ROSTER_AREA).tooltip(""))
+        // Each group's box takes a carried roster row (no press).
+        .children((0..MODERN_SETUP_ROWS as u16).map(|row| {
+            node(NodeKind::Text, GROUP_BOX + row).with(Prop::DropTarget, Value::Bool(true))
+        }))
 }
 
 /// The option trackbars' captions, statics that take no pointer.
@@ -1714,6 +1668,9 @@ fn map_offer_spec() -> NodeSpec {
 fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> Option<RectPx> {
     let shows = match id {
         ROSTER_SCROLL | ROSTER_AREA => return layout.roster.then_some(layout.roster_area),
+        id if (GROUP_BOX..GROUP_BOX + MODERN_SETUP_ROWS as u16).contains(&id) => {
+            return layout.group_boxes[usize::from(id - GROUP_BOX)];
+        }
         MAP_PREVIEW => return Some(layout.map_preview),
         TEAM_STARTS | TEAM_COLORS | BALANCE => view.team_bar(),
         PREVIOUS_ROWS | NEXT_ROWS => view.pages.len() > 1 && view.enabled(id),
@@ -1768,7 +1725,7 @@ pub(crate) fn sync(
                 .with(Prop::Cancel, Value::Bool(true)),
         )
     };
-    let roots: [(DialogId, &dyn Fn() -> NodeSpec); 4] = [
+    let roots: [(DialogResourceId, &dyn Fn() -> NodeSpec); 4] = [
         (page, &spec_page),
         (GAME_OPTIONS_BOX, &game_options_spec),
         (MAP_OFFER_BOX, &map_offer_spec),
@@ -1863,6 +1820,13 @@ fn props(
         if layout.roster {
             let opens = view.enabled(id) && roster_cell_opens(combo);
             props.push((Prop::PressThrough, Value::Bool(!opens)));
+            // The host carries a draggable row from a press that opens a
+            // cell's list, once it leaves the press.
+            let drags = opens && view.drag_rows.iter().any(|drag| drag.row == combo.row);
+            props.extend([
+                (Prop::Draggable, Value::Bool(drags)),
+                (Prop::DragThreshold, Value::Int(ROW_DRAG_START)),
+            ]);
             if let Some(list) = layout.roster_list(id, combo, cap) {
                 props.extend([
                     (Prop::RowHeight, Value::Int(list.row_height)),
@@ -1939,10 +1903,32 @@ pub(crate) fn press(
         && layout.roster
     {
         ui.popup_row = Some(combo.row);
-        if view.drag_rows.iter().any(|drag| drag.row == combo.row) {
-            ui.press_row(combo.row, x, y);
-        }
     }
+}
+
+/// The host's drag of a roster row on the room's page `page`, as its
+/// widgets hold it: the row whose cell was pressed, the pointer, and while
+/// it is carried the box under it that takes the row ([`SetupView::drop_group`]).
+pub(crate) fn row_drag(controller: &DialogController, view: &SetupView) -> Option<RowDrag> {
+    let page = view.page().dialog;
+    if controller.top_id() != Some(page) {
+        return None;
+    }
+    let gui = controller.gui();
+    let drag = gui.drag()?;
+    let row = view.combo(u16::try_from(gui.id_of(drag.node)?).ok()?)?.row;
+    let target = drag
+        .target
+        .filter(|_| drag.carrying)
+        .and_then(|node| gui.id_of(node))
+        .and_then(|id| usize::try_from(id - i32::from(GROUP_BOX)).ok())
+        .filter(|header| view.drop_group(row, *header).is_some());
+    Some(RowDrag {
+        row,
+        at: drag.at,
+        carrying: drag.carrying,
+        target,
+    })
 }
 
 /// The control of the top dialog `root` under the pointer: the one whose
@@ -2329,9 +2315,9 @@ mod tests {
         gui.set(roster, Prop::Rect, Value::Rect(area)).unwrap();
         gui.set(roster, Prop::Tooltip, Value::Text(String::new())).unwrap();
         let roster = Some(roster);
-        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -1.0);
+        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -1.0, 0);
         assert_eq!(ui.roster_top(scroll.max_top), 3);
-        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -100.0);
+        ui.wheel(&mut gui, roster, &view, &layout, area.x, area.y, -100.0, 0);
         assert_eq!(ui.roster_top(scroll.max_top), scroll.max_top);
         let mut ui = MultiplayerSetupState::default();
         // A room that fits shows no scrollbar.
@@ -2497,15 +2483,6 @@ mod tests {
         assert_eq!(view.drop_group(3, 5), None);
         assert_eq!(view.drop_group(3, 0), Some(SetupGroup::Team(0)));
         assert_eq!(view.drop_group(2, 2), None);
-
-        // The list the press opened stays open until the row is carried.
-        let mut ui = MultiplayerSetupState::default();
-        ui.press_row(1, 100, 100);
-        assert!(!ui.drag_row(103, 105, |_| Some(2)));
-        assert_eq!(ui.row_drag.and_then(|drag| drag.target), None);
-        assert!(ui.drag_row(100, 106, |_| Some(2)));
-        assert_eq!(ui.drop_row(), Some((1, 2)));
-        assert_eq!(ui.row_drag, None);
     }
 
     /// VERA's game room trades a guest's Accept for Game Options in its

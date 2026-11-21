@@ -15,9 +15,10 @@ mod widget;
 
 pub use shell::geom::RectPx as Rect;
 pub use gui::{
-    DialogId, DialogKind, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs,
+    DialogId, DialogKind, DragView, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs, append_events,
 };
 pub use node::{NodeId, NodeKind, Prop, Refused, Rgba, Tree, Value};
 pub use widget::combo::ComboDropDown;
 pub use widget::list::ListView;
+pub use widget::scrollbar::ScrollBarView;
 pub use spec::NodeSpec;

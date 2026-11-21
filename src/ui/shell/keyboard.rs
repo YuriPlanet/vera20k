@@ -9,7 +9,7 @@ use super::in_game_shell::{self, InGameShellLayout};
 /// A3 as a front-end family page: no top buttons, Back on the bottom row,
 /// heading `0x694` and status line `0x695` (template at `0x00BEF560`).
 pub const KEYBOARD_PAGE: super::menu_page::MenuPageSpec = super::menu_page::MenuPageSpec {
-    dialog: super::descriptor::DialogId(0x00A3),
+    dialog: super::descriptor::DialogResourceId(0x00A3),
     title_key: "GUI:KeyboardOptions",
     stacked: &[],
     back: super::menu_page::MenuPageButtonSpec {
@@ -108,23 +108,37 @@ impl KeyboardControl {
     }
 }
 
-/// A3's children with their status help. The capture field is a static to
-/// the pointer: A3 takes the keys itself. A press anywhere on the category
-/// face opens its list. Every press on a command row selects it.
+/// IDCANCEL: Escape closes A3 without saving (`0x005FB6D4`); no button
+/// shows it.
+pub const CANCEL: u16 = 2;
+
+/// A3's children with their status help. The capture field is a static that
+/// takes the focus on a press and reads the keys itself (A3 interprets
+/// them); a press on the category face opens its list anywhere and takes the
+/// focus off the field. Every press on a command row selects it, and the
+/// wheel moves the list three rows a notch.
 fn spec() -> NodeSpec {
-    NodeSpec::new(NodeKind::Dialog).children(CONTROLS.map(|(control, id, help)| {
+    let focus = |node: NodeSpec| node.with(Prop::FocusOnPress, Value::Bool(true));
+    let controls = CONTROLS.map(|(control, id, help)| {
         let node = match control {
             KeyboardControl::Button(_) => NodeSpec::new(NodeKind::Button),
-            KeyboardControl::Commands => {
-                NodeSpec::new(NodeKind::List).with(Prop::RowCount, Value::Int(0))
-            }
-            KeyboardControl::Category => NodeSpec::new(NodeKind::Combo)
+            KeyboardControl::Commands => NodeSpec::new(NodeKind::List)
+                .with(Prop::RowCount, Value::Int(0))
+                .with(Prop::WheelStep, Value::Int(1)),
+            KeyboardControl::Category => focus(NodeSpec::new(NodeKind::Combo))
                 .with(Prop::RowCount, Value::Int(0))
                 .with(Prop::OpenAnywhere, Value::Bool(true)),
+            KeyboardControl::Capture => focus(NodeSpec::new(NodeKind::Text)),
             _ => NodeSpec::new(NodeKind::Text),
         };
         node.id(id.into()).tooltip(help)
-    }))
+    });
+    let cancel = NodeSpec::new(NodeKind::Button)
+        .id(CANCEL.into())
+        .with(Prop::Cancel, Value::Bool(true));
+    NodeSpec::new(NodeKind::Dialog)
+        .children(controls)
+        .child(cancel)
 }
 
 #[derive(Debug, Clone)]
@@ -146,11 +160,9 @@ pub struct KeyboardState {
     /// 464 clears63B independently of the retained capture field.
     pub current_owner_visible: bool,
     pub error: Option<&'static str>,
-    /// The capture field takes the keys. A static, not a gui `Edit`: it
-    /// shows the hotkey it captured, not typed text.
-    pub capture_focused: bool,
     /// The controls; the command list holds its selection and top, the
-    /// category combo its open list and hot row.
+    /// category combo its open list and hot row, the gui which control has
+    /// the focus.
     pub ui: DialogController,
 }
 impl KeyboardState {
@@ -184,7 +196,6 @@ impl KeyboardState {
             captured: 0,
             current_owner_visible: false,
             error: None,
-            capture_focused: false,
             ui: DialogController::default(),
         };
         result.ui.reset_to(KEYBOARD_PAGE.dialog);
@@ -282,14 +293,15 @@ impl KeyboardState {
     pub fn selected(&self) -> Option<usize> {
         self.list().selected
     }
-    /// The list's top row, which the wheel sets.
-    pub fn set_top(&mut self, top: usize) {
-        if let Some(node) = self.list_node() {
-            let _ = self
-                .ui
-                .gui_mut()
-                .set(node, Prop::Top, Value::Int(top as i32));
-        }
+    fn capture_node(&self) -> Option<NodeId> {
+        self.ui
+            .gui()
+            .find_id(self.root()?, KeyboardControl::Capture.id().into())
+    }
+    /// The capture field has the focus: the keys are a hotkey to capture.
+    /// It is a static, not a gui `Edit`: it shows the hotkey, not typed text.
+    pub fn capture_focused(&self) -> bool {
+        self.capture_node().is_some() && self.ui.gui().focused_control() == self.capture_node()
     }
     pub fn selected_command(&self) -> Option<&KeyboardCommandRow> {
         self.selected()
@@ -308,7 +320,9 @@ impl KeyboardState {
         }
         self.current_owner_visible = false;
         self.captured = 0;
-        self.capture_focused = true;
+        if let Some(node) = self.capture_node() {
+            let _ = self.ui.gui_mut().focus_control(node);
+        }
     }
     pub fn reset_interaction(&mut self) {
         let gui = self.ui.gui_mut();
@@ -585,6 +599,42 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn the_gui_moves_the_focus_between_the_category_and_the_capture_field() {
+        use crate::ui::shell::page::{PageEvent, page_events};
+        let rows = vec![KeyboardCommandRow {
+            command_index: 0,
+            name: "Stop".into(),
+            category: "Control".into(),
+            description: "stop".into(),
+        }];
+        let mut state = KeyboardState::new(KeyboardParent::Launcher, rows, Vec::new());
+        let layout = KeyboardLayout::new(800, 600, None);
+        let root = state.root().unwrap();
+        super::super::page::sync_rects(state.ui.gui_mut(), root, |id| layout.rect(id));
+        let press = |state: &mut KeyboardState, r: RectPx| {
+            state.ui.on_pointer_move(r.x + 2, r.y + 2);
+            state.ui.on_pointer_down(r.x + 2, r.y + 2);
+            state.ui.on_pointer_up(r.x + 2, r.y + 2);
+            state.ui.gui_mut().close_popup();
+        };
+        assert!(!state.capture_focused());
+        press(&mut state, layout.capture);
+        assert!(state.capture_focused());
+        press(&mut state, layout.assign);
+        assert!(state.capture_focused(), "a button leaves the focus");
+        press(&mut state, layout.category);
+        assert!(!state.capture_focused());
+        state.select_command(0);
+        assert!(state.capture_focused());
+        state.ui.drain_events();
+        state
+            .ui
+            .on_input(vera20k_gui::InputEvent::Key(vera20k_gui::Key::Escape));
+        let events = state.ui.drain_events();
+        assert!(page_events(state.ui.gui(), events).contains(&PageEvent::Activated(CANCEL)));
+    }
+
     /// VERA's own category is listed after every retail one even though it
     /// sorts before them, so an enhancement's keys never land among the
     /// original ones and the category exists before its first command does.
@@ -669,7 +719,7 @@ mod tests {
         assert!(state.selected_command().is_none());
         state.select_command(0);
         assert_eq!(state.selected_command().unwrap().command_index, 2);
-        assert!(state.capture_focused);
+        assert!(state.capture_focused());
         state.captured = 81;
         state.error = Some("Error:CannotMap");
         state.current_owner_visible = true;

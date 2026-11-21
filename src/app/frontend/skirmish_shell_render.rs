@@ -218,7 +218,12 @@ fn build_skirmish_shell_instances(
     leaving: bool,
     // `0x102`'s widgets as the GUI paints them, and the computer rows'
     // scrollbar arrow its List draws pushed.
-    (page, opponent_arrow): (&[SpriteInstance], Option<crate::ui::shell::list::ListScrollPart>),
+    // The random-map Advanced scrollbar's widget.
+    (page, opponent_arrow, advanced_bar): (
+        &[SpriteInstance],
+        Option<vera20k_gui::shell::list::ListScrollPart>,
+        Option<vera20k_gui::ScrollBarView>,
+    ),
 ) -> Vec<SpriteInstance> {
     let mut instances = Vec::new();
     // Every page of the family starts with the right panel and the lower
@@ -249,7 +254,7 @@ fn build_skirmish_shell_instances(
             let profile = ShellDialogChromeProfile::RandomMapSetup0x105;
             push_panel_chrome(&mut instances, atlas, layout, wave, profile, CHOOSE_MAP_COLUMN_DEPTH);
             if !leaving {
-                push_random_map_setup_modal_control_instances(&mut instances, atlas, setup_layout, modal);
+                push_random_map_setup_modal_control_instances(&mut instances, atlas, setup_layout, modal, advanced_bar);
             }
         } else {
             let interior = push_choose_map_background_instances(
@@ -602,10 +607,10 @@ fn render_skirmish_shell_with_atlas(
         ),
     };
     let validation_ok_pressed = state.frontend.shell_controller.top_id()
-        == Some(crate::ui::shell::descriptor::DialogId(0x00CE))
+        == Some(crate::ui::shell::descriptor::DialogResourceId(0x00CE))
         && crate::ui::shell::menu_page::pressed_id(
             &state.frontend.shell_controller,
-            crate::ui::shell::descriptor::DialogId(0x00CE),
+            crate::ui::shell::descriptor::DialogResourceId(0x00CE),
         ) == Some(crate::ui::shell::modal::control::OK);
     let validation_pressed = |id| validation_ok_pressed && id == crate::ui::shell::modal::control::OK;
     let validation_look = BoxLook::skirmish(atlas.mode_two_dialog_background(None));
@@ -638,6 +643,7 @@ fn render_skirmish_shell_with_atlas(
             (
                 &page_paint.controls,
                 crate::ui::skirmish_shell::page::opponent_arrow(&state.frontend.shell_controller),
+                crate::ui::skirmish_shell::random_map_page::scrollbar_view(&state.frontend.shell_controller),
             ),
         )
     };

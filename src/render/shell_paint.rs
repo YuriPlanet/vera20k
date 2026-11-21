@@ -26,7 +26,7 @@ use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 use crate::ui::shell::geom::{RectPx, RightPanelRects, ShellScale};
-use crate::ui::shell::list::{
+use vera20k_gui::shell::list::{
     ListScrollPart, grip_tiles, scrollbar_arrow_origins, scrollbar_interior,
 };
 use crate::ui::shell::slide::{ColumnDraw, PanelArt, panel_art_origin};
@@ -925,13 +925,13 @@ mod tests {
         let retail = crate::ui::shell::geom::right_panel_rects(1024, 768);
         assert_eq!(retail.stretch(), (1.0, 1.0));
 
-        let double = ShellScale::from_screen(1600, 1200).scale_panel(retail);
+        let double = retail.scaled(ShellScale::from_screen(1600, 1200));
         assert_eq!(double.stretch(), (2.0, 2.0));
 
         // The shell keeps its shape, so a window only taller or only wider than
         // 800x600 leaves the panel at its native size.
         for (w, h) in [(800, 1200), (1600, 600)] {
-            let panel = ShellScale::from_screen(w, h).scale_panel(retail);
+            let panel = retail.scaled(ShellScale::from_screen(w, h));
             assert_eq!(panel.stretch(), (1.0, 1.0), "{w}x{h}");
             assert_eq!(panel.tile.w, RIGHT_PANEL_WIDTH, "{w}x{h}");
         }

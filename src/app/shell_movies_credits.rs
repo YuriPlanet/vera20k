@@ -37,7 +37,7 @@ impl App {
     pub(super) fn show_shell_page(
         state: &mut AppState,
         route: ShellRoute,
-        dialog: crate::ui::shell::descriptor::DialogId,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
     ) {
         state.frontend.shell_route = route;
         state.frontend.shell_controller.reset_to(dialog);

@@ -20,8 +20,8 @@ use crate::render::{
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::list::ShellListGeometry;
+use vera20k_gui::shell::list::ListMetrics;
+use vera20k_gui::shell::list::ShellListGeometry;
 use crate::util::time::Instant;
 
 pub(crate) fn render_keyboard_shell(
@@ -118,7 +118,7 @@ pub(crate) fn render_keyboard_shell(
             .expect("active A3 side art");
         let mut art = in_game_shell::background_instances(sidebar, shell.layout, width, height);
         let frame =
-            crate::ui::shell::button::owner_button_frame(is_pressed(KeyboardButton::Back), false);
+            vera20k_gui::shell::button::owner_button_frame(is_pressed(KeyboardButton::Back), false);
         if let Some(entry) =
             sidebar.in_game_shell.buttons[frame].or(sidebar.in_game_shell.buttons[0])
         {

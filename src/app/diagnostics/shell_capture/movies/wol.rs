@@ -2716,11 +2716,8 @@ impl WolCapture {
                         !moved.is_observer()
                             && moved.slot.team == crate::skirmish_launch::LaunchTeam::Team(0)
                             && crate::app::input::multiplayer_setup::open_list(state).is_none()
-                            && state
-                                .frontend
-                                .multiplayer_setup
-                                .as_ref()
-                                .is_some_and(|ui| ui.row_drag.is_none()),
+                            && state.frontend.multiplayer_setup.is_some()
+                            && state.frontend.shell_controller.gui().drag().is_none(),
                         "dragging Natasha onto Team A gave {:?}",
                         moved.slot.team
                     );
@@ -6547,8 +6544,8 @@ impl WolCapture {
             .and_then(|root| gui.find_id(root, crate::ui::wol_buddy::LIST.into()))
             .and_then(|list| gui.list_view(list))
             .map_or(0, |view| view.top);
-        let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.page.scale);
-        let rect = crate::ui::shell::list::ShellListGeometry::new(
+        let metrics = vera20k_gui::shell::list::ListMetrics::scaled(layout.page.scale);
+        let rect = vera20k_gui::shell::list::ShellListGeometry::new(
             layout
                 .rect_of(crate::ui::wol_buddy::LIST)
                 .unwrap_or_default(),

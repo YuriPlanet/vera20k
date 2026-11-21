@@ -29,7 +29,7 @@ use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::trackbar::{TrackbarRange, value_text_rect};
+use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
 /// widgets, and of an open combo drop-down over them.
@@ -259,7 +259,6 @@ fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
     }
 }
 
-pub(crate) use crate::ui::shell::page::new_edit;
 
 /// The widgets under `root`, in tree order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(
@@ -417,7 +416,7 @@ pub(crate) fn paint_gui_with(
                         &mut paint.controls,
                         atlas,
                         rect,
-                        crate::ui::shell::button::ButtonVisual {
+                        vera20k_gui::shell::button::ButtonVisual {
                             pressed,
                             highlighted: flag(gui, node, Prop::Toggled, false),
                         },
@@ -604,7 +603,7 @@ pub(crate) fn paint_gui_with(
                 let Some(view) = gui.list_view(node) else {
                     continue;
                 };
-                let mut metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
+                let mut metrics = vera20k_gui::shell::list::ListMetrics::scaled(scale);
                 metrics.row_h = int(gui, node, Prop::RowHeight, metrics.row_h);
                 let geometry = view.geometry(rect, metrics);
                 let selected = view
@@ -668,8 +667,11 @@ pub(crate) fn paint_gui_with(
             // NewEdit `0x00614B30` as `push_new_edit` paints it, or framed in
             // its rect with a `TextInset` field; the open IME composition
             // shows in the focused one, a whole-text selection fills behind it.
+            // An edit with no area (the Choose Map search line, which the
+            // host paints itself) draws nothing.
+            NodeKind::Edit if rect.w <= 0 || rect.h <= 0 => {}
             NodeKind::Edit => {
-                let mut edit = new_edit(gui, node);
+                let mut edit = gui.edit_state(node).unwrap_or_default();
                 let composition = state
                     .platform
                     .ime

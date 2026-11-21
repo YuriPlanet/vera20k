@@ -14,7 +14,7 @@ use crate::app::{App, AppState};
 use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{
     WolPageLayout, WolPageReceivedLayout, wol_page_layout, wol_page_layout_in,
@@ -69,7 +69,7 @@ pub(crate) fn open(state: &AppState) -> bool {
 }
 
 /// The open dialog that takes the input, `0xCF` first.
-fn top(state: &AppState) -> Option<DialogId> {
+fn top(state: &AppState) -> Option<DialogResourceId> {
     if page_dialog(state).is_some() {
         Some(PAGE_DIALOG)
     } else {
@@ -78,7 +78,7 @@ fn top(state: &AppState) -> Option<DialogId> {
 }
 
 /// `dialog`'s widgets, where they sit and its transcript's id.
-fn widgets(state: &AppState, dialog: DialogId) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
+fn widgets(state: &AppState, dialog: DialogResourceId) -> (fn() -> vera20k_gui::NodeSpec, Rects, u16) {
     if dialog == PAGE_DIALOG {
         let layout = page_layout(state);
         (
@@ -99,7 +99,7 @@ fn widgets(state: &AppState, dialog: DialogId) -> (fn() -> vera20k_gui::NodeSpec
 type Rects = Box<dyn Fn(u16) -> Option<RectPx>>;
 
 /// `dialog`'s rows.
-fn lines(visit: &mut super::WolVisit, dialog: DialogId) -> Option<&mut Vec<LanChatLine>> {
+fn lines(visit: &mut super::WolVisit, dialog: DialogResourceId) -> Option<&mut Vec<LanChatLine>> {
     match dialog {
         PAGE_DIALOG => visit.page_dialog.as_deref_mut().map(|page| &mut page.lines),
         _ => visit
@@ -111,7 +111,7 @@ fn lines(visit: &mut super::WolVisit, dialog: DialogId) -> Option<&mut Vec<LanCh
 
 /// Builds and places `dialog`'s widgets at the popups' retail pixels and
 /// gives its list the rows; the root.
-fn sync(state: &mut AppState, dialog: DialogId) -> Option<NodeId> {
+fn sync(state: &mut AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let (spec, rect_of, list) = widgets(state, dialog);
     let root = leaf::place(state, dialog, ShellScale::RETAIL, spec, rect_of)?;
     let frontend = &mut state.frontend;
@@ -130,7 +130,7 @@ fn sync(state: &mut AppState, dialog: DialogId) -> Option<NodeId> {
 /// A fresh `dialog` over the shell stack, as an overlay: the screens under
 /// it may reset or box their own dialogs (a lobby wait box) and it stays on
 /// top with its widgets until it closes.
-fn push_fresh(state: &mut AppState, dialog: DialogId) {
+fn push_fresh(state: &mut AppState, dialog: DialogResourceId) {
     let controller = &mut state.frontend.shell_controller;
     controller.close(dialog);
     controller.push_overlay(dialog);
@@ -260,7 +260,7 @@ fn observer_cannot_page(state: &AppState, name: &str) -> bool {
 /// `0x005E2820` into `dialog`'s list, wrapped to its width; the view
 /// follows the rows when it showed the last one. Returns whether the
 /// dialog took the line.
-fn append_line(state: &mut AppState, dialog: DialogId, line: LanChatLine) -> bool {
+fn append_line(state: &mut AppState, dialog: DialogResourceId, line: LanChatLine) -> bool {
     let (_, rect_of, id) = widgets(state, dialog);
     let rect = rect_of(id).unwrap_or_default();
     let font = &state.renderer.bit_font;
@@ -427,7 +427,7 @@ fn locate(state: &mut AppState, name: String) {
 
 /// API+0xF8 with the record and text, and `u"[%hs] %s"` (`0x0084B94C`)
 /// with the login nickname `[0xB73E40]`, the echo, into `dialog`'s list.
-fn send_page(state: &mut AppState, dialog: DialogId, name: &str, text: Vec<u16>, color: u32) {
+fn send_page(state: &mut AppState, dialog: DialogResourceId, name: &str, text: Vec<u16>, color: u32) {
     let mut echo: Vec<u16> = format!("[{}] ", state.frontend.wol_account.nickname)
         .encode_utf16()
         .collect();

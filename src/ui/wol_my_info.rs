@@ -11,7 +11,7 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
@@ -19,7 +19,7 @@ use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSp
 use crate::ui::shell::page;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0114);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0114);
 pub(crate) const BACK: u16 = 0x0686;
 pub(crate) const PLAY_BUDDY: u16 = 0x0687;
 pub(crate) const CLAN: u16 = 0x0688;

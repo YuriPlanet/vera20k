@@ -18,9 +18,9 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
     find_family_list,
 };
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
 
@@ -28,7 +28,7 @@ use vera20k_gui::ListView;
 /// geometry in window `list`.
 pub(crate) fn family_list_view(
     state: &AppState,
-    dialog: crate::ui::shell::descriptor::DialogId,
+    dialog: crate::ui::shell::descriptor::DialogResourceId,
     list: RectPx,
     scale: ShellScale,
 ) -> Option<(ShellListGeometry, ListView)> {
@@ -36,7 +36,7 @@ pub(crate) fn family_list_view(
     let view = controller
         .gui()
         .list_view(find_family_list(controller, dialog)?)?;
-    let rect = crate::ui::shell::list::list_box_rect(list);
+    let rect = vera20k_gui::shell::list::list_box_rect(list);
     Some((view.geometry(rect, ListMetrics::scaled(scale)), view))
 }
 
@@ -44,7 +44,7 @@ pub(crate) fn family_list_view(
 /// help's hover target. The page is the top dialog.
 pub(crate) fn family_list_hovered(
     state: &AppState,
-    dialog: crate::ui::shell::descriptor::DialogId,
+    dialog: crate::ui::shell::descriptor::DialogResourceId,
 ) -> bool {
     let controller = &state.frontend.shell_controller;
     controller.top_id() == Some(dialog)
@@ -56,7 +56,7 @@ pub(crate) fn family_list_hovered(
 /// parent background), its geometry and view; the rows' text is the host's.
 pub(crate) fn paint_family_list(
     state: &AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     list: RectPx,
     scale: ShellScale,
 ) -> Option<(Vec<SpriteInstance>, ShellListGeometry, ListView)> {
@@ -237,7 +237,7 @@ pub(crate) fn render_credits_roll(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;
-    use crate::ui::shell::list::list_box_geometry;
+    use vera20k_gui::shell::list::list_box_geometry;
 
     #[test]
     fn list_rows_match_the_native_capture() {

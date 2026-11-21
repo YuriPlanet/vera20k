@@ -163,6 +163,15 @@ pub enum Prop {
     /// List: `LBS_MULTIPLESEL`: a press toggles its row in `SelectedRows`
     /// (and reports it as `ListSelected`); `Selected` stays as it is.
     MultiSelect,
+    /// A press on the node may carry it (`UiEvent::DragStarted`); a press a
+    /// drop-down takes may not.
+    Draggable,
+    /// Px the pointer moves from a `Draggable` node's press, on either
+    /// axis, before the node is carried (0 or unset: the first move).
+    DragThreshold,
+    /// The node takes a carried node ([`crate::UiEvent::Dropped`]'s
+    /// `target`); it need take no press.
+    DropTarget,
     /// List with `MultiSelect`: the selected rows, each in decimal, in the
     /// order they were selected.
     SelectedRows,
@@ -176,9 +185,22 @@ pub enum Prop {
     TabStop,
     /// Edit: Tab gives it the focus without restarting its caret blink.
     KeepsBlink,
+    /// A control that is no edit takes the dialog's focus on a press, off
+    /// the edits ([`crate::Gui::focused_control`]): a window that reads the
+    /// keys itself (VERA's Keyboard page's hotkey field), or one whose press
+    /// moves the focus off it (that page's category list).
+    FocusOnPress,
+    /// Button: a left release over it activates it whatever the press did,
+    /// off it or none (VERA's utility cards, whose buttons act on the
+    /// release alone).
+    ReleaseActivates,
     /// List: rows a wheel notch scrolls (3 unless set; VERA's Skirmish
     /// computer rows take one).
     WheelStep,
+    /// Edit: a left press anywhere else in its dialog, on a control or not
+    /// and over an open drop-down too, takes its focus (VERA's Skirmish
+    /// name box).
+    BlurOnPress,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -219,10 +241,15 @@ impl Prop {
             | Prop::PopupHidden
             | Prop::NoSelectionFill
             | Prop::MultiSelect
+            | Prop::Draggable
+            | Prop::DropTarget
             | Prop::Default
             | Prop::Cancel
             | Prop::TabStop
             | Prop::KeepsBlink
+            | Prop::FocusOnPress
+            | Prop::ReleaseActivates
+            | Prop::BlurOnPress
             | Prop::SelectOnFocus
             | Prop::AllSelected
             | Prop::ByteOnly => ValueType::Bool,
@@ -245,6 +272,7 @@ impl Prop {
             | Prop::RowCount
             | Prop::Top
             | Prop::VisibleRows
+            | Prop::DragThreshold
             | Prop::MaxLen
             | Prop::MaxBytes
             | Prop::Caret
@@ -259,9 +287,12 @@ impl Prop {
 
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
-            Prop::Toggled | Prop::Default | Prop::Cancel => kind == NodeKind::Button,
+            Prop::Toggled | Prop::Default | Prop::Cancel | Prop::ReleaseActivates => {
+                kind == NodeKind::Button
+            }
             Prop::TabStop => kind.is_focusable(),
-            Prop::KeepsBlink => kind == NodeKind::Edit,
+            Prop::KeepsBlink | Prop::BlurOnPress => kind == NodeKind::Edit,
+            Prop::FocusOnPress => !kind.is_container() && kind != NodeKind::Edit,
             Prop::Checked => kind == NodeKind::Checkbox,
             Prop::OpenAnywhere
             | Prop::PopupBottom

@@ -82,7 +82,7 @@ mod tests {
     use crate::ui::shell::menu_page;
     use vera20k_gui::{InputEvent, MouseButton};
 
-    const DIALOG: crate::ui::shell::descriptor::DialogId = SINGLE_PLAYER_PAGE.dialog;
+    const DIALOG: crate::ui::shell::descriptor::DialogResourceId = SINGLE_PLAYER_PAGE.dialog;
 
     /// 0x100's button nodes on the 800x600 layout, Load Saved Game enabled
     /// or not (`0x497`).

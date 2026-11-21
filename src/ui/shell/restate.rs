@@ -15,11 +15,11 @@
 
 use vera20k_gui::{NodeKind, NodeSpec};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
-pub const DIALOG: DialogId = DialogId(0x10C);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x10C);
 pub const TITLE_LABEL: (&str, &str) = ("GUI:Briefing", "Briefing");
 pub const RETURN_LABEL: (&str, &str) = ("GUI:Return", "Return");
 /// The briefing text 0x6E7's template rect, in dialog units.

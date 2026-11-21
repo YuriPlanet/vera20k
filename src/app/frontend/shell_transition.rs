@@ -18,7 +18,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::app::AppState;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page::MenuPageSpec;
 
 pub(crate) use crate::ui::shell::slide::{
@@ -100,8 +100,8 @@ impl ShellSlideKind {
 
     /// The Win32 dialog resource id this shell maps to. The slide's column is
     /// looked up from this id in the data-driven `slide` table.
-    pub(crate) fn dialog_id(self) -> DialogId {
-        DialogId(match self {
+    pub(crate) fn dialog_id(self) -> DialogResourceId {
+        DialogResourceId(match self {
             ShellSlideKind::MainMenu => 0x00E2,
             ShellSlideKind::SinglePlayer => 0x0100,
             ShellSlideKind::MoviesAndCredits => 0x0101,
@@ -640,8 +640,8 @@ mod tests {
 
     #[test]
     fn campaign_score_owns_dialog_0x103() {
-        assert_eq!(ShellSlideKind::CampaignScore.dialog_id(), DialogId(0x0103));
-        assert!(crate::ui::shell::slide::slide_spec_for(DialogId(0x0103)).is_some());
+        assert_eq!(ShellSlideKind::CampaignScore.dialog_id(), DialogResourceId(0x0103));
+        assert!(crate::ui::shell::slide::slide_spec_for(DialogResourceId(0x0103)).is_some());
     }
 
     #[test]
@@ -793,7 +793,7 @@ mod tests {
         // and slides its six page buttons under Keyboard, then its Mods
         // button where the build has mods.
         assert_eq!(
-            crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
+            crate::ui::shell::slide::slide_spec_for(DialogResourceId(0x00D5))
                 .unwrap()
                 .top_buttons,
             2

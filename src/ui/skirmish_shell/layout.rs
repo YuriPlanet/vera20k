@@ -300,18 +300,6 @@ impl AdvancedField {
         )
     }
 
-    /// Thumb position for a scroll offset clamped to the available pages, on
-    /// the shared scrollbar kernel (`0x0061C690`) the combo dropdowns use.
-    pub fn advanced_scrollbar_thumb(layout: &RandomMapSetupLayout, page: usize) -> RectPx {
-        use vera20k_gui::shell::list::{ListMetrics, scrollbar_thumb_y, thumb_height};
-        let bar = Self::advanced_scrollbar_rect(layout);
-        let metrics = ListMetrics::scaled(layout.scale);
-        let thumb_h = thumb_height(bar.h, Self::ALL.len() - Self::PAGE_SIZE, metrics);
-        let top = page.min(Self::PAGE_COUNT - 1);
-        let thumb_y = scrollbar_thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1, metrics);
-        RectPx::new(bar.x, thumb_y, bar.w, thumb_h)
-    }
-
     /// The row label: the string table's own names where it has one.
     pub const fn label(self) -> (&'static str, &'static str) {
         match self {
@@ -575,7 +563,7 @@ fn opponent_scrollbar_rect(rows: &SkirmishRowRects, shown: usize) -> RectPx {
     RectPx::new(
         first.x + first.w + OPPONENT_SCROLLBAR_GAP,
         top,
-        crate::ui::shell::list::ListMetrics::RETAIL.scrollbar_w + 2,
+        vera20k_gui::shell::list::ListMetrics::RETAIL.scrollbar_w + 2,
         bottom - top,
     )
 }
@@ -682,7 +670,7 @@ pub fn random_map_setup_dropdown_rect(
     // never end inside one, so they keep their height.
     for (index, &control) in layout.control_rects.iter().enumerate().skip(row + 1) {
         let text = if index + 1 == layout.control_rects.len() {
-            crate::ui::shell::trackbar::value_text_rect(control, layout.scale)
+            vera20k_gui::shell::trackbar::value_text_rect(control, layout.scale)
         } else {
             combo_text_rect(control, layout.scale)
         };
@@ -884,7 +872,7 @@ mod tests {
         let mut ui = crate::ui::shell::controller::DialogController::default();
         choose_map_page::sync_page(&mut ui, &modal, layout);
         ui.on_pointer_move(x, y);
-        match choose_map_page::hover_target(ui.gui(), &modal, layout, x, y) {
+        match choose_map_page::hover_target(ui.gui(), &modal, x, y) {
             Some(ChooseMapHoverTarget::Button(button)) => Some(button),
             _ => None,
         }
@@ -1129,9 +1117,6 @@ mod tests {
         assert!(bar.x > sliders[0].x + sliders[0].w);
         assert_eq!(bar.y, sliders[0].y);
         assert_eq!(bar.y + bar.h, sliders[6].y + sliders[6].h);
-        let top = AdvancedField::advanced_scrollbar_thumb(&setup, 0);
-        let bottom = AdvancedField::advanced_scrollbar_thumb(&setup, 1);
-        assert!(top.y < bottom.y, "the thumb travels with the page");
         let (px, py) = (bar.x + bar.w / 2, bar.y + bar.h / 2);
         assert_eq!(
             random_map_setup_control_at_view(&setup, px, py, true, false, false, 0),
@@ -1156,11 +1141,13 @@ mod tests {
         assert_eq!(at(&mut modal, Pointer::Down, up), [PageCue::ListClick]);
         assert_eq!(modal.advanced_page, 0);
         at(&mut modal, Pointer::Up, up);
-        assert_eq!(at(&mut modal, Pointer::Down, bottom.y + bottom.h / 2), [PageCue::ListClick]);
-        assert_eq!(at(&mut modal, Pointer::Move, top.y), [PageCue::ListClick]);
+        // The track's lowest and highest points, inside the arrows.
+        let (low, high) = (bar.y + bar.h - 30, bar.y + 25);
+        assert_eq!(at(&mut modal, Pointer::Down, low), [PageCue::ListClick]);
+        assert_eq!(at(&mut modal, Pointer::Move, high), [PageCue::ListClick]);
         assert_eq!(modal.advanced_page, 0);
-        at(&mut modal, Pointer::Up, top.y);
-        assert!(at(&mut modal, Pointer::Move, bottom.y + bottom.h / 2).is_empty());
+        at(&mut modal, Pointer::Up, high);
+        assert!(at(&mut modal, Pointer::Move, low).is_empty());
         assert_eq!(modal.advanced_page, 0, "released");
     }
 

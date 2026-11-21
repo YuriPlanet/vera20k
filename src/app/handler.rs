@@ -16,13 +16,6 @@ use super::{
 use crate::ui::pause_menu::InGameMenuState;
 use winit::event::{ElementState, KeyEvent};
 
-/// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
-/// reference makes the no-close/no-replacement guarantee explicit at the
-/// keyboard routing seam.
-fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> bool {
-    is_escape && dialog.is_some()
-}
-
 /// One window input, routed to the layer that takes it.
 #[derive(Clone, Copy)]
 enum Input<'a> {
@@ -111,13 +104,10 @@ impl App {
             {
                 Self::route_shell_message_box_key(state, key);
             }
-        } else if is_escape
-            // `0xD5` ignores IDCANCEL=2. Preserve the same dialog instance
-            // and emit no Apply/write/event.
-            && !launcher_options_consumes_escape(&state.frontend.options_dialog, is_escape)
-        {
-            Self::close_main_menu_dialogs(state);
         }
+        // Otherwise the launcher Options `0xD5` is up (A3 takes its own keys):
+        // it has no Cancel button, as its proc ignores IDCANCEL=2, so Escape
+        // keeps the same dialog instance and emits no Apply, write or event.
         true
     }
 
@@ -522,9 +512,9 @@ impl App {
         );
         match input {
             Input::Key(event) if Self::window_key(state, event) => return,
-            // Nothing under VERA's enlarged map preview follows the pointer;
-            // only the cursor over it moves.
-            Input::Move if zoom_page && preview_zoom::is_open(state) => return,
+            // VERA's enlarged map preview is a modal over the page: nothing
+            // under it follows the pointer; only the cursor over it moves.
+            Input::Move if zoom_page && preview_zoom::pointer(state, None) => return,
             // Shared tooltip service: every move restarts the show delay and
             // hides a visible tip, and any button edge (middle too) kills a
             // visible tip and its timer (study S1).
@@ -602,7 +592,7 @@ impl App {
             Input::Key(event) => Self::screen_key(state, screen, event),
             Input::Move => Self::screen_pointer(state, screen, None),
             Input::Button(_, edge)
-                if zoom_page && preview_zoom::mouse(state, edge.is_pressed()) => {}
+                if zoom_page && preview_zoom::pointer(state, Some(edge.is_pressed())) => {}
             Input::Button(button, edge) => {
                 Self::screen_pointer(state, screen, Some((button, edge)))
             }
@@ -656,7 +646,7 @@ impl App {
             .frontend
             .keyboard_dialog
             .as_ref()
-            .is_some_and(|dialog| dialog.capture_focused);
+            .is_some_and(|dialog| dialog.capture_focused());
         let window_command = fixed.or_else(|| {
             if capturing {
                 return None;
@@ -749,16 +739,18 @@ impl App {
                 }
                 return;
             }
-            // VERA's Game Options box takes the keys over the page;
-            // Escape and Enter close it, as they close the room's.
+            // VERA's Game Options box takes the keys over the page; its
+            // OK takes Escape and Enter, as the room's does.
             if game_options {
-                if fresh_press
-                    && matches!(
-                        event.physical_key,
-                        PhysicalKey::Code(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
-                    )
-                {
-                    Self::close_skirmish_game_options(state);
+                let key = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Escape) => Some(vera20k_gui::Key::Escape),
+                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
+                        Some(vera20k_gui::Key::Enter)
+                    }
+                    _ => None,
+                };
+                if let Some(key) = key.filter(|_| fresh_press) {
+                    Self::skirmish_game_options_key(state, key);
                 }
                 return;
             }
@@ -934,7 +926,7 @@ impl App {
             }
             // Nothing under VERA's enlarged map preview takes it.
             ScreenPage::NetworkSetup | ScreenPage::Skirmish
-                if crate::app::frontend::preview_zoom::is_open(state) => {}
+                if crate::app::frontend::preview_zoom::wheel(state) => {}
             ScreenPage::NetworkSetup if !chooser_open => {
                 crate::app::input::multiplayer_setup::wheel(state, lines);
             }
@@ -2325,22 +2317,5 @@ mod tests {
             app.capture_render_wait_until(deadline + Duration::from_secs(1), None),
             None
         );
-    }
-
-    #[test]
-    fn launcher_options_escape_is_consumed_without_replacing_the_parent() {
-        let dialog = crate::ui::main_menu_dialogs::OptionsDialogState::default();
-        let mut slot = Some(dialog);
-        let identity_before = slot.as_ref().map(|value| value as *const _);
-
-        assert!(launcher_options_consumes_escape(&slot, true));
-        assert_eq!(
-            slot.as_ref().map(|value| value as *const _),
-            identity_before
-        );
-        assert!(!launcher_options_consumes_escape(&slot, false));
-
-        slot = None;
-        assert!(!launcher_options_consumes_escape(&slot, true));
     }
 }

@@ -27,17 +27,17 @@ use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{
     LanChatState, PlayerNameMatch, apply_chat_length_limit, saved_player_name_matches,
 };
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
-use crate::ui::shell::list::ListMetrics;
+use vera20k_gui::shell::list::ListMetrics;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use vera20k_gui::shell::new_edit::NewEdit;
 use crate::util::time::Instant;
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0113);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0113);
 
 pub(crate) const CREATE: u16 = 0x62B;
 pub(crate) const JOIN: u16 = 0x62D;
@@ -281,6 +281,7 @@ impl WolLobbyLayout {
     }
 
     /// The header buttons the page shows, with their windows.
+    #[cfg(test)]
     pub(crate) fn sort_buttons(&self) -> impl Iterator<Item = (u16, RectPx)> + '_ {
         SORT_BUTTONS
             .iter()
@@ -623,15 +624,15 @@ impl WolLobbyState {
     }
 
     /// Edit `id` as its NewEdit (caret in UTF-16 units).
-    pub(crate) fn edit(&self, id: u16) -> SavedSeedDescriptionEdit {
+    pub(crate) fn edit(&self, id: u16) -> NewEdit {
         self.node(id)
-            .map_or_else(Default::default, |node| page::new_edit(&self.gui, node))
+            .map_or_else(Default::default, |node| self.gui.edit_state(node).unwrap_or_default())
     }
 
     /// Writes `edit`'s text and caret back to edit `id`.
-    fn store_edit(&mut self, id: u16, edit: &SavedSeedDescriptionEdit) {
+    fn store_edit(&mut self, id: u16, edit: &NewEdit) {
         if let Some(node) = self.node(id) {
-            page::store_edit(&mut self.gui, node, edit);
+            let _ = &mut self.gui.set_edit_state(node, edit);
         }
     }
 
@@ -712,7 +713,7 @@ impl WolLobbyState {
     }
 
     /// List `id` as it shows and hits, the gui's.
-    fn placed_list(&self, id: u16) -> Option<crate::ui::shell::list::ShellListGeometry> {
+    fn placed_list(&self, id: u16) -> Option<vera20k_gui::shell::list::ShellListGeometry> {
         self.gui.list_geometry(self.gui.find_id(self.page_root(), id.into())?)
     }
 
@@ -850,8 +851,8 @@ impl WolLobbyState {
         rect: RectPx,
         count: usize,
         scale: ShellScale,
-    ) -> crate::ui::shell::list::ShellListGeometry {
-        crate::ui::shell::list::ShellListGeometry::new(
+    ) -> vera20k_gui::shell::list::ShellListGeometry {
+        vera20k_gui::shell::list::ShellListGeometry::new(
             rect,
             count,
             self.list_top(id),
@@ -1036,7 +1037,7 @@ impl WolLobbyState {
                 let mut edit = self.edit(CHAT);
                 apply_chat_length_limit(&mut edit);
                 let text = crate::ui::wol_chat::trim_line_end(&edit.wide_text(111)).to_vec();
-                self.store_edit(CHAT, &SavedSeedDescriptionEdit::default());
+                self.store_edit(CHAT, &NewEdit::default());
                 WolLobbyAction::Emote(text)
             }
             OPTIONS => WolLobbyAction::Options,
@@ -1108,7 +1109,7 @@ impl WolLobbyState {
             (None, Some(text)) if !popup => {
                 // Each typed character's EN_CHANGE caps the chat edit
                 // (`TextChanged`, below).
-                for input in crate::ui::lan_shell::edit_inputs(None, Some(text)) {
+                for input in crate::ui::shell::controller::gui_inputs(None, false, Some(text)) {
                     let now = self.now();
                     self.gui.input(input, now);
                     self.drain(&mut out);

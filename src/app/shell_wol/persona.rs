@@ -13,7 +13,7 @@ use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
 use vera20k_gui::{NodeId, Prop, Value};
@@ -299,7 +299,7 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
 }
 
 /// The open page's dialog.
-pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogId> {
+pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogResourceId> {
     match state.frontend.wol.as_ref()?.page {
         WolPage::AutoLoginQuery(_) => Some(AUTO_LOGIN_DIALOG),
         WolPage::Locale(_) => Some(LOCALE_DIALOG),

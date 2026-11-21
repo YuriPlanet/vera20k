@@ -437,12 +437,12 @@ mod tests {
         g.set(list, Prop::WheelStep, Value::Int(1)).unwrap();
         g.input(InputEvent::PointerMove { x: 900, y: 900 }, 0);
         g.drain_events();
-        assert!(g.wheel_list(list, -2));
+        assert!(g.wheel_list(list, -2, 0));
         assert_eq!(g.drain_events(), vec![UiEvent::Scrolled { node: list, top: 2 }]);
-        assert!(g.wheel_list(list, 5));
-        assert!(!g.wheel_list(list, 1), "already at the top");
+        assert!(g.wheel_list(list, 5, 0));
+        assert!(!g.wheel_list(list, 1, 0), "already at the top");
         g.set(list, Prop::Visible, Value::Bool(false)).unwrap();
-        assert!(!g.wheel_list(list, -1), "a hidden list takes no wheel");
+        assert!(!g.wheel_list(list, -1, 0), "a hidden list takes no wheel");
     }
 
     /// `LBS_MULTIPLESEL`: each press toggles its row and reports it; the

@@ -372,18 +372,20 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     atlas: &SkirmishShellChromeAtlas,
     layout: &RandomMapSetupLayout,
     modal: &RandomMapSetupModalState,
+    // The Advanced scrollbar's widget.
+    scrollbar: Option<vera20k_gui::ScrollBarView>,
 ) {
     use crate::ui::skirmish_shell::AdvancedField;
     let chrome = atlas.control_chrome();
     // The native vertical scrollbar the dropdowns use, paging the seven
     // reusable rows over every Advanced slider.
-    if modal.advanced && modal.extras_page.is_none() && AdvancedField::PAGE_COUNT > 1 {
+    if let Some(bar) = scrollbar.filter(|_| modal.advanced && modal.extras_page.is_none() && AdvancedField::PAGE_COUNT > 1) {
         paint_control(
             out,
             &chrome,
             ControlPaint::ScrollBar {
-                scrollbar: AdvancedField::advanced_scrollbar_rect(layout),
-                thumb: AdvancedField::advanced_scrollbar_thumb(layout, modal.advanced_page),
+                scrollbar: bar.bar,
+                thumb: bar.thumb,
                 pressed_part: None,
             },
             layout.scale,

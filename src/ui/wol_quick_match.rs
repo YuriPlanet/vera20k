@@ -9,14 +9,14 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0117);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0117);
 pub(crate) const CANCEL: u16 = 0x05C0;
 pub(crate) const TRANSCRIPT: u16 = 0x053F;
 /// The "Match Status" caption (template static `0xFFFF`).

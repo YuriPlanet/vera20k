@@ -18,13 +18,13 @@ use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{LanChatLine, apply_chat_length_limit};
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page;
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use vera20k_gui::shell::new_edit::NewEdit;
 use crate::ui::wol_chat::trim_line_end;
 
-pub(crate) const PAGE_DIALOG: DialogId = DialogId(0x00CF);
-pub(crate) const RECEIVED_DIALOG: DialogId = DialogId(0x011E);
+pub(crate) const PAGE_DIALOG: DialogResourceId = DialogResourceId(0x00CF);
+pub(crate) const RECEIVED_DIALOG: DialogResourceId = DialogResourceId(0x011E);
 /// `0xCF`'s text to send and `0x11E`'s reply, both `0x540`.
 pub(crate) const TEXT: u16 = 0x540;
 /// `0xCF`'s name edit.
@@ -139,14 +139,12 @@ pub(crate) fn received_spec() -> NodeSpec {
 }
 
 /// Edit `id` of `dialog` as the NewEdit its getters read.
-fn edit(c: &DialogController, dialog: DialogId, id: u16) -> SavedSeedDescriptionEdit {
-    SavedSeedDescriptionEdit {
-        units: c.text(dialog, id).encode_utf16().collect(),
-        ..Default::default()
-    }
+fn edit(c: &DialogController, dialog: DialogResourceId, id: u16) -> NewEdit {
+    let node = c.control(dialog, id);
+    node.and_then(|node| c.gui().edit_state(node)).unwrap_or_default()
 }
 
-fn set_enabled(c: &mut DialogController, dialog: DialogId, id: u16, enabled: bool) {
+fn set_enabled(c: &mut DialogController, dialog: DialogResourceId, id: u16, enabled: bool) {
     c.set_prop(dialog, id, Prop::Enabled, Value::Bool(enabled));
 }
 
@@ -571,7 +569,7 @@ mod tests {
     }
 
     /// A dialog's widgets built in a fresh shell stack.
-    fn controller(dialog: DialogId, spec: fn() -> NodeSpec) -> DialogController {
+    fn controller(dialog: DialogResourceId, spec: fn() -> NodeSpec) -> DialogController {
         let mut c = DialogController::default();
         c.push(dialog);
         let root = c.root_in(dialog).unwrap();
@@ -595,11 +593,11 @@ mod tests {
         page.focus_moved(c, old, Some(id), last)
     }
 
-    fn enabled(c: &DialogController, dialog: DialogId, id: u16) -> bool {
+    fn enabled(c: &DialogController, dialog: DialogResourceId, id: u16) -> bool {
         c.flag(dialog, id, Prop::Enabled, true)
     }
 
-    fn text(c: &DialogController, dialog: DialogId, id: u16) -> String {
+    fn text(c: &DialogController, dialog: DialogResourceId, id: u16) -> String {
         c.text(dialog, id)
     }
 

@@ -8,7 +8,7 @@
 //! wheel).
 
 use crate::map::scenario_menu::MapMenuEntry;
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use super::super::layout::{RectPx, SkirmishShellLayout, shown_player_rows};
 use super::SkirmishShellState;

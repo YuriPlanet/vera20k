@@ -5,11 +5,11 @@
 //! action/result-code tables the activated control id maps through.
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page;
 
 /// The main-menu dialog resource.
-pub const MAIN_MENU_DIALOG: DialogId = DialogId(0x00E2);
+pub const MAIN_MENU_DIALOG: DialogResourceId = DialogResourceId(0x00E2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainMenuControlId {
@@ -201,16 +201,16 @@ mod tests {
         c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
         down(&mut c, 700, 210);
         // A message box over 0xE2 leaves 0xE2's own press and hover painted.
-        c.push(DialogId(0x0120));
+        c.push(DialogResourceId(0x0120));
         assert_eq!(pressed_control(&c), single_player);
         assert_eq!(hovered_control(&c), single_player);
         // Destroying 0xE2 under the box clears them for the next instance.
         c.restart_instance(MAIN_MENU_DIALOG);
         assert_eq!(pressed_control(&c), None);
         assert_eq!(hovered_control(&c), None);
-        assert_eq!(c.top_id(), Some(DialogId(0x0120)));
+        assert_eq!(c.top_id(), Some(DialogResourceId(0x0120)));
         // Back from Single Player: 0x100's hover is never read as 0xE2's.
-        c.reset_to(DialogId(0x0100));
+        c.reset_to(DialogResourceId(0x0100));
         c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
         assert_eq!(hovered_control(&c), None);
     }

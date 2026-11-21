@@ -3,7 +3,7 @@
 //! tools/storage_oracle/saved_game_layout.{py,json}. See the pause-save-shells
 //! evidence dated 2026-09-12 for callers, text keys and active paint policy.
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx, ShellScale};
 use super::in_game_shell::{self, InGameShellLayout};
 use super::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
@@ -79,7 +79,7 @@ pub const LOAD_LIST_HELP_KEY: &str = "STT:LoadList";
 /// line. Proc `0x00558A30` writes `0x40F` for Load and 2 for Back
 /// (`0x00558AB0`).
 pub const LOAD_SAVED_GAME_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x00B7),
+    dialog: DialogResourceId(0x00B7),
     title_key: "GUI:LoadMissionMenu",
     stacked: &[MenuPageButtonSpec::new(
         LOAD_BUTTON,

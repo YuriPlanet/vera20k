@@ -11,7 +11,7 @@ use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 use crate::i18n::tr_fill;
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::shell::page;
@@ -30,7 +30,7 @@ pub(crate) const FIRST_CAPTION: u16 = 0x7FD8;
 pub(crate) const FORM_STATUS: u16 = 0x7FDC;
 /// The popups' box over the login page. Not a gamemd dialog: the id only
 /// names it on the shell's dialog stack.
-pub(crate) const POPUP: DialogId = DialogId(0x7FE8);
+pub(crate) const POPUP: DialogResourceId = DialogResourceId(0x7FE8);
 
 /// A lobby name's and an account password's longest.
 pub(crate) const NAME_LIMIT: usize = 24;
@@ -249,7 +249,7 @@ pub(crate) struct WolAccountForm {
     pub(crate) kind: FormKind,
     /// Where its fields stand: the login page (the sign-in form) or the
     /// popup's own box ([`POPUP`]).
-    dialog: DialogId,
+    dialog: DialogResourceId,
     pub(crate) fields: Vec<AccountField>,
     /// The account it concerns, once the lobby has it (Verify, Reset).
     pub(crate) name: String,
@@ -327,7 +327,7 @@ impl WolAccountForm {
     /// step is a fresh box over the page.
     fn with_fields(
         ui: &mut DialogController,
-        dialog: DialogId,
+        dialog: DialogResourceId,
         kind: FormKind,
         fields: Vec<AccountField>,
         status: StatusText,

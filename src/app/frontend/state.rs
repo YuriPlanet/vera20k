@@ -181,7 +181,7 @@ pub(crate) struct FrontendState {
     /// The WOL pages' loaded art by dialog (`shell_wol::leaf::open_art`),
     /// each freed with its page.
     pub(crate) wol_art: Vec<(
-        crate::ui::shell::descriptor::DialogId,
+        crate::ui::shell::descriptor::DialogResourceId,
         crate::render::main_menu_shell_chrome::WolPageArt,
     )>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).

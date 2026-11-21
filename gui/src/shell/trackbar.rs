@@ -24,8 +24,9 @@ pub fn trackbar_position_from_x(
     let usable_span = (client_width - plaque_reserve - 13).max(1);
     let maximum_track_x = (client_width - plaque_reserve - 12).max(1);
     let track_x = (raw_mouse_x - 6).clamp(1, maximum_track_x);
-    let relative = ((track_x - 1) * (range + 1)) / usable_span;
-    relative.min(range)
+    // Widened: an owner's extreme range must not overflow.
+    let relative = (i64::from(track_x - 1) * (i64::from(range) + 1)) / i64::from(usable_span);
+    relative.min(i64::from(range)) as i32
 }
 
 /// What a left press does on a shell trackbar.
@@ -105,7 +106,8 @@ pub fn thumb_left(position: i32, client_width: i32, reserve: i32, range: i32) ->
     // Original 0x0061E486..0x0061E4A8 (TBM_SETPOS) and
     // 0x0061DC44..0x0061DC58 (drag) divide the painted offset by range.
     // Mouse quantization above deliberately uses range + 1 instead.
-    1 + position * usable_span / range.max(1)
+    let offset = i64::from(position) * i64::from(usable_span) / i64::from(range.max(1));
+    1 + offset.clamp(i64::from(i32::MIN) + 1, i64::from(i32::MAX) - 1) as i32
 }
 
 /// A trackbar window and cursor in the authored 800x600 numbers the native
@@ -188,7 +190,7 @@ impl TrackbarRange {
     /// `0x0061E4AD`) and the value text shows (`0x0061E27A`): `value` rounded
     /// down to a multiple of the step.
     pub const fn stepped(self, value: i32) -> i32 {
-        value / self.step * self.step
+        value.wrapping_div(self.step).saturating_mul(self.step)
     }
 
     /// The value a fresh window holds once its owner's setup has sent
@@ -200,19 +202,25 @@ impl TrackbarRange {
         if value >= self.min && value <= self.max {
             return value;
         }
-        let range = self.max - self.min;
+        let range = self.max.saturating_sub(self.min);
         let position = if range < 0 { range } else { 0 };
         let position = if position < self.min {
             self.min
         } else {
             position
         };
-        self.min + position
+        self.min.saturating_add(position)
+    }
+
+    /// Maximum minus minimum, saturated (`TBM_SETRANGE` keeps the position
+    /// relative to the minimum).
+    const fn range(self) -> i32 {
+        self.max.saturating_sub(self.min)
     }
 
     /// The thumb's left edge in a `width`-wide window showing `value`.
     pub fn thumb_left(self, value: i32, width: i32) -> i32 {
-        thumb_left(value - self.min, width, self.reserve, self.max - self.min)
+        thumb_left(value.saturating_sub(self.min), width, self.reserve, self.range())
     }
 
     /// [`Self::thumb_left`] for a window at `scale`, as an offset from its left
@@ -220,19 +228,13 @@ impl TrackbarRange {
     /// thumb stay authored, so the painted thumb lands inside the painted plaque
     /// boundary the input side admits.
     pub fn thumb_left_in(self, value: i32, window: RectPx, scale: ShellScale) -> i32 {
-        thumb_left_at(
-            value - self.min,
-            window,
-            self.reserve,
-            self.max - self.min,
-            scale,
-        )
+        thumb_left_at(value.saturating_sub(self.min), window, self.reserve, self.range(), scale)
     }
 
     /// The value a captured pointer at window-relative `x` selects.
     pub fn value_at(self, x: i32, width: i32) -> i32 {
-        let position = trackbar_position_from_x(x, width, self.reserve, self.max - self.min);
-        self.stepped(self.min + position)
+        let position = trackbar_position_from_x(x, width, self.reserve, self.range());
+        self.stepped(self.min.saturating_add(position))
     }
 
     /// [`Self::value_at`] for a window at `scale` with a device cursor `x`.
@@ -244,9 +246,11 @@ impl TrackbarRange {
     /// What a press at window-relative `(x, y)` does on a window showing
     /// `value`; a jump carries the new value.
     pub fn press(self, value: i32, x: i32, y: i32, width: i32, height: i32) -> TrackbarPress {
-        let range = self.max - self.min;
-        match trackbar_press(value - self.min, x, y, width, height, self.reserve, range) {
-            TrackbarPress::Jump(position) => TrackbarPress::Jump(self.stepped(self.min + position)),
+        let position = value.saturating_sub(self.min);
+        match trackbar_press(position, x, y, width, height, self.reserve, self.range()) {
+            TrackbarPress::Jump(position) => {
+                TrackbarPress::Jump(self.stepped(self.min.saturating_add(position)))
+            }
             other => other,
         }
     }
@@ -449,5 +453,18 @@ mod tests {
             }
         }
         (position_count, pointer_count)
+    }
+
+    #[test]
+    fn an_extreme_range_neither_overflows_nor_leaves_it() {
+        let range = TrackbarRange::new(i32::MIN, i32::MAX, 1);
+        for x in [0, 60, 128] {
+            let value = range.value_at(x, 129);
+            assert!(range.thumb_left(value, 129) >= 1, "x={x}");
+        }
+        assert_eq!(range.value_at(128, 129), i32::MIN + i32::MAX);
+        let negative = TrackbarRange::new(i32::MIN, 0, -1);
+        assert_eq!(negative.stepped(7), 7);
+        negative.stepped(i32::MIN); // i32::MIN / -1 must not trap
     }
 }

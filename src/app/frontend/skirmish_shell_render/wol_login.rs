@@ -93,7 +93,7 @@ pub(crate) fn paint_wol_login_children(
     // in the face's text area. ComboDrop's edit-child geometry is untraced;
     // the face's text rect stands in for it.
     if let Some(node) = ui.control(DIALOG, NICKNAME) {
-        let edit = gui_paint::new_edit(gui, node);
+        let edit = gui.edit_state(node).unwrap_or_default();
         let combo_text = layout.nickname_text_rect();
         let font = &state.renderer.bit_font;
         if ui.caret_visible(node) {

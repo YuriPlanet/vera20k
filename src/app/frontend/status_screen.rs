@@ -237,6 +237,9 @@ impl CardUi {
         for (_, rect) in buttons {
             let node = self.gui.create(NodeKind::Button, Some(root)).ok()?;
             let _ = self.gui.set(node, Prop::Rect, Value::Rect(*rect));
+            // The card acts on a left release over a button alone: a press
+            // dragged onto it, or one held since before the card showed.
+            let _ = self.gui.set(node, Prop::ReleaseActivates, Value::Bool(true));
             nodes.push(node);
         }
         let cancel = buttons
@@ -865,6 +868,17 @@ mod tests {
         assert_eq!(
             card.input(InputEvent::PointerUp { x, y, button }),
             [Action::Leave]
+        );
+        // A press off the buttons, dragged onto Resume, still resumes.
+        assert!(
+            card.input(InputEvent::PointerDown { x: 1, y: 1, button })
+                .is_empty()
+        );
+        let (x, y) = (resume.x + 2, resume.y + 2);
+        card.sync(&actions, &layout, (x, y));
+        assert_eq!(
+            card.input(InputEvent::PointerUp { x, y, button }),
+            [Action::Resume]
         );
     }
 

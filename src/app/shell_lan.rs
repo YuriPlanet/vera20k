@@ -9,15 +9,15 @@ use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::room_limits::RoomLimits;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::descriptor::DialogResourceId;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::util::time::{Duration, Instant};
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-pub(crate) const MODAL: DialogId = DialogId(0xCE);
+pub(crate) const MODAL: DialogResourceId = DialogResourceId(0xCE);
 pub(crate) const OK: u16 = 1;
 pub(crate) const CANCEL: u16 = 2;
 /// VERA's Create Game box's Max players and Allow spectators (its own
@@ -254,7 +254,7 @@ impl App {
         crate::util::lan_network::release();
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
-        state.frontend.shell_controller.reset_to(DialogId(0xE2));
+        state.frontend.shell_controller.reset_to(DialogResourceId(0xE2));
         state.frontend.shell_first_paint_slide = None;
     }
 

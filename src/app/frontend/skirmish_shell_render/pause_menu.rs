@@ -12,13 +12,13 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::pause_menu::{
     InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate,
 };
-use crate::ui::shell::trackbar::value_text_rect;
+use vera20k_gui::shell::trackbar::value_text_rect;
 use crate::ui::sidebar::SidebarTheme;
 
 /// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
 /// Disabled buttons retain their SHP frame;612F5F changes their text color only.
 pub(super) fn button_frame(state: PauseMenuButtonState) -> usize {
-    crate::ui::shell::button::owner_button_frame(state.pressed, state.highlighted)
+    vera20k_gui::shell::button::owner_button_frame(state.pressed, state.highlighted)
 }
 
 pub(super) fn button_text_rgb(theme: SidebarTheme, enabled: bool) -> [f32; 3] {

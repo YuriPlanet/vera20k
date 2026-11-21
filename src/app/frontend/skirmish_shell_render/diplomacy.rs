@@ -9,7 +9,7 @@ use crate::app::AppState;
 use crate::app::input::dialog_page::pressed;
 use crate::app::input::diplomacy::DIALOG;
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::button::CheckboxFace;
+use vera20k_gui::shell::button::CheckboxFace;
 use crate::ui::shell::diplomacy::{DiplomacyControl, DiplomacyHeader, diplomacy_layout};
 use crate::ui::shell::geom::ShellScale;
 

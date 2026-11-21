@@ -16,13 +16,13 @@
 
 use crate::util::time::{Duration, Instant};
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-pub const CAMPAIGN_DIALOG: DialogId = DialogId(0x0094);
+pub const CAMPAIGN_DIALOG: DialogResourceId = DialogResourceId(0x0094);
 /// Allied emblem static (FSALG.SHP, kind 4).
 pub const ALLIED_EMBLEM: u16 = 0x06EA;
 /// Soviet emblem static (FSSLG.SHP, kind 4).

@@ -475,7 +475,7 @@ pub(crate) fn member_names(state: &AppState) -> Vec<String> {
 }
 
 /// The dialog a runner's closed box or wait returns the input to.
-fn runner_dialog(state: &AppState) -> crate::ui::shell::descriptor::DialogId {
+fn runner_dialog(state: &AppState) -> crate::ui::shell::descriptor::DialogResourceId {
     if super::quick_match::page_open(state) {
         crate::ui::wol_quick_match::DIALOG
     } else {

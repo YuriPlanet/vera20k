@@ -16,7 +16,7 @@ use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_lobby::*;
 
 /// The popups paint over the covered dialog, before their own controls.

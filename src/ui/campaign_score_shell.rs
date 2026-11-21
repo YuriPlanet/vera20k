@@ -27,14 +27,14 @@ use crate::util::time::{Duration, Instant};
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::score_shell::{ScoreRow, ScoreStatic, ScoreStatics};
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{self, RectPx, ShellScale, fit_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::{HEADING_KIND1, Kind1Params, STATUS_LINE_KIND1};
 
-pub const CAMPAIGN_SCORE_DIALOG: DialogId = DialogId(0x0103);
+pub const CAMPAIGN_SCORE_DIALOG: DialogResourceId = DialogResourceId(0x0103);
 
 pub const CONTINUE_BUTTON: u16 = 0x0423;
 pub const TITLE_STATIC: u16 = 0x0694;
@@ -140,7 +140,7 @@ pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 11] = [
 
 /// The LAN Cooperative campaign-end dialog `0xBC7`
 /// (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`).
-pub const CAMPAIGN_END_DIALOG: DialogId = DialogId(0x0BC7);
+pub const CAMPAIGN_END_DIALOG: DialogResourceId = DialogResourceId(0x0BC7);
 pub const CAMPAIGN_END_CONTINUE: u16 = 0x06D1;
 pub const CAMPAIGN_END_NAME: u16 = 0x0733;
 pub const CAMPAIGN_END_NUMBER: u16 = 0x0735;
@@ -211,7 +211,7 @@ pub enum CampaignScoreDialog {
 }
 
 impl CampaignScoreDialog {
-    pub const fn id(self) -> DialogId {
+    pub const fn id(self) -> DialogResourceId {
         self.page().dialog
     }
 

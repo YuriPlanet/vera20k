@@ -7,7 +7,7 @@ use crate::app::input::dialog_page;
 use crate::app::input::sound::DIALOG;
 use crate::render::{shell_paint, shell_text::ShellAlign};
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::sound::{SoundButton, SoundControl, SoundLayout, SoundSlider};
 
 pub(crate) fn render_sound_shell(
@@ -128,7 +128,7 @@ pub(crate) fn render_sound_shell(
         for (index, label) in labels.into_iter().enumerate() {
             let caption = paint.label(label);
             paint.text(&caption, layout.labels[index], ShellAlign::H_RIGHT);
-            let value = crate::ui::shell::trackbar::value_text_rect(
+            let value = vera20k_gui::shell::trackbar::value_text_rect(
                 layout.sliders[index],
                 ShellScale::RETAIL,
             );

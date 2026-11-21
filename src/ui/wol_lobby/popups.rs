@@ -9,13 +9,13 @@ use vera20k_gui::{DialogKind, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use super::{WolLobbyState, password_accepted};
 use crate::ui::room_limits::RoomLimits;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::WolCreateGameLayout;
 use crate::ui::shell::page;
 
-pub(crate) const CREATE_DIALOG: DialogId = DialogId(0x00C3);
-pub(crate) const PASSWORD_DIALOG: DialogId = DialogId(0x00E1);
+pub(crate) const CREATE_DIALOG: DialogResourceId = DialogResourceId(0x00C3);
+pub(crate) const PASSWORD_DIALOG: DialogResourceId = DialogResourceId(0x00E1);
 
 pub(crate) const POPUP_OK: u16 = 1;
 pub(crate) const POPUP_CANCEL: u16 = 2;
@@ -147,7 +147,7 @@ pub(crate) struct WolLobbyPopup {
 }
 
 impl WolLobbyPopup {
-    pub(crate) fn dialog(&self) -> DialogId {
+    pub(crate) fn dialog(&self) -> DialogResourceId {
         if self.create.is_some() {
             CREATE_DIALOG
         } else {
@@ -341,7 +341,7 @@ impl WolLobbyState {
                 Prop::Checked,
                 Value::Bool(watching != RoomWatching::Off),
             );
-            let mut edit = crate::ui::skirmish_shell::SavedSeedDescriptionEdit::default();
+            let mut edit = vera20k_gui::shell::new_edit::NewEdit::default();
             edit.set_units_limited(name.encode_utf16(), ROOM_NAME_LIMIT as usize);
             self.store_edit(CREATE_NAME, &edit);
         }

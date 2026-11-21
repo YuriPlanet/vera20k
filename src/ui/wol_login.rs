@@ -13,7 +13,7 @@ use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
@@ -21,11 +21,11 @@ use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSp
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 use crate::ui::wol_account::{
-    AccountFormAction, AccountRequest, AccountSignIn, FORM_CANCEL, FORM_OK, FORM_REMEMBER,
+    AccountFormAction, AccountRequest, AccountSignIn, FORM_OK, FORM_REMEMBER,
     FieldKind, POPUP, WolAccountForm, valid_name,
 };
 
-pub(crate) const DIALOG: DialogId = DialogId(0x010F);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x010F);
 pub(crate) const LOGIN: u16 = 0x0539;
 pub(crate) const FORGET: u16 = 0x06EB;
 pub(crate) const MANAGE: u16 = 0x06EC;
@@ -834,6 +834,11 @@ impl WolLoginState {
             return None;
         }
         self.refresh(cx);
+        // On the login pages Enter is the default button even while the
+        // nickname list is open (the list does not take it), as before.
+        if key == Key::Enter && self.account.is_none() {
+            cx.ui.gui_mut().close_popup();
+        }
         cx.ui.on_input(InputEvent::Key(key));
         let raw = cx.ui.drain_events();
         let events = page::page_events(cx.ui.gui(), raw);
@@ -1258,13 +1263,12 @@ mod tests {
 
     #[test]
     fn password_is_painted_masked() {
-        use crate::app::frontend::skirmish_shell_render::gui_paint::new_edit;
         let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
         let mut login = WolLoginState::open(&mut page.cx());
         page.focus(PASSWORD);
         login.insert_text(&mut page.cx(), "secret12");
         let ui = &page.ui;
-        let painted = |id| new_edit(ui.gui(), ui.control(DIALOG, id).unwrap()).painted_text();
+        let painted = |id| ui.gui().edit_state(ui.control(DIALOG, id).unwrap()).unwrap().painted_text();
         assert_eq!(painted(PASSWORD), "********");
         assert_eq!(painted(NICKNAME), "");
     }

@@ -37,7 +37,7 @@ pub(crate) fn type3_button_frames(
         atlas.modal_button_mnbttn_frame1,
         atlas.modal_button_mnbttn_frame2,
     ];
-    let index = crate::ui::shell::button::owner_button_frame;
+    let index = vera20k_gui::shell::button::owner_button_frame;
     crate::render::shell_paint::ModalButtonFrames {
         up: frames[index(false, false)],
         disabled: frames[index(false, false)],
@@ -205,7 +205,7 @@ pub(super) fn push_right_panel_button_shp(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     rect: RectPx,
-    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
+    visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
     depth: f32,
 ) {
@@ -236,7 +236,7 @@ pub(super) fn push_right_panel_button_shp(
 }
 
 pub(super) fn right_panel_button_sdbtnanm_frame_index(
-    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
+    visual: impl Into<vera20k_gui::shell::button::ButtonVisual>,
     disabled: bool,
 ) -> usize {
     let visual = visual.into();

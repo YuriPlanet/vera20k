@@ -14,7 +14,7 @@
 
 use super::{Capture, Ctx, WidgetState};
 use crate::gui::{Key, UiEvent, UiMs};
-use crate::node::{NodeId, Prop, Value};
+use crate::node::{Node, NodeId, Prop, Tree, Value};
 use crate::shell::new_edit::{self, NewEdit};
 
 #[derive(Debug, Default)]
@@ -118,23 +118,40 @@ fn take_selection(ctx: &mut Ctx<'_>, node: NodeId) -> bool {
     n.props.remove(&Prop::AllSelected) == Some(Value::Bool(true))
 }
 
-/// The node's text and caret as a NewEdit (caret in UTF-16 units).
-fn load(ctx: &Ctx<'_>, node: NodeId) -> Option<NewEdit> {
-    let n = ctx.tree.node(node).ok()?;
+/// An `Edit` node's props as a NewEdit: `Text`, `Caret` (chars; unset is
+/// the end) as UTF-16 units, `Top` as the first shown unit, the `Password`
+/// mask. Not focused.
+pub(crate) fn read(n: &Node) -> NewEdit {
     let text = n.text_prop(Prop::Text).unwrap_or("");
     let chars = text.chars().count();
     let caret_chars = match n.props.get(&Prop::Caret) {
         Some(Value::Int(c)) => usize::try_from(*c).unwrap_or(0).min(chars),
         _ => chars,
     };
-    let caret = text.chars().take(caret_chars).map(char::len_utf16).sum();
-    Some(NewEdit {
-        units: text.encode_utf16().collect(),
-        caret,
+    let units: Vec<u16> = text.encode_utf16().collect();
+    NewEdit {
+        caret: text.chars().take(caret_chars).map(char::len_utf16).sum(),
+        first_visible_unit: usize::try_from(n.int_prop(Prop::Top, 0)).unwrap_or(0).min(units.len()),
+        units,
         password: n.bool_prop(Prop::Password, false),
-        focused: true,
         ..NewEdit::default()
-    })
+    }
+}
+
+/// Writes a NewEdit's text, caret (as chars) and first shown unit to its
+/// node's props, without an event.
+pub(crate) fn write(tree: &mut Tree, node: NodeId, edit: &NewEdit) {
+    let caret = String::from_utf16_lossy(&edit.units[..edit.caret.min(edit.units.len())]).chars().count();
+    let _ = tree.set(node, Prop::Text, Value::Text(edit.display_text()));
+    let _ = tree.set(node, Prop::Caret, Value::Int(i32::try_from(caret).unwrap_or(i32::MAX)));
+    let _ = tree.set(node, Prop::Top, Value::Int(i32::try_from(edit.first_visible_unit).unwrap_or(i32::MAX)));
+}
+
+/// The node's text and caret as the focused NewEdit typing works on (the
+/// view's first shown unit is the host's).
+fn load(ctx: &Ctx<'_>, node: NodeId) -> Option<NewEdit> {
+    let n = ctx.tree.node(node).ok()?;
+    Some(NewEdit { focused: true, first_visible_unit: 0, ..read(n) })
 }
 
 /// Writes the edit back; `TextChanged` when the text changed.

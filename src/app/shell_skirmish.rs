@@ -10,8 +10,8 @@ use crate::ui::skirmish_shell::{
 };
 
 /// Skirmish's validation box (`0xCE`).
-const VALIDATION_BOX: crate::ui::shell::descriptor::DialogId =
-    crate::ui::shell::descriptor::DialogId(0x00CE);
+const VALIDATION_BOX: crate::ui::shell::descriptor::DialogResourceId =
+    crate::ui::shell::descriptor::DialogResourceId(0x00CE);
 
 /// The open Choose Map dialog.
 fn chooser(state: &mut AppState) -> Option<&mut ChooseMapModalState> {
@@ -410,6 +410,23 @@ impl App {
 
     /// The open Game Options box takes every press, release and move over
     /// the page; returns whether it is open.
+    /// A fresh Enter or Escape over the Game Options box: its OK takes both
+    /// and the box closes.
+    pub(super) fn skirmish_game_options_key(state: &mut AppState, key: vera20k_gui::Key) {
+        use crate::ui::skirmish_shell::game_options;
+        let page = skirmish_layout(state);
+        let frontend = &mut state.frontend;
+        let close = game_options::key(
+            &mut frontend.shell_controller,
+            &mut frontend.skirmish_shell_state,
+            &game_options::GameOptionsLayout::over(&page),
+            key,
+        );
+        if close {
+            Self::close_skirmish_game_options(state);
+        }
+    }
+
     fn route_game_options_mouse(state: &mut AppState, at: Pointer) -> bool {
         use crate::ui::skirmish_shell::game_options;
         if state.frontend.skirmish_shell_state.game_options.is_none() {
@@ -1200,7 +1217,6 @@ impl App {
     /// help is the mode's description (`0x4E9`, `0x005E6E44`).
     fn update_choose_map_modal_status_help(state: &mut AppState) {
         use crate::ui::skirmish_shell::ChooseMapHoverTarget as Target;
-        let layout = choose_map_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let gui = state.frontend.shell_controller.gui();
         let modal = state
@@ -1209,7 +1225,7 @@ impl App {
             .choose_map_modal
             .as_ref();
         let Some(target) = modal.and_then(|modal| {
-            crate::ui::skirmish_shell::choose_map_page::hover_target(gui, modal, &layout, x, y)
+            crate::ui::skirmish_shell::choose_map_page::hover_target(gui, modal, x, y)
         }) else {
             return;
         };
@@ -1407,9 +1423,8 @@ impl App {
         {
             return;
         }
-        let layout = skirmish_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
-        if layout.player_name.contains(x, y) {
+        if crate::ui::skirmish_shell::page::over_name(&state.frontend.shell_controller, x, y) {
             // The name box takes the press even over an open list, which
             // closes without its cue; the press selects the name.
             Self::close_skirmish_list(state);
@@ -1423,17 +1438,17 @@ impl App {
             );
             return;
         }
-        Self::blur_player_name(state);
         let over = crate::app::frontend::preview_zoom::over_box(
             state,
             crate::ui::skirmish_shell::page::DIALOG,
         );
-        if !Self::skirmish_list_open(state)
-            && crate::app::frontend::preview_zoom::press_on_box(state, over)
-        {
-            return;
-        }
+        let zoom = over && !Self::skirmish_list_open(state);
+        // The widgets take the press (the name box loses the focus to it);
+        // on the preview it takes nothing and enlarges the picture.
         Self::skirmish_page_pointer(state, Pointer::Down);
+        if zoom {
+            crate::app::frontend::preview_zoom::press_on_box(state, true);
+        }
     }
 
     pub(super) fn handle_skirmish_shell_mouse_up(state: &mut AppState) {

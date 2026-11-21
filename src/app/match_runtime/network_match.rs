@@ -824,11 +824,11 @@ fn list_metrics(state: &AppState) -> (i32, usize) {
     let rect = crate::ui::shell::connection::list_rect(width, height);
     let page = state.match_state.network_wait.page();
     let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.top));
-    let geometry = crate::ui::shell::list::ShellListGeometry::new(
+    let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
         rect,
         count,
         top,
-        crate::ui::shell::list::ListMetrics::RETAIL,
+        vera20k_gui::shell::list::ListMetrics::RETAIL,
     );
     (rect.w, geometry.visible_rows)
 }

@@ -22,7 +22,7 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
@@ -30,7 +30,7 @@ use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSp
 use crate::ui::shell::paging::RowPage;
 use crate::ui::shell::static_reveal::{Kind1Params, Kind1RevealWindow, PresentedKind1Static};
 
-pub const SCORE_DIALOG: DialogId = DialogId(0x0108);
+pub const SCORE_DIALOG: DialogResourceId = DialogResourceId(0x0108);
 pub const CONTINUE_BUTTON: u16 = 0x06D1;
 /// VERA paging controls; omitted for native-sized result tables.
 pub const PREVIOUS_PAGE: u16 = 0xF201;

@@ -14,7 +14,7 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::stock_skirmish_modes;
 use crate::ui::shell::page::PageCue;
-use crate::ui::shell::trackbar::{THUMB_W, TrackbarHold};
+use vera20k_gui::shell::trackbar::{THUMB_W, TrackbarHold};
 use crate::ui::skirmish_shell::layout::compute_choose_map_modal_layout;
 use crate::ui::skirmish_shell::page;
 use crate::ui::skirmish_shell::{
@@ -275,7 +275,7 @@ struct DropdownScrollDragState {
 }
 
 fn dropdown_scroll_press(shell: &SkirmishShellState) -> Option<DropdownScrollbarPressState> {
-    use crate::ui::shell::list::ListScrollPart;
+    use vera20k_gui::shell::list::ListScrollPart;
     read_page(shell, |gui, _| {
         let open = page::open_combo(gui, shell)?;
         let part = gui.combo_drop_down(gui.popup()?)?.captured_part?;
@@ -961,7 +961,7 @@ fn hovered_choose_map_modal_control(
     let mut ui = crate::ui::shell::controller::DialogController::default();
     choose_map_page::sync_page(&mut ui, modal, layout);
     ui.on_pointer_move(x, y);
-    choose_map_page::hover_target(ui.gui(), modal, layout, x, y)
+    choose_map_page::hover_target(ui.gui(), modal, x, y)
 }
 
 #[test]

@@ -12,14 +12,14 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
 
-pub(crate) const DIALOG: DialogId = DialogId(0x02BC);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x02BC);
 pub(crate) const OK: u16 = 0x0001;
 pub(crate) const CANCEL: u16 = 0x0002;
 pub(crate) const SOUND_OPTIONS: u16 = 0x063A;

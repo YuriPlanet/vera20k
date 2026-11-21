@@ -45,6 +45,10 @@ pub enum PageEvent {
     TextChanged(u16, String),
     Submitted(u16, String),
     Cancelled(u16),
+    /// A `Draggable` control was carried off its press.
+    DragStarted(u16),
+    /// A carried control was dropped, over the `DropTarget` control given.
+    Dropped(u16, Option<u16>),
 }
 
 /// Builds `spec`'s children under the dialog root once; true when it built.
@@ -117,12 +121,7 @@ pub fn edit_input(
     event: vera20k_gui::InputEvent,
     mut changed: impl FnMut(&mut super::controller::DialogController),
 ) {
-    use vera20k_gui::InputEvent;
-    let events = match event {
-        InputEvent::Text(text) => text.chars().map(|ch| InputEvent::Text(ch.into())).collect(),
-        event => vec![event],
-    };
-    for event in events {
+    for event in super::controller::per_char(event) {
         c.on_input(event);
         if c.drain_events()
             .iter()
@@ -191,55 +190,10 @@ pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
     }
 }
 
-/// An `Edit` node as the NewEdit its paint reads: text, caret, the first
-/// shown unit the host keeps in `Top`, the password mask and whether it
-/// holds the focus.
-pub fn new_edit(gui: &Gui, node: NodeId) -> crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
-    let int = |prop| match gui.get(node, prop).ok().flatten() {
-        Some(Value::Int(value)) => Some(*value),
-        _ => None,
-    };
-    let text = match gui.get(node, Prop::Text).ok().flatten() {
-        Some(Value::Text(text)) => text.as_str(),
-        _ => "",
-    };
-    let chars = text.chars().count();
-    let caret_chars = usize::try_from(int(Prop::Caret).unwrap_or(chars as i32))
-        .unwrap_or(0)
-        .min(chars);
-    let units: Vec<u16> = text.encode_utf16().collect();
-    crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
-        first_visible_unit: usize::try_from(int(Prop::Top).unwrap_or(0))
-            .unwrap_or(0)
-            .min(units.len()),
-        units,
-        caret: text.chars().take(caret_chars).map(char::len_utf16).sum(),
-        focused: gui.focus() == Some(node),
-        password: matches!(
-            gui.get(node, Prop::Password).ok().flatten(),
-            Some(Value::Bool(true))
-        ),
-    }
-}
-
-/// Writes a NewEdit's text, caret and first shown unit back to its node.
-pub fn store_edit(
-    gui: &mut Gui,
-    node: NodeId,
-    edit: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
-) {
-    let caret = String::from_utf16_lossy(&edit.units[..edit.caret.min(edit.units.len())])
-        .chars()
-        .count();
-    let _ = gui.set(node, Prop::Text, Value::Text(edit.display_text()));
-    let _ = gui.set(node, Prop::Caret, Value::Int(caret as i32));
-    let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
-}
-
 /// NewEdit keeps the caret in view (`scroll_to_caret`) in `available` base
 /// px of its field; the first shown unit is the node's `Top`.
 pub fn scroll_edit(gui: &mut Gui, node: NodeId, available: u32, measure: impl Fn(&str) -> u32) {
-    let mut edit = new_edit(gui, node);
+    let mut edit = gui.edit_state(node).unwrap_or_default();
     edit.scroll_to_caret(available, measure);
     let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
 }
@@ -292,6 +246,10 @@ pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {
                 out.extend(id(node).map(|id| PageEvent::Submitted(id, text)))
             }
             UiEvent::Cancelled { node } => out.extend(id(node).map(PageEvent::Cancelled)),
+            UiEvent::DragStarted { node } => out.extend(id(node).map(PageEvent::DragStarted)),
+            UiEvent::Dropped { node, target } => {
+                out.extend(id(node).map(|dragged| PageEvent::Dropped(dragged, target.and_then(id))))
+            }
             _ => {}
         }
     }

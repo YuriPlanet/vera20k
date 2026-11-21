@@ -5,7 +5,7 @@
 
 use crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 /// What the host of VERA's room chose at Create Game: the most people it

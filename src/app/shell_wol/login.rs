@@ -264,16 +264,12 @@ pub(crate) fn status_key(state: &AppState) -> Option<&str> {
     if !list.is_some_and(|list| list.popup.rect.contains(x, y)) {
         return leaf::status_key(state, DIALOG);
     }
-    // Buttons first, then the template's order.
-    let layout = login_layout(state);
-    let ids = PAGE
-        .buttons()
-        .map(|button| button.id)
-        .chain([REMEMBER, PASSWORD, NICKNAME]);
-    let rect = |id| layout.rect_of(if id == NICKNAME { NICKNAME_DROP } else { id });
-    ids.into_iter()
-        .find(|id| rect(*id).is_some_and(|rect| rect.contains(x, y)))
-        .and_then(tooltip_key)
+    // The control the page's widgets hit under the list; the nickname's
+    // edit and its combo share the combo's help.
+    let gui = ui.gui();
+    let node = gui.hit_at(ui.root_in(DIALOG)?, x, y, false)?;
+    let id = u16::try_from(gui.id_of(node)?).ok()?;
+    tooltip_key(if id == NICKNAME_DROP { NICKNAME } else { id })
 }
 
 /// Esc closes the nickname combo's open list; true when one was open.

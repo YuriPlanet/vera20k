@@ -10,7 +10,7 @@ use crate::app::shell_wol::lobby::player_badge;
 use crate::skirmish_launch::{AiDifficulty, LaunchStartPosition, LaunchTeam};
 use crate::skirmish_modes::mode_by_id;
 use crate::ui::multiplayer_setup::*;
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 use crate::ui::skirmish_shell::{
     self, SkirmishComboItem, SkirmishCountryChoice, SkirmishTrackbarId,
 };

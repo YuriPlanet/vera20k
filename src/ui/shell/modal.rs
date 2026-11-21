@@ -2,7 +2,7 @@
 //! ([`ShellBox`], their templates in `shell_layout.ini`) and the WOL and LAN
 //! popups that share the box.
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx, ScaledRects};
 use super::layout::RectTable;
 
@@ -43,7 +43,7 @@ pub struct BoxButton {
 /// button pressed; its owner keeps what the answer leads to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellBox {
-    pub dialog: DialogId,
+    pub dialog: DialogResourceId,
     pub body: String,
     pub buttons: Vec<BoxButton>,
     /// Its `shell_layout.ini` section; without one, the count-rule template
@@ -119,7 +119,7 @@ pub fn menu_message_box(buttons: usize, width: i32, height: i32) -> BoxParts {
 }
 
 impl ShellBox {
-    pub fn new(dialog: DialogId, body: impl Into<String>) -> Self {
+    pub fn new(dialog: DialogResourceId, body: impl Into<String>) -> Self {
         Self {
             dialog,
             body: body.into(),
@@ -139,7 +139,7 @@ impl ShellBox {
             1 + usize::from(!cancel.is_empty())
         };
         let ids = [control::OK, control::CANCEL, control::THIRD];
-        let dialog = DialogId([0xCE, 0x120, 0x121][count - 1]);
+        let dialog = DialogResourceId([0xCE, 0x120, 0x121][count - 1]);
         let captions = [ok, cancel, third].into_iter().take(count);
         ids.into_iter()
             .zip(captions)
@@ -673,16 +673,16 @@ mod tests {
     fn count_rule_picks_the_template_and_answers_by_button() {
         let s = |t: &str| t.to_owned();
         let notice = ShellBox::message(s("b"), s("OK"), s(""), s(""));
-        assert_eq!((notice.dialog, notice.buttons.len()), (DialogId(0xCE), 1));
+        assert_eq!((notice.dialog, notice.buttons.len()), (DialogResourceId(0xCE), 1));
         let quit = ShellBox::message(s("b"), s("OK"), s("Cancel"), s(""));
         assert_eq!(
             (quit.dialog, quit.answer(control::CANCEL)),
-            (DialogId(0x120), Some(1))
+            (DialogResourceId(0x120), Some(1))
         );
         let three = ShellBox::message(s("b"), s("OK"), s(""), s("Maybe"));
         assert_eq!(
             (three.dialog, three.answer(control::THIRD)),
-            (DialogId(0x121), Some(2))
+            (DialogResourceId(0x121), Some(2))
         );
         // At 800x600 the 0x120 box centres on the page left of the button
         // column, OK directly above Cancel.
@@ -786,7 +786,7 @@ mod tests {
     fn wol_wait_box_matches_the_template_arithmetic_at_800x600() {
         // RT_DIALOG 0xC4 through the shared 300x200 DLU modal policy (the
         // relayout tool's MulDiv; the popup was not executed).
-        let wait = ShellBox::new(DialogId(0xC4), "")
+        let wait = ShellBox::new(DialogResourceId(0xC4), "")
             .button(0x58D, "D")
             .button(0x58E, "C")
             .template(WAIT_TEMPLATE)

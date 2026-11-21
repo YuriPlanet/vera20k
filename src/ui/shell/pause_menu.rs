@@ -17,11 +17,11 @@
 
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
 use super::layout_data;
-use super::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -86,11 +86,11 @@ impl PauseMenuTemplate {
         }
     }
 
-    pub const fn dialog(self) -> DialogId {
+    pub const fn dialog(self) -> DialogResourceId {
         match self {
-            Self::Offline => DialogId(0xB5),
-            Self::Network => DialogId(0xBBA),
-            Self::Internet => DialogId(0xFF),
+            Self::Offline => DialogResourceId(0xB5),
+            Self::Network => DialogResourceId(0xBBA),
+            Self::Internet => DialogResourceId(0xFF),
         }
     }
 

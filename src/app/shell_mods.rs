@@ -19,7 +19,7 @@ use crate::ui::mods_shell::{self, ModsLayout};
 use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
 };
-use crate::ui::shell::list::{ListMetrics, list_box_geometry};
+use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 use crate::ui::shell::modal::ShellBox;
 
 impl App {
@@ -129,9 +129,10 @@ impl App {
         let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
             return;
         };
+        let now = controller.now();
         let gui = controller.gui_mut();
         let _ = gui.set(node, vera20k_gui::Prop::WheelStep, vera20k_gui::Value::Int(1));
-        gui.wheel_list(node, (lines * 3.0) as i32);
+        gui.wheel_list(node, (lines * 3.0) as i32, now);
         gui.drain_events();
     }
 

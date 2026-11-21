@@ -9,7 +9,7 @@
 use vera20k_gui::{Gui, InputEvent, Key, MouseButton, NodeId, NodeKind, Prop, UiEvent, Value};
 use winit::keyboard::KeyCode;
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use crate::util::time::{Duration, Instant};
 
 /// The shell's one keyboard adapter: the GUI key a physical key gives
@@ -35,6 +35,20 @@ pub fn gui_key(code: KeyCode, shift: bool) -> Option<Key> {
     })
 }
 
+/// One input per `WM_CHAR`: typed text a character at a time, so an edit's
+/// parent runs its `EN_CHANGE` handler after each.
+pub fn per_char(event: InputEvent) -> Vec<InputEvent> {
+    match event {
+        InputEvent::Text(text) => text.chars().map(|c| InputEvent::Text(c.into())).collect(),
+        event => vec![event],
+    }
+}
+
+/// [`gui_input`] as [`per_char`] inputs.
+pub fn gui_inputs(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Vec<InputEvent> {
+    gui_input(code, shift, text).map_or_else(Vec::new, per_char)
+}
+
 /// [`gui_key`], else the text the key typed, as one GUI input.
 pub fn gui_input(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Option<InputEvent> {
     match (code.and_then(|code| gui_key(code, shift)), text) {
@@ -45,7 +59,7 @@ pub fn gui_input(code: Option<KeyCode>, shift: bool, text: Option<&str>) -> Opti
 }
 
 struct Instance {
-    id: DialogId,
+    id: DialogResourceId,
     dialog: vera20k_gui::DialogId,
     /// A box over whatever screen is up (the WOL page dialogs): it stays on
     /// top, with its widgets, through the screen's pushes, pops and resets,
@@ -80,22 +94,28 @@ impl std::fmt::Debug for DialogController {
 }
 
 impl DialogController {
-    pub fn push(&mut self, id: DialogId) {
+    pub fn push(&mut self, id: DialogResourceId) {
         self.push_kind(id, vera20k_gui::DialogKind::Page, false);
     }
 
     /// [`Self::push`] as a modal: it blocks every dialog beneath it.
-    pub fn push_modal(&mut self, id: DialogId) {
+    pub fn push_modal(&mut self, id: DialogResourceId) {
         self.push_kind(id, vera20k_gui::DialogKind::Modal, false);
     }
 
     /// [`Self::push`] as an overlay: it stays on top until [`Self::close`].
-    pub fn push_overlay(&mut self, id: DialogId) {
+    pub fn push_overlay(&mut self, id: DialogResourceId) {
         self.push_kind(id, vera20k_gui::DialogKind::Page, true);
     }
 
+    /// [`Self::push_overlay`] as a modal: it takes every input over the
+    /// screen, which keeps its own stack beneath (VERA's enlarged preview).
+    pub fn push_modal_overlay(&mut self, id: DialogResourceId) {
+        self.push_kind(id, vera20k_gui::DialogKind::Modal, true);
+    }
+
     /// A dialog goes under the overlays, an overlay on top.
-    fn push_kind(&mut self, id: DialogId, kind: vera20k_gui::DialogKind, overlay: bool) {
+    fn push_kind(&mut self, id: DialogResourceId, kind: vera20k_gui::DialogKind, overlay: bool) {
         let root = self.gui.create(NodeKind::Dialog, None).expect("the shell stack stays far below the node budget");
         let dialog = self.gui.push_dialog(root, kind).expect("a fresh Dialog node");
         let at = match overlay {
@@ -109,19 +129,19 @@ impl DialogController {
     }
 
     /// Pops the topmost dialog under the overlays.
-    pub fn pop(&mut self) -> Option<DialogId> {
+    pub fn pop(&mut self) -> Option<DialogResourceId> {
         let at = self.stack.iter().rposition(|i| !i.overlay)?;
         Some(self.remove(at))
     }
 
     /// Closes the topmost instance of `id`, an overlay included.
-    pub fn close(&mut self, id: DialogId) {
+    pub fn close(&mut self, id: DialogResourceId) {
         if let Some(at) = self.stack.iter().rposition(|i| i.id == id) {
             self.remove(at);
         }
     }
 
-    fn remove(&mut self, at: usize) -> DialogId {
+    fn remove(&mut self, at: usize) -> DialogResourceId {
         let inst = self.stack.remove(at);
         let _ = self.gui.pop_dialog(inst.dialog);
         self.pending.clear();
@@ -154,23 +174,23 @@ impl DialogController {
 
     /// [`Self::caret_visible`] for `dialog`'s own focus, under a box too
     /// (BB keeps painting its edits' caret under its message box).
-    pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId) -> bool {
+    pub fn caret_visible_in(&self, dialog: DialogResourceId, node: NodeId) -> bool {
         self.instance(dialog)
             .is_some_and(|inst| self.gui.caret_visible_in(inst.dialog, node, self.now()))
     }
 
     /// Control `id` under the topmost live instance of `dialog`.
-    pub fn control(&self, dialog: DialogId, id: u16) -> Option<NodeId> {
+    pub fn control(&self, dialog: DialogResourceId, id: u16) -> Option<NodeId> {
         self.gui.find_id(self.root_in(dialog)?, i32::from(id))
     }
 
     /// Control `id`'s `prop` on `dialog`.
-    pub fn prop(&self, dialog: DialogId, id: u16, prop: Prop) -> Option<&Value> {
+    pub fn prop(&self, dialog: DialogResourceId, id: u16, prop: Prop) -> Option<&Value> {
         self.gui.get(self.control(dialog, id)?, prop).ok().flatten()
     }
 
     /// Control `id`'s boolean `prop` on `dialog` (`default` when unset).
-    pub fn flag(&self, dialog: DialogId, id: u16, prop: Prop, default: bool) -> bool {
+    pub fn flag(&self, dialog: DialogResourceId, id: u16, prop: Prop, default: bool) -> bool {
         match self.prop(dialog, id, prop) {
             Some(Value::Bool(on)) => *on,
             _ => default,
@@ -178,14 +198,14 @@ impl DialogController {
     }
 
     /// Sets `prop` on control `id` of `dialog`.
-    pub fn set_prop(&mut self, dialog: DialogId, id: u16, prop: Prop, value: Value) {
+    pub fn set_prop(&mut self, dialog: DialogResourceId, id: u16, prop: Prop, value: Value) {
         if let Some(node) = self.control(dialog, id) {
             let _ = self.gui.set(node, prop, value);
         }
     }
 
     /// Control `id`'s text on `dialog` ("" when it has none).
-    pub fn text(&self, dialog: DialogId, id: u16) -> String {
+    pub fn text(&self, dialog: DialogResourceId, id: u16) -> String {
         match self.prop(dialog, id, Prop::Text) {
             Some(Value::Text(text)) => text.clone(),
             _ => String::new(),
@@ -194,14 +214,14 @@ impl DialogController {
 
     /// Control `id`'s text as a program assigns it (`SetWindowTextW`): the
     /// caret goes to the end and the view to the start.
-    pub fn set_text(&mut self, dialog: DialogId, id: u16, text: &str) {
+    pub fn set_text(&mut self, dialog: DialogResourceId, id: u16, text: &str) {
         self.set_prop(dialog, id, Prop::Text, Value::Text(text.to_owned()));
         self.set_prop(dialog, id, Prop::Caret, Value::Int(text.chars().count() as i32));
         self.set_prop(dialog, id, Prop::Top, Value::Int(0));
     }
 
     /// `SetFocus` on edit `id` of `dialog` (none clears it), on top or not.
-    pub fn focus_control(&mut self, dialog: DialogId, id: Option<u16>) {
+    pub fn focus_control(&mut self, dialog: DialogResourceId, id: Option<u16>) {
         let now = self.now();
         let node = id.and_then(|id| self.control(dialog, id));
         if let Some(inst) = self.instance(dialog).map(|inst| inst.dialog) {
@@ -210,20 +230,20 @@ impl DialogController {
     }
 
     /// The control id of the edit holding `dialog`'s focus.
-    pub fn focused_control(&self, dialog: DialogId) -> Option<u16> {
+    pub fn focused_control(&self, dialog: DialogResourceId) -> Option<u16> {
         let node = self.gui.focus_in(self.instance(dialog)?.dialog)?;
         self.gui.id_of(node).and_then(|id| u16::try_from(id).ok())
     }
 
     /// Drops `dialog`'s capture and hover only; a box over it keeps its own.
-    pub fn drop_pointer_in(&mut self, dialog: DialogId) {
+    pub fn drop_pointer_in(&mut self, dialog: DialogResourceId) {
         if let Some(inst) = self.instance(dialog).map(|inst| inst.dialog) {
             self.gui.drop_pointer_in(inst);
         }
     }
 
     /// The root node of the topmost live instance of `id`.
-    pub fn root_in(&self, id: DialogId) -> Option<NodeId> {
+    pub fn root_in(&self, id: DialogResourceId) -> Option<NodeId> {
         self.gui.dialog_root(self.instance(id)?.dialog)
     }
 
@@ -235,7 +255,7 @@ impl DialogController {
     }
 
     /// [`Self::set_scale`] of dialog `id`, an overlay included.
-    pub fn set_scale_in(&mut self, id: DialogId, scale: crate::ui::shell::geom::ShellScale) {
+    pub fn set_scale_in(&mut self, id: DialogResourceId, scale: crate::ui::shell::geom::ShellScale) {
         if let Some(inst) = self.instance(id) {
             self.gui.set_dialog_scale(inst.dialog, scale);
         }
@@ -275,11 +295,11 @@ impl DialogController {
 
     /// Moves the GUI's new events to `pending`.
     fn collect(&mut self) {
-        self.pending.extend(self.gui.drain_events());
+        vera20k_gui::append_events(&mut self.pending, self.gui.drain_events());
     }
 
     /// Clear the stack and make `id` the sole active dialog (a shell transition).
-    pub fn reset_to(&mut self, id: DialogId) {
+    pub fn reset_to(&mut self, id: DialogResourceId) {
         while self.pop().is_some() {}
         self.pending.clear();
         self.push(id);
@@ -287,7 +307,7 @@ impl DialogController {
 
     /// Make `id` the active dialog, resetting only when it is not already on top,
     /// so an in-progress press survives across the gesture.
-    pub fn ensure_active(&mut self, id: DialogId) {
+    pub fn ensure_active(&mut self, id: DialogResourceId) {
         if self.top_id() != Some(id) {
             self.reset_to(id);
         }
@@ -295,12 +315,12 @@ impl DialogController {
 
     /// The screen's top dialog: overlays over it do not count, as a box
     /// kept beside the stack would not.
-    pub fn top_id(&self) -> Option<DialogId> {
+    pub fn top_id(&self) -> Option<DialogResourceId> {
         self.base().map(|i| i.id)
     }
 
     /// The topmost overlay, which takes the input over the screen.
-    pub fn overlay_id(&self) -> Option<DialogId> {
+    pub fn overlay_id(&self) -> Option<DialogResourceId> {
         self.stack.iter().rev().find(|i| i.overlay).map(|i| i.id)
     }
 
@@ -309,22 +329,22 @@ impl DialogController {
     }
 
     /// The node captured in the topmost live instance of `id`.
-    pub fn pressed_node_in(&self, id: DialogId) -> Option<NodeId> {
+    pub fn pressed_node_in(&self, id: DialogResourceId) -> Option<NodeId> {
         self.gui.pressed_in(self.instance(id)?.dialog)
     }
 
     /// The node under the pointer in the topmost live instance of `id`.
-    pub fn hovered_node_in(&self, id: DialogId) -> Option<NodeId> {
+    pub fn hovered_node_in(&self, id: DialogResourceId) -> Option<NodeId> {
         self.gui.hovered_in(self.instance(id)?.dialog)
     }
 
-    fn instance(&self, id: DialogId) -> Option<&Instance> {
+    fn instance(&self, id: DialogResourceId) -> Option<&Instance> {
         self.stack.iter().rev().find(|i| i.id == id)
     }
 
     /// Give every live instance of `id` fresh press/hover state (a new
     /// dialog instance in the same stack slot).
-    pub fn restart_instance(&mut self, id: DialogId) {
+    pub fn restart_instance(&mut self, id: DialogResourceId) {
         for inst in self.stack.iter().filter(|i| i.id == id) {
             self.gui.reset_pointer(inst.dialog);
         }
@@ -350,7 +370,8 @@ impl DialogController {
         }
     }
 
-    fn now(&self) -> u64 {
+    /// The widgets' clock (ms since the controller started).
+    pub fn now(&self) -> u64 {
         Instant::now().saturating_duration_since(self.epoch).as_millis() as u64
     }
 }
@@ -359,8 +380,8 @@ impl DialogController {
 mod tests {
     use super::*;
 
-    const A: DialogId = DialogId(0x00E2);
-    const B: DialogId = DialogId(0x0100);
+    const A: DialogResourceId = DialogResourceId(0x00E2);
+    const B: DialogResourceId = DialogResourceId(0x0100);
 
     #[test]
     fn keys_reach_the_top_dialogs_cancel_button_through_the_one_adapter() {
@@ -380,7 +401,7 @@ mod tests {
 
     #[test]
     fn an_overlay_stays_on_top_with_its_widgets_through_resets() {
-        let page = DialogId(0x00CF);
+        let page = DialogResourceId(0x00CF);
         let mut c = DialogController::default();
         c.ensure_active(A);
         c.push_overlay(page);
@@ -399,7 +420,7 @@ mod tests {
 
     #[test]
     fn push_over_base_pops_back_to_it() {
-        let modal = DialogId(0x0120);
+        let modal = DialogResourceId(0x0120);
         let mut c = DialogController::default();
         c.ensure_active(A);
         c.push(modal);

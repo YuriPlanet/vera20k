@@ -9,9 +9,9 @@
 use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::state::AppState;
 use crate::render::bit_font::BitFont;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
-use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::{BoxParts, control, menu_area, message_box_parts};
 use crate::util::time::Instant;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
@@ -136,7 +136,7 @@ fn wrap_width() -> u32 {
 }
 
 /// The open offer's change list, the box's layout and its dialog.
-fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogId)> {
+fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogResourceId)> {
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let shell_box = &message_box.shell_box;
     let layout = crate::app::frontend::shell_layout::shell_box_parts(state, shell_box);
@@ -149,7 +149,7 @@ fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogId)> {
 }
 
 /// The offer box's `List` node, if built.
-fn list_node(state: &AppState, dialog: DialogId) -> Option<NodeId> {
+fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let controller = &state.frontend.shell_controller;
     let gui = controller.gui();
     let children = gui.tree().children(controller.root_in(dialog)?).ok()?;
@@ -226,9 +226,10 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
         return false;
     };
     let controller = &mut state.frontend.shell_controller;
+    let now = controller.now();
     let gui = controller.gui_mut();
     let _ = gui.set(node, Prop::WheelStep, Value::Int(1));
-    gui.wheel_list(node, (lines * 3.0) as i32);
+    gui.wheel_list(node, (lines * 3.0) as i32, now);
     gui.drain_events();
     true
 }

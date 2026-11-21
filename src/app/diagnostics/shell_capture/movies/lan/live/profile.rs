@@ -172,7 +172,7 @@ impl SetupComboInput {
                 let bar = geometry.scrollbar.context("setup popup scrollbar")?;
                 let down = index >= popup.first + popup.visible_rows;
                 let (x, y) =
-                    crate::ui::shell::list::scrollbar_arrow_origins(bar, geometry.metrics.arrow_h)
+                    vera20k_gui::shell::list::scrollbar_arrow_origins(bar, geometry.metrics.arrow_h)
                         [usize::from(down)];
                 setup_click(
                     state,

@@ -9,7 +9,7 @@ use vera20k_gui::{Gui, InputEvent, MouseButton, NodeId, NodeKind, NodeSpec};
 
 use crate::app::{App, AppState};
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::page::{self, PageEvent};
 
@@ -35,7 +35,7 @@ pub(crate) fn shell_event(state: &AppState, down: Option<bool>) -> InputEvent {
 /// order.
 pub(crate) fn route(
     ui: &mut DialogController,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     nodes: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
     sync: impl FnOnce(&mut Gui, NodeId),
@@ -61,7 +61,7 @@ pub(crate) fn no_sync(_: &mut Gui, _: NodeId) {}
 /// (`0x0060B000`) and the status line 0x695 in the same places; its own
 /// controls are a [`NodeSpec`] kept on its layout's rects.
 pub(crate) struct InGameDialog {
-    pub(crate) id: DialogId,
+    pub(crate) id: DialogResourceId,
     /// Title 0x694's caption, when it shows one.
     pub(crate) title: Option<(&'static str, &'static str)>,
     /// The lower right-panel button's id and caption.

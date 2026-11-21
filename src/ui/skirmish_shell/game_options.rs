@@ -7,10 +7,10 @@ use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::rules::personal_rules::{SUPERWEAPON_LIMIT_MAX, admitted_superweapon_limit};
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 use super::SkirmishShellLayout;
 
@@ -83,7 +83,7 @@ impl GameOptionsControl {
 }
 
 /// The open box over the page in the shell controller.
-pub const DIALOG: DialogId = DialogId(0x7103);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x7103);
 
 /// The open box: the rules it shows. Its widgets hold the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,7 +138,11 @@ pub fn sync(
                     NodeSpec::new(NodeKind::Checkbox)
                         .with(Prop::Text, Value::Text(crate::i18n::tr(label)))
                 }
-                GameOptionsControl::Ok => NodeSpec::new(NodeKind::Button),
+                // VERA's box closes on Enter or Escape as on OK, as the
+                // room's does.
+                GameOptionsControl::Ok => NodeSpec::new(NodeKind::Button)
+                    .with(Prop::Default, Value::Bool(true))
+                    .with(Prop::Cancel, Value::Bool(true)),
             };
             let spec = spec.id(control as i32);
             match control.status_help_key() {
@@ -219,6 +223,26 @@ pub fn pointer(
         }
     }
     (cues, close)
+}
+
+/// A key over the open box, which takes every key: true when it activated
+/// OK (Enter or Escape) and the box closes.
+pub fn key(
+    controller: &mut DialogController,
+    state: &mut super::SkirmishShellState,
+    layout: &GameOptionsLayout,
+    key: vera20k_gui::Key,
+) -> bool {
+    let Some(open) = state.game_options.as_ref() else {
+        return false;
+    };
+    if sync(controller, open, layout).is_none() {
+        return false;
+    }
+    controller.on_input(vera20k_gui::InputEvent::Key(key));
+    let raw = controller.drain_events();
+    page::page_events(controller.gui(), raw)
+        .contains(&PageEvent::Activated(GameOptionsControl::Ok as u16))
 }
 
 /// The box's control under the pointer, for its status help.

@@ -265,7 +265,7 @@ pub(crate) fn render_coop_score(
     let gui = controller.gui();
     let edit_node = controller.control(COOP_SCORE_PAGE.dialog, CHAT);
     let mut edit = edit_node.map_or_else(Default::default, |node| {
-        crate::ui::shell::page::new_edit(gui, node)
+        gui.edit_state(node).unwrap_or_default()
     });
     edit.focused = controller.focused_control(COOP_SCORE_PAGE.dialog) == Some(CHAT);
     let caret = edit.focused;
@@ -288,8 +288,8 @@ pub(crate) fn render_coop_score(
         .and_then(|node| gui.list_view(node));
     let top = log.map_or(0, |log| log.top);
     let pressed = log.and_then(|log| log.pressed);
-    let metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
-    let chat = crate::ui::shell::list::ShellListGeometry::new(
+    let metrics = vera20k_gui::shell::list::ListMetrics::scaled(scale);
+    let chat = vera20k_gui::shell::list::ShellListGeometry::new(
         chat_log_rect,
         ui.chat.lines.len(),
         top,

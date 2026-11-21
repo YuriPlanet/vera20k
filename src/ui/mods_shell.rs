@@ -6,13 +6,13 @@
 //!
 //! The rows and the choice belong to `app::mods`; this is the page's shape.
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::list::ROW_HEIGHT;
+use vera20k_gui::shell::list::ROW_HEIGHT;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 /// Not a retail dialog: their ids stop near `0xBC7`.
-pub(crate) const DIALOG: DialogId = DialogId(0x7E02);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x7E02);
 pub(crate) const USE: u16 = 0x7E31;
 pub(crate) const OPEN_FOLDER: u16 = 0x7E32;
 pub(crate) const BACK: u16 = 0x7E33;
@@ -125,7 +125,7 @@ vera20k_gui::scaled_rects!(ModsLayout {
 mod tests {
     use super::*;
     use crate::ui::shell::geom::fit_window;
-    use crate::ui::shell::list::{ListMetrics, list_box_geometry};
+    use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 
     /// The page's own parts stay left of the right panel and above the lower
     /// strip at both retail sizes, one under the other, and the list shows

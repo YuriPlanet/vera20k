@@ -38,7 +38,7 @@ pub use state::{
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PLAYERS_RANGE, RandomMapPreset,
     RandomMapSetupModalState, SAVED_SEED_DESCRIPTION_MAX_UNITS, SEARCH_MAX_CHARS, SETUP_COMBO_ROWS,
-    SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedDescriptionEdit, SavedSeedOutcome,
+    SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedOutcome,
     SavedSeedPrompt, SavedSeedPromptPurpose, SetupCombo, SetupComboItem, SkirmishAiRowType,
     SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice, SkirmishHoverTarget,
     SkirmishModeSelection, SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat,

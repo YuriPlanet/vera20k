@@ -11,7 +11,7 @@ use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
 use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};

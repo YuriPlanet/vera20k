@@ -7,12 +7,11 @@ use std::collections::VecDeque;
 use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::shell::page;
 
 pub(crate) const CREATE: u16 = 0x6CC;
 pub(crate) const JOIN: u16 = 0x6CD;
@@ -30,7 +29,7 @@ pub(crate) const OBSERVER_IMAGE: u16 = 0x75F;
 pub(crate) const OBSERVER_TOGGLE: u16 = 0x760;
 
 pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0xBB),
+    dialog: DialogResourceId(0xBB),
     title_key: "GUI:Lobby",
     stacked: &[
         MenuPageButtonSpec::new(CREATE, 122, "GUI:New", "STT:LobbyButtonNew"),
@@ -178,33 +177,22 @@ pub(crate) enum LanSelectionChange {
 }
 
 /// The gui inputs a key press or typed text makes in a focused NewEdit
-/// (`0x00614B30`): its editing keys and Enter, and typed text one character
-/// at a time, so the parent's EN_CHANGE handler runs after each one as after
-/// each WM_CHAR. Escape (the edit consumes it) and Tab (the dialog's) make
-/// none.
-pub(crate) fn edit_inputs(
-    code: Option<winit::keyboard::KeyCode>,
-    text: Option<&str>,
-) -> Vec<InputEvent> {
-    match code.and_then(|code| crate::ui::shell::controller::gui_key(code, false)) {
-        Some(Key::Escape | Key::Tab | Key::BackTab) => Vec::new(),
-        Some(key) => vec![InputEvent::Key(key)],
-        None => {
-            let chars = text.unwrap_or_default().chars();
-            chars.map(|c| InputEvent::Text(c.to_string())).collect()
-        }
-    }
+/// (`0x00614B30`), one per WM_CHAR: Escape (the edit consumes it) and Tab
+/// (the dialog's) make none.
+fn edit_inputs(code: Option<winit::keyboard::KeyCode>, text: Option<&str>) -> Vec<InputEvent> {
+    let inputs = crate::ui::shell::controller::gui_inputs(code, false, text);
+    inputs.into_iter().filter(|e| !matches!(e, InputEvent::Key(Key::Escape | Key::Tab | Key::BackTab))).collect()
 }
 
 /// The chat edit `0x540`'s EN_CHANGE: `0x005EDD00`'s length cap
 /// ([`apply_chat_length_limit`]) on its text. The hosts run it after every
 /// input the edit takes.
 pub(crate) fn cap_chat_edit(gui: &mut Gui, node: NodeId) {
-    let mut edit = page::new_edit(gui, node);
+    let mut edit = gui.edit_state(node).unwrap_or_default();
     let before = edit.units.len();
     apply_chat_length_limit(&mut edit);
     if edit.units.len() != before {
-        page::store_edit(gui, node, &edit);
+        let _ = gui.set_edit_state(node, &edit);
     }
 }
 
@@ -213,11 +201,11 @@ pub(crate) fn cap_chat_edit(gui: &mut Gui, node: NodeId) {
 /// units and clears the edit. The line read, unless it holds no more than
 /// the line end.
 pub(crate) fn submit_chat_edit(gui: &mut Gui, node: NodeId) -> Option<Vec<u16>> {
-    let mut edit = page::new_edit(gui, node);
+    let mut edit = gui.edit_state(node).unwrap_or_default();
     edit.append_enter_line_end();
     apply_chat_length_limit(&mut edit);
     let sent = edit.wide_text(111);
-    page::store_edit(gui, node, &Default::default());
+    let _ = gui.set_edit_state(node, &Default::default());
     (sent.len() > 2).then_some(sent)
 }
 
@@ -226,7 +214,7 @@ pub(crate) fn submit_chat_edit(gui: &mut Gui, node: NodeId) -> Option<Vec<u16>> 
 /// its text after each; the line Enter sends.
 pub(crate) fn chat_key(
     controller: &mut DialogController,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     code: Option<winit::keyboard::KeyCode>,
     text: Option<&str>,
 ) -> Option<Vec<u16>> {
@@ -782,7 +770,7 @@ mod tests {
         let mut controller = DialogController::default();
         controller.push(PAGE.dialog);
         let root = controller.root_in(PAGE.dialog).unwrap();
-        page::ensure_built(controller.gui_mut(), root, spec);
+        crate::ui::shell::page::ensure_built(controller.gui_mut(), root, spec);
         controller.focus_control(PAGE.dialog, Some(CHAT));
         (controller, LanLobbyState::new("Tester"))
     }

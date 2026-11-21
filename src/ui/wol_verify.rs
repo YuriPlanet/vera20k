@@ -9,9 +9,9 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::shell::page::{self, PageEvent};
@@ -26,7 +26,7 @@ pub const MODERN_SHOW_DELAY: std::time::Duration = std::time::Duration::from_sec
 /// `0x0084A1F0`: node `i`'s checkbox, stacked by `i` in the template.
 pub const BOXES: [u16; 8] = [0x769, 0x761, 0x764, 0x762, 0x765, 0x768, 0x766, 0x767];
 
-const DIALOG: DialogId = DialogId(0x0130);
+const DIALOG: DialogResourceId = DialogResourceId(0x0130);
 /// The list whose scrollbar moves the boxes past eight nodes.
 const LIST: u16 = 0x0200;
 /// Node `node`'s box widget (by node, not by template id: past eight nodes

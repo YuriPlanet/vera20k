@@ -18,16 +18,16 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 
-pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
-pub(crate) const LOCALE_DIALOG: DialogId = DialogId(0x00FE);
-pub(crate) const ADD_BUDDY_DIALOG: DialogId = DialogId(0x0122);
+pub(crate) const AUTO_LOGIN_DIALOG: DialogResourceId = DialogResourceId(0x0112);
+pub(crate) const LOCALE_DIALOG: DialogResourceId = DialogResourceId(0x00FE);
+pub(crate) const ADD_BUDDY_DIALOG: DialogResourceId = DialogResourceId(0x0122);
 /// IDOK/IDCANCEL: Yes/No on `0x112` and `0x122`, OK/Cancel on `0xFE`.
 pub(crate) const ACCEPT: u16 = 0x0001;
 pub(crate) const DECLINE: u16 = 0x0002;
@@ -72,7 +72,7 @@ pub(crate) const DO_NOT_ASK_KEY: &str = "GUI:DoNotAsk";
 pub(crate) const LOCALE_LABEL_KEY: &str = "GUI:YourLocation";
 
 /// Status help of the two pages' children (executed `0x006040B0`).
-pub(crate) fn tooltip_key(dialog: DialogId, control: u16) -> Option<&'static str> {
+pub(crate) fn tooltip_key(dialog: DialogResourceId, control: u16) -> Option<&'static str> {
     match (dialog, control) {
         (AUTO_LOGIN_DIALOG, DO_NOT_ASK) => Some("STT:WOLAutoLoginDoNotAsk"),
         (AUTO_LOGIN_DIALOG, _) => AUTO_LOGIN_PAGE.button(control).map(|spec| spec.tooltip_key),
@@ -185,7 +185,7 @@ pub(crate) const TEXT: u16 = 0xFFFF;
 /// A persona page's widgets: the column's buttons, the centred question and
 /// Don't Ask (`OwnerDraw_CheckBox 0x006163A0`, toggled on its icon's press),
 /// or the caption and the locale list (`0x00618D40`, every press selects).
-pub(crate) fn spec(dialog: DialogId) -> NodeSpec {
+pub(crate) fn spec(dialog: DialogResourceId) -> NodeSpec {
     let text = NodeSpec::new(NodeKind::Text).id(TEXT.into());
     let (text, control) = if dialog == LOCALE_DIALOG {
         let list = NodeSpec::new(NodeKind::List);
@@ -225,7 +225,7 @@ fn align(align: ShellAlign) -> Value {
     Value::Int(i32::from(align.0))
 }
 
-fn control_id(dialog: DialogId) -> u16 {
+fn control_id(dialog: DialogResourceId) -> u16 {
     if dialog == LOCALE_DIALOG {
         LOCALE_LIST
     } else {
@@ -238,7 +238,7 @@ fn control_id(dialog: DialogId) -> u16 {
 /// (`0x0060C0C0`).
 #[derive(Debug, Clone)]
 pub(crate) struct WolPersonaLayout {
-    pub(crate) dialog: DialogId,
+    pub(crate) dialog: DialogResourceId,
     pub(crate) page: MenuPageLayout,
     /// The question or the list's caption [`TEXT`], and Don't Ask or the
     /// list `0x3F0`.
@@ -246,7 +246,7 @@ pub(crate) struct WolPersonaLayout {
 }
 
 impl WolPersonaLayout {
-    pub(crate) fn spec(dialog: DialogId) -> &'static MenuPageSpec {
+    pub(crate) fn spec(dialog: DialogResourceId) -> &'static MenuPageSpec {
         match dialog {
             LOCALE_DIALOG => &LOCALE_PAGE,
             ADD_BUDDY_DIALOG => &ADD_BUDDY_PAGE,
@@ -254,7 +254,7 @@ impl WolPersonaLayout {
         }
     }
 
-    pub(crate) fn new(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
+    pub(crate) fn new(dialog: DialogResourceId, width: i32, height: i32, scale: ShellScale) -> Self {
         let section = format!("{:#X}", dialog.0);
         let (page, rects) =
             layout_data::menu_page(Self::spec(dialog), &section, scale, width, height);

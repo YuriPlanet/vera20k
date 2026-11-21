@@ -11,7 +11,7 @@ use crate::map::rmg::randomize::{
 };
 use crate::map::rmg::settings::RmgSettings;
 use crate::ui::shell::static_reveal::DialogStatics;
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 use super::super::layout::{AdvancedField, RandomMapSetupControl};
 use super::choose_map::ChooseMapSelection;
@@ -799,7 +799,9 @@ impl RandomMapSetupModalState {
     }
 
     /// Scroll the Advanced sliders by arrow-button steps, clamped to the
-    /// seven-row window. Returns whether the visible rows changed.
+    /// seven-row window. Returns whether the visible rows changed. The
+    /// Advanced scrollbar widget steps through [`Self::set_advanced_scroll`].
+    #[cfg(test)]
     pub fn scroll_advanced(&mut self, delta: i32) -> bool {
         let next = (i32::try_from(self.advanced_page).unwrap_or(i32::MAX) + delta)
             .clamp(0, AdvancedField::PAGE_COUNT as i32 - 1) as usize;
@@ -1518,7 +1520,7 @@ mod tests {
             SetupCombo::Resources.row(),
             RESOURCE_ITEMS.len(),
         );
-        let extreme = list.y + 3 * crate::ui::shell::combobox::COMBO_DROPDOWN_ROW_H + 10;
+        let extreme = list.y + 3 * vera20k_gui::shell::combobox::COMBO_DROPDOWN_ROW_H + 10;
         click(&mut ui, &mut state, &layout, (list.x + 4, extreme));
         assert_eq!(open_combo(&ui, &state), None);
         assert_eq!(state.options.resources, 3);

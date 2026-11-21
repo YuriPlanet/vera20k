@@ -11,7 +11,7 @@ use crate::app::AppState;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{WolPageLayout, WolPageReceivedLayout};
 use crate::ui::wol_page::*;
@@ -68,7 +68,7 @@ fn paint_box(
 /// the transcript, with the statics and rows its model keeps.
 fn paint_widget_box(
     state: &AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     rect: RectPx,
     text_of: &dyn Fn(i32) -> Option<String>,
     rows_of: &dyn Fn(i32) -> Option<HostRows>,

@@ -6,7 +6,7 @@ use crate::app::input::dialog_page;
 use crate::app::AppState;
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{control, message_box_parts};
 use crate::ui::shell::page::PageEvent;
@@ -14,7 +14,7 @@ use vera20k_gui::{InputEvent, NodeKind, NodeSpec, Prop, Value};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
-pub(crate) const DIALOG: DialogId = DialogId(0xCE);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0xCE);
 pub(crate) const BODY: (&str, &str) = ("TXT_OUT_OF_SYNC", "Reconnection Error!");
 pub(crate) const STOP: (&str, &str) = ("TXT_STOP", "Stop");
 

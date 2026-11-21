@@ -12,7 +12,7 @@ use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value}
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
@@ -20,8 +20,8 @@ use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSp
 use crate::ui::shell::page;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0116);
-pub(crate) const ADD_DIALOG: DialogId = DialogId(0x0115);
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0116);
+pub(crate) const ADD_DIALOG: DialogResourceId = DialogResourceId(0x0115);
 pub(crate) const CREATE: u16 = 0x062B;
 pub(crate) const JOIN: u16 = 0x062D;
 pub(crate) const PAGE_BUTTON: u16 = 0x05C2;

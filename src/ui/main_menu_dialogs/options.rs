@@ -1569,7 +1569,7 @@ mod tests {
     use crate::assets::csf_file::CsfFile;
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
     use crate::ui::shell::geom::RectPx;
-    use crate::ui::shell::trackbar::TrackbarHold;
+    use vera20k_gui::shell::trackbar::TrackbarHold;
 
     /// The frame's cues and events.
     fn drained(state: &mut OptionsDialogState) -> (Vec<PageCue>, Vec<LauncherOptionsEvent>) {

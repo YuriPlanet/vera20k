@@ -395,6 +395,7 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
 fn apply(state: &mut AppState, events: Vec<PageEvent>) {
     for event in super::dialog_page::play_cues(state, events) {
         match event {
+            PageEvent::Activated(CANCEL) => close(state, KeyboardExit::Cancel),
             PageEvent::Activated(id) => {
                 if let Some(KeyboardControl::Button(button)) = KeyboardControl::from_id(id) {
                     activate(state, button);
@@ -424,7 +425,8 @@ pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
 
 /// One pointer message on A3 (`down`: `None` moves). The category combo
 /// opens on a press anywhere on its face; its open list takes every press,
-/// and closes on it. Back, Assign and Reset All are owner-draw
+/// and closes on it. A press on the face or the capture field moves the
+/// focus there. Back, Assign and Reset All are owner-draw
 /// (GUIMainButtonSound, 0x0061376B); a command row press plays the generic
 /// click.
 fn pointer(state: &mut AppState, down: Option<bool>) {
@@ -435,7 +437,6 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
     };
-    let was_open = dialog.category_open();
     let rows = Value::Rect(layout.category_rows(dialog.categories.len()));
     dialog.ui.set_scale(layout.scale);
     let events = super::dialog_page::route(
@@ -450,13 +451,6 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
         },
         super::dialog_page::event_at(x, y, down),
     );
-    if down == Some(true) && !was_open {
-        match super::dialog_page::hit(&dialog.ui, x, y).and_then(KeyboardControl::from_id) {
-            Some(KeyboardControl::Category) => dialog.capture_focused = false,
-            Some(KeyboardControl::Capture) => dialog.capture_focused = true,
-            _ => {}
-        }
-    }
     apply(state, events);
 }
 
@@ -477,46 +471,58 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
     };
-    let hovered = super::dialog_page::hovered(&dialog.ui);
     if dialog.category_open() {
-        // The wheel steps the selection and closes the list, silently.
+        // The wheel steps the selection and closes the list, silently: the
+        // combo's own step (CBN_SELCHANGE without a close cue), which an open
+        // gui drop-down does not do (`wheel_popup` scrolls its rows).
         let next = (dialog.category as i32 - lines.signum() as i32)
             .clamp(0, dialog.categories.len().saturating_sub(1) as i32) as usize;
         dialog.select_category(next);
-    } else if hovered == Some(KeyboardControl::Commands.id()) {
-        let list = dialog.list();
-        let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.scale);
-        let max_top = list.geometry(layout.commands, metrics).max_top;
-        let top = (list.top as i32 - (lines * 3.0) as i32).clamp(0, max_top as i32);
-        dialog.set_top(top as usize);
+        return;
     }
+    // The hovered command list takes three rows a notch.
+    dialog.ui.set_scale(layout.scale);
+    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel {
+        lines: (lines * 3.0) as i32,
+    });
+    dialog.ui.drain_events();
 }
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
     };
-    // The open category list takes the keys: arrows, Enter and Escape.
-    if dialog.category_open() {
-        let key = match event.logical_key {
-            Key::Named(NamedKey::ArrowUp) => Some(vera20k_gui::Key::Up),
-            Key::Named(NamedKey::ArrowDown) => Some(vera20k_gui::Key::Down),
-            Key::Named(NamedKey::Enter) => Some(vera20k_gui::Key::Enter),
-            Key::Named(NamedKey::Escape) => Some(vera20k_gui::Key::Escape),
-            _ => None,
+    let code = match event.physical_key {
+        winit::keyboard::PhysicalKey::Code(code) => Some(code),
+        _ => None,
+    };
+    let gui_key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false));
+    if event.state.is_pressed()
+        && let Some(key) = gui_key
+    {
+        // The open category list takes the arrows, Enter and Escape (with
+        // its close cue); otherwise Escape reaches the hidden IDCANCEL.
+        let open = dialog.category_open();
+        let consumed = if open {
+            let now = dialog.ui.now();
+            dialog.ui.gui_mut().key_popup(key, now);
+            true
+        } else {
+            dialog.ui.on_input(vera20k_gui::InputEvent::Key(key))
         };
-        if let Some(key) = key.filter(|_| event.state.is_pressed()) {
-            dialog.ui.gui_mut().key_popup(key);
-            let events = dialog.ui.gui_mut().drain_events();
-            let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
-            apply(state, events);
+        let mut events = dialog.ui.drain_events();
+        events.extend(dialog.ui.gui_mut().drain_events());
+        let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
+        apply(state, events);
+        if consumed {
+            return;
         }
+    } else if dialog.category_open() {
         return;
     }
-    if event.state.is_pressed() && event.logical_key == Key::Named(NamedKey::Escape) {
-        close(state, KeyboardExit::Cancel);
+    let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
-    }
-    if !dialog.capture_focused {
+    };
+    if !dialog.capture_focused() {
         return;
     }
     let unmodified = event.key_without_modifiers();

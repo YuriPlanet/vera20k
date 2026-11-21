@@ -13,7 +13,7 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::controller::DialogController;
 use super::descriptor::{
-    AnchorRule, BACK_BUTTON, BUTTON, DialogId, HEADING_ANCHOR, MONITOR_ANCHOR,
+    AnchorRule, BACK_BUTTON, BUTTON, DialogResourceId, HEADING_ANCHOR, MONITOR_ANCHOR,
 };
 use super::geom::{
     RectPx, RightPanelRects, SHELL_BASE_H, SHELL_BASE_W, ScaledRects, ShellScale, center_offset,
@@ -80,7 +80,7 @@ impl MenuPageButtonSpec {
 /// Static description of one right-panel menu page dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuPageSpec {
-    pub dialog: DialogId,
+    pub dialog: DialogResourceId,
     /// Heading static `0x694` caption.
     pub title_key: &'static str,
     /// Stacked right-panel buttons in resource order.
@@ -124,7 +124,7 @@ pub fn hover_target(id: u16, help_key: &str) -> NodeSpec {
 /// runtime enable state (a disabled control still hovers).
 pub fn sync_nodes(
     controller: &mut DialogController,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     nodes: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
     enabled: &[(u16, bool)],
@@ -141,12 +141,12 @@ pub fn sync_nodes(
 }
 
 /// The control `dialog`'s live instance holds captured.
-pub fn pressed_id(controller: &DialogController, dialog: DialogId) -> Option<u16> {
+pub fn pressed_id(controller: &DialogController, dialog: DialogResourceId) -> Option<u16> {
     node_id(controller, controller.pressed_node_in(dialog))
 }
 
 /// The control under the pointer in `dialog`'s live instance.
-pub fn hovered_id(controller: &DialogController, dialog: DialogId) -> Option<u16> {
+pub fn hovered_id(controller: &DialogController, dialog: DialogResourceId) -> Option<u16> {
     node_id(controller, controller.hovered_node_in(dialog))
 }
 
@@ -157,7 +157,7 @@ fn node_id(controller: &DialogController, node: Option<vera20k_gui::NodeId>) -> 
 /// The status help of the control under the pointer in `dialog`'s live
 /// instance (enable-unfiltered). A trackbar holding the mouse keeps its own:
 /// no hit test runs until its release (`0x00622CCB`).
-pub fn hovered_help(controller: &DialogController, dialog: DialogId) -> Option<String> {
+pub fn hovered_help(controller: &DialogController, dialog: DialogResourceId) -> Option<String> {
     let gui = controller.gui();
     let held = controller
         .pressed_node_in(dialog)
@@ -254,7 +254,7 @@ impl MenuPageLayout {
         self.warning_monitor = scale.scale_rect(self.warning_monitor);
         self.status_help = scale.scale_rect(self.status_help);
         self.lower_strip = scale.scale_rect(self.lower_strip);
-        self.right_panel = scale.scale_panel(self.right_panel);
+        self.right_panel = self.right_panel.scaled(scale);
         self.buttons = self.buttons.scaled_rects(scale);
         self
     }

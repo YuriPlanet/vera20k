@@ -806,7 +806,7 @@ impl RestartCapture {
                     );
                     ensure!(
                         state.frontend.shell_controller.top_id()
-                            == Some(crate::ui::shell::descriptor::DialogId(0xCE)),
+                            == Some(crate::ui::shell::descriptor::DialogResourceId(0xCE)),
                         "MapSelect notice has wrong controller template"
                     );
                     ensure!(

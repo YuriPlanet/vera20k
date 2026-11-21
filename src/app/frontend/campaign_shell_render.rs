@@ -21,7 +21,7 @@ use crate::render::shell_paint::{
 use crate::render::shell_text::ShellAlign;
 use crate::ui::campaign_shell::{CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX};
 use crate::ui::shell::geom::{RectPx, centred_in_window};
-use crate::ui::shell::trackbar::thumb_left;
+use vera20k_gui::shell::trackbar::thumb_left;
 
 /// Frame counts of the two emblems (FSALG / FSSLG, or the 640 set).
 pub(crate) fn emblem_frame_counts(state: &AppState) -> [usize; 2] {

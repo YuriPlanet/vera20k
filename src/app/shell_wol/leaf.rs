@@ -10,14 +10,14 @@ use vera20k_gui::{NodeId, NodeSpec, Prop};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::skirmish_shell_render::gui_paint;
 use crate::app::{App, AppState};
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::page::{self, PageEvent};
 
 /// A WOL page's art loader: its background shape and palette (loaded only at
 /// 800 wide, [`shell_layout::art_key_screen_width`]) and its PCX images.
 /// `0xFE` and `0x122` load none.
-fn art_files(dialog: DialogId) -> Option<((&'static str, &'static str), Vec<&'static str>)> {
+fn art_files(dialog: DialogResourceId) -> Option<((&'static str, &'static str), Vec<&'static str>)> {
     use crate::ui::{wol_buddy, wol_persona, wol_shell};
     let files = match dialog {
         // 0x0072C7E0
@@ -69,7 +69,7 @@ fn art_files(dialog: DialogId) -> Option<((&'static str, &'static str), Vec<&'st
 }
 
 /// Loads `dialog`'s art once (its loader above); whether it is loaded.
-pub(crate) fn open_art(state: &mut AppState, dialog: DialogId) -> bool {
+pub(crate) fn open_art(state: &mut AppState, dialog: DialogResourceId) -> bool {
     if art(state, dialog).is_some() {
         return true;
     }
@@ -94,7 +94,7 @@ pub(crate) fn open_art(state: &mut AppState, dialog: DialogId) -> bool {
 /// `dialog`'s loaded art.
 pub(crate) fn art(
     state: &AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
 ) -> Option<&crate::render::main_menu_shell_chrome::WolPageArt> {
     let arts = &state.frontend.wol_art;
     arts.iter()
@@ -103,14 +103,14 @@ pub(crate) fn art(
 }
 
 /// Frees `dialog`'s art (its page's teardown).
-pub(crate) fn free_art(state: &mut AppState, dialog: DialogId) {
+pub(crate) fn free_art(state: &mut AppState, dialog: DialogResourceId) {
     state.frontend.wol_art.retain(|(id, _)| *id != dialog);
 }
 
 /// `dialog`'s root while it takes the input: the screen's top dialog, or the top overlay over it.
-pub(crate) fn root(state: &AppState, dialog: DialogId) -> Option<NodeId> {
+pub(crate) fn root(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let controller = &state.frontend.shell_controller;
-    let takes = |top: Option<DialogId>| top == Some(dialog);
+    let takes = |top: Option<DialogResourceId>| top == Some(dialog);
     controller
         .root_in(dialog)
         .filter(|_| takes(controller.top_id()) || takes(controller.overlay_id()))
@@ -119,7 +119,7 @@ pub(crate) fn root(state: &AppState, dialog: DialogId) -> Option<NodeId> {
 /// Builds `dialog`'s widgets once and puts them on the layout; the root.
 pub(super) fn sync(
     state: &mut AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     scale: ShellScale,
     spec: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
@@ -137,7 +137,7 @@ pub(super) fn sync(
 /// itself ([`scroll_edit`]).
 pub(super) fn place(
     state: &mut AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     scale: ShellScale,
     spec: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
@@ -167,12 +167,12 @@ pub(super) fn scroll_edit(state: &mut AppState, node: NodeId, scale: ShellScale)
 }
 
 /// Control `id`'s text under `dialog`'s root ("" when it has none).
-pub(crate) fn text(state: &AppState, dialog: DialogId, id: u16) -> String {
+pub(crate) fn text(state: &AppState, dialog: DialogResourceId, id: u16) -> String {
     state.frontend.shell_controller.text(dialog, id)
 }
 
 /// Whether control `id` under `dialog`'s root is there and enabled.
-pub(crate) fn enabled(state: &AppState, dialog: DialogId, id: u16) -> bool {
+pub(crate) fn enabled(state: &AppState, dialog: DialogResourceId, id: u16) -> bool {
     let controller = &state.frontend.shell_controller;
     controller.control(dialog, id).is_some() && controller.flag(dialog, id, Prop::Enabled, true)
 }
@@ -185,7 +185,7 @@ pub(crate) fn focused(state: &AppState) -> Option<u16> {
 }
 
 /// `SetFocus` on edit `id` under `dialog`'s root (`None` clears the focus).
-pub(super) fn focus(state: &mut AppState, dialog: DialogId, id: Option<u16>) {
+pub(super) fn focus(state: &mut AppState, dialog: DialogResourceId, id: Option<u16>) {
     state.frontend.shell_controller.focus_control(dialog, id);
 }
 
@@ -235,13 +235,13 @@ pub(super) fn poll(state: &mut AppState, open: bool) -> Option<crate::util::time
 }
 
 /// The hovered control's status help on `dialog`, under a box too.
-pub(crate) fn status_key(state: &AppState, dialog: DialogId) -> Option<&str> {
+pub(crate) fn status_key(state: &AppState, dialog: DialogResourceId) -> Option<&str> {
     let controller = &state.frontend.shell_controller;
     page::hovered_key_in(controller.gui(), controller.root_in(dialog)?)
 }
 
 /// The widgets under `dialog`'s root through the generic painter.
-pub(crate) fn paint(state: &AppState, dialog: DialogId, scale: ShellScale) -> gui_paint::GuiPaint {
+pub(crate) fn paint(state: &AppState, dialog: DialogResourceId, scale: ShellScale) -> gui_paint::GuiPaint {
     let controller = &state.frontend.shell_controller;
     match controller.root_in(dialog) {
         Some(root) => gui_paint::paint_gui_children(state, controller.gui(), root, scale),

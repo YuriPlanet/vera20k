@@ -21,7 +21,7 @@ use vera20k_gui::{
 
 use crate::i18n::tr;
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{
     RectPx, ShellScale, center_offset, child_window, dlu_rect, right_panel_rects,
 };
@@ -205,7 +205,7 @@ const COLUMN: &[MenuPageButtonSpec] = &[
 /// tiles under Keyboard, and VERA's Mods the one after them, where the build
 /// has mods ([`HAS_MODS`]). Button captions come from the dialog's own labels.
 pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x00D5),
+    dialog: DialogResourceId(0x00D5),
     title_key: "GUI:OptionsMenu",
     stacked: if HAS_MODS {
         COLUMN
@@ -1245,7 +1245,7 @@ impl OptionsDialogState {
         window: RectPx,
         scale: ShellScale,
     ) -> i32 {
-        crate::ui::shell::trackbar::thumb_left_at(
+        vera20k_gui::shell::trackbar::thumb_left_at(
             i32::from(self.trackbar_position(id)),
             window,
             id.plaque_reserve(),
@@ -1257,10 +1257,10 @@ impl OptionsDialogState {
     /// The slider holding the mouse, and whether it follows the pointer.
     pub(crate) fn shell_trackbar_hold(
         &self,
-    ) -> Option<crate::ui::shell::trackbar::TrackbarHold<LauncherTrackbarId>> {
+    ) -> Option<vera20k_gui::shell::trackbar::TrackbarHold<LauncherTrackbarId>> {
         self.shell
             .held_slider()
-            .map(|id| crate::ui::shell::trackbar::TrackbarHold {
+            .map(|id| vera20k_gui::shell::trackbar::TrackbarHold {
                 id,
                 dragging: self.shell.gui.dragging(),
             })
@@ -1315,7 +1315,7 @@ mod tests {
     use crate::ui::shell::pause_menu::{
         PauseMenuButton, PauseMenuLayout, PauseMenuTemplate, pause_menu_layout,
     };
-    use crate::ui::shell::trackbar::TrackbarHold;
+    use vera20k_gui::shell::trackbar::TrackbarHold;
 
     fn state() -> OptionsDialogState {
         OptionsDialogState::new(

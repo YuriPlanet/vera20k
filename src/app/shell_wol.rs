@@ -135,7 +135,7 @@ fn send_wol_preferences(state: &mut AppState) {
 use super::{App, AppState};
 use crate::app::frontend::shell_layout;
 use crate::app::shell_route::ShellRoute;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page::PageEvent;
 use crate::ui::wol_login::{WolCredential, WolLoginState};
 use crate::ui::wol_shell::{
@@ -143,7 +143,7 @@ use crate::ui::wol_shell::{
 };
 
 /// The custom lobby `0x113`'s controller identity.
-pub(crate) const WOL_LOBBY_DIALOG: DialogId = DialogId(0x0113);
+pub(crate) const WOL_LOBBY_DIALOG: DialogResourceId = DialogResourceId(0x0113);
 
 /// What one WOL page is showing.
 #[derive(Debug, Clone)]
@@ -944,7 +944,7 @@ impl App {
         state
             .frontend
             .shell_controller
-            .reset_to(crate::ui::shell::descriptor::DialogId(0x00E2));
+            .reset_to(crate::ui::shell::descriptor::DialogResourceId(0x00E2));
     }
 
     pub(super) fn commit_wol_login_close(state: &mut AppState, result: u16) {

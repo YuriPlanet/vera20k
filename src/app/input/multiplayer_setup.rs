@@ -107,7 +107,7 @@ pub(crate) fn park_chat(state: &mut AppState) {
     let gui = controller.gui();
     let view = gui.list_view(log);
     let parked = crate::ui::lan_shell::ParkedChat {
-        edit: crate::ui::shell::page::new_edit(gui, edit),
+        edit: gui.edit_state(edit).unwrap_or_default(),
         top: view.map_or(0, |view| view.top),
         rows: view.map_or(0, |view| view.rows),
     };
@@ -133,7 +133,7 @@ pub(crate) fn unpark_chat(state: &mut AppState) {
     let page = view.page().dialog;
     let controller = &mut state.frontend.shell_controller;
     if let Some(edit) = controller.control(page, CHAT) {
-        crate::ui::shell::page::store_edit(controller.gui_mut(), edit, &parked.edit);
+        let _ = controller.gui_mut().set_edit_state(edit, &parked.edit);
     }
     if let Some(log) = controller.control(page, CHAT_LOG) {
         let gui = controller.gui_mut();
@@ -304,10 +304,11 @@ pub(crate) fn slider_held(state: &AppState) -> bool {
 /// What the room paints of its widgets at the pointer: VERA's roster
 /// lights the control a press works, the original rooms the one under it.
 pub(crate) fn room_look(state: &AppState, view: &SetupView) -> RoomLook {
-    let Some(ui) = state.frontend.multiplayer_setup.as_ref() else {
+    if state.frontend.multiplayer_setup.is_none() {
         return RoomLook::default();
-    };
-    let carrying = ui.row_drag.is_some_and(|drag| drag.carrying);
+    }
+    let controller = &state.frontend.shell_controller;
+    let carrying = row_drag(controller, view).is_some_and(|drag| drag.carrying);
     let still = carrying || slider_held(state) || notice_active(state);
     let target = pointer_target(state, view, !view.dialog.modern).filter(|_| !still);
     look(&state.frontend.shell_controller, view, target)
@@ -336,11 +337,9 @@ pub(crate) fn drop_pointer(state: &mut AppState, close_list: bool) {
     if close_list && controller.top_id() == Some(page) {
         controller.gui_mut().close_popup();
     }
+    // A carried roster row goes with the pointer.
     for dialog in [page, GAME_OPTIONS_BOX, MAP_OFFER_BOX] {
         controller.drop_pointer_in(dialog);
-    }
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.cancel_pointer();
     }
 }
 
@@ -371,6 +370,27 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
                 state.frontend.shell_controller.gui_mut().close_popup();
                 if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
                     ui.scroll_roster_to(top);
+                }
+            }
+            // The host carried a roster row off its cell: its list closed.
+            PageEvent::DragStarted(_) => {
+                if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+                    ui.popup_row = None;
+                }
+            }
+            // ... and dropped it on a box that takes it.
+            PageEvent::Dropped(cell, Some(target)) => {
+                let row = view.combo(cell).map(|combo| combo.row);
+                let header = usize::try_from(i32::from(target) - i32::from(GROUP_BOX)).ok();
+                let group = row.zip(header).and_then(|(row, header)| {
+                    Some((row, view.drop_group(row, header)?))
+                });
+                if let Some((row, group)) = group {
+                    App::play_page_cue(state, PageCue::Button);
+                    crate::app::shell_network_setup::apply_action(
+                        state,
+                        SetupAction::DropRow { row, group },
+                    );
                 }
             }
             event => {
@@ -441,15 +461,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
-        // The host carries a pressed roster row to another box.
-        let carried = ui.drag_row(x, y, |row| {
-            layout
-                .group_box_at(x, y)
-                .filter(|header| view.drop_group(row, *header).is_some())
-        });
-        if carried {
-            state.frontend.shell_controller.gui_mut().close_popup();
-        }
         ui.statics.hover(&help, Instant::now());
     }
     handle_events(state, &view);
@@ -491,20 +502,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             y,
         );
     } else {
-        let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
-            return;
-        };
-        let dropped = ui
-            .drop_row()
-            .and_then(|(row, header)| Some((row, view.drop_group(row, header)?)));
+        // A carried roster row drops (`PageEvent::Dropped`, below).
         state.frontend.shell_controller.on_pointer_up(x, y);
-        if let Some((row, group)) = dropped {
-            App::play_page_cue(state, PageCue::Button);
-            crate::app::shell_network_setup::apply_action(
-                state,
-                SetupAction::DropRow { row, group },
-            );
-        }
     }
     handle_events(state, &view);
 }
@@ -550,7 +549,8 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
     };
     let controller = &mut state.frontend.shell_controller;
     let area = controller.control(view.page().dialog, ROSTER_AREA);
-    let taken = ui.wheel(controller.gui_mut(), area, &view, &layout, x, y, lines);
+    let now = controller.now();
+    let taken = ui.wheel(controller.gui_mut(), area, &view, &layout, x, y, lines, now);
     handle_events(state, &view);
     taken
 }

@@ -391,15 +391,15 @@ mod tests {
     #[test]
     fn keys_move_the_hot_row_within_the_rows_and_enter_picks_it() {
         let (mut g, c) = page_with_combo(3, 0);
-        assert!(!g.key_popup(Key::Down), "a closed list leaves the keys");
+        assert!(!g.key_popup(Key::Down, 0), "a closed list leaves the keys");
         click(&mut g, 129, 25);
         for _ in 0..3 {
-            assert!(g.key_popup(Key::Down));
+            assert!(g.key_popup(Key::Down, 0));
         }
         assert_eq!(g.combo_drop_down(c).unwrap().hot_row, Some(2));
-        g.key_popup(Key::Up);
+        g.key_popup(Key::Up, 0);
         g.drain_events();
-        g.key_popup(Key::Enter);
+        g.key_popup(Key::Enter, 0);
         assert_eq!(
             g.drain_events(),
             vec![
@@ -408,7 +408,7 @@ mod tests {
             ]
         );
         click(&mut g, 129, 25);
-        g.key_popup(Key::Escape);
+        g.key_popup(Key::Escape, 0);
         assert_eq!(g.drain_events(), vec![UiEvent::ComboClosed { node: c }]);
         assert_eq!(g.get(c, Prop::Selected).unwrap(), Some(&Value::Int(1)));
     }

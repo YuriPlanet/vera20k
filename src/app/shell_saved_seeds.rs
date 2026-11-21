@@ -8,7 +8,7 @@ use super::shell_random_map::{
 use super::*;
 use crate::app::frontend::shell_layout;
 use crate::map::rmg::{SeedDescription, saved_seeds};
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::skirmish_shell::{
     SavedSeedLayout, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };

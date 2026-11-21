@@ -16,13 +16,13 @@
 //!
 //! Render-agnostic: depends only on `ui::shell` + `std` (no sim/render/assets),
 //! honouring the `ui/` layering rule. The app layer (`app::frontend::shell_transition`) maps
-//! the showing screen to a `DialogId`, drives the wave each frame, and plays the
+//! the showing screen to a `DialogResourceId`, drives the wave each frame, and plays the
 //! start cue (`GUIMoveInSound`, stock `MenuSlideIn`) and the end cue
 //! (`ShellButtonSlideSound`, empty in stock rules).
 
 use crate::util::time::{Duration, Instant};
 
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::RightPanelRects;
 
 /// One animation tick per 30 ms, advancing exactly one frame (never skipped).
@@ -186,7 +186,7 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
 /// setup dialogs. `0xB7` slides only outside a suspended game (`0x00612690`),
 /// which is the only place it is rendered as a family page. Message boxes
 /// (`0x120` confirm, `0xCE` body-ok) are not in it.
-pub(crate) fn slide_spec_for(id: DialogId) -> Option<SlideDialogSpec> {
+pub(crate) fn slide_spec_for(id: DialogResourceId) -> Option<SlideDialogSpec> {
     RENDERED_SHELL_SLIDES
         .iter()
         .find(|spec| spec.dialog_id == id.0)
@@ -472,7 +472,7 @@ mod tests {
     const SDMPBTN_SIZE: (i32, i32) = (156, 84);
 
     fn spec(dialog_id: u16) -> SlideDialogSpec {
-        slide_spec_for(DialogId(dialog_id)).expect("rendered dialog")
+        slide_spec_for(DialogResourceId(dialog_id)).expect("rendered dialog")
     }
 
     /// Screen draw of one column row at a resolution through the painters'
@@ -644,7 +644,7 @@ mod tests {
         // Message boxes are not in 0x0060C540's list; the in-game Options
         // dialog 0xBBB is, but has no slide here yet.
         for id in [0x0120u16, 0x00CE, 0x0BBB] {
-            assert_eq!(slide_spec_for(DialogId(id)), None, "{id:#06x} must not slide");
+            assert_eq!(slide_spec_for(DialogResourceId(id)), None, "{id:#06x} must not slide");
         }
     }
 }

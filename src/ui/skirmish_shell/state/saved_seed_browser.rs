@@ -8,7 +8,7 @@
 use super::super::layout::{RectPx, SavedSeedMode};
 use crate::map::rmg::{SeedDescription, saved_seeds::SavedSeed};
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page;
 use crate::util::native_file_name::NativeFileName;
 use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
@@ -16,8 +16,8 @@ use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
 pub const SAVED_SEED_DESCRIPTION_MAX_UNITS: usize = 79;
 
 /// The browser and its message box in the browser's own controller.
-pub const BROWSER_DIALOG: DialogId = DialogId(0x00B7);
-pub const PROMPT_DIALOG: DialogId = DialogId(0x5D34);
+pub const BROWSER_DIALOG: DialogResourceId = DialogResourceId(0x00B7);
+pub const PROMPT_DIALOG: DialogResourceId = DialogResourceId(0x5D34);
 /// The list, the description edit (Save only), the action (Load `0x40F`,
 /// Save `0x6C7` or Delete `0x6C8`), Back, VERA's Setups Load and Delete, and
 /// the box's affirmative and negative buttons.
@@ -70,7 +70,7 @@ impl<I> SavedSeedPrompt<I> {
     pub fn shell_box(&self) -> crate::ui::shell::modal::ShellBox {
         use crate::ui::shell::modal::ShellBox;
         let dialog = [0xCE, 0x120][usize::from(self.negative.is_some())];
-        let dialog = crate::ui::shell::descriptor::DialogId(dialog);
+        let dialog = crate::ui::shell::descriptor::DialogResourceId(dialog);
         let shell_box = ShellBox::new(dialog, self.body.clone()).button(YES, &*self.affirmative);
         match &self.negative {
             Some(no) => shell_box.button(NO, no.as_str()),
@@ -110,7 +110,7 @@ impl<I> SavedSeedBrowserRow<I> {
 
 /// NewEdit614B30, the caret-only UTF-16 editor every shell edit runs on;
 /// it lives in `vera20k-gui` ([`vera20k_gui::shell::new_edit`]).
-pub use vera20k_gui::shell::new_edit::NewEdit as SavedSeedDescriptionEdit;
+use vera20k_gui::shell::new_edit::NewEdit;
 
 #[derive(Debug)]
 pub struct SavedSeedBrowserState<I = NativeFileName> {
@@ -182,7 +182,7 @@ fn spec(mode: SavedSeedMode) -> NodeSpec {
 }
 
 /// The dialog control `id` lives in.
-fn dialog(id: u16) -> DialogId {
+fn dialog(id: u16) -> DialogResourceId {
     if matches!(id, YES | NO) {
         PROMPT_DIALOG
     } else {
@@ -230,23 +230,12 @@ impl<I> SavedSeedBrowserState<I> {
 
     /// The description edit as NewEdit paints it: the first shown unit is
     /// its `Top`, the focus the browser's own.
-    pub fn edit(&self) -> SavedSeedDescriptionEdit {
-        let text = match self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Text) {
-            Some(Value::Text(text)) => text.as_str(),
-            _ => "",
-        };
-        let caret = int(self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Caret))
-            .map_or(usize::MAX, |c| c.max(0) as usize);
-        let units: Vec<u16> = text.encode_utf16().collect();
-        let top = int(self.ui.prop(BROWSER_DIALOG, EDIT, Prop::Top))
-            .unwrap_or(0)
-            .max(0) as usize;
-        SavedSeedDescriptionEdit {
-            caret: text.chars().take(caret).map(char::len_utf16).sum(),
-            first_visible_unit: top.min(units.len()),
-            units,
+    pub fn edit(&self) -> NewEdit {
+        let edit = self.node(EDIT).and_then(|node| self.ui.gui().edit_state(node));
+        NewEdit {
             focused: self.prompt.is_none() && self.ui.focused_control(BROWSER_DIALOG) == Some(EDIT),
             password: false,
+            ..edit.unwrap_or_default()
         }
     }
 

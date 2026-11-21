@@ -276,8 +276,9 @@ pub(crate) fn render_multiplayer_setup(
         // its cells, lit with its group's box under the pointer and grey
         // while it is closed; and a box around each group, lit while a press
         // in it joins the group or the host carries a row over it.
+        let drag = row_drag(controller, &view);
         if layout.roster {
-            let target = ui.row_drag.and_then(|drag| drag.target);
+            let target = drag.and_then(|drag| drag.target);
             for (row, header) in view.headers.iter().enumerate() {
                 let Some(header) = header else {
                     continue;
@@ -322,7 +323,7 @@ pub(crate) fn render_multiplayer_setup(
                 }
             }
             // The carried row's name follows the pointer, centred on it.
-            if let Some(drag) = ui.row_drag.filter(|drag| drag.carrying)
+            if let Some(drag) = drag.filter(|drag| drag.carrying)
                 && let Some(name) = view
                     .combos
                     .iter()
@@ -544,7 +545,7 @@ pub(crate) fn render_multiplayer_setup(
         // The chat edit as its widget holds it: it keeps the room's focus,
         // and its caret, under the room's boxes too.
         if let Some(node) = controller.control(view.page().dialog, CHAT) {
-            let mut edit = crate::ui::shell::page::new_edit(controller.gui(), node);
+            let mut edit = controller.gui().edit_state(node).unwrap_or_default();
             edit.focused = controller.focused_control(view.page().dialog) == Some(CHAT);
             push_new_edit(
                 &mut controls,

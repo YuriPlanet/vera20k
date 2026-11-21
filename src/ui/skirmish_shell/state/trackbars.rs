@@ -4,7 +4,7 @@ use crate::rules::ini_parser::IniFile;
 
 use super::super::layout::SkirmishTrackbarId;
 use super::SkirmishShellState;
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
 pub const GAME_SPEED_MIN: i32 = 0;
 pub const GAME_SPEED_MAX: i32 = crate::ui::shell::game_speed::MAX_POSITION;

@@ -990,7 +990,7 @@ impl App {
     /// repaints status line `0x695` (`0x00615EF7`).
     pub(super) fn screen_page_pointer(
         state: &mut AppState,
-        dialog: crate::ui::shell::descriptor::DialogId,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
         nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
         rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
         enabled: &[(u16, bool)],
@@ -1011,7 +1011,7 @@ impl App {
     /// `0x0061374B`). Returns the activated control.
     pub(crate) fn page_pointer(
         state: &mut AppState,
-        dialog: crate::ui::shell::descriptor::DialogId,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
         nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
         rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
         enabled: &[(u16, bool)],
@@ -1026,7 +1026,7 @@ impl App {
     /// `Default`/`Cancel` buttons.
     pub(crate) fn page_input(
         state: &mut AppState,
-        dialog: crate::ui::shell::descriptor::DialogId,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
         nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
         rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
         enabled: &[(u16, bool)],
@@ -1560,11 +1560,6 @@ impl App {
     /// Close retained main-menu child dialogs (options — never on the
     /// controller stack). The exit-confirm modal closes through
     /// close_shell_message_box_from_controller (D-B3).
-    pub(crate) fn close_main_menu_dialogs(state: &mut AppState) {
-        state.frontend.shell_message_box = None;
-        state.frontend.options_dialog = None;
-    }
-
     /// Controller-routed exit-confirm teardown (D-B3): dismiss the modal UI
     /// state, then LIFO-pop its 0x120 instance so focus returns to the shell
     /// beneath. Mirrors `close_validation_modal_from_controller` — every Esc
@@ -1573,7 +1568,7 @@ impl App {
         state.frontend.shell_message_box = None;
         if matches!(
             state.frontend.shell_controller.top_id(),
-            Some(crate::ui::shell::descriptor::DialogId(
+            Some(crate::ui::shell::descriptor::DialogResourceId(
                 0x00CE | 0x0120 | 0x0121
             ))
         ) {

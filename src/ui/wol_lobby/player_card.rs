@@ -10,7 +10,7 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::WolLobbyState;
-use crate::ui::shell::combobox::ComboPopup;
+use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::PLAYER_CARD_ROWS;
 use crate::ui::shell::page;

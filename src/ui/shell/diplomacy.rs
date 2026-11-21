@@ -14,12 +14,12 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use super::button::CheckboxFace;
-use super::descriptor::DialogId;
+use vera20k_gui::shell::button::CheckboxFace;
+use super::descriptor::DialogResourceId;
 use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
 
-pub const DIALOG: DialogId = DialogId(0x73);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x73);
 
 /// Physical row slots. VERA pages the same slots when more Houses are shown.
 pub const DIPLOMACY_ROWS: usize = 8;

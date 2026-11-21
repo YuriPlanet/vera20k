@@ -20,12 +20,12 @@ use super::state::{
 };
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::game_speed::SpeedContext;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The page's dialog in the shell controller.
-pub const DIALOG: DialogId = DialogId(0x0102);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x0102);
 
 /// The page's fixed controls by resource id, in paint order. VERA's two
 /// right-panel buttons take ids gamemd's dialog has none of.
@@ -161,6 +161,8 @@ fn spec() -> NodeSpec {
                     Value::Rect(super::layout::FRAMED_EDIT_TEXT_INSET),
                 )
                 .with(Prop::SelectOnFocus, Value::Bool(true))
+                // A press anywhere else on the page takes the focus.
+                .with(Prop::BlurOnPress, Value::Bool(true))
                 .with(
                     Prop::MaxBytes,
                     Value::Int(super::state::PLAYER_NAME_EDIT_LIMIT_BYTES as i32),
@@ -560,7 +562,8 @@ pub fn wheel(
     let Some(node) = controller.control(DIALOG, OPPONENT_SCROLL) else {
         return false;
     };
-    let scrolled = controller.gui_mut().wheel_list(node, lines as i32);
+    let now = controller.now();
+    let scrolled = controller.gui_mut().wheel_list(node, lines as i32, now);
     let events = controller.gui_mut().drain_events();
     let events = page::page_events(controller.gui(), events);
     take_scroll(controller, state, &events);
@@ -568,7 +571,7 @@ pub fn wheel(
 }
 
 /// The computer rows' scrollbar arrow drawn pushed.
-pub fn opponent_arrow(controller: &DialogController) -> Option<crate::ui::shell::list::ListScrollPart> {
+pub fn opponent_arrow(controller: &DialogController) -> Option<vera20k_gui::shell::list::ListScrollPart> {
     let node = controller.control(DIALOG, OPPONENT_SCROLL)?;
     controller.gui().list_view(node)?.pressed
 }
@@ -595,6 +598,16 @@ pub fn key(
     handle(state, &[], page::page_events(controller.gui(), raw));
     scroll_player_name(controller, layout, measure);
     true
+}
+
+/// Whether a press at `x`, `y` lands on the name box, as the page's widgets
+/// hit-test it (an open list over it does not count).
+pub fn over_name(controller: &DialogController, x: i32, y: i32) -> bool {
+    let gui = controller.gui();
+    let node = controller
+        .root_in(DIALOG)
+        .and_then(|root| gui.hit_at(root, x, y, true));
+    node.is_some() && node == controller.control(DIALOG, PLAYER_NAME)
 }
 
 /// NewEdit keeps the name box's caret in view.

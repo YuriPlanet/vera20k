@@ -2,9 +2,10 @@
 //! pass applies (contract C7).
 
 /// Win32 dialog resource id (e.g. `0x00E2` main menu, `0x0100` single player,
-/// `0x0102` skirmish). A newtype so dialog ids never mix with control ids.
+/// `0x0102` skirmish). A newtype so dialog ids never mix with control ids, nor
+/// with the GUI crate's stack handle `vera20k_gui::DialogId`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DialogId(pub u16);
+pub struct DialogResourceId(pub u16);
 
 /// Per-control re-anchor rule applied after the one-shot
 /// DLU->pixel conversion (contract C7). Each variant is a faithful port of a

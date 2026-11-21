@@ -41,7 +41,7 @@ impl App {
         let map_name = map.map(|map| map.display_name.trim()).unwrap_or_default();
         let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
         let visible_rows = saved_browser_rows(&setups_layout(state));
-        let browser = SavedSeedBrowserState::open_rows(
+        let mut browser = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,
             rows,
             description(map_name),
@@ -49,6 +49,11 @@ impl App {
             saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
             visible_rows,
         );
+        // VERA: Back takes Escape (the base browser ignores IDCANCEL); a
+        // message box over the page takes it first.
+        use crate::ui::skirmish_shell::saved_seed_browser::{BACK, BROWSER_DIALOG};
+        let cancel = vera20k_gui::Value::Bool(true);
+        browser.ui.set_prop(BROWSER_DIALOG, BACK, vera20k_gui::Prop::Cancel, cancel);
         Self::blur_player_name(state);
         state.frontend.skirmish_shell_state.setups_browser = Some(browser);
     }
@@ -178,11 +183,7 @@ impl App {
         let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
-        // Esc leaves the page when no message box is up.
-        if browser.prompt.is_none() && code == Some(KeyCode::Escape) {
-            Self::close_skirmish_setups(state);
-            return;
-        }
+        // Esc leaves the page through Back when no message box is up.
         let results = saved_file_input::key(browser, code, text);
         Self::apply_skirmish_setups_input(state, results);
         Self::update_skirmish_setups_scroll(state, false);

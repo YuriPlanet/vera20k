@@ -928,7 +928,7 @@ mod tests {
             // The Players window has the runtime growth (226 wide) the
             // combos do not have yet (225), so its value text runs one
             // column past the lists.
-            let mut players_value = crate::ui::shell::trackbar::value_text_rect(
+            let mut players_value = vera20k_gui::shell::trackbar::value_text_rect(
                 layout.control_rects[5],
                 ShellScale::RETAIL,
             );

@@ -5,12 +5,12 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use super::controller::DialogController;
-use super::descriptor::DialogId;
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
 /// Active B8 (resource `0xBEFE4C`).
-pub const DIALOG: DialogId = DialogId(0xB8);
+pub const DIALOG: DialogResourceId = DialogResourceId(0xB8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -164,7 +164,7 @@ impl SoundState {
 
     pub fn thumb_left(&self, id: SoundSlider, rect: RectPx) -> i32 {
         let position = self.positions()[id as usize];
-        crate::ui::shell::trackbar::thumb_left(i32::from(position), rect.w, 50, 10)
+        vera20k_gui::shell::trackbar::thumb_left(i32::from(position), rect.w, 50, 10)
     }
 
     /// The list's view: rows, top, selection and held scroll part.
@@ -191,7 +191,7 @@ fn trackbar(slider: SoundSlider, positions: [u8; 3], enabled: bool) -> NodeSpec 
 /// `0x6B6300` skips the Shuffle/Repeat/list init there (`0x6B6485`), and the
 /// executed `0x006040B0` table has no help rows for it.
 pub const SHELL_SOUND_PAGE: super::menu_page::MenuPageSpec = super::menu_page::MenuPageSpec {
-    dialog: super::descriptor::DialogId(0x00D6),
+    dialog: super::descriptor::DialogResourceId(0x00D6),
     title_key: "GUI:SoundOptions",
     stacked: &[],
     back: super::menu_page::MenuPageButtonSpec {
@@ -432,7 +432,7 @@ mod tests {
             );
         }
         // The trackbar's drag (`0x0061DC44`) takes the pointer's position.
-        let range = crate::ui::shell::trackbar::TrackbarRange::new(0, 10, 1);
+        let range = vera20k_gui::shell::trackbar::TrackbarRange::new(0, 10, 1);
         for sample in native["pointers"].as_array().unwrap() {
             let x = rect.x + sample["x"].as_i64().unwrap() as i32;
             set(
@@ -543,7 +543,7 @@ mod tests {
                 .filter_map(shell_sound_volume)
                 .collect::<Vec<_>>()
         };
-        let thumb = r.x + crate::ui::shell::trackbar::thumb_left(5, r.w, 50, 10);
+        let thumb = r.x + vera20k_gui::shell::trackbar::thumb_left(5, r.w, 50, 10);
         for x in [r.x + 1, thumb] {
             assert_eq!(press(&mut gui, x), []);
         }

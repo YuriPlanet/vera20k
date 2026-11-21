@@ -1786,7 +1786,7 @@ impl LanCapture {
                     // actual mouse handler performs the change and publication.
                     let (x, expected) = (rect.x..rect.x + rect.w)
                         .find_map(|x| match bar.press(x, y, rect, layout.page.scale) {
-                            crate::ui::shell::trackbar::TrackbarPress::Jump(value)
+                            vera20k_gui::shell::trackbar::TrackbarPress::Jump(value)
                                 if value != bar.value =>
                             {
                                 Some((x, value))
@@ -3649,7 +3649,7 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
 
 /// The middle of a chooser list's row.
 fn list_row_point(
-    geometry: crate::ui::shell::list::ShellListGeometry,
+    geometry: vera20k_gui::shell::list::ShellListGeometry,
     row: usize,
     top: usize,
 ) -> (i32, i32) {

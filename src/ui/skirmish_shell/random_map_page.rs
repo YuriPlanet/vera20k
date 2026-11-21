@@ -15,11 +15,11 @@ use super::page::{Pointer, slider_held};
 use super::state::{RandomMapSetupModalState, SetupCombo, status_help_key_for_random_map_setup};
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The dialog in the shell controller.
-pub const DIALOG: DialogId = DialogId(0x0105);
+pub const DIALOG: DialogResourceId = DialogResourceId(0x0105);
 
 /// Every fixed control by id, in hit order: VERA's right-column buttons, the
 /// option rows, then the action row and the column. VERA's ids are its own.
@@ -208,6 +208,12 @@ fn help(modal: &RandomMapSetupModalState, control: C) -> &'static str {
             .map_or("", super::state::ExtrasRow::help),
         control => status_help_key_for_random_map_setup(control),
     }
+}
+
+/// The Advanced scrollbar as its widget paints: the bar, and its thumb at
+/// the page showing.
+pub fn scrollbar_view(controller: &DialogController) -> Option<vera20k_gui::ScrollBarView> {
+    controller.gui().scrollbar_view(controller.control(DIALOG, SCROLLBAR)?)
 }
 
 /// Builds the widgets under the controller's `0x105` (a fresh instance when

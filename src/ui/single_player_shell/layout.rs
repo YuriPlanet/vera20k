@@ -1,14 +1,14 @@
 //! Dialog 0x100 Single Player page: resource-order controls over the shared
 //! right-panel menu page layout (`ui::shell::menu_page`).
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 /// RT_DIALOG `0x100` buttons with the results written by dialog proc
 /// `0x0052D640` (`SinglePlayerDialog0x100__WndProc`). Control `0x68A` (result
 /// 10) has no template child, so it is not reachable.
 pub const SINGLE_PLAYER_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x0100),
+    dialog: DialogResourceId(0x0100),
     title_key: "GUI:SinglePlayerMenu",
     stacked: &[
         MenuPageButtonSpec::new(0x0688, 122, "GUI:NewCampaign", "STT:SingleButtonNewCampaign").returning(8),

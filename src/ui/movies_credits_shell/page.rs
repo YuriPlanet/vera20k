@@ -1,12 +1,12 @@
 //! Dialog `0x101` Movies & Credits page table.
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 /// RT_DIALOG `0x101` owner-draw buttons with the results written by dialog
 /// proc `0x0052D790` (jump table `0x0052D848`, index bytes `0x0052D85C`).
 pub const MOVIES_CREDITS_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x0101),
+    dialog: DialogResourceId(0x0101),
     title_key: "GUI:MoviesAndCredits",
     stacked: &[
         MenuPageButtonSpec::new(0x068D, 122, "GUI:SneakPeeks", "STT:OptionsButtonSneak").returning(0x0D),

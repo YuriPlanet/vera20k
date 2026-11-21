@@ -11,7 +11,7 @@ use super::{WolPage, apply_wol_preferences};
 use crate::app::frontend::shell_layout;
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
-use crate::ui::shell::combobox::ComboPopup;
+use vera20k_gui::shell::combobox::ComboPopup;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
 use crate::ui::wol_options::{

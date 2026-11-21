@@ -27,7 +27,7 @@ use crate::app::frontend::skirmish_shell_render::gui_paint::{
 };
 use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
@@ -72,7 +72,7 @@ impl FamilyPage {
         }
     }
 
-    pub(crate) fn dialog(self) -> DialogId {
+    pub(crate) fn dialog(self) -> DialogResourceId {
         self.spec().dialog
     }
 
@@ -158,7 +158,7 @@ impl FamilyPage {
 /// a scratch tree of them, which paints released.
 pub(crate) fn page_tree(
     state: &mut AppState,
-    dialog: DialogId,
+    dialog: DialogResourceId,
     nodes: impl FnOnce() -> NodeSpec,
     rect_of: impl Fn(u16) -> Option<RectPx>,
     enabled: &[(u16, bool)],
@@ -462,7 +462,7 @@ impl<'a> FamilyFrame<'a> {
     pub(crate) fn on(
         self,
         state: &'a AppState,
-        dialog: DialogId,
+        dialog: DialogResourceId,
         scratch: &'a Option<(Gui, NodeId)>,
     ) -> Self {
         let controller = &state.frontend.shell_controller;

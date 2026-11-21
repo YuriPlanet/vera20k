@@ -1018,11 +1018,11 @@ impl LiveLanCapture {
                     let layout = lobby::layout(state);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
                     let top = lobby::list_top(state, crate::ui::lan_shell::GAMES);
-                    let geometry = crate::ui::shell::list::ShellListGeometry::new(
+                    let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
                         layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
                         lobby_state.game_count(),
                         top,
-                        crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),
+                        vera20k_gui::shell::list::ListMetrics::scaled(layout.page.scale),
                     );
                     let (x, y) = list_row_point(geometry, index + 1, top);
                     lobby_click(state, RectPx::new(x, y, 2, 2));

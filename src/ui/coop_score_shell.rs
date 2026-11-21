@@ -14,14 +14,14 @@
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::LanChatState;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::shell::trackbar::TrackbarRange;
+use vera20k_gui::shell::trackbar::TrackbarRange;
 
-pub const COOP_SCORE_DIALOG: DialogId = DialogId(0x0BC6);
+pub const COOP_SCORE_DIALOG: DialogResourceId = DialogResourceId(0x0BC6);
 pub const CONTINUE: u16 = 0x06D1;
 pub const QUIT: u16 = 0x05C0;
 pub const TIME: u16 = 0x03EA;

@@ -22,7 +22,7 @@
 //! The frame is centered in the static's window along an axis where the window
 //! is larger (`0x0061595E..0x0061597E`).
 
-use crate::time::{Duration, Instant};
+use vera20k_gui::time::{Duration, Instant};
 
 /// Control id of the monitor static in every dialog that has one.
 pub const WARNING_MONITOR_CONTROL: u16 = 0x071C;
@@ -111,7 +111,7 @@ fn frame_count_interval(frames: usize) -> Duration {
     Duration::from_millis(frames as u64)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
 
@@ -173,7 +173,7 @@ mod tests {
     fn startup_timer_matches_the_native_getter() {
         // 0x00603240 for 0x71C, executed by
         // tools/storage_oracle/shell_static_timers.py.
-        let cases = crate::fixtures::native_static_timer_cases();
+        let cases = vera20k_gui::fixtures::native_static_timer_cases();
         for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5] {
             let case = cases
                 .iter()
