@@ -449,7 +449,8 @@ fn append_chat_to(
         let layout = crate::app::input::multiplayer_setup::layout(state);
         (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        // The online page's chat may be hidden behind its games.
+        let layout = crate::app::shell_wol::lobby::chat_layout(state);
         (layout.chat_log, layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
@@ -487,6 +488,15 @@ fn append_chat_to(
                 .bit_font
                 .text_width(&String::from_utf16_lossy(units)) as i32
         });
+    }
+    if wol_lobby
+        && let Some(lobby) = state
+            .frontend
+            .wol
+            .as_mut()
+            .and_then(|visit| visit.lobby_mut())
+    {
+        lobby.ui.chat_arrived();
     }
 }
 

@@ -42,6 +42,9 @@ pub(crate) const QUICK_MATCH: u16 = crate::ui::wol_shell::QUICK_MATCH;
 pub(crate) const BACK: u16 = 0x686;
 /// VERA: Back to Room, while this player visits the lobby from a game room.
 pub(crate) const BACK_TO_ROOM: u16 = 0x7E30;
+/// VERA: the online page's button between its games and its chat with the
+/// player list ([`LobbyView`]).
+pub(crate) const VIEW: u16 = 0x7E3A;
 pub(crate) const REFRESH: u16 = 0x55D;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const LOBBIES: u16 = 0x53D;
@@ -107,8 +110,10 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 
 /// The normal VERA lobby keeps core play and Options. It has no welcome
 /// `0x10E`, so its third row is that page's Quick Match (`0x6E0`, its caption
-/// and tooltip) and Options moves to the fourth. The retail page above
-/// remains the owner for legacy service diagnostics.
+/// and tooltip) and Options moves to the fourth. The fifth swaps the games
+/// for the chat and the player list; its caption and help are the view's
+/// ([`WolLobbyState::view_caption`]). The retail page above remains the
+/// owner for legacy service diagnostics.
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(CREATE, 111, "GUI:CreateGame", "STT:LobbyButtonNew"),
@@ -120,19 +125,21 @@ const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
             "STT:WOLWelcomeQuickMatch",
         ),
         button(OPTIONS, 193, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
+        button(VIEW, 222, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
     ],
     ..PAGE
 };
 
 /// The online page while this player visits the lobby from a game room
 /// (docs/lobby-protocol.md "Visiting the lobby"): Join Game, which leaves
-/// that room, Options and Back to Room. Its Back goes back to the room too,
-/// so it says nothing of the online menu.
+/// that room, Options, Back to Room and the view button. Its Back goes back
+/// to the room too, so it says nothing of the online menu.
 const ONLINE_VISIT_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(JOIN, 111, "GUI:JoinGame", "STT:LobbyButtonJoin"),
         button(OPTIONS, 138, "GUI:WOLOptions", "STT:WOLLobbyOptions"),
         button(BACK_TO_ROOM, 166, "VERA:BackToRoom", ""),
+        button(VIEW, 193, "VERA:LobbyChat", "VERA:LobbyChatHelp"),
     ],
     back: button(BACK, 332, "GUI:Back", ""),
     ..ONLINE_PAGE
@@ -274,8 +281,6 @@ pub(crate) struct WolLobbyLayout {
     pub(crate) page: MenuPageLayout,
     pub(crate) lobbies: RectPx,
     pub(crate) games: RectPx,
-    /// Modern room information is outside the games list's scroll and click bounds.
-    pub(crate) game_details: Option<RectPx>,
     pub(crate) players: RectPx,
     pub(crate) chat_log: RectPx,
     /// The chat NewEdit after its init inset (`0x00614CCF`).
@@ -333,7 +338,6 @@ impl WolLobbyLayout {
                 ah,
             )),
             games: px(11, 57, 301, 307),
-            game_details: None,
             players: px(321, 57, 301, 307),
             chat_log: px(11, 369, 611, 160),
             chat: px(12, 534, 578, 22),
@@ -405,6 +409,72 @@ impl WolLobbyLayout {
             _ => return None,
         })
         .filter(|rect| rect.w > 0)
+    }
+}
+
+/// VERA: the online page's body in `view`. The games fill it down to the
+/// chat edit's foot; or the chat takes its left and the player list its
+/// right above the chat edit. The lists hold whole rows, so the pointer
+/// never meets a row that is not drawn. What the other view shows has no
+/// window.
+fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
+    let scale = layout.page.scale;
+    let px = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
+    let row_h = crate::ui::shell::list::ListMetrics::scaled(scale).row_h;
+    let whole_rows = |rect: RectPx, bottom: i32| RectPx {
+        h: 2 + ((bottom - rect.y - 2) / row_h).max(1) * row_h,
+        ..rect
+    };
+    let hidden = RectPx::new(0, 0, 0, 0);
+    match view {
+        LobbyView::Games => {
+            layout.games = whole_rows(px(11, 57, 611, 0), layout.chat.y + layout.chat.h);
+            layout
+                .sort_buttons
+                .retain(|(id, _)| *id != PLAYER_SORT_ALPHA);
+            for (id, rect) in &mut layout.sort_buttons {
+                match *id {
+                    SORT_ALPHA => *rect = px(12, 37, 508, 17),
+                    SORT_PING => *rect = px(520, 37, 100, 17),
+                    _ => {}
+                }
+            }
+            layout.labels[1].1 = hidden;
+            for rect in [
+                &mut layout.players,
+                &mut layout.chat_log,
+                &mut layout.chat,
+                &mut layout.emote,
+            ] {
+                *rect = hidden;
+            }
+        }
+        LobbyView::Chat => {
+            layout.players = whole_rows(px(441, 57, 181, 0), layout.chat_log.y + layout.chat_log.h);
+            let log = px(11, 37, 421, 0);
+            layout.chat_log = RectPx {
+                h: layout.players.y + layout.players.h - log.y,
+                ..log
+            };
+            layout
+                .sort_buttons
+                .retain(|(id, _)| *id == PLAYER_SORT_ALPHA);
+            for (_, rect) in &mut layout.sort_buttons {
+                *rect = px(442, 37, 179, 17);
+            }
+            layout.labels = [
+                ("VERA:LobbyChat", px(14, 10, 201, 17)),
+                ("GUI:Players", px(444, 10, 157, 17)),
+            ];
+            for rect in [
+                &mut layout.games,
+                &mut layout.refresh,
+                &mut layout.observer_toggle,
+            ] {
+                *rect = hidden;
+            }
+            layout.observer_caption = None;
+        }
     }
 }
 
@@ -560,10 +630,22 @@ pub(crate) enum WolLobbyAction {
     QuickMatch,
     /// VERA: a lobby visitor back to their game room.
     BackToRoom,
+    /// VERA: the view button swapped the online page's view.
+    View,
     /// Buddy List, Clan, Tournament and News run dialogs or web pages that
     /// are later chains.
     Unported(u16),
     Popup(WolPopupAction),
+}
+
+/// VERA: what the online page's body shows. The games fill it, and the view
+/// button ([`VIEW`]) swaps them for the chat with the player list. The
+/// retail page shows everything at once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum LobbyView {
+    #[default]
+    Games,
+    Chat,
 }
 
 /// The dialog's children: list contents, selection, enable state, chat.
@@ -573,6 +655,11 @@ pub(crate) struct WolLobbyState {
     /// VERA: this player visits the lobby from a game room
     /// ([`Self::set_visiting`]).
     visiting: bool,
+    /// VERA: the online page's view; a new lobby runner opens on its games.
+    view: LobbyView,
+    /// VERA: chat messages that arrived while the games showed. The view
+    /// button counts them until the chat shows.
+    unread: u32,
     pub(crate) chat: LanChatState,
     pub(crate) lobby_rows: Vec<WolLobbyRow>,
     pub(crate) game_rows: Vec<WolGameRow>,
@@ -602,6 +689,8 @@ impl WolLobbyState {
         Self {
             modern,
             visiting: false,
+            view: LobbyView::Games,
+            unread: 0,
             chat: {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
@@ -649,7 +738,69 @@ impl WolLobbyState {
         self.modern
     }
 
+    /// VERA: the chat and its edit show: always on the retail page, on the
+    /// online page in its chat view.
+    pub(crate) fn shows_chat(&self) -> bool {
+        !self.modern || self.view == LobbyView::Chat
+    }
+
+    /// VERA: a chat message arrived; the view button counts it while the
+    /// games show.
+    pub(crate) fn chat_arrived(&mut self) {
+        if !self.shows_chat() {
+            self.unread = self.unread.saturating_add(1);
+        }
+    }
+
+    /// VERA: the view button's caption names the view it shows next, with
+    /// the messages that arrived while the games showed.
+    pub(crate) fn view_caption(&self) -> String {
+        match self.view {
+            LobbyView::Chat => crate::i18n::tr("VERA:LobbyGames"),
+            LobbyView::Games if self.unread > 0 => {
+                crate::i18n::tr_fill("VERA:LobbyChatUnread", &[("count", &self.unread)])
+            }
+            LobbyView::Games => crate::i18n::tr("VERA:LobbyChat"),
+        }
+    }
+
+    /// VERA: the view button's status help.
+    pub(crate) fn view_help_key(&self) -> &'static str {
+        match self.view {
+            LobbyView::Games => "VERA:LobbyChatHelp",
+            LobbyView::Chat => "VERA:LobbyGamesHelp",
+        }
+    }
+
+    /// VERA: the view button shows the other view; the chat's count clears
+    /// once the chat shows.
+    fn toggle_view(&mut self) {
+        self.view = match self.view {
+            LobbyView::Games => LobbyView::Chat,
+            LobbyView::Chat => LobbyView::Games,
+        };
+        if self.view == LobbyView::Chat {
+            self.unread = 0;
+        }
+    }
+
     pub(crate) fn layout(&self, width: i32, height: i32, responsive: bool) -> WolLobbyLayout {
+        self.layout_of(self.view, width, height, responsive)
+    }
+
+    /// VERA: the page as its chat view lays it out, whichever view shows:
+    /// the chat's messages wrap to that log's width.
+    pub(crate) fn chat_layout(&self, width: i32, height: i32, responsive: bool) -> WolLobbyLayout {
+        self.layout_of(LobbyView::Chat, width, height, responsive)
+    }
+
+    fn layout_of(
+        &self,
+        view: LobbyView,
+        width: i32,
+        height: i32,
+        responsive: bool,
+    ) -> WolLobbyLayout {
         let mut layout = if responsive {
             WolLobbyLayout::responsive(width, height, self.page_spec())
         } else {
@@ -660,37 +811,19 @@ impl WolLobbyState {
                 .sort_buttons
                 .retain(|(id, _)| !LEGACY_CONTROLS.contains(id));
             let scale = layout.page.scale;
-            // Ten whole rows at 800x600. Rounding to whole scaled rows also
-            // keeps the list's last few pixels from hitting an undrawn row.
-            let pane = layout.games;
-            let row_h = crate::ui::shell::list::ListMetrics::scaled(scale).row_h;
-            let rows = ((pane.h * 2 / 3 - 2) / row_h).max(1);
-            layout.games.h = 2 + rows * row_h;
-            layout.game_details = Some(RectPx::new(
-                pane.x,
-                pane.y + layout.games.h,
-                pane.w,
-                pane.h - layout.games.h,
-            ));
-            for (id, rect) in &mut layout.sort_buttons {
-                match *id {
-                    SORT_ALPHA => *rect = scale.scale_rect(RectPx::new(12, 37, 198, 17)),
-                    PLAYER_SORT_ALPHA => *rect = scale.scale_rect(RectPx::new(322, 37, 299, 17)),
-                    _ => {}
-                }
-            }
             // The retail checkbox and eye image sit on two centre lines below
-            // the Players heading, with no caption. Here the checkbox trails
-            // that heading: its 18x18 plate is the control (the plate alone
-            // toggles, as on every shell checkbox), flush with the list's
-            // right edge and centred on the heading's capitals (rows 14..22),
-            // and a caption on the heading's baseline names it. It shows the
-            // state, so the eye image is gone.
+            // the Players heading, with no caption. Here the checkbox ends the
+            // headings' row: its 18x18 plate is the control (the plate alone
+            // toggles, as on every shell checkbox), flush with the games
+            // list's right edge and centred on the heading's capitals (rows
+            // 14..22), and a caption on the heading's baseline names it. It
+            // shows the state, so the eye image is gone.
             layout.observer_toggle = scale.scale_rect(RectPx::new(604, 10, 18, 18));
             layout.observer_caption = Some(scale.scale_rect(RectPx::new(484, 10, 114, 17)));
             layout.observer_image = RectPx::new(0, 0, 0, 0);
             // One chat lobby, so no lobby list.
             layout.lobbies = RectPx::new(0, 0, 0, 0);
+            show_view(&mut layout, view);
         }
         layout
     }
@@ -942,17 +1075,22 @@ impl WolLobbyState {
             OPTIONS => WolLobbyAction::Options,
             PAGE_BUTTON => WolLobbyAction::Page,
             QUICK_MATCH if self.modern => WolLobbyAction::QuickMatch,
+            VIEW if self.modern => {
+                self.toggle_view();
+                WolLobbyAction::View
+            }
             BUDDY | CLAN | TOURNAMENT | NEWS => WolLobbyAction::Unported(control),
             _ => return None,
         })
     }
 
-    /// Keys reach the popup's edit, else the chat NewEdit (always focused).
+    /// Keys reach the popup's edit, else the chat NewEdit (always focused
+    /// while it shows).
     pub(crate) fn edit_key(&mut self, key: LanEditKey) -> Option<WolLobbyAction> {
         if let Some(popup) = self.popup.as_mut() {
             return popup.edit_key(key).map(WolLobbyAction::Popup);
         }
-        if key == LanEditKey::Tab {
+        if key == LanEditKey::Tab || !self.shows_chat() {
             return None;
         }
         let sent = self.chat.key(key)?;
@@ -961,9 +1099,10 @@ impl WolLobbyState {
     }
 
     pub(crate) fn insert_text(&mut self, text: &str) {
-        match self.popup.as_mut() {
-            Some(popup) => popup.insert_text(text),
-            None => self.chat.insert_text(text),
+        if let Some(popup) = self.popup.as_mut() {
+            popup.insert_text(text);
+        } else if self.shows_chat() {
+            self.chat.insert_text(text);
         }
     }
 }
@@ -1041,10 +1180,11 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = WolLobbyLayout::new(800, 600, lobby.page_spec());
         let controls: Vec<_> = layout.page.buttons.iter().map(|button| button.id).collect();
-        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, BACK]);
+        assert_eq!(controls, [CREATE, JOIN, QUICK_MATCH, OPTIONS, VIEW, BACK]);
         let retail = WolLobbyLayout::new(800, 600, &PAGE);
         assert_eq!(layout.control_rect(QUICK_MATCH), retail.control_rect(BUDDY));
         assert_eq!(layout.control_rect(OPTIONS), retail.control_rect(CLAN));
+        assert_eq!(layout.control_rect(VIEW), retail.control_rect(TOURNAMENT));
         assert_eq!(
             tooltip_key(QUICK_MATCH, lobby.page_spec()),
             Some("STT:WOLWelcomeQuickMatch")
@@ -1075,7 +1215,7 @@ mod tests {
         let layout = lobby.layout(800, 600, false);
         let legacy = WolLobbyState::new(false, false).layout(800, 600, false);
         let headers: Vec<_> = layout.sort_buttons.iter().map(|(id, _)| *id).collect();
-        assert_eq!(headers, [SORT_ALPHA, SORT_PING, PLAYER_SORT_ALPHA]);
+        assert_eq!(headers, [SORT_ALPHA, SORT_PING]);
         for id in [
             SORT_GAMETYPE,
             SORT_PASSWORD,
@@ -1094,30 +1234,34 @@ mod tests {
             assert!(!lobby.enabled(id));
             assert_eq!(lobby.activate(id), None);
         }
-        for id in [
-            SORT_ALPHA,
-            SORT_PING,
-            PLAYER_SORT_ALPHA,
-            REFRESH,
-            EMOTE,
-            GAMES,
-            PLAYERS,
-            CHAT_LOG,
-            CHAT,
-            OBSERVER_TOGGLE,
+        lobby.activate(VIEW);
+        let chat = lobby.layout(800, 600, false);
+        for (layout, ids) in [
+            (
+                &layout,
+                &[SORT_ALPHA, SORT_PING, REFRESH, GAMES, OBSERVER_TOGGLE][..],
+            ),
+            (
+                &chat,
+                &[PLAYER_SORT_ALPHA, EMOTE, PLAYERS, CHAT_LOG, CHAT][..],
+            ),
         ] {
-            let rect = layout.control_rect(id).expect("useful control");
-            assert_eq!(
-                layout.control_at(rect.x + rect.w / 2, rect.y + rect.h / 2),
-                Some(id)
-            );
+            for &id in ids {
+                let rect = layout.control_rect(id).expect("useful control");
+                assert_eq!(
+                    layout.control_at(rect.x + rect.w / 2, rect.y + rect.h / 2),
+                    Some(id)
+                );
+            }
         }
     }
 
+    /// The online page's games run on where its chat was; the view button
+    /// swaps them for the chat and the player list, and back.
     #[test]
-    fn modern_game_details_do_not_hide_a_clickable_game_at_the_scroll_limit() {
+    fn the_view_button_swaps_the_full_games_list_for_the_chat_and_players() {
         let mut ui = WolLobbyState::new(false, true);
-        let channels = (1..=30)
+        let channels = (1..=40)
             .map(|n| WolChannel {
                 name: format!("Game {n}"),
                 max_users: 8,
@@ -1125,54 +1269,69 @@ mod tests {
             })
             .collect::<Vec<_>>();
         ui.replace_games(game_rows(&channels, 0, false, true));
-        let layout = ui.layout(640, 480, false);
-        let classic = WolLobbyState::new(false, false).layout(640, 480, false);
-        let count = ui.game_rows.len();
-        let list = ui
-            .game_list
-            .geometry(layout.games, count, layout.page.scale);
-        let thumb = list.thumb.expect("a crowded list scrolls");
-        let x = thumb.x + thumb.w / 2;
-        let y = thumb.y + thumb.h / 2;
-        let top = &mut ui.game_list.top_index;
-        ui.game_list.scroll.press(
-            list.scroll_part_at(x, y).unwrap(),
-            list,
-            top,
-            y,
-            crate::util::time::Instant::now(),
+        let classic = WolLobbyState::new(false, false).layout(800, 600, false);
+        let (x, y) = (
+            classic.chat_log.x + 20,
+            classic.chat_log.y + classic.chat_log.h / 2,
         );
-        ui.game_list
-            .scroll
-            .pointer_moved(list, top, x, layout.games.y + layout.games.h - 1);
-        let last = list.row(list.visible_rows - 1);
-        ui.hover_games(&layout, last.x + 1, last.y + 1);
-        assert_eq!(ui.game_rows[ui.game_list.hot_row.unwrap()].name, "Game 30");
-        let (x, y) = (last.x + 1, classic.games.y + classic.games.h - 12);
-        assert_eq!(
-            layout.control_at(x, y),
-            None,
-            "details must not accept game clicks"
-        );
-        ui.hover_games(&layout, x, y);
-        assert_eq!(ui.game_list.hot_row, None);
+        let games = ui.layout(800, 600, false);
+        assert_eq!(games.control_at(x, y), Some(GAMES));
+        ui.hover_games(&games, x, y);
+        assert!(ui.game_list.hot_row.is_some());
+        for id in [PLAYERS, PLAYER_SORT_ALPHA, CHAT_LOG, CHAT, EMOTE] {
+            assert_eq!(games.control_rect(id), None);
+        }
+        assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
+        let chat = ui.layout(800, 600, false);
+        assert_eq!(chat.control_at(x, y), Some(CHAT_LOG));
+        for id in [GAMES, SORT_ALPHA, SORT_PING, REFRESH, OBSERVER_TOGGLE] {
+            assert_eq!(chat.control_rect(id), None);
+        }
+        assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
+        assert_eq!(ui.layout(800, 600, false).control_at(x, y), Some(GAMES));
     }
 
-    /// The modern Observe checkbox trails the Players heading on its row,
-    /// flush with the player list, with its caption between the two; the
-    /// retail eye image's place left of it takes no clicks.
+    /// The online page's chat takes keys only while it shows, and the view
+    /// button counts the messages that arrive while the games show.
     #[test]
-    fn modern_observe_checkbox_trails_the_players_heading() {
+    fn a_hidden_chat_takes_no_keys_and_the_view_button_counts_its_messages() {
+        let mut lobby = WolLobbyState::new(false, true);
+        lobby.insert_text("hello");
+        assert_eq!(lobby.edit_key(LanEditKey::Enter), None);
+        assert!(lobby.chat.edit.units.is_empty());
+        lobby.chat_arrived();
+        lobby.chat_arrived();
+        assert_eq!(
+            lobby.view_caption(),
+            crate::i18n::tr_fill("VERA:LobbyChatUnread", &[("count", &2)])
+        );
+        lobby.activate(VIEW);
+        assert_eq!(lobby.view_caption(), crate::i18n::tr("VERA:LobbyGames"));
+        lobby.chat_arrived();
+        lobby.insert_text("hello");
+        assert_eq!(
+            lobby.edit_key(LanEditKey::Enter),
+            Some(WolLobbyAction::Chat("hello".encode_utf16().collect()))
+        );
+        lobby.activate(VIEW);
+        assert_eq!(lobby.view_caption(), crate::i18n::tr("VERA:LobbyChat"));
+    }
+
+    /// The modern Observe checkbox ends the games' heading row, flush with
+    /// the games list, with its caption between the two; the retail eye
+    /// image's place left of it takes no clicks.
+    #[test]
+    fn modern_observe_checkbox_ends_the_games_heading_row() {
         let layout = WolLobbyState::new(false, true).layout(800, 600, false);
         let legacy = WolLobbyState::new(false, false).layout(800, 600, false);
-        let (_, heading) = layout.labels[1];
+        let (_, heading) = layout.labels[0];
         let plate = crate::ui::skirmish_shell::checkbox_icon_rect(
             layout.observer_toggle,
             layout.page.scale,
         );
         assert_eq!(plate, layout.observer_toggle);
         assert_eq!(plate.y, heading.y);
-        assert_eq!(plate.x + plate.w, layout.players.x + layout.players.w);
+        assert_eq!(plate.x + plate.w, layout.games.x + layout.games.w);
         let caption = layout.observer_caption.expect("caption");
         assert_eq!(caption.y, heading.y);
         assert!(heading.x + heading.w <= caption.x && caption.x + caption.w < plate.x);

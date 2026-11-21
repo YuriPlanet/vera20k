@@ -904,7 +904,13 @@ pub(crate) fn render_wol_page(
         let Some(spec) = spec.and_then(|spec| spec.button(button.id)) else {
             continue;
         };
-        let text = resolve_csf(state, spec.csf_key);
+        // VERA: the online page's view button names the view it shows next.
+        let text = match lobby.filter(|_| matches!(painted, Painted::Lobby(_))) {
+            Some(lobby) if button.id == crate::ui::wol_lobby::VIEW => {
+                lobby.ui.view_caption().into()
+            }
+            _ => resolve_csf(state, spec.csf_key),
+        };
         labels.push(PaintLabel {
             text,
             rect: owner_draw_button_label_rect(button.rect, *pressed),

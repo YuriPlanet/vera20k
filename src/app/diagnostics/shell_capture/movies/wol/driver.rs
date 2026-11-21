@@ -1152,7 +1152,9 @@ impl WolCapture {
                     return Ok(());
                 }
                 if self.target == WolTarget::ModernLobby {
-                    // Tanya's row names her badge, rank and OS.
+                    // Tanya's row names her badge, rank and OS. The players
+                    // show in the chat view.
+                    show_lobby_chat(state)?;
                     let row = player_row_rect(state, "Tanya")?;
                     set_window_pointer_to_rect_center(state, row);
                     App::handle_wol_mouse_move(state);
