@@ -600,22 +600,10 @@ pub(crate) fn shp_visitor<'a>(
         // does not change it: the active locomotor's head/null-current
         // projection (or Tube exit) owns this read. Physical position still
         // owns shroud, depth and the extra's side/ground/height queries.
-        let physical_cell = (pos.rx(), pos.ry());
-        let light_cell = if entity.category() == EntityCategory::Infantry {
-            sim.foot_navigation_coordinate(stable_id)
-                .map(|coord| {
-                    (
-                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
-                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
-                    )
-                })
-                // Incomplete pre-bind/headless actors can lack an active
-                // locomotor or Tube descriptor. Preserve their prior physical
-                // cell fallback; a missing light-grid entry still uses1000.
-                .unwrap_or(physical_cell)
-        } else {
-            physical_cell
-        };
+        let light_cell = entity
+            .place
+            .infantry_light_cell
+            .unwrap_or((pos.rx(), pos.ry()));
         let tint = shp_body_tint(input.lighting, light_cell, entity.category(), extra_light);
         // Asked only where it is used: a building's body takes its own
         // light below, so only a voxel turret reads this one.
