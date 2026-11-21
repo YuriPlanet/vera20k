@@ -2057,17 +2057,19 @@ impl Category {
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
-            // Windows adds the Graphics API list under VSync, below the
-            // sliders, so they keep their places on every desktop build.
+            // Windows adds the Graphics API list with the other two lists
+            // about where and how the game draws, above the sliders; the
+            // boxes stay one group. `every_page_slider_lands_on_an_authored_
+            // trackbar_frame` holds for this page with the flag forced on.
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
+                Setting::List(List::GraphicsApi),
                 Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
-                Setting::List(List::GraphicsApi),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
