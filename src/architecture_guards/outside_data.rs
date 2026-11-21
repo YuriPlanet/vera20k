@@ -23,8 +23,8 @@ use std::fs;
 use std::path::Path;
 
 use super::{
-    blank_comments_and_literals, closing, count_identifier, source_files, strip_test_items,
-    test_gated_files,
+    blank_comments_and_literals, closing, count_identifier, engine_production_files, source_files,
+    strip_test_items, test_gated_files,
 };
 
 /// Production files under `src/` whose code takes outside bytes or text
@@ -686,6 +686,24 @@ fn outside_data_readers_pin_every_way_they_can_panic() {
     assert!(
         stale.is_empty(),
         "stale pin(s): {stale:#?}\nDelete them so the guard tightens."
+    );
+}
+
+/// A save's interned ids come from the file. Save admission and restore read
+/// them with `StringInterner::try_resolve`, which answers `None` for an id
+/// the file invented; `resolve` indexes and panics on one.
+#[test]
+fn save_restore_reads_saved_names_with_try_resolve() {
+    let resolving: Vec<&str> = engine_production_files()
+        .into_iter()
+        .filter(|(file, _)| *file == "sim/snapshot.rs" || file.starts_with("sim/snapshot/"))
+        .filter(|(_, production)| count_identifier(production, "resolve") > 0)
+        .map(|(file, _)| file)
+        .collect();
+    assert!(
+        resolving.is_empty(),
+        "save restore code names `resolve`: {resolving:?}\n\
+         Read a saved id with `try_resolve` and refuse the save when it answers `None`."
     );
 }
 

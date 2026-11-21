@@ -9,6 +9,9 @@
 //! ## Dependency rules
 //! - config.rs is part of util/ â€” no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};

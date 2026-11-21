@@ -64,6 +64,9 @@
 //! shipped files by tag — is loaded again within a second
 //! ([`poll_language_files`]), so its texts follow without a restart.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
 use std::path::{Path, PathBuf};

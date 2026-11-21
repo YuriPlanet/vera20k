@@ -4,6 +4,15 @@
 //! state. Trigger events can test these locals, and trigger actions can mutate
 //! them during runtime.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::indexing_slicing,
+)]
+
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;

@@ -2,6 +2,9 @@
 //! Handles sparse column-based voxel span decoding.
 //! Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use crate::assets::error::AssetError;
 use crate::assets::vxl_file::VxlVoxel;
 

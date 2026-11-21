@@ -3,6 +3,15 @@
 //! This is a VERA UTF-8 manifest, not a gamemd INI. The same bounded reader
 //! serves the Mods page, game startup and launch probes on every platform.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::indexing_slicing,
+)]
+
 use std::{path::Path, sync::Arc};
 
 use crate::assets::client_install::ClientInstall;

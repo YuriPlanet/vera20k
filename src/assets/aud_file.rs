@@ -27,6 +27,9 @@
 //! - IMA ADPCM sample math comes from `assets::ima_adpcm`, the crate's single
 //!   implementation.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use super::ima_adpcm::{ImaAdpcmState, decode_nibbles};
 
 /// Magic value at the start of each audio chunk.

@@ -2,6 +2,9 @@
 //! Uncompress64BDD0. The session owns these caches; Simulation keeps the only
 //! OutList/DoList. Inputs and mirror records are transient transfer values.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::BTreeMap;
 
 use crate::sim::command::{

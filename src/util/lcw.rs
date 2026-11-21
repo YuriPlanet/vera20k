@@ -18,6 +18,9 @@
 //! ## Dependency rules
 //! - Part of util/ — no game dependencies.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 /// Errors during LCW decompression.
 #[derive(Debug)]
 pub enum LcwError {

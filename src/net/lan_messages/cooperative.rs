@@ -5,6 +5,9 @@
 //! options `0x32` (`0x0046D4A0`) is 455. The round state and the slot values
 //! belong to their app owners; this module only encodes and reads fields.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use super::{LAN_MESSAGE_LEN, LanMessage, LanMessageError, LanMessageKind};
 use crate::util::read_helpers::array_at;
 

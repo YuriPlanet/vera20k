@@ -18,6 +18,9 @@
 //! Native registry allocation and ordered RulesClass passes live in
 //! `rules::native_processing`; typed gameplay projection lives in `ruleset`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;

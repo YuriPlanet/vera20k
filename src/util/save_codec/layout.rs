@@ -22,6 +22,9 @@
 //! it returns a placeholder once its wire form is read. An impl that branches
 //! on a decoded value is described along the branch its made-up value takes.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::any::type_name;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};

@@ -4,6 +4,9 @@
 //! This module keeps the first-pass support intentionally narrow: parse the most
 //! useful metadata now and leave the broader scenario semantics for later work.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use crate::assets::csf_file::CsfFile;
 use crate::rules::ini_parser::IniFile;
 use crate::util::native_string::decode_widened_utf8;

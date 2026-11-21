@@ -5,6 +5,9 @@
 //! IPv4 endpoints here are VERA's LAN transport adaptation: retail's Network
 //! menu uses IPX sockets. No legacy IPX socket or address protocol is included.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4};
 

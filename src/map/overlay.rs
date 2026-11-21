@@ -13,6 +13,9 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on util/ (base64, lcw), rules/ (ini_parser).
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use crate::map::cell_index::CellGrid;
 use crate::rules::ini_parser::IniFile;
 use crate::util::base64;

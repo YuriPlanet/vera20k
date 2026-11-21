@@ -3,6 +3,15 @@
 //! saved pointer slot to resolve to an object of an admitted kind while
 //! clearing only deliberate weak identities.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::indexing_slicing,
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::SnapshotRestoreError;

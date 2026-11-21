@@ -18,6 +18,9 @@
 //! save header is read that way without decoding the body behind it.
 //! [`layout`] describes what a type reads, so saves can name their layout.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::fmt;
 
 use serde::de::{self, DeserializeSeed, Deserializer as _, IntoDeserializer, Visitor};

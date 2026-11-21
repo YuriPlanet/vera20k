@@ -9,6 +9,9 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use crate::assets::mix_hash::mix_hash;
 
 /// A single entry from the XCC global mix database.

@@ -1,6 +1,9 @@
 //! The ordering owner's full-match archive. Sequence offsets stay on
 //! disk; the in-memory deque is only a bounded cache of this same stream.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use super::sequenced::{DEPARTURE_EVENT, FRAME_END_EVENT};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};

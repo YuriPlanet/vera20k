@@ -10,6 +10,9 @@
 //! peer roster. Residual: router/localhost rewriting, native self-source
 //! filtering, spare sockets and platform socket-buffer tuning are not ported.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::VecDeque;
 use std::io;
 #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]

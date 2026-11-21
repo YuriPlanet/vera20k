@@ -13,6 +13,9 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::borrow::Cow;
 
 use crate::assets::error::AssetError;

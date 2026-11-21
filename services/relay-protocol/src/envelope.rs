@@ -15,6 +15,9 @@
 //! a datagram must carry, the replay window, rate limits and the per-kind
 //! payloads (§6.1 table) belong to `ClientSession` and `RelayServer`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use hmac::Mac;
 
 use crate::{RelayError, SecretKey};

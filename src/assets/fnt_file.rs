@@ -12,6 +12,9 @@
 //!
 //! See docs/SIDEBAR_READY_TEXT_RENDERING.md for format details.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::collections::HashMap;
 
 use crate::util::read_helpers::read_u32_le;

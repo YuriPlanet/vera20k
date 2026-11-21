@@ -7,6 +7,9 @@
 //! Browser networking uses the same quota/eviction owner over the per-tab VFS;
 //! synchronous operations need no process lock, and shared leases retain pins.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable, clippy::indexing_slicing)]
+
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
 use crate::util::file_system as fs;
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]

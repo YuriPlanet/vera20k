@@ -5,6 +5,9 @@
 //! the stream, so the players' games never learn it is there. It only pulls,
 //! and its traffic spends budgets of its own, none of the players'.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::panic)]
+
 use std::collections::VecDeque;
 
 use super::*;

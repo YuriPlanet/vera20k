@@ -3,6 +3,9 @@
 //! This records preview metadata and decodes the packed thumbnail pixels used
 //! by the skirmish shell on demand. GPU upload remains in the app/render layer.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use std::fmt;
 
 use crate::rules::ini_parser::IniFile;

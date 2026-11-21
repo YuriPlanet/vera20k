@@ -4,6 +4,9 @@
 //! shell controls, plus the runtime-written 3-plane direct RGB preview form.
 //! The parser keeps embedded VGA palettes in 8-bit RGB.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)]
+
 use crate::assets::error::AssetError;
 
 #[derive(Debug, Clone)]
