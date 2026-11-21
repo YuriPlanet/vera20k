@@ -335,7 +335,7 @@ pub(crate) fn briefing(state: &AppState, record_index: usize) -> Option<String> 
         SkirmishScenarioSource::Online(_) => {
             crate::map::basic::briefing_text(online_header(state, record_index)?)
         }
-        SkirmishScenarioSource::LooseYrm(_) => {
+        SkirmishScenarioSource::LooseMap(_) => {
             let path =
                 crate::map::source::local_map_path(state.ra2_dir()?, &record.file_name).ok()?;
             let bytes = crate::util::file_system::read(path).ok()?;
@@ -622,9 +622,13 @@ pub(crate) fn keep_map(
     let mut carried_star = None;
     if online.is_some() || !listed {
         let ordinal = online.map_or(records.len(), |index| records[index].source_ordinal);
-        let record =
-            crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), ordinal)
-                .context("the kept map does not read as a map")?;
+        let record = crate::map::scenario_sources::loose_map_record(
+            &kept.path,
+            kept.name.clone(),
+            ordinal,
+            state.process_assets.manager(),
+        )
+        .context("the kept map does not read as a map")?;
         // A starred online map stays starred under its file name.
         if online.is_some() && state.frontend.map_library.favorites.contains(&sha256) {
             carried_star = crate::ui::skirmish_shell::favorite_key(&record);

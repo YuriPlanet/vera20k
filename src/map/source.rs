@@ -250,6 +250,13 @@ pub fn read_map_ini_for_metadata(path: &Path) -> Option<IniFile> {
     map_file::ini_from_file_bytes(crate::util::file_system::read(path).ok()?.into()).ok()
 }
 
+/// The selected loose map's INI with gameplay's directive resolution. Terrain
+/// and other packed sections stay encoded while the chooser reads its header.
+pub(super) fn read_effective_loose_map_ini(path: &Path, assets: &AssetManager) -> Option<IniFile> {
+    let ini = read_map_ini_for_metadata(path)?;
+    expand_map_ini_with_options(ini, &path.to_string_lossy(), assets, false).ok()
+}
+
 /// Physical INI plus the exact source bytes used by shell map verification.
 /// Unlike full MapFile parsing, native6951F0 admits an INI without requiring
 /// a playable map header before comparing its [Digest] text.
@@ -506,25 +513,23 @@ fn expand_map_ini(
     source: &LoadedMapSource,
     assets: &AssetManager,
 ) -> Result<IniFile> {
-    expand_map_ini_with_options(ini, source, assets, false, None)
+    let name = match source {
+        LoadedMapSource::Loose { path, .. } => path.to_string_lossy(),
+        LoadedMapSource::Mix { logical_name, .. } => Cow::Borrowed(logical_name.as_str()),
+        _ => Cow::Borrowed("<map>"),
+    };
+    expand_map_ini_with_options(ini, &name, assets, false)
 }
 
 fn expand_map_ini_with_options(
     ini: IniFile,
-    source: &LoadedMapSource,
+    name: &str,
     assets: &AssetManager,
     strict: bool,
-    logical_name: Option<&str>,
 ) -> Result<IniFile> {
     if !(crate::rules::ares_switch::ares_way() || crate::rules::PHOBOS_ENABLED) {
         return Ok(ini);
     }
-    let name = match source {
-        LoadedMapSource::Loose { path, .. } => path.to_string_lossy().into_owned(),
-        LoadedMapSource::Mix { logical_name, .. } => logical_name.clone(),
-        _ => "<map>".to_owned(),
-    };
-    let name = logical_name.unwrap_or(&name);
     let (expanded, _) = crate::rules::retail_sources::expand_ini_with_assets(
         assets,
         ini,
@@ -547,13 +552,7 @@ pub fn resolve_network_map_ini(
     logical_name: &str,
 ) -> Result<LoadedMapIni> {
     if !seed {
-        loaded.ini = expand_map_ini_with_options(
-            loaded.ini,
-            &loaded.source,
-            assets,
-            true,
-            Some(logical_name),
-        )?;
+        loaded.ini = expand_map_ini_with_options(loaded.ini, logical_name, assets, true)?;
     }
     Ok(loaded)
 }
@@ -1266,7 +1265,7 @@ mod tests {
             maps.join("FrozenLakes.yrm")
         );
         let record =
-            crate::map::scenario_sources::loose_yrm_record(&kept.path, kept.name.clone(), 0)
+            crate::map::scenario_sources::loose_map_record(&kept.path, kept.name.clone(), 0, None)
                 .expect("Choose Map reads the kept map");
         assert_eq!(record.display_name, "Frozen Lakes");
         // The same map again, in another case, is the file already kept.

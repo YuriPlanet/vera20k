@@ -1323,7 +1323,7 @@ mod tests {
         let layout = compute_choose_map_modal_layout(800, 600);
         let loose = |name: &str, game_modes: &[&str]| {
             let mut record = record_for(name, game_modes);
-            record.source = SkirmishScenarioSource::LooseYrm(format!("{name}.map"));
+            record.source = SkirmishScenarioSource::LooseMap(format!("{name}.map"));
             record
         };
         let mut arctic = record_for("Arctic Pass", &["standard"]);

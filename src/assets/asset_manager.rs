@@ -507,8 +507,8 @@ pub fn holds_master_archives(dir: &Path) -> bool {
 }
 
 /// Use the selected folder's authored loader settings when it has them.
-/// A conventional launcher folder can describe itself with its existing
-/// client catalog and a complete numbered archive family.
+/// Otherwise recognize a classic RA2 folder by its files, or a launcher
+/// folder by its client catalog and numbered archive family.
 pub fn mod_resources(
     dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
@@ -520,6 +520,21 @@ pub fn mod_resources(
         return Ok(resources);
     }
     let Some(client) = ClientInstall::read(dir)? else {
+        if base.profile != IniProfile::Custom
+            && super::numbered_mod_resources::uses_classic_ra2(dir)?
+        {
+            // This mod uses the original game's file family. Missing members
+            // come from the same RA2 family in the normal installation VFS.
+            let ini = &mut resources.ini;
+            ini.profile = IniProfile::Custom;
+            ini.rules = Some("rules.ini".into());
+            ini.art = Some("art.ini".into());
+            ini.ai = Some("ai.ini".into());
+            ini.modes.get_or_insert_with(|| "mpmodes.ini".into());
+            ini.map_catalog.get_or_insert_with(|| "missions.pkt".into());
+            resources.archives.expansion_prefix = "expand".into();
+            resources.archives.multiplayer = "multi.mix".into();
+        }
         return Ok(resources);
     };
     if let Some((ini, archives)) = super::numbered_mod_resources::discover(dir)? {
@@ -2756,6 +2771,52 @@ mod tests {
         assert_eq!(original.get_ref("rulesmd.ini"), Some(&b"game rules"[..]));
         assert_eq!(original.get_ref("unit.shp"), Some(&b"game unit"[..]));
         assert_eq!(original.get_ref("new.vxl"), None);
+    }
+
+    #[test]
+    fn selected_classic_mod_uses_its_rules_and_modes_and_the_base_ai() {
+        use crate::util::{ares_launch::AresSetting, mod_package::ModFolder};
+        let install = audio_test_install("classic-base");
+        install.write_mix("local.mix", "ai.ini", b"[AITriggerTypes]\n");
+        let files = TestDirectory::new("classic-mod");
+        for (name, data) in [
+            ("RuLeS.INI", "[General]\n"),
+            ("ART.ini", "[Vehicle]\n"),
+            (
+                "MPModes.ini",
+                "[Battle]\n1=GUI:Battle,STT:ModeBattle,Alt.ini,standard,true\n",
+            ),
+        ] {
+            std::fs::write(files.path().join(name), data).unwrap();
+        }
+        files.write_mix("Expand50.mix", "Alt.ini", b"[General]\nCrateMinimum=7\n");
+        let folder = ModFolder::loose(files.path().to_owned());
+        let request = mod_resources(
+            &folder,
+            &ModDefinition::default(),
+            &IniRootConfig::default(),
+        )
+        .unwrap();
+        let assets = AssetManager::with_mod_and_ares(
+            install.path(),
+            Some(&folder),
+            MediaArchiveMode::STOCK_DIGITAL,
+            AresSetting::Auto,
+            &request.archives,
+        )
+        .unwrap()
+        .with_resource_config(&request)
+        .unwrap();
+        let roots = assets.ini_roots();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(assets.get_ref(roots.ai()), Some(&b"[AITriggerTypes]\n"[..]));
+        assert!(
+            String::from_utf8_lossy(assets.get_ref(roots.modes()).unwrap()).contains("Alt.ini")
+        );
+        assert_eq!(
+            assets.get_ref("Alt.ini"),
+            Some(&b"[General]\nCrateMinimum=7\n"[..])
+        );
     }
 
     /// VERA's Ares setting: Auto ignores the installation's `ares.mix` with
