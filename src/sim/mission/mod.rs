@@ -18,6 +18,7 @@ pub mod control;
 pub(crate) mod leaf;
 pub(crate) mod mega_mission;
 pub(crate) mod readiness;
+pub(crate) mod rescue;
 pub mod retask;
 pub mod state;
 pub mod timer;
