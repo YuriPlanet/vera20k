@@ -300,10 +300,18 @@ fn page_rows(settings: &[Setting], first_row: i32, px: impl Fn(RectPx) -> RectPx
                 rows.end += SLIDER_PITCH;
             }
             Setting::Slider(id) => {
+                // A level number needs a narrow box; a step name, such as
+                // Visual Details' "Medium", half the track.
+                let step_w = match id {
+                    LauncherTrackbarId::HouseColorStrength => 20,
+                    _ => 60,
+                };
                 rows.labels
-                    .push((dlu(ROW_X, top, 60, 10), PageLabel::Slider(id)));
-                rows.labels
-                    .push((dlu(ROW_X + 60, top, 60, 10), PageLabel::Step(id)));
+                    .push((dlu(ROW_X, top, 120 - step_w, 10), PageLabel::Slider(id)));
+                rows.labels.push((
+                    dlu(ROW_X + 120 - step_w, top, step_w, 10),
+                    PageLabel::Step(id),
+                ));
                 rows.trackbars.push((id, slider(ROW_X, top + 15, 120, 13)));
                 rows.end += SLIDER_PITCH;
             }
@@ -765,7 +773,7 @@ impl OptionsDialogState {
                 PageLabel::List(id) => (Cow::Owned(list_caption(id)), Left),
                 PageLabel::Localized(key) => (Cow::Owned(tr(key)), Left),
                 PageLabel::Slider(id) => (self.slider_caption(id), Left),
-                PageLabel::Step(id) => (Cow::Borrowed(self.slider_step(id)), Right),
+                PageLabel::Step(id) => (self.slider_step(id), Right),
                 PageLabel::Blank => (Cow::Borrowed(self.labels.blank.as_str()), Left),
             };
             LauncherShellLabel {
@@ -809,9 +817,11 @@ impl OptionsDialogState {
     }
 
     /// The step name a plaque-less slider prints; a plaque slider shows its
-    /// value on the plaque instead.
-    fn slider_step(&self, id: LauncherTrackbarId) -> &str {
-        match id {
+    /// value on the plaque instead. VERA's Team Color Strength prints the
+    /// level its position stands for, so the player never sees a 0 for
+    /// gamemd's own colours.
+    fn slider_step(&self, id: LauncherTrackbarId) -> Cow<'_, str> {
+        Cow::Borrowed(match id {
             LauncherTrackbarId::Detail => &self.detail_caption,
             LauncherTrackbarId::Difficulty => &self.difficulty_caption,
             LauncherTrackbarId::Scroll => &self.scroll_caption,
@@ -819,8 +829,11 @@ impl OptionsDialogState {
                 .game_speed_names
                 .get(usize::from(self.game_speed_position))
                 .map_or("", String::as_str),
+            LauncherTrackbarId::HouseColorStrength => {
+                return Cow::Owned(self.house_color_strength().to_string());
+            }
             _ => "",
-        }
+        })
     }
 
     /// In the two-column form the setting is already named on the left.
@@ -2931,7 +2944,7 @@ mod tests {
             .unwrap();
         assert_eq!(state.house_color_strength(), STRENGTH_RETAIL);
         assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::HouseColorStrength),
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
             "1"
         );
 
@@ -2941,7 +2954,7 @@ mod tests {
         state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
         assert_eq!(state.house_color_strength(), STRENGTH_MAX);
         assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::HouseColorStrength),
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
             "10"
         );
         assert_eq!(
