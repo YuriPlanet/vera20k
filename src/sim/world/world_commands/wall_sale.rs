@@ -6,7 +6,7 @@ use super::trace_wall_sell_zone_repair_step;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control_authority::CommandCapability;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::overlay_grid::{
     OverlayGrid, OverlayRecalcOutcome, RecomputeResult, runtime_wall_cleanup_visit_at,
 };
@@ -111,7 +111,7 @@ impl Simulation {
     /// Returns whether a wall went.
     pub(crate) fn sell_wall_at_cell(
         &mut self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         x: i16,
         y: i16,
@@ -153,7 +153,7 @@ impl Simulation {
         // and before clearing the overlay. Locality belongs to the receiver.
         if !suppress_local_cue
             && rules.general.sell_sound.is_some()
-            && let Some(receiver) = self.interner.get(command_owner)
+            && let Some(receiver) = self.interner.key_id(command_owner)
         {
             self.sound_events.emit(SimSoundEvent::WallSold { receiver });
         }

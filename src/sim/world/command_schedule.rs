@@ -739,10 +739,9 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             sender,
-            &cmd_owner_str,
+            cmd.owner,
             &cmd.payload,
             rules,
             overlay_registry,
@@ -1037,11 +1036,10 @@ impl Simulation {
         let sender = sender
             .filter(|_| self.session.execution_topology().is_lockstep())
             .map(|house| {
-                let owner = self.interner.resolve(house.owner);
                 (
-                    owner,
+                    house.owner,
                     house.house_id,
-                    self.resolve_command_grant_source(owner, house.house_id),
+                    self.resolve_command_grant_source(house.owner.into(), house.house_id),
                 )
             });
         let mut run_start = 0;
@@ -1093,7 +1091,7 @@ impl Simulation {
                             CommandCapability::PrimaryHouse
                         };
                         self.command_actor_outside_scope(
-                            owner,
+                            owner.into(),
                             granted_source,
                             entity_id,
                             capability,

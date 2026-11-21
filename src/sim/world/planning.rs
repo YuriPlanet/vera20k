@@ -1667,11 +1667,11 @@ impl Simulation {
     pub(super) fn apply_planning_record(
         &mut self,
         sender: Option<i8>,
-        owner_name: &str,
+        owner_name: crate::sim::intern::InternKey<'_>,
         record: &CommandRecord,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
-        let Some(owner) = self.interner.get(owner_name) else {
+        let Some(owner) = self.interner.key_id(owner_name) else {
             return false;
         };
         let authority = if self.session.has_custom_control_grants() {
@@ -2261,9 +2261,7 @@ impl Simulation {
                 break (node_id, record.clone());
             }
             let permitted = owner
-                .and_then(|owner| {
-                    self.resolve_command_grant_source(self.interner.resolve(owner), sender)
-                })
+                .and_then(|owner| self.resolve_command_grant_source(owner.into(), sender))
                 .is_some_and(|source| self.planning_command_actor_allowed(source, actor));
             if permitted {
                 break (node_id, record.clone());

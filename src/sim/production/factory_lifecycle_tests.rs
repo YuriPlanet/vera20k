@@ -1282,7 +1282,7 @@ fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
         rules,
         "Russians",
         super::ProductionCancellation::Type {
-            type_id: "E2",
+            type_id: "E2".into(),
             naval: false
         },
         false,
@@ -2303,7 +2303,7 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: name,
+                type_id: name.into(),
                 naval: false
             },
             false,
@@ -2440,7 +2440,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2456,7 +2456,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2515,7 +2515,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2944,7 +2944,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         ProductionCancellation::Type {
-            type_id: "GAPOWR",
+            type_id: "GAPOWR".into(),
             naval: false,
         },
         false,
@@ -3389,7 +3389,7 @@ fn active_cancel_without_house_does_not_create_refund_account() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "SMIN",
+                type_id: "SMIN".into(),
                 naval: false,
             },
             all,
@@ -3615,7 +3615,7 @@ fn a_cancel_refunds_the_cost_of_at_cancel_time() {
         &rules,
         "Russians",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "HTNK",
+            type_id: "HTNK".into(),
             naval: false
         },
         false,

@@ -134,15 +134,15 @@ impl HouseFactoryAbandonment {
 /// Building Production Queue option also sets through the scenario's rules)
 /// skips both the busy refusal (`0x4FA520`) and the held-product abandon
 /// (`0x4C9C7B`), so the PRODUCE appends to the factory queue instead.
-pub fn enqueue_by_type(
+pub fn enqueue_by_type<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
-    type_id: &str,
+    owner: impl Into<InternKey<'k>>,
+    type_id: impl Into<InternKey<'k>>,
     effects: &mut FrameEffects<'_>,
     force: bool,
 ) -> bool {
-    let Some(obj) = rules.object(type_id) else {
+    let Some(obj) = sim.interner.key_object_type(type_id.into(), rules) else {
         return false;
     };
     let Some(selection) = super::ProductionSelection::for_type(rules, obj) else {
@@ -278,14 +278,14 @@ pub(crate) fn enqueue_selected<'k>(
 
 /// The SUSPEND event: `HouseClass::Suspend_Production @ 0x004FA910` puts the
 /// category's running build on hold.
-pub(crate) fn suspend_production(
+pub(crate) fn suspend_production<'k>(
     interner: &StringInterner,
     production: &mut ProductionState,
     session: &ScenarioSession,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     category: ProductionCategory,
 ) -> bool {
-    let Some(owner_id) = interner.get(owner) else {
+    let Some(owner_id) = interner.key_id(owner.into()) else {
         return false;
     };
     let frame = session.binary_frame();
@@ -584,7 +584,7 @@ fn refund_abandoned(
 /// remains the sole owner of the held object, queue and Factory lifetime.
 #[derive(Debug, Clone, Copy)]
 pub enum ProductionCancellation<'a> {
-    Type { type_id: &'a str, naval: bool },
+    Type { type_id: InternKey<'a>, naval: bool },
     Category(ProductionCategory),
     Selected(super::ProductionSelection),
 }
@@ -603,7 +603,7 @@ pub fn cancel_production_for_owner<'k>(
 ) -> bool {
     let request = match request {
         ProductionCancellation::Type { type_id, naval } => {
-            let Some(object) = rules.object(type_id) else {
+            let Some(object) = sim.interner.key_object_type(type_id, rules) else {
                 return false;
             };
             let Some(mut selection) = super::ProductionSelection::for_type(rules, object) else {

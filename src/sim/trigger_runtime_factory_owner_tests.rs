@@ -407,7 +407,7 @@ fn transferred_held_tank_refund_values_its_owner_but_credits_factory_house() {
         &rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "MTNK",
+            type_id: "MTNK".into(),
             naval: false
         },
         true,
