@@ -11,10 +11,13 @@ use crate::ui::wol_lobby::*;
 use crate::util::time::Instant;
 use winit::keyboard::KeyCode;
 
-use super::{WolLobby, dispatch, layout, lobby, lobby_mut, modern_lobby};
+use super::{WolLobby, chat_layout, dispatch, layout, lobby, lobby_mut, modern_lobby};
 
 pub(crate) fn update_geometry(state: &mut AppState) {
     let layout = layout(state);
+    // The chat keeps its own view's log and edit while the games cover it,
+    // so its scroll and the edit's text survive the swap.
+    let chat = chat_layout(state);
     let create_rects = create_layout(state);
     let password_rect = password_layout(state).password;
     let font = &state.renderer.bit_font;
@@ -32,13 +35,13 @@ pub(crate) fn update_geometry(state: &mut AppState) {
         (&mut ui.lobby_list, layout.lobbies, ui.lobby_rows.len()),
         (&mut ui.game_list, layout.games, ui.game_rows.len()),
         (&mut ui.player_list, layout.players, ui.player_rows.len()),
-        (&mut ui.chat.list, layout.chat_log, ui.chat.lines.len()),
+        (&mut ui.chat.list, chat.chat_log, ui.chat.lines.len()),
     ] {
         list.reconcile_geometry(rect, count, scale);
     }
     ui.chat
         .edit
-        .scroll_to_caret((scale.base_rect(layout.chat).w - 3).max(0) as u32, |text| {
+        .scroll_to_caret((scale.base_rect(chat.chat).w - 3).max(0) as u32, |text| {
             font.text_width(text)
         });
     if let Some(popup) = ui.popup.as_mut() {
@@ -65,7 +68,7 @@ pub(crate) fn update_geometry(state: &mut AppState) {
 
 /// The chat NewEdit while it takes keys, for the input method
 /// (`app::input::ime`): `handle_wol_key` reaches [`key_press`] with the lobby
-/// page up, no page dialog and no popup.
+/// page up, no page dialog, no popup and the chat showing.
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = App::wol_active(state)
         && !shell_transition::blocks_shell_input(state)
@@ -74,7 +77,11 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         && App::wol_page_is_lobby(state);
     lobby(state)
         .filter(|lobby| {
-            routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+            routed
+                && lobby.interactive()
+                && lobby.ui.popup.is_none()
+                && lobby.ui.card.is_none()
+                && lobby.ui.shows_chat()
         })
         .map(|_| layout(state).chat)
 }

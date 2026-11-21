@@ -44,7 +44,6 @@ mod join;
 mod runners;
 mod visit;
 use help::scenario_description;
-pub(crate) use help::room_details;
 
 use super::{
     WOL_LOBBY_DIALOG, WolProvider, WolVisit, buddies, buddy, page, persona, player_card,
@@ -495,6 +494,20 @@ pub(crate) fn layout(state: &AppState) -> WolLobbyLayout {
         WolLobbyLayout::responsive(width as i32, height as i32, &crate::ui::wol_lobby::PAGE)
     } else {
         WolLobbyLayout::new(width as i32, height as i32, &crate::ui::wol_lobby::PAGE)
+    }
+}
+
+/// [`layout`] as the online page's chat view lays it out, whichever view
+/// shows: the log the lobby's chat wraps its messages to.
+pub(crate) fn chat_layout(state: &AppState) -> WolLobbyLayout {
+    let (width, height) = shell_layout::shell_screen_size(state);
+    match lobby(state) {
+        Some(lobby) => lobby.ui.chat_layout(
+            width as i32,
+            height as i32,
+            shell_layout::fills_window(state),
+        ),
+        None => layout(state),
     }
 }
 
@@ -2507,6 +2520,11 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             ),
         ),
         WolLobbyAction::BackToRoom => back_to_room(state),
+        // VERA: the other view's lists and edit take the pointer's place.
+        WolLobbyAction::View => {
+            input::update_geometry(state);
+            cursor_moved(state);
+        }
         // VERA: the online page's Quick Match ends the runner as Buddy List
         // does, with return mode 4, and the Quick Match runner follows.
         WolLobbyAction::QuickMatch => App::leave_shell_dialog(

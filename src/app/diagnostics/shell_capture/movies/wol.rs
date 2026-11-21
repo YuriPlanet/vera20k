@@ -1439,6 +1439,25 @@ fn lobby_button(state: &mut AppState, layout: &lobby_ui::WolLobbyLayout, id: u16
     Ok(())
 }
 
+/// The online page's chat view through its view button, so the chat and the
+/// player list show.
+fn show_lobby_chat(state: &mut AppState) -> Result<()> {
+    let shows_chat = |state: &AppState| {
+        state
+            .frontend
+            .wol
+            .as_ref()
+            .and_then(|visit| visit.lobby())
+            .is_some_and(|lobby| lobby.ui.shows_chat())
+    };
+    if !shows_chat(state) {
+        let layout = crate::app::shell_wol::lobby::layout(state);
+        lobby_button(state, &layout, lobby_ui::VIEW)?;
+    }
+    ensure!(shows_chat(state), "the view button did not show the chat");
+    Ok(())
+}
+
 /// A click on one visible game row.
 fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
     let layout = crate::app::shell_wol::lobby::layout(state);
@@ -1458,8 +1477,9 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
     Ok(())
 }
 
-/// A click on the player list's row of `name`.
+/// A click on the player list's row of `name`, in the chat view.
 fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
+    show_lobby_chat(state)?;
     let rect = player_row_rect(state, name)?;
     welcome_click(state, rect);
     Ok(())
