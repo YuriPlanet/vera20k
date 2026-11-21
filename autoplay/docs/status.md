@@ -93,11 +93,14 @@ seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158
   全部 timeout，连原本 32491 胜的那局也丢了。原因不是门槛本身——`army at first
   push` 三局都还是 10，说明门不是它在把；抬它把 `fist_needs` 一起抬到 20，
   支队被饿死，袭扰线没了。
-- **把 `PUSH_SUPERIORITY_PERMILLE` 1200 → 1000**（军队和目标是同一水平就出门，
-  想解 seed 19 的 `push=outgunned`）：三局全部变差。seed 10 从 `won at tick 35820`
-  掉到 timeout（own 157 → 116，army 93 → 50，lost 55:124 → 81:79）；
-  seed 24301 从 `won at 29484` 掉到 `won at 30341`；seed 19 自己的 stuck 从 82
-  掉到 11（军队确实出门了），但仍 timeout，而且 own 158 → 151、lost 47:46 → 47:57。
+- **把 `PUSH_SUPERIORITY_PERMILLE` 从 1200 往下调**（想解 seed 19 的 `push=outgunned`）：
+  两档都试过，两档都更差。降到 **1000**（同等兵力就出门）：seed 10 从
+  `won at tick 35820` 掉到 timeout（own 157 → 116，army 93 → 50，lost 55:124 → 81:79）；
+  seed 24301 从 `won at 29484` 掉到 `won at 30341`；seed 19 自己的 stuck 从 82 掉到 11
+  （军队确实出门了），但仍 timeout，而且 own 158 → 151、lost 47:46 → 47:57。
+  降到 **1100** 同样三局都差：24301 `won at 31756`，seed 10 也丢了胜利
+  （timeout own=131 army=62 epoints=7336）。也就是说悬崖正好在 1.1 和 1.2 之间，
+  1200 不是随手取的数，是这三局里刚好能站住的下限。
   结论：门不是无谓的谨慎。同等兵力出门，等于用军队换一块守不住的基地——
   这正是 `squads.rs:88-101` 那段注释写的，现在有数了。1200 回退后三局逐字节复原。
 - **把 fist 的门单独抬到 20**（新增 `PUSH_ARMY`，`mop_up` 不再能把它降回 10）：
