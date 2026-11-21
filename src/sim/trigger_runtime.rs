@@ -322,6 +322,9 @@ mod lifecycle;
 mod module_triggers;
 #[cfg(any(test, feature = "dev-overlays"))]
 mod trace;
+mod untriggered;
+
+pub(crate) use untriggered::{StockActionCall, StockReference, StockReferenceKind};
 
 pub(crate) use module_triggers::{ModuleTrigger, ModuleTriggers};
 

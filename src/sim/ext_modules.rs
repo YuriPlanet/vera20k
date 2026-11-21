@@ -15,11 +15,13 @@
 //! - names of TechnoTypes, countries and properties (`lookup`, `name_of`);
 //! - reads of the object and house properties [`Host::get`] lists, and
 //!   `find` over objects and houses;
-//! - the atomic `AddMoney` action;
 //! - modifiers on objects ([`modifiers`]) and the variables modules declare
 //!   in `vera.vars` ([`vars`]);
 //! - writes of `Health`, `Owner` and `Rank` through their owners;
-//! - runtime triggers and `on_events` delivery ([`triggers`]).
+//! - runtime triggers and `on_events` delivery ([`triggers`]);
+//! - names of weapons, warheads, TeamTypes and action kinds;
+//! - the `action` import ([`actions`]): atomic actions and stock trigger
+//!   actions through their owners, for direct calls and trigger actions.
 //!
 //! Modules come from the selected mod's folder and the map's
 //! `[VeraWasmRulesPack]` ([`Simulation::install_scenario_ext_modules`]).
@@ -49,18 +51,22 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Query,
-    SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION,
-    TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROPERTY, NAME_TEAM_TYPE, NAME_TECHNO_TYPE,
+    NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS,
+    SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE,
+    property_name,
 };
 
+mod actions;
 pub(crate) mod modifiers;
 pub(crate) mod vars;
 
+pub use actions::{ActionContext, run_action};
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
 use crate::map::entities::EntityCategory;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::{CountryIdx, RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
@@ -81,7 +87,7 @@ const GLOBAL_VARS: std::ops::Range<i32> = 100..150;
 
 /// Atomic action `AddMoney`: atomic actions are numbered from 1000 in
 /// appendix 5.3 table order, where it is entry 15 (numbers are open question 5).
-pub const ACTION_ADD_MONEY: i32 = 1015;
+pub const ACTION_ADD_MONEY: i32 = actions::ADD_MONEY;
 
 /// Provisional house reference: kind 0 with bit 47 set over the house array
 /// index. Houses here have no creation serial; the RFC's shared counter is a
@@ -146,6 +152,10 @@ pub struct ExtModules {
     pending: Vec<SavedSlot>,
     /// Log lines from modules, drained by the caller.
     log: Vec<String>,
+    /// Set while a module trigger runs its immediate actions, so the events
+    /// they raise reach no module trigger (no chain triggers yet). False
+    /// between frames; not saved.
+    firing: bool,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -359,12 +369,12 @@ const fn category_value(category: EntityCategory) -> i64 {
 
 /// The host a module sees during one call: the simulation, whose module
 /// slots are set aside for the call, and the calling module's own state.
-struct Host<'a, 'e> {
+struct Host<'a, 'f> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
-    /// For the owners a write reaches (ChangeOwner).
-    registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: &'a mut FrameEffects<'e>,
+    /// For the owners a write or action reaches (ChangeOwner, ...).
+    overlay_registry: Option<&'a OverlayTypeRegistry>,
+    frame_effects: &'a mut FrameEffects<'f>,
     rng: &'a mut SimRng,
     source: ModuleSource,
 }
@@ -386,7 +396,7 @@ impl SimHost for Host<'_, '_> {
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
         match table {
             vera20k_wasm_ext::triggers::TABLE_EVENT => triggers::RAISED_EVENTS.contains(&id),
-            TABLE_ACTION => id == ACTION_ADD_MONEY,
+            TABLE_ACTION => actions::has_action(id, self.rules),
             TABLE_PROPERTY => property_name(id).is_some_and(|name| {
                 READABLE.contains(&name) || Stat::from_property(name).is_some()
             }),
@@ -396,8 +406,10 @@ impl SimHost for Host<'_, '_> {
                     | NAME_WEAPON
                     | NAME_WARHEAD
                     | NAME_COUNTRY
-                    | NAME_PROPERTY
+                    | NAME_TEAM_TYPE
                     | NAME_VARIABLE
+                    | NAME_PROPERTY
+                    | NAME_ACTION_KIND
             ),
             TABLE_SCOPE => matches!(id, SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_MODIFIERS),
             _ => false,
@@ -410,6 +422,10 @@ impl SimHost for Host<'_, '_> {
             NAME_COUNTRY => self.rules.country_index(name).map(|c| i32::from(c.0)),
             NAME_WEAPON => self.rules.weapon_index(name).map(|i| i as i32),
             NAME_WARHEAD => self.rules.warhead_index(name).map(|i| i as i32),
+            NAME_TEAM_TYPE => self
+                .sim
+                .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
+                .map(|index| index as i32),
             NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
             _ => return Ok((-1, Status::Unsupported)),
         };
@@ -435,6 +451,9 @@ impl SimHost for Host<'_, '_> {
                 .ok()
                 .and_then(|id| self.rules.warhead_at(id))
                 .map(|warhead| warhead.id.as_str()),
+            NAME_TEAM_TYPE => usize::try_from(id)
+                .ok()
+                .and_then(|id| self.sim.stock_team_type_name(id)),
             _ => return Ok((String::new(), Status::Unsupported)),
         };
         name.map(|name| (name.to_owned(), Status::Ok))
@@ -563,26 +582,7 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid> {
-        if var >= FIRST_DECLARED_VAR {
-            let Some(holder) = self.var_holder(scope, var)? else {
-                return Ok(Status::Gone);
-            };
-            self.sim.ext_modules.vars.set(var, holder, value);
-            return Ok(Status::Ok);
-        }
-        let (global, index) = stock_variable(scope, var)?;
-        // The trigger runtime's writer also resets the timers of triggers
-        // waiting on the variable (events 27, 28, 36, 37), as map actions do.
-        let sim = &mut *self.sim;
-        Simulation::set_trigger_variable(
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.trigger_runtime,
-            global,
-            index as i32,
-            value != 0,
-        );
-        Ok(Status::Ok)
+        self.sim.write_module_var(scope, var, value)
     }
 
     fn action(
@@ -590,20 +590,16 @@ impl SimHost for Host<'_, '_> {
         kind: i32,
         target: i64,
         params: &ActionParams,
+        text: &str,
     ) -> Result<(i64, Status), Invalid> {
-        match kind {
-            ACTION_ADD_MONEY => {
-                let Some(owner) = self.house(target)? else {
-                    return Ok((0, Status::Gone));
-                };
-                let amount = i32::try_from(params.value).map_err(|_| {
-                    Invalid(format!("AddMoney amount {} is out of range", params.value))
-                })?;
-                crate::sim::credit_income::add_credits(&mut self.sim.houses, owner, amount);
-                Ok((0, Status::Ok))
-            }
-            _ => Ok((0, Status::Unsupported)),
-        }
+        let context = ActionContext {
+            rules: self.rules,
+            overlay_registry: self.overlay_registry,
+            frame_effects: &mut *self.frame_effects,
+            text,
+            trigger_house: None,
+        };
+        run_action(self.sim, kind, target, params, context)
     }
 
     fn trigger_create(
@@ -689,22 +685,10 @@ impl Host<'_, '_> {
         })
     }
 
-    /// The holder of declared variable `var` that `scope` names (`None`
-    /// when gone); a wrong scope or unknown variable is invalid.
-    fn var_holder(&self, scope: i64, var: i32) -> Result<Option<vars::Holder>, Invalid> {
-        let sim = &*self.sim;
-        sim.ext_modules.vars.holder(
-            scope,
-            var,
-            |index| index < sim.houses.order().len(),
-            |id| sim.entities().get(id).is_some(),
-        )
-    }
-
     /// A variable, as `var_get` reads it.
     fn read_var(&self, scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
         if var >= FIRST_DECLARED_VAR {
-            let holder = self.var_holder(scope, var)?;
+            let holder = self.sim.module_var_holder(scope, var)?;
             return Ok(self.sim.ext_modules.vars.read(var, holder));
         }
         let (global, index) = stock_variable(scope, var)?;
@@ -963,7 +947,7 @@ impl Host<'_, '_> {
             return Ok(Status::Refused);
         }
         self.sim
-            .change_owner_with_rules(id, house, self.rules, self.registry, self.effects);
+            .change_owner_with_rules(id, house, self.rules, self.overlay_registry, self.frame_effects);
         Ok(Status::Ok)
     }
 
@@ -1046,6 +1030,42 @@ fn stock_variable(scope: i64, var: i32) -> Result<(bool, u32), Invalid> {
 }
 
 impl Simulation {
+    /// The holder of declared variable `var` that `scope` names (`None`
+    /// when gone); a wrong scope or unknown variable is invalid.
+    fn module_var_holder(&self, scope: i64, var: i32) -> Result<Option<vars::Holder>, Invalid> {
+        self.ext_modules.vars.holder(
+            scope,
+            var,
+            |index| index < self.houses.order().len(),
+            |id| self.entities().get(id).is_some(),
+        )
+    }
+
+    /// The one variable writer for modules: `var_set` and the `SetVar`
+    /// action. Declared variables go to [`VarStore`]; Red Alert 2 variables
+    /// go through the trigger runtime's writer, which also resets the timers
+    /// of triggers waiting on the variable (events 27, 28, 36, 37), as map
+    /// actions do.
+    fn write_module_var(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid> {
+        if var >= FIRST_DECLARED_VAR {
+            let Some(holder) = self.module_var_holder(scope, var)? else {
+                return Ok(Status::Gone);
+            };
+            self.ext_modules.vars.set(var, holder, value);
+            return Ok(Status::Ok);
+        }
+        let (global, index) = stock_variable(scope, var)?;
+        Simulation::set_trigger_variable(
+            &self.session,
+            &mut self.scenario_rng,
+            &mut self.trigger_runtime,
+            global,
+            index as i32,
+            value != 0,
+        );
+        Ok(Status::Ok)
+    }
+
     /// Loads a module and runs its `vera_init`. An error means the module
     /// cannot run and the match should not start (RFC section 3).
     pub fn install_ext_module(
@@ -1160,8 +1180,8 @@ impl Simulation {
     pub(crate) fn run_ext_module_phase(
         &mut self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: &mut FrameEffects<'_>,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !self.ext_modules.modifiers.is_empty() {
             let frame = self.session.binary_frame();
@@ -1169,7 +1189,7 @@ impl Simulation {
                 .modifiers
                 .expire(&mut self.substrate.entities, frame);
         }
-        self.raise_module_timers(rules);
+        self.raise_module_timers(rules, frame_effects);
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
@@ -1178,8 +1198,8 @@ impl Simulation {
                 self.ext_modules.slots[index].started = true;
                 if let Err(fault) = self.call_ext_module(
                     rules,
-                    registry,
-                    effects,
+                    overlay_registry,
+                    frame_effects,
                     index,
                     Export::ScenarioStart,
                     ONCE_BUDGET,
@@ -1188,11 +1208,11 @@ impl Simulation {
                     continue;
                 }
             }
-            if let Err(fault) = self.deliver_ext_module_events(rules, registry, effects, index) {
+            if let Err(fault) = self.deliver_ext_module_events(rules, overlay_registry, frame_effects, index) {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
-            match self.call_ext_module(rules, registry, effects, index, Export::Frame, FRAME_BUDGET)
+            match self.call_ext_module(rules, overlay_registry, frame_effects, index, Export::Frame, FRAME_BUDGET)
             {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
@@ -1204,13 +1224,13 @@ impl Simulation {
     fn call_ext_module(
         &mut self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: &mut FrameEffects<'_>,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
         index: usize,
         export: Export,
         budget: u64,
     ) -> Result<u64, Fault> {
-        self.with_ext_module(rules, registry, effects, index, |module, host| {
+        self.with_ext_module(rules, overlay_registry, frame_effects, index, |module, host| {
             module.call(export, budget, host)
         })
     }
@@ -1222,8 +1242,8 @@ impl Simulation {
     fn with_ext_module<R>(
         &mut self,
         rules: &RuleSet,
-        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: &mut FrameEffects<'_>,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
         index: usize,
         f: impl FnOnce(&mut SimModule, &mut Host<'_, '_>) -> R,
     ) -> R {
@@ -1232,8 +1252,8 @@ impl Simulation {
         let mut host = Host {
             sim: self,
             rules,
-            registry,
-            effects,
+            overlay_registry,
+            frame_effects,
             rng: &mut slot.rng,
             source: slot.source,
         };
