@@ -712,6 +712,8 @@ impl App {
     ) {
         use crate::app::frontend::shell_pass::resolve_csf;
         use crate::ui::score_shell::{ScorePage, ScoreTexts, format_elapsed, format_game_number};
+        // The page draws the main menu's chrome, dropped for the match.
+        Self::ensure_main_menu_shell_chrome(state);
         let texts = ScoreTexts {
             game: format_game_number(&model, &resolve_csf(state, "TXT_GAME")),
             time: format_elapsed(&model, &resolve_csf(state, "TXT_TIME_FORMAT_HOURS")),
@@ -1108,6 +1110,49 @@ impl App {
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
     /// WOL its lobby 0x113, Skirmish a new0x102. The session keeps the
     /// admitted network return owner.
+    /// The main menu's chrome atlas: built at startup, dropped when a match
+    /// starts (`loading::transitions`) and built again here before a shell
+    /// screen reads it (the score page as it opens, the frame loop for the
+    /// menu). `false` when it cannot be built: the error card
+    /// (`main_menu_shell_error`) keeps the words a startup failure gets, and
+    /// no frame tries again.
+    pub(crate) fn ensure_main_menu_shell_chrome(state: &mut AppState) -> bool {
+        if state.frontend.main_menu_shell_chrome.is_some() {
+            return true;
+        }
+        if state.frontend.main_menu_shell_error.is_some() {
+            return false;
+        }
+        let Some(assets) = state.process_assets.manager() else {
+            log::warn!(
+                "Could not prepare the main menu shell chrome: process asset manager is unavailable"
+            );
+            return false;
+        };
+        let started = crate::util::time::Instant::now();
+        let built = crate::render::main_menu_shell_chrome::build_main_menu_shell_chrome_atlas(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            assets,
+        );
+        match built {
+            Ok(atlas) => {
+                log::info!(
+                    "Main-menu shell chrome built in {:.0} ms",
+                    started.elapsed().as_secs_f64() * 1e3
+                );
+                state.frontend.main_menu_shell_chrome = Some(atlas);
+                true
+            }
+            Err(error) => {
+                log::warn!("{error:#}");
+                state.frontend.main_menu_shell_error =
+                    Some(super::initialize::describe_startup_error(&error));
+                false
+            }
+        }
+    }
+
     pub(crate) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
             // A relay launch first reports its result to the match service;

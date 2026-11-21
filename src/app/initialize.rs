@@ -231,7 +231,7 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
 /// `std::io::Error`'s own message is in the host's language, which need not
 /// be the player's. This walks the `anyhow` chain and states each I/O link
 /// from the language files, as our own context strings already are.
-fn describe_startup_error(err: &anyhow::Error) -> String {
+pub(super) fn describe_startup_error(err: &anyhow::Error) -> String {
     use crate::assets::error::AssetError;
 
     let mut parts: Vec<String> = Vec::new();
