@@ -940,7 +940,7 @@ impl ReplayStartup {
             map_sha256: map_sha256.to_owned(),
             blueprint,
             scenario_rng: sim.scenario_rng().clone(),
-            main_rng: sim.main_rng().checkpoint(),
+            main_rng: sim.main_rng().clone(),
             mapgen_rng: sim.mapgen_rng().clone(),
             initial_hash: sim.state_hash(),
             every_frame_network,
@@ -1154,13 +1154,13 @@ pub struct ReplayVerification {
 /// canonical records already contain their accepted frame and source order.
 /// The existing checksum owner and simulation dispatcher remain shared.
 struct ReplayNetworkBoundary {
-    checksum: std::cell::RefCell<crate::sim::command_queue::FrameChecksumState>,
+    checksum: crate::sim::command_queue::FrameChecksumState,
     every_frame_network: bool,
 }
 
 impl crate::sim::world::NetworkCommandBoundary for ReplayNetworkBoundary {
     fn exchange_commands(
-        &self,
+        &mut self,
         context: crate::sim::world::NetworkQueueContext,
         _queues: &mut crate::sim::world::NetworkCommandQueues<'_>,
     ) -> std::result::Result<
@@ -1174,10 +1174,8 @@ impl crate::sim::world::NetworkCommandBoundary for ReplayNetworkBoundary {
         }))
     }
 
-    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-        self.checksum
-            .borrow_mut()
-            .record_frame_checksum(frame, checksum);
+    fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
+        self.checksum.record_frame_checksum(frame, checksum);
     }
 
     fn compare_frame_info(
@@ -1323,9 +1321,7 @@ impl ReplayPlayback {
             initial_effects,
             failure: None,
             network: ReplayNetworkBoundary {
-                checksum: std::cell::RefCell::new(
-                    crate::sim::command_queue::FrameChecksumState::new(),
-                ),
+                checksum: crate::sim::command_queue::FrameChecksumState::new(),
                 every_frame_network,
             },
         })
@@ -1360,7 +1356,7 @@ impl ReplayPlayback {
     pub fn advance(
         &mut self,
         runtime: &mut crate::sim::runtime::SimRuntime,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<Option<crate::sim::world::SimFrameOutput>> {
         if !self.can_advance() {
             return Ok(None);
@@ -1375,7 +1371,7 @@ impl ReplayPlayback {
     fn advance_inner(
         &mut self,
         runtime: &mut crate::sim::runtime::SimRuntime,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput> {
         let entry = &self.replay.ticks[self.index];
         // A JSON replay carries raw interned ids, and `StringInterner::resolve`
@@ -1401,7 +1397,7 @@ impl ReplayPlayback {
             &commands,
             self.tick_ms,
             crate::sim::world::TickLane::Ordinary,
-            effects.with_network_commands(&self.network),
+            &mut effects.reborrow().with_network_commands(&mut self.network),
         )?;
         if output.network_failure.is_some() {
             anyhow::ensure!(
@@ -1409,7 +1405,7 @@ impl ReplayPlayback {
                 "diagnostic log continues after a fatal FRAMEINFO mismatch"
             );
             output = runtime
-                .resume_after_network_failure(effects.with_network_commands(&self.network))?;
+                .resume_after_network_failure(&mut effects.reborrow().with_network_commands(&mut self.network))?;
         }
         anyhow::ensure!(
             !output.network_waiting && !output.outcome_waiting,
@@ -1539,7 +1535,7 @@ impl ReplayRunner {
         while playback.can_advance() {
             playback.advance(
                 &mut loaded.runtime,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             )?;
         }
         playback.verification(&loaded.runtime)
@@ -1574,7 +1570,7 @@ impl ReplayRunner {
                 ..Default::default()
             },
         )?));
-        let network = ReplayNetworkBoundary {
+        let mut network = ReplayNetworkBoundary {
             checksum: Default::default(),
             every_frame_network: true,
         };
@@ -1583,7 +1579,7 @@ impl ReplayRunner {
                 &[],
                 tick_ms,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty().with_network_commands(&network),
+                &mut crate::sim::world::FrameEffects::empty().with_network_commands(&mut network),
             )?;
             anyhow::ensure!(
                 frame.tick.frame_committed && frame.tick.state_hash.is_some(),
@@ -1612,7 +1608,7 @@ impl ReplayRunner {
         let mut hashes = Vec::with_capacity(replay.ticks.len());
         while playback.can_advance() {
             if let Some(output) =
-                playback.advance(runtime, crate::sim::world::FrameEffects::empty())?
+                playback.advance(runtime, &mut crate::sim::world::FrameEffects::empty())?
             {
                 hashes.push(output.tick.state_hash);
             }
@@ -1706,7 +1702,7 @@ impl ReplayRunner {
         // Playback returns every frame's hash, so a test world hashes each one;
         // a recording compared with it must ask for the same.
         sim.hash_state_every(std::num::NonZeroU64::MIN);
-        let network = std::cell::RefCell::new(crate::sim::command_queue::FrameChecksumState::new());
+        let mut network = crate::sim::command_queue::FrameChecksumState::new();
         let mut hashes: Vec<Option<u64>> = Vec::with_capacity(replay.ticks.len());
         for input in &replay.initial_scenario_services {
             input
@@ -1723,7 +1719,7 @@ impl ReplayRunner {
                     tick_ms,
                     TickLane::Ordinary,
                     poll_triggers,
-                    crate::sim::world::FrameEffects::default().with_network_commands(&network),
+                    &mut crate::sim::world::FrameEffects::default().with_network_commands(&mut network),
                 )
                 .expect("fixture frame must complete")
                 .into_tick();
@@ -1737,7 +1733,7 @@ impl ReplayRunner {
                     .resume_after_network_failure_for_test(
                         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
                         overlay_registry,
-                        crate::sim::world::FrameEffects::default().with_network_commands(&network),
+                        &mut crate::sim::world::FrameEffects::default().with_network_commands(&mut network),
                     )
                     .expect("recorded checksum modal tail must complete")
                     .tick;
@@ -1827,7 +1823,7 @@ mod tests {
         let mut playback =
             ReplayPlayback::from_runtime(&mut runtime, std::sync::Arc::new(log), 22).unwrap();
         let output = playback
-            .advance(&mut runtime, FrameEffects::empty())
+            .advance(&mut runtime, &mut FrameEffects::empty())
             .unwrap()
             .unwrap();
         let pauses: Vec<_> = output
@@ -2035,7 +2031,7 @@ mod tests {
                 .validate_header(&wrong_header)
                 .is_err()
         );
-        let network = ReplayNetworkBoundary {
+        let mut network = ReplayNetworkBoundary {
             every_frame_network: true,
             checksum: Default::default(),
         };
@@ -2071,7 +2067,7 @@ mod tests {
                     &commands,
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::empty().with_network_commands(&network),
+                    &mut FrameEffects::empty().with_network_commands(&mut network),
                 )
                 .unwrap();
             let admitted = output.take_admitted_commands();
@@ -2597,7 +2593,6 @@ mod tests {
         use crate::sim::command_queue::{FrameChecksumState, FrameInfo};
         use crate::sim::runtime::SimRuntime;
         use crate::sim::world::FrameEffects;
-        use std::cell::RefCell;
 
         fn world(frame: u32) -> Simulation {
             let mut sim = Simulation::with_seed(73);
@@ -2618,7 +2613,7 @@ mod tests {
         for (frame, wrong_crc) in [(0, true), (256, false), (256, true)] {
             let mut control = SimRuntime::from_simulation(world(frame));
             let checksum = control
-                .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+                .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
                 .unwrap()
                 .multiplayer_checksum
                 .unwrap()
@@ -2642,21 +2637,21 @@ mod tests {
                 rules_hash: 0,
                 pixel_conversion_bounds: live.simulation.session().pixel_conversion_bounds(),
             });
-            let network = RefCell::new(FrameChecksumState::new());
+            let mut network = FrameChecksumState::new();
             live.simulation.admit_native_command_record(record);
             let mut output = live
                 .advance_frame(
                     &[],
                     33,
                     TickLane::Ordinary,
-                    FrameEffects::empty().with_network_commands(&network),
+                    &mut FrameEffects::empty().with_network_commands(&mut network),
                 )
                 .unwrap();
             assert_eq!(output.network_failure.is_some(), frame != 0 && wrong_crc);
             if output.network_failure.is_some() {
                 output = live
                     .resume_after_network_failure(
-                        FrameEffects::empty().with_network_commands(&network),
+                        &mut FrameEffects::empty().with_network_commands(&mut network),
                     )
                     .unwrap();
             }
@@ -2708,7 +2703,7 @@ mod tests {
         let mut playback =
             ReplayPlayback::from_runtime(&mut runtime, std::sync::Arc::new(replay), 33).unwrap();
         let error = playback
-            .advance(&mut runtime, crate::sim::world::FrameEffects::empty())
+            .advance(&mut runtime, &mut crate::sim::world::FrameEffects::empty())
             .unwrap_err();
         assert_eq!(playback.failure(), Some(format!("{error:#}").as_str()));
         format!("{error:#}")

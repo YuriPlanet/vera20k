@@ -13,7 +13,7 @@ use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
 use crate::sim::game_entity::{GameEntity, TechnoConstructorInit};
 use crate::sim::houses::Houses;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId, StringInterner};
 use crate::sim::miner::{Miner, MinerConfig, miner_kind_for_object};
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::scenario_session::ScenarioSession;
@@ -61,10 +61,10 @@ impl Simulation {
         })
     }
 
-    pub(super) fn construct_runtime_techno(
+    pub(super) fn construct_runtime_techno<'k>(
         &mut self,
-        type_id: &str,
-        owner: &str,
+        type_id: impl Into<InternKey<'k>>,
+        owner: impl Into<InternKey<'k>>,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -72,9 +72,12 @@ impl Simulation {
         rules: &RuleSet,
         init: TechnoConstructorInit,
     ) -> Result<Option<GameEntity>, GeneratedTechnoInitError> {
-        let Some(obj) = rules.object(type_id) else {
+        let type_id = type_id.into();
+        let Some(obj) = self.interner.key_object_type(type_id, rules) else {
             return Ok(None);
         };
+        let owner = self.interner.intern_key(owner.into());
+        let type_id = self.interner.intern_key(type_id);
         self.construct_resolved_runtime_techno(obj, type_id, owner, rx, ry, facing, z, rules, init)
     }
 
@@ -83,8 +86,8 @@ impl Simulation {
     pub(super) fn construct_resolved_runtime_techno(
         &mut self,
         obj: &ObjectType,
-        type_id: &str,
-        owner: &str,
+        type_iid: InternedId,
+        owner_iid: InternedId,
         rx: u16,
         ry: u16,
         facing: u8,
@@ -96,11 +99,9 @@ impl Simulation {
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);
         let category = EntityCategory::from(obj.category);
-        let uses_voxel = GameEntity::object_uses_voxel(type_id, obj, rules);
+        let uses_voxel = GameEntity::object_uses_voxel(self.interner.resolve(type_iid), obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
         let stable_id = self.substrate.allocate_stable_id();
-        let owner_iid = self.interner.intern(owner);
-        let type_iid = self.interner.intern(type_id);
         let techno_ctor_random_word =
             super::resolve_techno_constructor_word(&mut self.scenario_rng, init, None)?;
         let native_unique_id = self.next_native_runtime_id();
@@ -144,7 +145,7 @@ impl Simulation {
         // objects are constructed at frame 0 (`sim::ares_transports`).
         if rules.ares() && self.object_placement_scope_active() && self.session.binary_frame() != 0
         {
-            ge.ares.ares_initial_payload.mark_created();
+            ge.seldom.ares.ares_initial_payload.mark_created();
         }
         Ok(Some(ge))
     }
@@ -181,7 +182,7 @@ impl Simulation {
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
         let owner_is_playing = session.current_house() == Some(ge.owner());
-        ge.discovery.classify_owner(owner_is_playing);
+        ge.seldom.discovery.classify_owner(owner_is_playing);
 
         if rules.ares() {
             ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
@@ -212,7 +213,7 @@ impl Simulation {
             && let Some(ty) = rules.shield_type(name)
             && ty.strength() > 0
         {
-            ge.shield = Some(crate::sim::shield::ShieldState::new(
+            ge.seldom.shield = Some(crate::sim::shield::ShieldState::new(
                 name.to_owned(),
                 ty.initial_strength(),
                 ty.strength(),
@@ -251,7 +252,7 @@ impl Simulation {
         if category == EntityCategory::Infantry {
             match origin {
                 ComponentOrigin::Authored { sub_cell, .. } => {
-                    ge.sub_cell.hold(sub_cell);
+                    ge.seldom.sub_cell.hold(sub_cell);
                     let (lx, ly) = crate::util::lepton::subcell_lepton_offset(ge.sub_cell());
                     ge.position.put_cell_offset(lx, ly);
                 }
@@ -260,7 +261,7 @@ impl Simulation {
                     // the caller's actual XY/Z and live occupation bytes.
                     // Constructor-held objects reserve no spot and retain
                     // their requested XY until the shared placement boundary.
-                    ge.sub_cell.release();
+                    ge.seldom.sub_cell.release();
                 }
             }
         }
@@ -278,7 +279,7 @@ impl Simulation {
             // NumberOfDocks floored at one. Both authored and runtime objects
             // own their actual slots before any scan or HELLO. Original
             // constructor controls: tools/spatial_oracle/refinery_dock.json.
-            ge.radio_contacts =
+            ge.seldom.radio_contacts =
                 crate::sim::radio::Contacts::with_capacity(obj.dock_contact_capacity() as usize);
         }
         // Unit constructor735678 and InitFromType74689B initialize the empty
@@ -308,7 +309,8 @@ impl Simulation {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
         }
-        ge.ai_sell_repair
+        ge.seldom
+            .ai_sell_repair
             .construct(category == EntityCategory::Structure && rules.has_buildup(&obj.id));
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
@@ -468,10 +470,10 @@ impl GameEntity {
     fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
         self.stamp_scoring_flags(TypeProjectionWrite(()), object, rules);
         if let Some(object) = object {
-            self.sight.stamp_type_sight(object.sight);
-            self.crushable_facts = CrushableFacts::stamp(object);
+            self.seldom.sight.stamp_type_sight(object.sight);
+            self.seldom.crushable_facts = CrushableFacts::stamp(object);
             self.mover_facts = MoverFacts::stamp(object);
-            self.removal_facts.stamp_occupier(object.occupier);
+            self.seldom.removal_facts.stamp_occupier(object.occupier);
             stamp_building_cell_profile(self, Some(object));
         }
     }
@@ -514,7 +516,7 @@ fn stamp_building_cell_profile(
         ge.building.building_light.stamp(obj.has_spotlight);
     }
     let category = ge.category();
-    ge.type_facts.stamp(category, obj);
+    ge.seldom.type_facts.stamp(category, obj);
 }
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for

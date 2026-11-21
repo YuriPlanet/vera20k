@@ -157,7 +157,7 @@ fn a_hunting_computer_aircraft_strikes_storage_in_multiplayer_only() {
             &rules,
             owners[0],
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mut hunted = false;
         let mut targets = Vec::new();

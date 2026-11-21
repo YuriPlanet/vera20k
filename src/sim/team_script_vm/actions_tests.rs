@@ -176,10 +176,10 @@ fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
         team,
         Some(TeamTarget::Cell { x: 25, y: 20 }),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let rng = sim.rng_state();
-    sim.team_coordinate_attack(team, &rules, FrameEffects::default());
+    sim.team_coordinate_attack(team, &rules, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().focus,
         Some(TeamTarget::Object(tree))
@@ -227,7 +227,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         let team = sim
             .team_script_vm
             .create_team(receiver, script, vec![id], 0);
-        sim.team_assign_mission_target(team, target, &rules, FrameEffects::default());
+        sim.team_assign_mission_target(team, target, &rules, &mut FrameEffects::default());
         let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
         state.focus = focus;
         state.zone = sold;
@@ -239,7 +239,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for (team, expected_target, expected_focus, id) in teams {
         let state = sim.team_script_vm.team(team).unwrap();
@@ -263,12 +263,12 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
         .get_mut(&team)
         .unwrap()
         .mission_target = Some(TeamTarget::Cell { x: 516, y: 3 }); // same allocation as4,4
-    sim.stop_all_targeting_cell(4, 4, &rules, FrameEffects::default());
+    sim.stop_all_targeting_cell(4, 4, &rules, &mut FrameEffects::default());
     assert_eq!(sim.team_script_vm.team(team).unwrap().mission_target, None);
     let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
     state.mission_target = Some(TeamTarget::Cell { x: -1, y: 0 });
     state.focus = Some(TeamTarget::Cell { x: 9, y: 9 });
-    sim.stop_all_targeting_cell(12, 12, &rules, FrameEffects::default());
+    sim.stop_all_targeting_cell(12, 12, &rules, &mut FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!((state.mission_target, state.focus), (None, None));
 }
@@ -286,7 +286,7 @@ fn object_detach_clears_team_targets_without_expiring_zone_or_members() {
     sim.stop_all_targeting_on_detach(
         44,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
@@ -309,13 +309,13 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         let source = sim
             .spawn_object("SHK", "Americans", 11, 12, 0, &rules)
             .unwrap();
-        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, FrameEffects::default()));
+        assert!(sim.acquire_adjacent_tesla_coil(source, &rules, &mut FrameEffects::default()));
         if !automatic {
             sim.assign_target_represented(
                 source,
                 Some(TargetKind::Entity(coil)),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         }
@@ -360,11 +360,11 @@ fn tesla_charger_team_recalls_an_automatic_target_but_keeps_an_explicit_attack()
         state.team_type_id = Some(type_id);
         state.mission_target = Some(TeamTarget::Cell { x: 25, y: 25 });
         state.focus = state.mission_target;
-        sim.team_coordinate_move(team, &rules, None, FrameEffects::default());
+        sim.team_coordinate_move(team, &rules, None, &mut FrameEffects::default());
         let actor = sim.substrate.entities.get(source).unwrap();
         if automatic {
             assert_eq!(actor.attack_target.target(), None);
-            assert!(!actor.tesla_charger.is_active());
+            assert!(!actor.seldom.tesla_charger.is_active());
             assert_eq!(
                 actor.mission.effective(),
                 MissionId::from_known(MissionType::Move)
@@ -519,25 +519,25 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
         team,
         Some(TeamTarget::Object(old)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for &member in &members {
         sim.team_member_assign_target(
             member,
             TeamTarget::Object(old),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         sim.team_member_set_destination(
             member,
             Some(TeamTarget::Object(old)),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     sim.session
         .set_binary_frame_for_test(rules.general.patrol_scan_frames() as u32);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
     assert_eq!(
@@ -550,7 +550,7 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
     }));
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
@@ -567,14 +567,14 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
     crate::sim::vision::reveal_radius(&mut sim.fog, owner, 14, 10, 8);
     sim.session
         .set_binary_frame_for_test((rules.general.patrol_scan_frames() - 1) as u32);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
     );
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-    sim.team_step_script(team, &rules, None, FrameEffects::default());
+    sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Object(enemy))
@@ -776,9 +776,21 @@ fn a_member_leaving_inside_a_placement_scope_skips_idle_mode() {
         entity.mission.set_current_for_test(hunt, 0);
     }
     sim.with_object_placement_scope(|sim| {
-        sim.team_remove_member(team, members[0], false, &rules, FrameEffects::default());
+        sim.team_remove_member(
+            team,
+            members[0],
+            false,
+            &rules,
+            &mut FrameEffects::default(),
+        );
     });
-    sim.team_remove_member(team, members[1], false, &rules, FrameEffects::default());
+    sim.team_remove_member(
+        team,
+        members[1],
+        false,
+        &rules,
+        &mut FrameEffects::default(),
+    );
     let queued = |id| sim.substrate.entities.get(id).unwrap().mission.queued();
     assert_eq!(queued(members[0]), MissionId::NONE, "inside the scope");
     assert_ne!(queued(members[1]), MissionId::NONE, "outside the scope");
@@ -794,8 +806,8 @@ fn a_member_detached_inside_a_placement_scope_stays_in_its_team() {
     let mut sim = Simulation::with_seed(0x4D9736);
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let (team, members, _) = building_team(&mut sim, &rules, &[], &[]);
-    let context = crate::sim::world::UninitContext::new(&rules);
-    sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context));
+    let mut context = crate::sim::world::UninitContext::new(&rules);
+    sim.with_object_placement_scope(|sim| sim.detach_all(members[1], true, context.reborrow()));
     sim.detach_all(members[2], true, context);
     let team_of = |id| sim.team_script_vm.member_team.get(&id).copied();
     assert_eq!(team_of(members[1]), Some(team), "inside the scope");
@@ -840,7 +852,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
         state.focus = Some(target);
         let old_timer = state.guard_timer;
         let rng_before = sim.scenario_rng.native_state_hex();
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.script_id(), expected_script, "{row}");
         assert_eq!(i64::from(state.cursor()), row["cursor"].as_i64().unwrap());
@@ -853,7 +865,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
         assert_eq!(state.guard_timer, old_timer, "{row}");
         assert_eq!(state.members().collect::<Vec<_>>(), members, "{row}");
         if !state.advance_pending() {
-            sim.team_step_script(team, &rules, None, FrameEffects::default());
+            sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
             let state = sim.team_script_vm.team(team).unwrap();
             assert_eq!(
                 i64::from(state.cursor()),
@@ -949,7 +961,7 @@ fn retail_sov01_script17_uses_the_production_script_registry() {
             state.cursor = 0;
             state.advance_pending = true;
         }
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.script_id(), expected);
         assert_eq!(state.cursor(), -1);
@@ -986,7 +998,7 @@ fn sound_movie_and_music_actions_play_and_advance() {
         state.advance_pending = true;
     }
     for _ in 0..3 {
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     }
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.cursor(), 2);
@@ -1038,7 +1050,7 @@ fn lightning_storm_actions_start_and_end_the_storm_and_advance() {
     let deferment = rules.general.lightning_deferment;
     assert_ne!(deferment, 0);
     let step = |sim: &mut Simulation| {
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         sim.lightning_storm.globals_for_test()
     };
     // No storm: the argument becomes the deferred storm's duration.
@@ -1128,7 +1140,7 @@ fn script34_focuses_the_zone_at_ground_or_bridge_height_and_finishes_immediately
             }
         });
         let rng = sim.rng_state();
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         assert_eq!(
             sim.drain_trigger_effects(),
             [TriggerEffect::CameraAtCoord {
@@ -1140,7 +1152,7 @@ fn script34_focuses_the_zone_at_ground_or_bridge_height_and_finishes_immediately
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(state.cursor(), 0);
         assert!(state.advance_pending());
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
         assert!(sim.drain_trigger_effects().is_empty());
     }
@@ -1273,7 +1285,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
         }
         if input["count"] == 0 {
             for &member in &members {
-                sim.team_remove_member(team, member, false, &rules, FrameEffects::default());
+                sim.team_remove_member(team, member, false, &rules, &mut FrameEffects::default());
             }
         }
         if !first {
@@ -1281,7 +1293,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
                 team,
                 Some(TeamTarget::Object(buildings[0])),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             // Changed waypoint now contains no building. A repeated visit
             // must retain the old target without running the first query.
@@ -1300,7 +1312,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
         let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
         state.cursor = if first { -1 } else { 0 };
         state.advance_pending = first;
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         let state = sim.team_script_vm.team(team).unwrap();
         assert_eq!(
             state.mission_target.is_some(),
@@ -1978,7 +1990,7 @@ impl DeployTeam {
     /// Runs action 9 for the team once, outside a frame.
     fn deploy_action(&mut self) {
         self.sim
-            .team_action_deploy(self.team, &self.rules, None, FrameEffects::default());
+            .team_action_deploy(self.team, &self.rules, None, &mut FrameEffects::default());
     }
 
     /// Whether `id` was ordered to Unload: queued, or already its mission.
@@ -2138,7 +2150,7 @@ fn script_action_52_shows_a_talk_bubble_over_the_first_member_and_finishes_the_s
             &commands,
             22,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     let state = scene.sim().team_script_vm.team(team).unwrap();

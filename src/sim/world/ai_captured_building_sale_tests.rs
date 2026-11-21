@@ -166,7 +166,7 @@ fn capture_by_walking(scene: &mut HeadlessScenario, owner: InternedId, plant: u6
             &command,
             &runtime.resources.rules,
             Some(runtime.resources.rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
     }
     let mut walked = false;
@@ -316,7 +316,8 @@ fn stock_computer_recapture_after_load_keeps_its_original_building() {
     let live_dummy = runtime.simulation.effective_shared_cell_dummy();
     live_dummy.adopt_prepared_load_state(&restored.effective_shared_cell_dummy());
     restored.bind_shared_cell_dummy(live_dummy);
-    restored.install_fresh_process_main(runtime.simulation.main_rng());
+    // No app process cell here: the install writes a stand-in nothing reads.
+    restored.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
     restored.publish_scenario_started();
     let plant_after_load = restored.entities().get(plant).unwrap();
     assert_eq!(

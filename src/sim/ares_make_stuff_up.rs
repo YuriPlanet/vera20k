@@ -15,9 +15,9 @@
 //!   `LogicClass::AI @ 0x0055AFB0`): every 90th frame each InfantryClass row
 //!   ([`Simulation::ares_make_stuff_up_logic`]).
 //!
-//! RESIDUAL: the readers of the written Rules values. The accessors below
-//! answer each value, but no Rust port of their gamemd readers asks them
-//! yet (VeteranRatio,
+//! RESIDUAL: the readers of the written Rules values. The values are saved
+//! and hashed, but no Rust port of their gamemd readers asks for them yet,
+//! and no accessor exists for them (VeteranRatio,
 //! BuildSpeed, BuildupTime, RefundPercent, GrowthRate, Stray, FlightLevel,
 //! the two fall rates, the three crews, HoverHeight, WindDirection,
 //! MaximumQueuedObjects, MaxWaypointPathLength, CruiseHeight, the four
@@ -81,19 +81,9 @@ pub(crate) struct AresMadeUpRules {
     player_flags: [bool; 3],
 }
 
-/// Which of the four colours 100677B0 rerolls, in its order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
-pub(crate) enum MadeUpColor {
-    LaserTarget,
-    IronCurtain,
-    Berserk,
-    ForceShield,
-}
-
 /// The three crews 100677B0 may replace, in its order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) enum MadeUpCrew {
     Allied,
     Soviet,
@@ -102,7 +92,7 @@ pub(crate) enum MadeUpCrew {
 
 /// The three player flags 100677B0 rerolls, in its order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) enum MadeUpPlayerFlag {
     AutoCrush,
     ReturnFire,
@@ -114,47 +104,21 @@ pub(crate) enum MadeUpPlayerFlag {
 const CREW_IDS: [&str; 3] = ["JOSH", "CAML", "COW"];
 
 /// `(double)draw / 100.0`, exact in binary64 as on the x87 at PC53.
+#[cfg(test)]
 fn hundredths(draw: i32) -> f64 {
     f64::from(draw) / 100.0
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 impl AresMadeUpRules {
     pub(crate) fn veteran_ratio(&self) -> f64 {
         hundredths(self.veteran_ratio)
-    }
-    pub(crate) fn build_speed(&self) -> f64 {
-        hundredths(self.build_speed)
-    }
-    pub(crate) fn buildup_time(&self) -> f64 {
-        hundredths(self.buildup_time)
-    }
-    pub(crate) fn refund_percent(&self) -> f64 {
-        hundredths(self.refund_percent)
-    }
-    /// GrowthRate after its one division by the draw.
-    pub(crate) fn growth_rate(&self, authored: f64) -> f64 {
-        authored / f64::from(self.growth_rate_divisor)
     }
     pub(crate) fn stray(&self) -> i32 {
         self.stray_cells << 8
     }
     pub(crate) fn flight_level(&self) -> i32 {
         self.flight_level
-    }
-    pub(crate) fn parachute_max_fall_rate(&self, authored: i32) -> i32 {
-        if self.fall_rates_flipped {
-            authored.wrapping_neg()
-        } else {
-            authored
-        }
-    }
-    pub(crate) fn no_parachute_max_fall_rate(&self, authored: i32) -> i32 {
-        if self.fall_rates_flipped {
-            authored.wrapping_sub(5)
-        } else {
-            authored
-        }
     }
     /// The replacing InfantryType ID, or `authored`.
     pub(crate) fn crew<'a>(
@@ -164,37 +128,11 @@ impl AresMadeUpRules {
     ) -> Option<&'a str> {
         self.crews[crew as usize].as_deref().or(authored)
     }
-    pub(crate) fn hover_height(&self, authored: i32) -> i32 {
-        authored.wrapping_add(self.hover_height)
-    }
-    pub(crate) fn wind_direction(&self) -> i32 {
-        self.wind_direction
-    }
-    pub(crate) fn maximum_queued_objects(&self, authored: i32) -> i32 {
-        authored.wrapping_add(self.maximum_queued_objects)
-    }
-    pub(crate) fn max_waypoint_path_length(&self, authored: i32) -> i32 {
-        authored.wrapping_add(self.max_waypoint_path_length)
-    }
-    pub(crate) fn cruise_height(&self, authored: i32) -> i32 {
-        authored.wrapping_add(self.cruise_height)
-    }
-    pub(crate) fn color(&self, color: MadeUpColor, authored: i32) -> i32 {
-        authored
-            .wrapping_add(self.colors[color as usize])
-            .clamp(0, 13)
-    }
-    pub(crate) fn pose_dir(&self) -> i32 {
-        self.pose_dir
-    }
     pub(crate) fn deploy_dir(&self) -> i32 {
         self.deploy_dir
     }
     pub(crate) fn gravity(&self, authored: i32) -> i32 {
         authored.wrapping_add(self.gravity)
-    }
-    pub(crate) fn ivan_timed_delay(&self, authored: i32) -> i32 {
-        authored.wrapping_add(self.ivan_timed_delay)
     }
     pub(crate) fn player_flag(&self, flag: MadeUpPlayerFlag) -> bool {
         self.player_flags[flag as usize]
@@ -203,7 +141,7 @@ impl AresMadeUpRules {
 
 impl Simulation {
     /// The Rules values CanMakeStuffUp wrote at scenario start, if it did.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn ares_made_up_rules(&self) -> Option<&AresMadeUpRules> {
         self.ares_made_up_rules.as_ref()
     }

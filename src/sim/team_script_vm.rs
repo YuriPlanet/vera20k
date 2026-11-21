@@ -127,7 +127,7 @@ pub struct TeamTypeDefinition {
 
 /// The TeamType's other INI fields, beside the definition, and where it was
 /// defined.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamTypeIniMetadata {
     /// ReadHouseType475540 called by6F1090; GetHouse6F2070 resolves it.
     #[serde(default)]
@@ -577,7 +577,7 @@ pub struct TeamScriptState {
     members: Vec<TeamMember>,
     /// `+0x88`: the members counted against each TaskForce entry, which
     /// `Add_Member` raises for the first entry of the member's type.
-    slot_counts: [i32; 6],
+    slot_counts: [i32; TASK_FORCE_SLOTS],
     /// `+0x84`: the team succeeded (script action 49). Its destruction then
     /// counts as its AI triggers' success.
     succeeded: bool,
@@ -833,6 +833,10 @@ impl<'de> Deserialize<'de> for MemberTeams {
     }
 }
 
+/// The TaskForce entries a team counts (`TeamClass+0x88`, six dwords); the
+/// TaskForce reader (`rules::team_ai_ini`) reads keys 0 to 5 only.
+pub(crate) const TASK_FORCE_SLOTS: usize = 6;
+
 /// Owns resolved TeamType/TaskForce/ScriptType definitions and live TeamClass
 /// state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -874,15 +878,34 @@ pub struct TeamScriptVm {
     /// destructor, not its Limbo or UnInit.
     #[serde(default)]
     rejoin_team: BTreeMap<u64, u64>,
-    /// Scratch for `Regroup`'s copy of a team's member list
-    /// ([`Simulation::team_regroup`]), kept so the walk allocates once per
-    /// match instead of once per regrouping team per tick. Empty between
-    /// walks; saves and the state hash leave it out.
+    /// Scratch for a script action's copy of a team's member ids
+    /// ([`Self::copy_members`]), kept so the walks allocate once
+    /// per match instead of once per team per step. Empty between walks;
+    /// saves and the state hash leave it out.
     #[serde(skip)]
-    regroup_members: Vec<TeamMember>,
+    member_ids: Vec<u64>,
 }
 
 impl TeamScriptVm {
+    /// Team `team_id`'s member ids in list order (none for a missing team),
+    /// copied for a walk whose callbacks can change the list: a member's
+    /// join, move or death. The copy is the VM's scratch buffer, taken out
+    /// here; hand it back with [`Self::restore_member_ids`]. A walk reached
+    /// from inside another finds the scratch taken and makes its own copy.
+    pub(crate) fn copy_members(&mut self, team_id: u64) -> Vec<u64> {
+        let mut ids = std::mem::take(&mut self.member_ids);
+        if let Some(team) = self.teams.get(&team_id) {
+            ids.extend(team.members());
+        }
+        ids
+    }
+
+    /// Take back the buffer [`Self::copy_members`] lent, emptied.
+    pub(crate) fn restore_member_ids(&mut self, mut ids: Vec<u64>) {
+        ids.clear();
+        self.member_ids = ids;
+    }
+
     pub fn register_script(&mut self, definition: TeamScriptDefinition) {
         if !self.scripts.contains_key(&definition.id) {
             self.script_order.push(definition.id);
@@ -1088,6 +1111,23 @@ impl TeamScriptVm {
         needed
     }
 
+    /// TaskForce `id`'s entries; none for a TaskForce that did not resolve.
+    pub(crate) fn task_force_entries_of(&self, id: InternedId) -> &[TeamTaskForceEntry] {
+        self.task_forces
+            .get(&id)
+            .map_or(&[], |task_force| &task_force.entries)
+    }
+
+    /// Entry `index` of TaskForce `id`, for a walk whose body takes the
+    /// simulation.
+    pub(crate) fn task_force_entry(
+        &self,
+        id: InternedId,
+        index: usize,
+    ) -> Option<TeamTaskForceEntry> {
+        self.task_force_entries_of(id).get(index).copied()
+    }
+
     /// The TaskForce of TeamType `team_type_id`, if it resolved.
     pub fn task_force_of(&self, team_type_id: InternedId) -> Option<&TeamTaskForceDefinition> {
         let team_type = self.team_types.get(&team_type_id)?;
@@ -1233,6 +1273,21 @@ impl TeamScriptVm {
         team.team_type_id
             .and_then(|id| self.team_type_ini.get(&id))
             .is_some_and(|metadata| metadata.transports_return_on_unload)
+    }
+
+    /// A restored save's TaskForces: a team indexes its slot counts by entry
+    /// position, so a saved TaskForce with more entries than
+    /// [`TASK_FORCE_SLOTS`] can only come from a damaged save. Members are
+    /// not required to be live: `PointerExpired` drops only a team's head.
+    pub(crate) fn validate_restored_task_forces(&self) -> Result<(), &'static str> {
+        if self
+            .task_forces
+            .values()
+            .any(|task_force| task_force.entries.len() > TASK_FORCE_SLOTS)
+        {
+            return Err("a TaskForce has more entries than a team has slots");
+        }
+        Ok(())
     }
 
     /// The team's TaskForce entries, none for a team without a TeamType.
@@ -1498,7 +1553,7 @@ impl TeamScriptVm {
             team.altered.hash(hasher);
             team.just_altered.hash(hasher);
             team.suspended.hash(hasher);
-            team.members().collect::<Vec<u64>>().hash(hasher);
+            hash_member_ids(team.members.len(), team.members(), hasher);
             // The retired target and per-type counts, always empty.
             None::<u64>.hash(hasher);
             Vec::<(TeamMemberTypeIdentity, u32)>::new().hash(hasher);
@@ -1753,8 +1808,44 @@ pub(crate) mod reinforcements_tests;
 #[cfg(all(test, tests_sim_t_z))]
 mod type_conversion_tests;
 
+/// Hash `count` member ids as the `Vec<u64>` they were once copied into
+/// hashes: the count, then every id's bytes in one write. A team of up to
+/// [`INLINE_MEMBER_IDS`] members is laid out on the stack; a larger one, which
+/// no retail TaskForce makes, is laid out on the heap.
+fn hash_member_ids(count: usize, ids: impl Iterator<Item = u64>, hasher: &mut impl Hasher) {
+    count.hash(hasher);
+    if count <= INLINE_MEMBER_IDS {
+        let mut bytes = [0u8; INLINE_MEMBER_IDS * 8];
+        for (slot, id) in bytes.as_chunks_mut::<8>().0.iter_mut().zip(ids) {
+            *slot = id.to_ne_bytes();
+        }
+        hasher.write(&bytes[..count * 8]);
+    } else {
+        let bytes: Vec<u8> = ids.flat_map(u64::to_ne_bytes).collect();
+        hasher.write(&bytes);
+    }
+}
+
+/// VERA's own bound for [`hash_member_ids`]'s stack layout.
+const INLINE_MEMBER_IDS: usize = 64;
+
 #[cfg(all(test, tests_sim_t_z))]
 mod tests {
+    /// The member fold feeds the state hasher what hashing a `Vec<u64>` of
+    /// the members fed it, on either side of the stack layout's bound.
+    #[test]
+    fn member_ids_hash_as_their_vec() {
+        use std::hash::{Hash, Hasher};
+        for count in [0, 3, super::INLINE_MEMBER_IDS, super::INLINE_MEMBER_IDS + 1] {
+            let ids: Vec<u64> = (0..count as u64).map(|i| i * 0x0101_0101 + 7).collect();
+            let mut folded = crate::util::state_hasher::StateHasher::new();
+            super::hash_member_ids(count, ids.iter().copied(), &mut folded);
+            let mut copied = crate::util::state_hasher::StateHasher::new();
+            ids.hash(&mut copied);
+            assert_eq!(folded.finish(), copied.finish(), "{count} members");
+        }
+    }
+
     /// The bits beside the member map answer "none" only for an id the map
     /// does not hold: a removal leaves the bit, a load rebuilds the bits,
     /// and an id past the bits is asked of the map.

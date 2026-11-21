@@ -51,7 +51,6 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// authored towns of the theater use. The farms and landmarks of the
 /// Countryside and Landmark Extras are the buildings `extras` names
 /// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,

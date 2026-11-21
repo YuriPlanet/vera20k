@@ -25,7 +25,10 @@ const VERA_ICON_PNG: &[u8] = include_bytes!("vera_icon.png");
 pub(super) struct WindowIcon {
     /// The icon as an image file: the red star's icon group as an `.ico`, or
     /// VERA's PNG. macOS takes every entry and picks its own resolution.
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_os = "macos"),
+        expect(dead_code, reason = "only macOS sets the icon from the file")
+    )]
     file: Vec<u8>,
     /// The largest entry, for winit's window icon (Windows and X11).
     rgba: image::RgbaImage,

@@ -35,7 +35,7 @@ impl Scene {
                 source,
                 Some(TargetKind::Entity(target)),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         Some(Self {
@@ -84,7 +84,7 @@ impl Scene {
             100,
             &mut CombatEmit::default(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let bullet = self.world.projectiles.get(id).unwrap();
@@ -101,7 +101,7 @@ impl Scene {
             .session
             .set_binary_frame_for_test(self.world.session.binary_frame() + 1);
         self.world
-            .visit_combat_tail(id, &self.rules, None, FrameEffects::default());
+            .visit_combat_tail(id, &self.rules, None, &mut FrameEffects::default());
     }
 }
 

@@ -191,8 +191,8 @@ impl TacticalCaptureSession {
                 });
                 // Preserve contact slot positions, including null holes. Reads
                 // of the contact/tether owners never send a radio query.
-                let contacts: Vec<_> = (0..entity.radio_contacts.capacity())
-                    .map(|slot| entity.radio_contacts.slot(slot))
+                let contacts: Vec<_> = (0..entity.seldom.radio_contacts.capacity())
+                    .map(|slot| entity.seldom.radio_contacts.slot(slot))
                     .collect();
                 // Read the existing cloak/type owners, without advancing a
                 // timer or inferring a phase from the rendered pixels. Signed
@@ -235,7 +235,7 @@ impl TacticalCaptureSession {
                     "deactivated": entity.deactivated,
                     // Mark and Logic membership are independent retained facts.
                     "cell_marked": entity.lifecycle.cell_marked(),
-                    "in_logic_vector": entity.in_logic_vector.is_member(),
+                    "in_logic_vector": entity.seldom.in_logic_vector.is_member(),
                     "mission": {"current": entity.mission.current().raw(),
                         "queued": entity.mission.queued().raw(), "suspended": entity.mission.suspended().raw(),
                         "effective": entity.mission.effective().raw(), "handler_state": entity.mission.handler_state(),
@@ -248,7 +248,7 @@ impl TacticalCaptureSession {
                     "cloak": cloak,
                     "building": building, "unit": unit,
                     "miner": miner,
-                    "radio": {"contacts": contacts, "dock_entered_with": entity.tether.partner()},
+                    "radio": {"contacts": contacts, "dock_entered_with": entity.seldom.tether.partner()},
                 });
                 if profile.observe_disguise_inputs == Some(true) {
                     observation["disguise_inputs"] = disguise_inputs(state, entity)?;
@@ -260,7 +260,8 @@ impl TacticalCaptureSession {
                         prism_observation(entity, sim.session().binary_frame() as i32);
                 }
                 if profile.observe_electric_bolts == Some(true) {
-                    observation["damage_smoke_system_id"] = json!(entity.damage_smoke_system_id);
+                    observation["damage_smoke_system_id"] =
+                        json!(entity.seldom.damage_smoke_system_id);
                 }
                 if profile.observe_bombs == Some(true)
                     || profile.observe_temporal == Some(true)

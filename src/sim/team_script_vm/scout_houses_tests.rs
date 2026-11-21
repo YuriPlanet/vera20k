@@ -24,7 +24,14 @@ fn scout_marks_a_house_without_buildings_then_completes() {
         argument: 0,
     };
     let unmarked_hash = sim.state_hash();
-    sim.team_run_action(team, action, true, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        true,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
     assert!(sim.houses[&owner].has_scouted_house(peer));
     assert!(!sim.houses[&peer].has_scouted_house(owner));
@@ -34,14 +41,28 @@ fn scout_marks_a_house_without_buildings_then_completes() {
     let bytes = GameSnapshot::save(&sim, 0, 0, "scout", 0);
     sim = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(sim.state_hash(), hash);
-    sim.team_run_action(team, action, false, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let state = sim.team_script_vm.team(team).unwrap();
     assert!(state.refusal().is_none());
     assert!(state.advance_pending(), "all peer houses have been scouted");
     let late = sim.interner.intern("Late");
     sim.houses
         .register(HouseState::new(late, 0, None, true, 0, 10));
-    sim.team_run_action(team, action, false, &rules, None, FrameEffects::default());
+    sim.team_run_action(
+        team,
+        action,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(sim.houses[&owner].has_scouted_house(late));
     assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
 }
@@ -90,7 +111,7 @@ fn scout_draws_from_the_global_building_array_including_dead_and_limbo_entries()
         false,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.scout_house, Some(peer));

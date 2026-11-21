@@ -1655,14 +1655,14 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     assert!(sim.anim(anim).is_some(), "constructor first-AI guard");
     sim.session.set_binary_frame_for_test(1 << 16); // expire any u16 rate timer
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     // AI UnInit conceals and queues the physical receiver. The ordinary
     // end-of-frame deletion owner, rather than AI itself, releases storage.

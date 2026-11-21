@@ -266,7 +266,12 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 .is_some_and(|miner| !miner.cargo().is_empty());
             scene
                 .runtime
-                .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    &commands,
+                    22,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .expect("ordinary bound-resource frame");
             let sim = scene.sim();
             let rules = &scene.runtime.resources.rules;

@@ -118,7 +118,7 @@ fn gsi_04_16_committed_structure_owner_change_refreshes_new_house_edge() {
         .spawn_object("GACNST", "Americans", 69, 115, 0, &rules)
         .expect("GACNST reveals");
 
-    sim.change_owner_with_rules(conyard, new_owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(conyard, new_owner, &rules, None, &mut Default::default());
 
     assert!(sim.production.is_primary_factory(conyard));
     let new_house = sim.houses.get(&new_owner).expect("new owner house");
@@ -145,7 +145,7 @@ fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
         .expect("CAOILD reveals");
     assert_eq!(sim.houses.get(&old_owner).unwrap().waypoint_edge(), 1);
 
-    sim.change_owner_with_rules(oil, new_owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(oil, new_owner, &rules, None, &mut Default::default());
 
     assert_eq!(sim.houses.get(&new_owner).unwrap().waypoint_edge(), 3);
 }

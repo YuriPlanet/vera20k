@@ -344,7 +344,7 @@ pub(crate) fn controlled_transport_house(
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
     open_topped
-        .then(|| transport.mind_control.controller())
+        .then(|| transport.seldom.mind_control.controller())
         .flatten()
         .and_then(|controller| entities.get(controller))
         .map(|controller| controller.owner())
@@ -496,8 +496,8 @@ pub fn is_armed(
 /// Aircraft auxiliary+18/41B7F0: the primary projectile selects the attack
 /// approach and release branches. All callers use the live weapon tier.
 pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
-    primary_for_tier(obj, veterancy)
-        .and_then(|name| rules.weapon(name))
+    weapon_for_index(obj, veterancy, 0)
+        .and_then(|record| record.weapon(rules))
         .and_then(|weapon| rules.weapon_projectile(weapon))
         .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
 }
@@ -714,8 +714,8 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
     obj: &ObjectType,
     veterancy: u16,
 ) -> bool {
-    let warhead = primary_for_tier(obj, veterancy)
-        .and_then(|id| rules.weapon(id))
+    let warhead = weapon_for_index(obj, veterancy, 0)
+        .and_then(|record| record.weapon(rules))
         .and_then(|weapon| rules.weapon_warhead(weapon));
     warhead.is_some_and(WarheadType::uses_medium_wood_target_mask)
 }
@@ -1486,7 +1486,7 @@ mod tests {
         .unwrap();
         assert_eq!((selected.index, selected.weapon_id), (1, "SECOND"));
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules, Default::default()),
+            world.power_down_building_upgrade(1, &rules, &mut Default::default()),
             world.interner.get("UP2")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -1502,7 +1502,7 @@ mod tests {
             .is_none()
         );
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules, Default::default()),
+            world.power_down_building_upgrade(1, &rules, &mut Default::default()),
             world.interner.get("UP1")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -2050,8 +2050,12 @@ mod tests {
             ));
         // The fixture entities' names were interned by `test_default`.
         sim.interner = crate::sim::intern::test_interner();
-        sim.substrate.entities.get_mut(1).unwrap().mind_control =
-            MindControlLink::controlled_by_for_test(3);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .seldom
+            .mind_control = MindControlLink::controlled_by_for_test(3);
         sim.substrate
             .entities
             .get_mut(2)

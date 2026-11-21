@@ -828,7 +828,7 @@ fn captured_vehicle_thief_count(
                     .filter(|entity| {
                         entity.category() == EntityCategory::Unit
                             && entity.owner() == owner
-                            && entity.capture_infantry_type_index.get() == index
+                            && entity.seldom.capture_infantry_type_index.get() == index
                     })
                     .fold(0i32, |count, _| count.wrapping_add(1))
             })
@@ -1054,12 +1054,12 @@ fn scan_factories<'a>(
             && ownable & get_ownable(building_type, rules, double_owned) != 0
             && if !skip_busy_airfield
                 && obj.category == ObjectCategory::Aircraft
-                && !building.radio_contacts.is_empty()
+                && !building.seldom.radio_contacts.is_empty()
             {
                 // 0x005F79C7..0x005F79FB: unless arg1 skips it, an
                 // AircraftType (`What_Am_I` 3) needs a free contact slot in a
                 // factory In_Radio_Contact (0x0065AE30, 0x0065ADC0).
-                building.radio_contacts.first_free().is_some()
+                building.seldom.radio_contacts.first_free().is_some()
             } else {
                 // 0x005F7A09..0x005F7A49: a naval UnitType needs a naval
                 // factory, anything else a non-naval one.

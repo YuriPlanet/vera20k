@@ -28,7 +28,7 @@ fn lifecycle_authority_reveal_commits_coords_then_marks_then_registers() {
     assert_eq!(entity.position.sub_y(), SimFixed::from_num(64));
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
     assert!(sim.substrate.occupancy.contains_entity(10, 20, 1));
     assert_eq!(sim.live_object_order_snapshot(), vec![1]);
 
@@ -66,7 +66,7 @@ fn reveal_stops_after_mark_when_object_is_not_alive() {
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     assert!(sim.lifecycle_outputs.is_empty());
 }
 
@@ -91,7 +91,7 @@ fn lifecycle_authority_reveal_mark_failure_keeps_adjusted_coords_alive_limbo() {
     assert!(entity.lifecycle.object_alive());
     assert!(entity.lifecycle.in_limbo());
     assert!(!entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     assert_eq!(
         sim.lifecycle_test_events,
         vec![
@@ -162,7 +162,7 @@ fn lifecycle_authority_reveal_logic_failure_keeps_successful_mark() {
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     assert!(sim.substrate.occupancy.contains_entity(10, 20, 1));
 }
 
@@ -178,6 +178,7 @@ fn lifecycle_authority_logic_flag_sets_after_append() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -203,6 +204,7 @@ fn lifecycle_authority_logic_append_failure_leaves_flag_clear() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -226,6 +228,7 @@ fn lifecycle_authority_logic_remove_compacts_then_clears_flag() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -234,6 +237,7 @@ fn lifecycle_authority_logic_remove_compacts_then_clears_flag() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -242,6 +246,7 @@ fn lifecycle_authority_logic_remove_compacts_then_clears_flag() {
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -255,6 +260,7 @@ fn lifecycle_authority_flagged_missing_remove_still_clears_flag() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .in_logic_vector
         .set_for_test(true);
     assert!(sim.live_object_order_snapshot().is_empty());
@@ -266,6 +272,7 @@ fn lifecycle_authority_flagged_missing_remove_still_clears_flag() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -335,7 +342,7 @@ fn open_topped_direct_registration_keeps_hidden_passenger_live() {
     assert!(passenger.lifecycle.object_alive());
     assert!(passenger.lifecycle.in_limbo());
     assert!(!passenger.lifecycle.cell_marked());
-    assert!(passenger.in_logic_vector.is_member());
+    assert!(passenger.seldom.in_logic_vector.is_member());
     assert_eq!(sim.live_object_order_snapshot(), vec![2, 1]);
 
     assert!(sim.register_open_topped_passenger(1));
@@ -390,7 +397,7 @@ fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
     assert!(sim.register_open_topped_passenger(1));
     sim.uninit(1);
 
-    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+    let _ = sim.object_ai_visit_one(1, None, &mut ObjectAiCtx::default());
 
     let uninits = sim
         .lifecycle_test_events
@@ -469,6 +476,7 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .removal_facts
         .set_dirty_rect_eligible_for_test(true);
     let _ = sim.reveal(1);
@@ -489,7 +497,7 @@ fn lifecycle_authority_conceal_dirty_eligibility_emits_dirty_before_drawn_clear(
     assert!(entity.lifecycle.object_alive());
     assert!(entity.lifecycle.in_limbo());
     assert!(!entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
 }
 
 #[test]
@@ -498,8 +506,11 @@ fn lifecycle_authority_conceal_deselects_unmarks_unregisters_then_sets_limbo() {
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     let _ = sim.reveal(1);
     let entity = sim.substrate.entities.get_mut(1).unwrap();
-    entity.selection.set_selected_for_test(true);
-    entity.removal_facts.set_dirty_rect_eligible_for_test(true);
+    entity.seldom.selection.set_selected_for_test(true);
+    entity
+        .seldom
+        .removal_facts
+        .set_dirty_rect_eligible_for_test(true);
     sim.lifecycle_test_events.clear();
 
     let _ = sim.object_conceal(1);
@@ -533,9 +544,9 @@ fn lifecycle_authority_conceal_deselects_unmarks_unregisters_then_sets_limbo() {
         ]
     );
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(!entity.selection.is_selected());
+    assert!(!entity.seldom.selection.is_selected());
     assert!(!entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     assert!(entity.lifecycle.in_limbo());
 }
 
@@ -622,6 +633,7 @@ fn lifecycle_authority_techno_limbo_breaks_contacts_before_common_conceal() {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(2),
         Some(0)
@@ -631,6 +643,7 @@ fn lifecycle_authority_techno_limbo_breaks_contacts_before_common_conceal() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(1),
         Some(0)
@@ -684,6 +697,7 @@ fn lifecycle_authority_techno_limbo_breaks_contacts_before_common_conceal() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -692,6 +706,7 @@ fn lifecycle_authority_techno_limbo_breaks_contacts_before_common_conceal() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -912,7 +927,7 @@ fn gsi_05_03_dead_nonlimbo_stored_object_still_runs_conceal() {
     assert!(!entity.lifecycle.object_alive());
     assert!(entity.lifecycle.in_limbo());
     assert!(!entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
 }
 
 #[test]
@@ -930,7 +945,7 @@ fn lifecycle_authority_uninit_dead_limbo_remains_resolvable_until_drain() {
     assert!(!entity.lifecycle.object_alive());
     assert!(entity.lifecycle.in_limbo());
     assert!(!entity.lifecycle.cell_marked());
-    assert!(!entity.in_logic_vector.is_member());
+    assert!(!entity.seldom.in_logic_vector.is_member());
     assert_eq!(sim.substrate.pending_delete.object_ids(), vec![1]);
 
     sim.process_pending_delete();
@@ -961,11 +976,11 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
         (1, 1)
     );
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert!(!entity.kill_record.is_recorded());
+    assert!(!entity.seldom.kill_record.is_recorded());
     assert!(entity.lifecycle.object_alive());
     assert!(!entity.lifecycle.in_limbo());
     assert!(entity.lifecycle.cell_marked());
-    assert!(entity.in_logic_vector.is_member());
+    assert!(entity.seldom.in_logic_vector.is_member());
 
     sim.uninit(1);
     let tracking = sim.houses.get(&owner).unwrap().tracking();
@@ -986,6 +1001,7 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -1091,6 +1107,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -1099,6 +1116,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -1119,6 +1137,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -1127,6 +1146,7 @@ fn lifecycle_authority_set_logic_order_for_test_synchronizes_all_membership_flag
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .in_logic_vector
             .is_member()
     );

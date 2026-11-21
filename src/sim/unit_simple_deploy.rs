@@ -33,7 +33,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let deployed = self
             .substrate
@@ -106,7 +106,7 @@ impl Simulation {
         id: u64,
         deploying: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let entity = self
             .substrate
@@ -244,7 +244,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(id)
-                .and_then(|e| e.disguise.as_mut())
+                .and_then(|e| e.seldom.disguise.as_mut())
             && disguise.is_disguised()
         {
             disguise.clear_unit();
@@ -318,6 +318,7 @@ impl Simulation {
         // GetRemapColour705D70 freezes the owner's current/disguised palette
         // at this producer, rather than following later owner/disguise changes.
         let remap_house = entity
+            .seldom
             .disguise
             .as_ref()
             .filter(|state| state.is_disguised())

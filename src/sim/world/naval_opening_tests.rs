@@ -26,7 +26,7 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
             0,
             0,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -38,7 +38,7 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
             0,
             PlacementEvidence::EvaluateMark,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .is_some()
     );
@@ -56,7 +56,14 @@ fn yard_fixture(rules: &RuleSet, name: &str, water: bool) -> (Simulation, u64) {
 }
 
 fn open(sim: &mut Simulation, id: u64, captured: bool, rules: &RuleSet) {
-    sim.grand_opening(id, captured, false, rules, None, FrameEffects::default());
+    sim.grand_opening(
+        id,
+        captured,
+        false,
+        rules,
+        None,
+        &mut FrameEffects::default(),
+    );
 }
 
 fn dispatch(sim: &mut Simulation, rules: &RuleSet) {
@@ -163,7 +170,7 @@ fn a_captured_shipyard_replaces_the_previous_owners_rally_through_the_event_tail
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    sim.change_owner_with_rules(id, owner, rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, owner, rules, None, &mut FrameEffects::default());
     assert_eq!(sim.entities().get(id).unwrap().owner(), owner);
     assert_eq!(sim.entities().get(id).unwrap().archive_target(), None);
     assert_eq!(sim.pending_command_snapshot().len(), 1);
@@ -198,7 +205,7 @@ fn an_accepted_default_survives_capture_when_the_replacement_event_is_refused() 
         .register(crate::sim::house_state::HouseState::new(
             new_owner, 0, None, true, 0, 10,
         ));
-    sim.change_owner_with_rules(id, new_owner, rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, new_owner, rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.pending_command_snapshot(),
         accepted,
@@ -289,7 +296,7 @@ fn default_rally_reaches_the_first_paid_destroyer_exit_without_an_explicit_click
         rules,
         "Americans",
         "DEST",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     let ship = sim

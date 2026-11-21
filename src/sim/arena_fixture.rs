@@ -67,6 +67,7 @@ pub fn discover(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("discovered object")
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
 }
@@ -80,6 +81,7 @@ pub fn own(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("owned object")
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
 }

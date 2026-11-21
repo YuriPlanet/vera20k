@@ -3815,7 +3815,7 @@ fn retail_spy_atlas_loads_its_default_disguise_without_a_real_infantryman() {
         .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();
     let entity = sim.entities().get(spy).unwrap();
-    let disguise = entity.disguise.as_ref().unwrap();
+    let disguise = entity.seldom.disguise.as_ref().unwrap();
     let worn = sim.interner().resolve(disguise.type_id().unwrap());
     assert_eq!(worn, "E1");
     assert_eq!(sim.entities().len(), 1);
@@ -3877,6 +3877,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     world
         .get_mut_for_test(1)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -3891,6 +3892,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     );
     second.set_is_voxel_for_test(false);
     second
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -3932,6 +3934,7 @@ fn spy_atlas_growth_tracks_each_active_disguise_and_its_house_color() {
     world
         .get_mut_for_test(2)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()

@@ -168,7 +168,7 @@ pub(crate) fn selected_stable_ids_in_order(
     let mut ordered = Vec::new();
     for &id in selection_order {
         if let Some(entity) = sim.entities().get(id)
-            && (selection_order_pending || entity.selection.is_selected())
+            && (selection_order_pending || entity.seldom.selection.is_selected())
         {
             ordered.push(id);
         }
@@ -220,7 +220,7 @@ fn admit_logic_selects(
             && sim
                 .entities()
                 .get(id)
-                .is_some_and(|entity| entity.selection.is_selected())
+                .is_some_and(|entity| entity.seldom.selection.is_selected())
             && members.insert(id)
         {
             insert_selected_id(ordered, id, sim, rules);
@@ -244,7 +244,7 @@ fn admit_missing_selected_ids(
     let mut ordered = VecDeque::from(ordered);
     admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, true);
     for entity in sim.entities().values() {
-        if entity.selection.is_selected() && members.insert(entity.stable_id()) {
+        if entity.seldom.selection.is_selected() && members.insert(entity.stable_id()) {
             insert_selected_id(&mut ordered, entity.stable_id(), sim, rules);
         }
     }
@@ -259,7 +259,7 @@ pub(super) fn selection_membership_committed(
     let mut committed_count = 0;
     sim.entities()
         .values()
-        .filter(|entity| entity.selection.is_selected())
+        .filter(|entity| entity.seldom.selection.is_selected())
         .all(|entity| {
             committed_count += 1;
             members.contains(&entity.stable_id())
@@ -377,7 +377,7 @@ pub(crate) fn selection_order_for_world(
         .filter(|id| {
             sim.entities()
                 .get(*id)
-                .is_some_and(|entity| entity.selection.is_selected())
+                .is_some_and(|entity| entity.seldom.selection.is_selected())
         })
         .collect();
     let reconciled = admit_missing_selected_ids(reconciled, sim, rules, logic_selects);

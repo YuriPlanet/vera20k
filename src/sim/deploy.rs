@@ -73,12 +73,12 @@ pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !sim.substrate.entities.get(id).is_some_and(|e| {
         e.lifecycle.object_alive()
             && !e.lifecycle.in_limbo()
-            && e.tether.partner().is_none()
+            && e.seldom.tether.partner().is_none()
             // Event9 has no occupant/cargo gate. Selection730B28 owns the
             // garrison D admission; an accepted Building event may be empty.
             && (matches!(e.category(), EntityCategory::Structure | EntityCategory::Infantry)
@@ -203,7 +203,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (i32, bool) {
         let mut bridge_changed = false;
         // Native always has a cell; without one VERA fires at nothing rather
@@ -328,7 +328,7 @@ impl Simulation {
                     && (entity.parasite.eater().is_some()
                         || (crate::sim::mcv_deploy::deploys_into(self, entity, rules)
                             .is_some_and(|yard| yard.construction_yard)
-                            && entity.mind_control.controller().is_some()))
+                            && entity.seldom.mind_control.controller().is_some()))
                 {
                     return false;
                 }
@@ -382,6 +382,7 @@ impl Simulation {
                             .as_infantry()
                             .is_some_and(|leaf| leaf.doing() == 31)
                         || entity
+                            .seldom
                             .rearm_timer
                             .remaining(self.session.binary_frame() as i32)
                             != 0)
@@ -450,7 +451,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -483,7 +484,7 @@ impl Simulation {
         id: u64,
         completed_doing: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let next = match completed_doing {
             27 => 28,
@@ -508,9 +509,9 @@ impl Simulation {
                 .get_mut(id)
                 .expect("same deployment completion receiver");
             if completed_doing == 27 {
-                actor.native_crush_immunity.grant();
+                actor.seldom.native_crush_immunity.grant();
             } else {
-                actor.native_crush_immunity.revoke();
+                actor.seldom.native_crush_immunity.revoke();
             }
         }
         if completed_doing == 27 {
@@ -526,7 +527,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let actor = self
             .substrate

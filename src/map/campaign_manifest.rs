@@ -3,6 +3,12 @@
 //! This layer keeps map names, roles, branch edges, rule choices and carry
 //! selections. Consumers resolve House identities against the constructed map.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};

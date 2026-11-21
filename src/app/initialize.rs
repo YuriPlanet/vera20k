@@ -29,6 +29,7 @@ pub(super) struct InitializationJob {
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
     deferred_window_events: Vec<winit::event::WindowEvent>,
     resume_admitted: bool,
+    /// Set by the browser's GPU request future, which shares it by `Rc`.
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     gpu_ready: Option<std::rc::Rc<std::cell::Cell<bool>>>,
 }
@@ -230,7 +231,7 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
 /// `std::io::Error`'s own message is in the host's language, which need not
 /// be the player's. This walks the `anyhow` chain and states each I/O link
 /// from the language files, as our own context strings already are.
-fn describe_startup_error(err: &anyhow::Error) -> String {
+pub(super) fn describe_startup_error(err: &anyhow::Error) -> String {
     use crate::assets::error::AssetError;
 
     let mut parts: Vec<String> = Vec::new();
@@ -563,36 +564,51 @@ impl App {
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let backends = crate::app::persistence::startup_backend::backends(
+        let named_api = options_profile.graphics_api.backend();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let first_backends = crate::app::persistence::startup_backend::backends(
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
-            options_profile.graphics_api.backend(),
+            named_api,
         );
+        // An API that has no adapter here or cannot start (the one VERA.INI
+        // names, or the start record's DirectX 12 on a Windows without it)
+        // gives way to the next the start record allows, the default set last.
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-        let gpu = match GpuContext::new(
-            window.clone(),
-            event_loop.owned_display_handle(),
-            capture || hidden_spawn_window,
-            backends,
-            crate::app::persistence::startup_backend::starting,
-        ) {
-            // The API the start record asks for has no adapter here (DirectX
-            // 12 on a Windows without it): the default set; the record stays.
-            Err(error) if backends != wgpu::Backends::PRIMARY => {
-                log::warn!(
-                    "No graphics adapter through {backends:?} ({error:#}); starting on the default graphics APIs"
-                );
-                GpuContext::new(
+        let (gpu, backends) = {
+            let mut backends = first_backends;
+            loop {
+                let error = match GpuContext::new(
                     window.clone(),
                     event_loop.owned_display_handle(),
                     capture || hidden_spawn_window,
-                    wgpu::Backends::PRIMARY,
+                    backends,
                     crate::app::persistence::startup_backend::starting,
-                )?
+                ) {
+                    Ok(gpu) => break (gpu, backends),
+                    Err(error) => error,
+                };
+                let Some(next) = crate::app::persistence::startup_backend::after_failure(backends)
+                else {
+                    return Err(error);
+                };
+                log::warn!(
+                    "No graphics adapter through {backends:?} ({error:#}); starting on {next:?}"
+                );
+                backends = next;
             }
-            result => result?,
         };
+        // The API VERA.INI names gave way to another: the player is told,
+        // with the line to remove, while the start goes on.
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(named) = named_api
+            && backends != first_backends
+            && !capture
+            && !hidden_spawn_window
+        {
+            crate::app::system_dialog::report_graphics_api_refused(named, gpu.graphics_api());
+        }
         // On the processor, building the renderers and reaching the first
         // picture can take minutes, and the window stays blank until then: a
         // player is told why while the start goes on.
@@ -706,6 +722,10 @@ impl App {
                 &mut main_menu_shell_error,
             )
         });
+        // This is the game the launch plays (`util::ares_launch`).
+        if let Some(assets) = &startup_asset_manager {
+            assets.open_for_play();
+        }
         // Native process startup seeds Scenario before the MPModes loader. The
         // Cooperative factory reached by that loader then advances this cursor
         // before the first shell is shown.
@@ -822,6 +842,7 @@ impl App {
                     startup_audio.load_audio_indices,
                 )
                 .with_resources(resources)
+                .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
                 .with_personal_rules(personal_rules)
                 .with_ares_setting(ares_setting);
             process_assets.csf = startup_csf;
@@ -1259,6 +1280,7 @@ impl App {
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
+                external_rules_mismatch: None,
                 match_result: None,
                 match_result_at: None,
                 match_winners: None,
@@ -1287,6 +1309,7 @@ impl App {
                 map_library: Default::default(),
                 login_info: Default::default(),
                 map_pictures: Default::default(),
+                language_files: Default::default(),
                 mods,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
@@ -1689,7 +1712,7 @@ mod tests {
                         &[],
                         crate::app::types::SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 victory_edges += output.sound_events.iter().filter(|event| matches!(event,
@@ -1752,7 +1775,7 @@ mod tests {
                         &[exit],
                         crate::app::types::SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 assert_eq!(output.tick.executed_commands, 1);

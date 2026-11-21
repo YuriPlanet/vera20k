@@ -396,7 +396,7 @@ impl Simulation {
         if entity.deactivated.is_offline() {
             return;
         }
-        if !entity.ares.sensor_array_counter.activate() {
+        if !entity.seldom.ares.sensor_array_counter.activate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -427,7 +427,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
-        if !entity.ares.sensor_array_counter.deactivate() {
+        if !entity.seldom.ares.sensor_array_counter.deactivate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -468,7 +468,7 @@ impl Simulation {
         {
             return;
         }
-        let was_active = entity.ares.sensor_array_counter.is_active();
+        let was_active = entity.seldom.ares.sensor_array_counter.is_active();
         let active = !entity.deactivated.is_offline()
             && self.building_operational_state(stable_id, rules) == Some(true);
         if active == was_active {
@@ -610,7 +610,7 @@ mod tests {
             soviet,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!sim.fog.has_sensor_for_house(americans, 57, 30));
         assert!(sim.fog.has_sensor_for_house(soviet, 57, 30));
@@ -737,7 +737,7 @@ mod tests {
                 0,
                 crate::sim::world::PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .is_some()
         );
@@ -789,13 +789,18 @@ mod tests {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .ares
                 .sensor_array_counter
                 .count()
         };
         assert_eq!((counter(&sim), sensor(&sim, 27)), (1, 1));
         let visit = |sim: &mut Simulation| {
-            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                id,
+                Some(&rules),
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            );
         };
         sim.substrate
             .entities
@@ -873,7 +878,7 @@ mod tests {
             americans,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.fog.has_sensor_for_house(soviet, 55, 41)

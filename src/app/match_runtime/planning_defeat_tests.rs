@@ -11,20 +11,45 @@ use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::selection::SelectionState;
 use crate::sim::world::{
-    FrameEffects, SimSoundEvent, Simulation, SoundBoundary, TickLane, UninitContext,
+    FrameClient, FrameEffects, LocalPlanningBoundary, SimSoundEvent, Simulation, SoundBoundary,
+    TickLane, UninitContext,
 };
-use std::cell::RefCell;
 
 /// Observe the existing queue before the production dispatcher appends the
 /// outcome EVA. Delivery is delegated unchanged; no device is constructed.
 struct OutcomeCueBoundary<'a, 'b> {
-    client: &'a FrameClientBoundary<'b>,
-    outcomes: RefCell<Vec<(bool, Vec<String>)>>,
+    client: &'a mut FrameClientBoundary<'b>,
+    outcomes: Vec<(bool, Vec<String>)>,
+}
+
+/// The House frame lends the client's sound role through the observer and
+/// its planner directly.
+impl FrameClient for OutcomeCueBoundary<'_, '_> {
+    fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
+        Some(self)
+    }
+
+    fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
+        Some(&mut *self.client)
+    }
+}
+
+/// The client's sound and planning roles only, as the House frame lends them.
+struct SoundAndPlanning<'a, 'b>(&'a mut FrameClientBoundary<'b>);
+
+impl FrameClient for SoundAndPlanning<'_, '_> {
+    fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
+        Some(&mut *self.0)
+    }
+
+    fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
+        Some(&mut *self.0)
+    }
 }
 
 impl SoundBoundary for OutcomeCueBoundary<'_, '_> {
     fn consume(
-        &self,
+        &mut self,
         sim: &Simulation,
         rules: &crate::rules::ruleset::RuleSet,
         events: &[SimSoundEvent],
@@ -32,12 +57,12 @@ impl SoundBoundary for OutcomeCueBoundary<'_, '_> {
         if events[self.client.delivered()..].iter().any(|event| {
             matches!(event, SimSoundEvent::MatchOutcome { owner, .. } if Some(*owner) == sim.session().current_house())
         }) {
-            let active = self.client.planning.as_ref().unwrap().borrow().0.active();
-            let queued = self.client.output.borrow().iter().filter_map(|event| match event {
-                crate::audio::events::GameSoundEvent::UiSound { sound_id } => Some(sound_id.clone()),
+            let active = self.client.planning.as_ref().unwrap().0.active();
+            let queued = self.client.output.iter().filter_map(|event| match event {
+                crate::audio::events::GameSoundEvent::UiSound { sound_id } => Some(sound_id.name_in(rules).to_string()),
                 _ => None,
             }).collect();
-            self.outcomes.borrow_mut().push((active, queued));
+            self.outcomes.push((active, queued));
         }
         self.client.consume(sim, rules, events);
     }
@@ -130,22 +155,22 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
         let was_defeated = rt.simulation.local_player_defeated();
         let mut admit_radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
         let mut output = {
-            let boundary =
+            let mut boundary =
                 FrameClientBoundary::new(None, Some("Americans"), &mut sounds, &mut admit_radar)
                     .with_planning(&mut planning, &mut selection);
-            let observed = OutcomeCueBoundary {
-                client: &boundary,
-                outcomes: RefCell::new(Vec::new()),
+            let mut observed = OutcomeCueBoundary {
+                client: &mut boundary,
+                outcomes: Vec::new(),
             };
             let output = rt
                 .advance_frame(
                     &[],
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::for_sound(&observed).with_local_planning(&boundary),
+                    &mut FrameEffects::for_client(&mut observed),
                 )
                 .expect("ordinary retail defeat frame");
-            outcome_cues.extend(observed.outcomes.into_inner());
+            outcome_cues.extend(observed.outcomes);
             output
         };
         if !was_defeated && rt.simulation.local_player_defeated() {
@@ -252,7 +277,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
         for _ in 0..5 {
             let mut admit_radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
             let mut output = {
-                let boundary = FrameClientBoundary::new(
+                let mut boundary = FrameClientBoundary::new(
                     None,
                     Some("Americans"),
                     &mut sounds,
@@ -263,7 +288,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::for_sound(&boundary).with_local_planning(&boundary),
+                    &mut FrameEffects::for_client(&mut SoundAndPlanning(&mut boundary)),
                 )
                 .unwrap()
             };

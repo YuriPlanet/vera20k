@@ -81,7 +81,7 @@ impl Simulation {
         argument: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if rules.ares_form() {
             self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
@@ -133,7 +133,7 @@ impl Simulation {
         destination: ChronoshiftTarget,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let checked = self.team_leader(team_id, rules).and_then(|leader| {
             let owner = self.substrate.entities.get(leader)?.owner();
@@ -228,7 +228,7 @@ impl Simulation {
         argument: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::rules::superweapon_targeting::AiTargetingMode;
         use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
@@ -328,7 +328,7 @@ impl Simulation {
         (x, y): (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(name) = usize::try_from(kind.native_index())
             .ok()

@@ -2940,10 +2940,8 @@ impl SfxPlayer {
     }
 
     /// The `[SoundList]` identity one owner's live loop handle names.
-    pub fn loop_handle_sound_id(&self, owner: u64) -> Option<String> {
-        self.arbiter
-            .loop_handle_key(HandleOwner::Positional(owner))
-            .map(str::to_owned)
+    pub fn loop_handle_sound_id(&self, owner: u64) -> Option<&str> {
+        self.arbiter.loop_handle_key(HandleOwner::Positional(owner))
     }
 
     /// The identity one owner's handle names, live or kept.

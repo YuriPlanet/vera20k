@@ -45,7 +45,7 @@ fn zone_entry_arrival_runs_same_zone_action_and_retires_one_shot_tag() {
         PerCellReason::TurnComplete,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -54,7 +54,7 @@ fn zone_entry_arrival_runs_same_zone_action_and_retires_one_shot_tag() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -93,7 +93,7 @@ fn zone_entry_infantry_arrival_reaches_the_same_live_tag_owner() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -109,7 +109,7 @@ fn zone_entry_country_predicate_rejects_another_house() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -155,7 +155,7 @@ fn zone_entry_rejects_distinct_supplied_native_zone_labels() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -205,7 +205,7 @@ fn zone_entry_uses_tag_as_source_for_the_asymmetric_fringe_shortcut() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -238,7 +238,7 @@ fn zone_entry_uses_retained_navigation_head_instead_of_location() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.trigger_runtime.globals_set.contains(&7));
@@ -262,7 +262,7 @@ fn zone_entry_live_removal_skips_shifted_tag_until_the_next_arrival() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([7]));
@@ -271,7 +271,7 @@ fn zone_entry_live_removal_skips_shifted_tag_until_the_next_arrival() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([7, 9]));
@@ -492,7 +492,7 @@ fn zone_entry_observes_destructor_changes_to_the_shared_map_cursor() {
         PerCellReason::Arrival,
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let calls: Vec<_> = sim

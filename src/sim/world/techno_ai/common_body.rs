@@ -326,7 +326,7 @@ pub(super) fn drop_airborne_target_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(crate::sim::combat::TargetKind::Entity(target_id)) = sim
         .substrate
@@ -372,7 +372,7 @@ pub(super) fn drop_unsensed_cloaked_target_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -422,18 +422,18 @@ pub(super) fn mission_counter_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
     sim.substrate.entities.count_mission_ai_visit(id);
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
-    sim.object_ai_sounds(id, rules, ctx.effects);
+    sim.object_ai_sounds(id, rules, &mut ctx.effects);
     // A quiet unit is not falling (`world::quiet_units`).
     if sim.quiet(id) {
         return true;
     }
-    match sim.object_ai_fall(id, rules, ctx.overlay_registry, ctx.effects) {
+    match sim.object_ai_fall(id, rules, ctx.overlay_registry, &mut ctx.effects) {
         Ok((landed, changed)) => {
             outcome.landed |= landed;
             outcome.bridge_state_changed |= changed;
@@ -488,7 +488,7 @@ pub(super) fn techno_common_steps(
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
     // Ares TechnoClass_Update1004B348..1004B397 converts for the current
@@ -689,7 +689,7 @@ pub(super) fn berserk_step(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim
         .substrate
@@ -830,7 +830,7 @@ pub(super) fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &Ru
     if matches!(code, FireError::Illegal | FireError::Cant) {
         //6FA4CB dispatches class+3C8 before this object's mission handler:
         // Infantry51B1F0 clears68D/requests its action and invalidates5E0.
-        sim.assign_target_represented(id, None, rules, FrameEffects::default())
+        sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
             .expect("the queried target-drop receiver remains present");
     }
 }
@@ -879,7 +879,7 @@ pub(super) fn target_reach_step(
     id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::combat::TargetKind;
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -1035,7 +1035,7 @@ pub(super) fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
     }
     //6FA46C precedes the subsequent live target re-read and illegal test.
     // Preserve class refusal and synchronous action/path effects.
-    sim.assign_target_represented(id, None, rules, FrameEffects::default())
+    sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
         .expect("the queried allied-target receiver remains present");
 }
 
@@ -1056,7 +1056,7 @@ pub(super) fn techno_after_acquisition(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
     // A quiet unit carries no bomb and no manager, is at full strength and
@@ -1065,8 +1065,9 @@ pub(super) fn techno_after_acquisition(
     let quiet = sim.quiet(id);
     if !quiet {
         outcome.bridge_state_changed |=
-            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, ctx.effects);
-        if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects) {
+            sim.bomb_fuse_step(id, rules, ctx.overlay_registry, &mut ctx.effects);
+        if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, &mut ctx.effects)
+        {
             outcome.frame_error = Some(super::FrameAdvanceError::new(
                 sim.session.tick(),
                 sim.session.binary_frame(),
@@ -1075,7 +1076,7 @@ pub(super) fn techno_after_acquisition(
             ));
             return false;
         }
-        sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
+        sim.capture_manager_update(id, rules, ctx.overlay_registry, &mut ctx.effects);
         if !ai_alive(&sim.substrate, id) {
             return false;
         }
@@ -1115,11 +1116,11 @@ pub(super) fn techno_after_acquisition(
             id,
             rules,
             ctx.overlay_registry,
-            ctx.effects,
+            &mut ctx.effects,
         );
         // A target the Unit's later Fire_At_Target hands its manager waits
         // until the next visit (Unit73647B/7365E1).
-        crate::sim::spawn_manager::spawn_manager_ai(sim, rules, id, ctx.effects);
+        crate::sim::spawn_manager::spawn_manager_ai(sim, rules, id, &mut ctx.effects);
         super::techno_ai_cloak::cloak_field_ai_step(sim, id, rules, ctx.overlay_registry);
     }
     healer_target_drop_step(sim, id, rules);
@@ -1300,7 +1301,7 @@ pub(super) fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &Rul
         })
     };
     let drop = |sim: &mut Simulation| {
-        sim.assign_target_represented(id, None, rules, FrameEffects::default())
+        sim.assign_target_represented(id, None, rules, &mut FrameEffects::default())
             .expect("the queried healer receiver remains present");
     };
     let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
@@ -1365,7 +1366,7 @@ pub(super) fn techno_common_post(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
     // Buildings step at4509DE in their existing UpdateAnimation owner.
@@ -1436,10 +1437,10 @@ pub(super) fn unit_techno_bracket(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     outcome: &mut ObjectAiOutcome,
 ) -> BracketReach {
-    if !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None) {
+    if !techno_common_steps(sim, id, rules, ctx.overlay_registry, &mut ctx.effects, None) {
         return BracketReach::DiedInPre;
     }
     // Guard B (IsAlive, `0x006FA23C`). A crashing wreck is alive at Health 0,
@@ -1480,8 +1481,8 @@ pub(super) fn unit_techno_bracket(
     if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
         return BracketReach::Dispatched;
     }
-    target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-    techno_common_post(sim, id, rules, ctx.effects);
+    target_reach_step(sim, id, rules, ctx.overlay_registry, &mut ctx.effects);
+    techno_common_post(sim, id, rules, &mut ctx.effects);
     BracketReach::Dispatched
 }
 
@@ -1526,7 +1527,7 @@ pub(super) fn clear_passive_target_off_mission(sim: &mut Simulation, id: u64, ru
     if !drop {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, rules, FrameEffects::default());
+    let _ = sim.assign_target_represented(id, None, rules, &mut FrameEffects::default());
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.passive_scan.clear_acquired();
     }

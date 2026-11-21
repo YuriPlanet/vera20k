@@ -461,7 +461,7 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
     let barricade = find(&scene, "CABARR02", (137, 103));
     let entity = scene.sim().entities().get(flak).unwrap();
     assert!(!entity.in_playfield());
-    assert!(!entity.discovery.discovered_by_current_house());
+    assert!(!entity.seldom.discovery.discovered_by_current_house());
     assert!(
         !entity.building_art.actually_placed(),
         "unseen player turret must not GrandOpen"
@@ -498,7 +498,7 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
         .simulation
         .reveal_entire_map(Some(player), UninitContext::new(&runtime.resources.rules));
     let entity = runtime.simulation.entities().get(flak).unwrap();
-    assert!(entity.discovery.discovered_by_current_house());
+    assert!(entity.seldom.discovery.discovered_by_current_house());
     assert!(
         entity.building_art.actually_placed(),
         "real discovery must run the shared opening"

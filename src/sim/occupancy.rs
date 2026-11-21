@@ -997,6 +997,7 @@ pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
         return vec![(entity.position.rx(), entity.position.ry())];
     }
     entity
+        .seldom
         .type_facts
         .foundation()
         .cell_offsets()

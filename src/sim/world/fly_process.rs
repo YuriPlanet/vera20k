@@ -163,7 +163,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> AirMovementTickStats {
         let mut stats = AirMovementTickStats::default();
         let flight_level = self.fly_type_flight_level(id, rules);
@@ -254,7 +254,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -319,7 +319,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         self.foot_mark_remove(id, rules, registry, frame_effects);
@@ -592,7 +592,7 @@ impl Simulation {
         may_slow: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> i32 {
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -623,7 +623,7 @@ impl Simulation {
 
         let mut aim = coord;
         if !hunter_seeker && let Some(building) = self.fly_building_at(coord) {
-            if entity.radio_contacts.contains(building) {
+            if entity.seldom.radio_contacts.contains(building) {
                 if let Some(dock) = crate::sim::movement::building_dock_coordinate(
                     &self.substrate.entities,
                     building,
@@ -810,7 +810,12 @@ impl Simulation {
     /// UnInits it, which announces the same expiry but removes the object at
     /// the frame's end. Trigger: the same retreat with passengers. Effect:
     /// none observed, as nothing reads a cargo passenger in between.
-    fn fly_playfield_latch(&mut self, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+    fn fly_playfield_latch(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
         let Some(bounds) = self.playfield_bounds else {
             return;
         };
@@ -836,7 +841,7 @@ impl Simulation {
         if !retreat {
             return;
         }
-        let context = super::UninitContext::new(rules).with_effects(frame_effects);
+        let mut context = super::UninitContext::new(rules).with_effects(frame_effects);
         while let Some((passenger, _)) = self
             .substrate
             .entities
@@ -856,10 +861,10 @@ impl Simulation {
             if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
                 passenger.passenger_role_mut().clear_carrier_relation();
             }
-            self.uninit_with_context(passenger, context);
+            self.uninit_with_context(passenger, context.reborrow());
         }
         self.team_script_vm.mark_member_team_leaving_map(id);
-        self.stun(id, context);
+        self.stun(id, context.reborrow());
         self.uninit_with_context(id, context);
     }
 }

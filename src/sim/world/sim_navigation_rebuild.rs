@@ -82,7 +82,7 @@ impl Simulation {
             match kind {
                 ObjectKind::Entity => {
                     for entity in self.substrate.entities.values_mut() {
-                        entity.in_logic_vector.mark(false);
+                        entity.seldom.in_logic_vector.mark(false);
                     }
                 }
                 ObjectKind::Anim => {

@@ -145,7 +145,10 @@ pub(crate) fn paint_wol_lobby_children(
             RectPx::new(row.x + x, row.y, w, row.h)
         })
     };
-    for (key, rect) in layout.labels {
+    // The online page's view hides the other view's children: they have no
+    // window ([`crate::ui::wol_lobby::LobbyView`]).
+    let shown = |rect: RectPx| rect.w > 0;
+    for (key, rect) in layout.labels.into_iter().filter(|(_, rect)| shown(*rect)) {
         paint.texts.push(text(
             &label(state, key),
             rect,
@@ -168,6 +171,7 @@ pub(crate) fn paint_wol_lobby_children(
         .iter()
         .copied()
         .chain([(REFRESH, layout.refresh), (EMOTE, layout.emote)])
+        .filter(|(_, rect)| shown(*rect))
     {
         let pressed = ui.buttons.is_pressed(id);
         match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
@@ -208,15 +212,17 @@ pub(crate) fn paint_wol_lobby_children(
         }
     }
 
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
-            checked: ui.observer,
-        },
-        scale,
-    );
+    if shown(layout.observer_toggle) {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect: layout.observer_toggle,
+                checked: ui.observer,
+            },
+            scale,
+        );
+    }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
@@ -226,22 +232,24 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
-    push_new_edit(
-        &mut paint.controls,
-        &mut paint.texts,
-        atlas,
-        font,
-        &ui.chat.edit,
-        state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
-        layout.chat,
-        ui.popup.is_none() && ui.caret_visible(now),
-        SHELL_LABEL_TEXT_RGB,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale,
-    );
+    if shown(layout.chat) {
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.chat.edit,
+            state
+                .platform
+                .ime
+                .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
+            layout.chat,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
 
     let lobbies = ui
         .lobby_list
@@ -256,7 +264,7 @@ pub(crate) fn paint_wol_lobby_children(
         .chat
         .list
         .geometry(layout.chat_log, ui.chat.lines.len(), scale);
-    if !modern {
+    if shown(layout.lobbies) {
         list_controls(
             &mut paint.controls,
             atlas,
@@ -266,30 +274,36 @@ pub(crate) fn paint_wol_lobby_children(
             scale,
         );
     }
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        games,
-        &ui.game_list,
-        true,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        players,
-        &ui.player_list,
-        false,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        chat,
-        &ui.chat.list,
-        false,
-        scale,
-    );
+    if shown(layout.games) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            games,
+            &ui.game_list,
+            true,
+            scale,
+        );
+    }
+    if shown(layout.players) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            players,
+            &ui.player_list,
+            false,
+            scale,
+        );
+    }
+    if shown(layout.chat_log) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            chat,
+            &ui.chat.list,
+            false,
+            scale,
+        );
+    }
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
         if let Some(visible) = row.checked_sub(ui.player_list.top_index)
@@ -368,7 +382,7 @@ pub(crate) fn paint_wol_lobby_children(
             None => name_end - name_x,
         };
         // A header that still exceeds one row at the tightest font fit
-        // ends in an ellipsis; its complete text remains in the row help.
+        // ends in an ellipsis.
         let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
         if modern {
             let width = name_w.max(1) as u32;
@@ -521,71 +535,6 @@ pub(crate) fn paint_wol_lobby_children(
             row_rgb(line.color),
         ));
     }
-    if let Some(panel) = layout.game_details {
-        push_solid_rect(
-            &mut paint.controls,
-            atlas,
-            panel,
-            [0.025, 0.035, 0.045],
-            SHELL_CONTROL_DEPTH,
-        );
-        push_rect_outline(
-            &mut paint.controls,
-            atlas,
-            panel,
-            [0.35, 0.40, 0.42],
-            SHELL_CONTROL_DEPTH - 0.00001,
-        );
-        if let Some(details) = crate::app::shell_wol::lobby::room_details(state) {
-            let pane = scale.base_rect(panel);
-            let width = (pane.w - 10).max(1) as u32;
-            let height = (pane.h - 8).max(1) as u32;
-            let line = font.cell_height().ceil() as u32;
-            // Reserve the counts first, leaving at least one line for the
-            // heading. A maximal map/room name cannot displace spectators.
-            let count_limit = height.saturating_sub(line + 2).max(1);
-            let count_fit = font.fit_box(&details.counts, width, count_limit);
-            let count_h = font
-                .fitted(count_fit, |font| {
-                    font.wrap_layout(&details.counts, width).height
-                })
-                .min(count_limit);
-            let title_limit = height.saturating_sub(count_h + 2).max(1);
-            let full_fits = font.fitted(crate::render::bit_font::Fit::TIGHTEST, |font| {
-                font.wrap_layout(details.title, width).height <= title_limit
-            });
-            // The selected row already names the room. If the full heading
-            // cannot fit, keep the format and map ahead of a long room name.
-            let title = if full_fits {
-                details.title
-            } else {
-                details
-                    .title
-                    .strip_prefix(details.room_name)
-                    .and_then(|tail| tail.strip_prefix(" - "))
-                    .unwrap_or(details.title)
-            };
-            let fit = font.fit_box(title, width, title_limit);
-            let title_h = font
-                .fitted(fit, |font| font.wrap_layout(title, width).height)
-                .min(title_limit);
-            let title_rect = RectPx::new(pane.x + 5, pane.y + 4, width as i32, title_h as i32);
-            let counts_rect = RectPx::new(
-                title_rect.x,
-                title_rect.y + title_rect.h + 2,
-                width as i32,
-                count_h as i32,
-            );
-            for (caption, rect) in [(title, title_rect), (details.counts.as_str(), counts_rect)] {
-                paint.texts.push(text(
-                    caption,
-                    scale.scale_rect(rect),
-                    ShellAlign::NONE,
-                    SHELL_LABEL_TEXT_RGB,
-                ));
-            }
-        }
-    }
     paint
 }
 
@@ -623,7 +572,6 @@ pub(super) fn paint_room_players(
 /// status line text. The `modern` lobby draws them on Red Alert 2's box art,
 /// as VERA's updater boxes do; the native lobby keeps gamemd's mode-2 art.
 /// `scale` is the lobby page's, so the box grows with the page.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_wol_lobby_popup(
     state: &AppState,
     popup: &WolLobbyPopup,

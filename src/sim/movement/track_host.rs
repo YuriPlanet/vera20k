@@ -112,7 +112,7 @@ impl Simulation {
         supplied: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let ares = rules.ares_form();
         self.force_track_observed(id, selector, supplied, ares, &mut |sim, id, coord| {
@@ -139,7 +139,7 @@ impl Simulation {
         cell: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         match registry {
             Some(registry) => {
@@ -233,7 +233,7 @@ impl Simulation {
         invocation: TrackInvocation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let object = self
             .substrate
@@ -332,7 +332,7 @@ impl Simulation {
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             registry,
             observe,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("track fixture must provide every coordinate receiver")
         .moved
@@ -345,7 +345,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let TrackInvocation {
             entity_id: id,
@@ -769,7 +769,7 @@ impl Simulation {
         entered: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(train) = self.substrate.entities.get(id) else {
             return;
@@ -872,7 +872,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1167,7 +1167,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -1378,7 +1378,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_enter_idle_base_with(id, rules, registry, effects, true)
     }
@@ -1390,7 +1390,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         planning_arrival: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -1451,7 +1451,9 @@ impl Simulation {
         // SlaveOwner, not Team (+5D4). The same-cell comparison calls
         // virtual+48 on both owners and truncates signed leptons /256.
         let archived = self.substrate.entities.get(id).and_then(|entity| {
-            if entity.category() != EntityCategory::Infantry || entity.slave.owner().is_some() {
+            if entity.category() != EntityCategory::Infantry
+                || entity.seldom.slave.owner().is_some()
+            {
                 return None;
             }
             let target = entity.archive_target()?;
@@ -1510,7 +1512,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         skip_human_land_check: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let saved_base_return =
             self.foot_enter_idle_base(id, rules, Some(rules.overlay_registry()), effects);
@@ -1519,7 +1521,7 @@ impl Simulation {
         };
         //738990..7389AB: a resumed attack-move (HaveMegaMission, vt+0x4AC)
         // or Wait28 suppresses the Unit tail after Foot.
-        if entity.mega_mission.is_attack_move()
+        if entity.seldom.mega_mission.is_attack_move()
             || entity.mission.effective().known() == Some(MissionType::Deliberate)
         {
             return saved_base_return;
@@ -1603,7 +1605,7 @@ impl Simulation {
             && !miner
             && !armed
             && !unloads
-            && (entity.mcv_deploy_pending.is_pending()
+            && (entity.seldom.mcv_deploy_pending.is_pending()
                 || current == Some(MissionType::AreaGuard)
                 || (current == Some(MissionType::Unload) && deploys_into))
         {
@@ -1652,7 +1654,7 @@ impl Simulation {
                 (position.y / 256) as i16 as u16,
             );
             actor.mission.current().raw() == 7
-                && actor.radio_contacts.slot(0).is_some_and(|contact| {
+                && actor.seldom.radio_contacts.slot(0).is_some_and(|contact| {
                     self.substrate
                         .entities
                         .get(contact)
@@ -1701,7 +1703,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Foot vt+504 ->4DB9B0, called after terminal PerCell and
         // StopMoving4DF0D0. Stock Enter7 + Building contact + UnitRepair
@@ -1756,7 +1758,7 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
         });
     if wide
         && sim.team_script_vm.team_for_member(id).is_none()
-        && entity.slave.owner().is_none()
+        && entity.seldom.slave.owner().is_none()
         && entity.slave_manager.is_none()
         && entity.bunker.link().installed_in().is_none()
     {
@@ -1802,7 +1804,7 @@ fn harvester_idle_selection(
     skip_human_land_check: bool,
 ) -> Option<MissionType> {
     let entity = sim.substrate.entities.get(id)?;
-    if !entity.radio_contacts.is_empty() {
+    if !entity.seldom.radio_contacts.is_empty() {
         return None;
     }
     let current = entity.mission.current().known();

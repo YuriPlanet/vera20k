@@ -4,7 +4,9 @@
 //! events, then feeds them to SfxPlayer for playback.
 //!
 //! Events carry the sound ID (from rules.ini / sound.ini) rather than a
-//! filename — the SfxPlayer resolves IDs to files via SoundRegistry.
+//! filename, as a [`SoundName`] of the rules' sound-name table: the consumer
+//! reads the name back from that table and the SfxPlayer resolves it to
+//! files via SoundRegistry.
 //!
 //! ## Design
 //! Events are plain data — no audio library handles, no asset references. This keeps
@@ -14,6 +16,9 @@
 //! ## Dependency rules
 //! - Part of audio/ — but contains no rodio code, only data types.
 //! - sim/ has its own neutral event transport and never imports audio/.
+
+use crate::rules::ruleset::{SoundName, SoundNames};
+use std::sync::Once;
 
 /// Where a positional sound plays: the world-pixel point the presentation
 /// frame draws it at, and the cell it occupies.
@@ -95,14 +100,14 @@ pub enum GameSoundEvent {
     /// Start/report sound owned by one authoritative animation object.
     AnimationStarted {
         anim_id: u64,
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
 
     /// Hard-stop one owner's handle, then optionally play StopSound.
     AnimationStopped {
         anim_id: u64,
-        stop_sound_id: Option<String>,
+        stop_sound_id: Option<SoundName>,
         source: Option<SoundSource>,
     },
     /// `SoundEvent::Release @ 0x00406060` on one owner's handle: its loop
@@ -121,7 +126,7 @@ pub enum GameSoundEvent {
         /// Stable id of the speaking object.
         speaker_id: u64,
         /// sound.ini ID from the unit's VoiceSelect= field.
-        sound_id: String,
+        sound_id: SoundName,
     },
 
     /// A unit was ordered to move — play VoiceMove.
@@ -129,7 +134,7 @@ pub enum GameSoundEvent {
         /// Stable id of the speaking object.
         speaker_id: u64,
         /// sound.ini ID from the unit's VoiceMove= field.
-        sound_id: String,
+        sound_id: SoundName,
     },
 
     /// A unit was ordered to attack — play VoiceAttack.
@@ -137,12 +142,15 @@ pub enum GameSoundEvent {
         /// Stable id of the speaking object.
         speaker_id: u64,
         /// sound.ini ID from the unit's VoiceAttack= field.
-        sound_id: String,
+        sound_id: SoundName,
     },
 
     /// An already-admitted scalar voice from the simulation's reached
     /// gameplay caller. Shares the same per-object pending/playing owner.
-    UnitVoiceRequested { speaker_id: u64, sound_id: String },
+    UnitVoiceRequested {
+        speaker_id: u64,
+        sound_id: SoundName,
+    },
 
     /// The live Logic cursor reached Techno6F9EBB for an interested owner.
     /// This visit drains only that owner's pending acknowledgement.
@@ -161,7 +169,7 @@ pub enum GameSoundEvent {
     /// An entity was destroyed — play DieSound.
     EntityDestroyed {
         /// sound.ini ID from the entity's DieSound= field.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
     },
@@ -169,20 +177,20 @@ pub enum GameSoundEvent {
     /// An entity was crushed by a vehicle — play CrushSound (the squish).
     EntityCrushed {
         /// sound.ini ID from the entity's CrushSound= field.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
     },
 
     /// Fly BeginTakeoff AuxSound1 or the one-shot landing AuxSound2.
     AircraftPhase {
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
     /// DeploySound on infantry stance entry or successful unit-to-building conversion.
     EntityDeployed {
         /// sound.ini ID from the entity's DeploySound= field.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
     },
@@ -190,7 +198,7 @@ pub enum GameSoundEvent {
     /// An infantry entity entered the Undeploying phase — play UndeploySound.
     EntityUndeployed {
         /// sound.ini ID from the entity's UndeploySound= field.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
     },
@@ -199,7 +207,7 @@ pub enum GameSoundEvent {
     /// Emitted twice per warp (source = ChronoOutSound, destination = ChronoInSound).
     ChronoTeleport {
         /// sound.ini ID — already resolved to the per-unit ChronoIn/OutSound by sim.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position of the sound source (for spatial audio).
         source: Option<SoundSource>,
     },
@@ -208,21 +216,21 @@ pub enum GameSoundEvent {
     /// `[AudioVisual] UpgradeVeteranSound=`/`UpgradeEliteSound=` cue
     /// (`VocClass::PlayAt` from `TechnoClass::AI_Update @ 0x006FA0BC`).
     UnitPromoted {
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
 
     /// One-shot positional `[AudioVisual] CloakSound` requested by an accepted
     /// native StartUncloaking arg-zero transition.
     CloakSound {
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
 
     /// One-shot positional overlay `CrushSound=` played by
     /// `UnitClass::PerCellProcess @ 0x0073B04D` when a crusher flattens a wall.
     WallCrushed {
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
 
@@ -230,14 +238,14 @@ pub enum GameSoundEvent {
     /// full-volume `VocClass::PlayAtPos` when `source` is absent. Both resolve
     /// only registered Voc entries, never raw audio-bag filenames.
     VocAt {
-        sound_id: String,
+        sound_id: SoundName,
         source: Option<SoundSource>,
     },
     /// One independent `VocClass::PlayAtCoord750E20` request. Unlike
     /// direct7509E0, it retains its source and re-drives/reaps at750EC0.
     /// Selected damage callers702760/7027A9/442706 use this route.
     VocAtCoord {
-        sound_id: String,
+        sound_id: SoundName,
         /// Immutable signed native XYZ in leptons, retained by750E20.
         /// The projected `source` is only a derived spatial-audio cache.
         coordinate: [i32; 3],
@@ -253,7 +261,7 @@ pub enum GameSoundEvent {
     /// the building's screen position when the first occupant enters.
     BuildingGarrisonedSfx {
         /// sound.ini ID for the SFX (resolves "BuildingGarrisoned" → file).
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position for spatial audio.
         source: Option<SoundSource>,
     },
@@ -264,7 +272,7 @@ pub enum GameSoundEvent {
     /// screen position. Skipped upstream when the rules key is empty.
     BunkerWalls {
         /// sound.ini ID (BunkerWallsUpSound or BunkerWallsDownSound).
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position for spatial audio.
         source: Option<SoundSource>,
     },
@@ -273,7 +281,7 @@ pub enum GameSoundEvent {
     /// a parachute. Resolved from [AudioVisual] ChuteSound.
     ChuteSound {
         /// sound.ini ID for the SFX.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position for spatial audio.
         source: Option<SoundSource>,
     },
@@ -287,7 +295,7 @@ pub enum GameSoundEvent {
     BridgeRepaired {
         /// Spatial `[BridgeRepaired]` SFX id. Empty when
         /// `RepairBridgeSound=` is unset in rules.
-        sound_id: String,
+        sound_id: SoundName,
         /// Screen position for spatial audio.
         source: Option<SoundSource>,
         /// `Some("EVA_BridgeRepaired")` when the engineer's owner is the
@@ -305,7 +313,7 @@ pub enum GameSoundEvent {
     /// accepted the ping (`0x004F95A5 TEST AL,AL ; JZ`).
     BaseUnderAttackSfx {
         /// sound.ini ID from `[AudioVisual] BaseUnderAttackSound=`.
-        sound_id: String,
+        sound_id: SoundName,
     },
 
     /// A superweapon fired: its `[AudioVisual]` cue and/or its EVA warning.
@@ -329,7 +337,7 @@ pub enum GameSoundEvent {
     /// enemy's launch announces itself on your client until you are defeated.
     SuperWeaponActivated {
         /// `[AudioVisual]`/`StartSound=` cue; empty when the case plays none.
-        sound_id: String,
+        sound_id: SoundName,
         /// Target-cell position, or `None` for a non-positional cue.
         source: Option<SoundSource>,
         /// `evamd.ini` event name for the `VoxClass::PlayEVA` call, or `None`
@@ -340,7 +348,7 @@ pub enum GameSoundEvent {
     /// Generic UI sound (button click, error beep, etc.).
     UiSound {
         /// sound.ini ID for the UI sound.
-        sound_id: String,
+        sound_id: SoundName,
     },
 
     /// One displayed-credits counter step: `[AudioVisual] CreditTicks[0]`
@@ -350,7 +358,7 @@ pub enum GameSoundEvent {
     /// (centre), no handle — so, unlike [`Self::UiSound`], at HALF volume.
     CreditTick {
         /// sound.ini ID from the `CreditTicks=` list.
-        sound_id: String,
+        sound_id: SoundName,
     },
 }
 
@@ -371,7 +379,10 @@ impl GameSoundEvent {
                 index: reference.eva_index(eva)?,
             });
         }
-        let Some(sound_id) = reference.sound(sounds).map(str::to_owned) else {
+        let Some(sound_id) = reference
+            .sound(sounds)
+            .map(|name| SoundName::Unlisted(name.into()))
+        else {
             // VocClass::PlayAt7509E0 leaves the requested Voc null for an
             // invalid index (7509F5..750A0F), stops a different live handle
             // (750A24..750A36), then rewrites that handle (750AA5..750AAE).
@@ -408,9 +419,12 @@ impl GameSoundEvent {
         })
     }
 
-    /// Get the sound ID for this event.
-    pub fn sound_id(&self) -> &str {
-        match self {
+    /// The sound this event names, read against the rules' sound-name
+    /// table `names` (`""` when it names none). A listed name that does not
+    /// read against `names` is a fault ([`report_unread_sound`]) and plays
+    /// nothing.
+    pub fn sound_id<'a>(&'a self, names: Option<&'a SoundNames>) -> &'a str {
+        let sound = match self {
             Self::AnimationStarted { sound_id, .. }
             | Self::UnitSelected { sound_id, .. }
             | Self::UnitMoveOrder { sound_id, .. }
@@ -435,7 +449,10 @@ impl GameSoundEvent {
             | Self::ChuteSound { sound_id, .. }
             | Self::BridgeRepaired { sound_id, .. }
             | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
-            Self::AnimationStopped { stop_sound_id, .. } => stop_sound_id.as_deref().unwrap_or(""),
+            Self::AnimationStopped { stop_sound_id, .. } => match stop_sound_id {
+                Some(sound_id) => sound_id,
+                None => return "",
+            },
             Self::AnimationReleased { .. }
             | Self::AnimationDetached { .. }
             | Self::VocStopAtCoord { .. }
@@ -444,10 +461,17 @@ impl GameSoundEvent {
             | Self::UnitVoiceMoved { .. }
             | Self::TriggerEva { .. }
             | Self::VocIndex { .. }
-            | Self::TriggerAudio { .. } => "",
+            | Self::TriggerAudio { .. } => return "",
             // The event name, not a sample: the sample is a per-side column
             // the `VoxClass` consumer resolves.
-            Self::Eva { event, .. } | Self::EvaRemove { event } => event,
+            Self::Eva { event, .. } | Self::EvaRemove { event } => return event,
+        };
+        match sound.resolve(names) {
+            Some(name) => name,
+            None => {
+                report_unread_sound(sound, names);
+                ""
+            }
         }
     }
 
@@ -684,6 +708,28 @@ impl SoundEventQueue {
     }
 }
 
+/// A listed sound name read against a table other than the one that made it:
+/// every table rebuild finishes before a Simulation is staged, so this is a
+/// programming error. Debug builds stop on it; a release build logs the first
+/// one and plays nothing, so the game carries on. A stale queue holds many
+/// such events, and a warning for each would flood the log.
+fn report_unread_sound(sound: &SoundName, names: Option<&SoundNames>) {
+    static WARNED: Once = Once::new();
+    let SoundName::Listed(id) = sound else {
+        return;
+    };
+    let (made, read) = (id.generation(), names.map_or(0, SoundNames::generation));
+    WARNED.call_once(|| {
+        log::warn!(
+            "a sound name of table {made} was read against table {read}: those sounds play nothing"
+        );
+    });
+    debug_assert!(
+        false,
+        "sound name of table {made} read against table {read}"
+    );
+}
+
 #[cfg(all(test, tests_audio))]
 mod trigger_audio_tests {
     use super::*;
@@ -720,7 +766,7 @@ mod trigger_audio_tests {
             },
         };
         assert!(
-            matches!(indexed.resolve_trigger_audio(&sounds, &eva), Some(GameSoundEvent::VocAtCoord { sound_id, coordinate: [256, 512, 0], flags: 1, .. }) if sound_id == "Alert")
+            matches!(indexed.resolve_trigger_audio(&sounds, &eva), Some(GameSoundEvent::VocAtCoord { sound_id, coordinate: [256, 512, 0], flags: 1, .. }) if sound_id.resolve(None) == Some("Alert"))
         );
         assert!(
             indexed
@@ -742,7 +788,7 @@ mod trigger_audio_tests {
             },
         };
         assert!(matches!(custom(1).resolve_trigger_audio(&sounds, &eva),
-            Some(GameSoundEvent::AnimationStarted { anim_id: 44, sound_id, .. }) if sound_id == "Alert"));
+            Some(GameSoundEvent::AnimationStarted { anim_id: 44, sound_id, .. }) if sound_id.resolve(None) == Some("Alert")));
         assert!(matches!(
             custom(99).resolve_trigger_audio(&sounds, &eva),
             Some(GameSoundEvent::AnimationStopped {

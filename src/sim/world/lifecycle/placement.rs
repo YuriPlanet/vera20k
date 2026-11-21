@@ -28,15 +28,15 @@ impl Simulation {
         let Some((owner, type_index, packed_cell, has_undeploy_target)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 (entity.category() == EntityCategory::Structure
-                    && entity.type_facts.base_plan_type_index() >= 0)
+                    && entity.seldom.type_facts.base_plan_type_index() >= 0)
                     .then_some((
                         entity.owner(),
-                        entity.type_facts.base_plan_type_index(),
+                        entity.seldom.type_facts.base_plan_type_index(),
                         crate::sim::base_plan::pack_base_plan_cell(
                             i32::from(entity.position.rx()),
                             i32::from(entity.position.ry()),
                         ),
-                        entity.type_facts.base_plan_has_undeploy_target(),
+                        entity.seldom.type_facts.base_plan_has_undeploy_target(),
                     ))
             })
         else {
@@ -72,15 +72,15 @@ impl Simulation {
         let Some((owner, type_index, packed_cell, is_base_defense, in_limbo)) =
             substrate.entities.get(stable_id).and_then(|entity| {
                 (entity.category() == EntityCategory::Structure
-                    && entity.type_facts.base_plan_type_index() >= 0)
+                    && entity.seldom.type_facts.base_plan_type_index() >= 0)
                     .then_some((
                         entity.owner(),
-                        entity.type_facts.base_plan_type_index(),
+                        entity.seldom.type_facts.base_plan_type_index(),
                         crate::sim::base_plan::pack_base_plan_cell(
                             i32::from(entity.position.rx()),
                             i32::from(entity.position.ry()),
                         ),
-                        entity.type_facts.base_plan_is_defense(),
+                        entity.seldom.type_facts.base_plan_is_defense(),
                         entity.lifecycle.in_limbo,
                     ))
             })
@@ -103,7 +103,11 @@ impl Simulation {
     /// Mark(PUT) through the object's vt+0x124: `FootClass::Mark`
     /// ([`Simulation::foot_mark_put`]) for Infantry, Unit and Aircraft, the
     /// building transaction below for a Structure.
-    pub(crate) fn mark_entity_put(&mut self, stable_id: u64, context: UninitContext<'_>) -> bool {
+    pub(crate) fn mark_entity_put(
+        &mut self,
+        stable_id: u64,
+        mut context: UninitContext<'_>,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return false;
         };
@@ -125,8 +129,8 @@ impl Simulation {
             context.terrain().or(self.resolved_terrain.as_ref()),
         );
         let insertion = CellListInsertion::from_category(entity.category());
-        let foundation = entity.type_facts.foundation().to_owned();
-        let hidden_profile = entity.type_facts.building_hidden_occupancy();
+        let foundation = entity.seldom.type_facts.foundation().to_owned();
+        let hidden_profile = entity.seldom.type_facts.building_hidden_occupancy();
         let current_cell = (entity.position.rx(), entity.position.ry());
         let (width, height) = foundation.dimensions();
         if let Some(layer) = layer {
@@ -134,7 +138,7 @@ impl Simulation {
                 self.substrate
                     .occupancy
                     .add(rx, ry, stable_id, layer, None, insertion);
-                self.discover_by_player(stable_id, Some((rx, ry)), context);
+                self.discover_by_player(stable_id, Some((rx, ry)), context.reborrow());
             }
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationListLinked);
@@ -376,7 +380,7 @@ impl Simulation {
     /// less `AIBaseSpacing=`, the foundation plus twice the spacing.
     fn base_reservation_writer(&self, stable_id: u64) -> Option<(InternedId, CellRect)> {
         let entity = self.substrate.entities.get(stable_id)?;
-        let spacing = entity.type_facts.base_reservation_spacing()?;
+        let spacing = entity.seldom.type_facts.base_reservation_spacing()?;
         // Ares IsBaseNormal (10011810, hooks 0x00440C08 Unlimbo and
         // 0x00456370 the neighbour repair): a delivered building marked
         // NoBaseNormal reserves no base space.
@@ -393,7 +397,7 @@ impl Simulation {
                 building_base_reservation_rect(
                     entity.position.rx(),
                     entity.position.ry(),
-                    entity.type_facts.foundation(),
+                    entity.seldom.type_facts.foundation(),
                     spacing,
                 ),
             )
@@ -405,12 +409,12 @@ impl Simulation {
     pub(super) fn clear_building_base_reservation_and_repair(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
-        let Some(spacing) = entity.type_facts.base_reservation_spacing() else {
+        let Some(spacing) = entity.seldom.type_facts.base_reservation_spacing() else {
             return false;
         };
         // Ares IsBaseNormal at Limbo's test (hook 0x00445A72): NoBaseNormal
@@ -429,10 +433,11 @@ impl Simulation {
         let rect = building_base_reservation_rect(
             entity.position.rx(),
             entity.position.ry(),
-            entity.type_facts.foundation(),
+            entity.seldom.type_facts.foundation(),
             spacing,
         );
-        let (foundation_width, foundation_height) = entity.type_facts.foundation().dimensions();
+        let (foundation_width, foundation_height) =
+            entity.seldom.type_facts.foundation().dimensions();
         let repair_rect = building_base_reservation_repair_rect(
             entity.position.rx(),
             entity.position.ry(),
@@ -471,7 +476,7 @@ impl Simulation {
             if let Some(neighbor_id) = neighbor_id
                 && neighbor_id != stable_id
             {
-                self.mark_building_base_reservation_with_arg(neighbor_id, true, context);
+                self.mark_building_base_reservation_with_arg(neighbor_id, true, context.reborrow());
             }
             true
         });
@@ -493,7 +498,7 @@ impl Simulation {
     pub(crate) fn unmark_entity_remove(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return false;
@@ -515,8 +520,8 @@ impl Simulation {
             entity,
             context.terrain().or(self.resolved_terrain.as_ref()),
         );
-        let foundation = entity.type_facts.foundation().to_owned();
-        let hidden_profile = entity.type_facts.building_hidden_occupancy();
+        let foundation = entity.seldom.type_facts.foundation().to_owned();
+        let hidden_profile = entity.seldom.type_facts.building_hidden_occupancy();
         let current_cell = (entity.position.rx(), entity.position.ry());
         if let Some(layer) = layer {
             for &(rx, ry) in &cells {
@@ -569,7 +574,7 @@ impl Simulation {
     /// Native multi-cell content hooks differ from full teardown Mark:
     /// neither building smudges nor unrelated track reservations are retired.
     /// Residual: hidden-building content callbacks beyond this relayer.
-    pub(crate) fn drop_as_bomb(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    pub(crate) fn drop_as_bomb(&mut self, stable_id: u64, mut context: UninitContext<'_>) {
         let rules = context.rules;
         use crate::sim::movement::locomotor::MovementLayer;
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -599,7 +604,7 @@ impl Simulation {
                 )
             });
         if foot {
-            self.foot_mark_remove(stable_id, rules, context.registry(), context.effects);
+            self.foot_mark_remove(stable_id, rules, context.registry(), &mut context.effects);
         } else {
             for &(rx, ry) in &cells {
                 self.substrate.occupancy.remove_on_layer(
@@ -627,7 +632,7 @@ impl Simulation {
             None,
         );
         if foot {
-            self.foot_mark_put(stable_id, rules, context.registry(), context.effects);
+            self.foot_mark_put(stable_id, rules, context.registry(), &mut context.effects);
         } else {
             for &(rx, ry) in &cells {
                 self.substrate.occupancy.add(

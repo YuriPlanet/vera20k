@@ -368,7 +368,7 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
             "FIRE3",
             &scene.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let anim = scene.sim.anim(scene.anim).unwrap();

@@ -189,8 +189,13 @@ fn ares_airborne_deployer_without_deploy_to_land_deploys() {
         .find(|row| row["input"]["name"] == "air_without_deploy_to_land")
         .unwrap();
     let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
-    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.update_unit_simple_deploy(
+        id,
+        true,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
     let leaf = entity.mission_leaf.as_unit().unwrap();
     assert_eq!((leaf.deployed(), leaf.deploy_begin_active()), (0, 1));
@@ -213,7 +218,7 @@ fn updater_flags_stage_and_signed_boundaries_match_native_lifecycle() {
             id,
             deploying,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let context = format!("lifecycle[{index}] {}", row["input"]);
@@ -251,7 +256,7 @@ fn updater_reads_the_height_on_any_layer() {
             id,
             deploying,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let context = format!("lifecycle[{index}] {} on the Ground layer", row["input"]);
@@ -278,7 +283,7 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
                     .unit_simple_mission_unload(
                         id,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_eq!(
@@ -302,7 +307,11 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
             let (mut sim, rules, id) = native_fixture(&row["input"], &result["before"]);
             let rng = sim.rng_state();
             let actual = sim
-                .unit_simple_mission_unload(id, &rules, crate::sim::world::FrameEffects::default())
+                .unit_simple_mission_unload(
+                    id,
+                    &rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             assert_eq!(
                 actual,
@@ -355,6 +364,7 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .tether
                     .set_for_test(Some(partner));
             }
@@ -740,8 +750,13 @@ fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
         .unwrap()
         .body_facing
         .snap(0xC000, frame);
-    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.update_unit_simple_deploy(
+        id,
+        true,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(entity.deploy_anim().is_none(), "no animation while turning");
     assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
@@ -770,7 +785,7 @@ fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
         .spawn_object("SDEP", "Russians", 10, 10, 64, &rules)
         .unwrap();
     assert_eq!(
-        sim.unit_simple_mission_unload(id, &rules, FrameEffects::default()),
+        sim.unit_simple_mission_unload(id, &rules, &mut FrameEffects::default()),
         Ok(450)
     );
     let entity = sim.substrate.entities.get(id).unwrap();

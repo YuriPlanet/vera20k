@@ -1383,10 +1383,12 @@ impl AresParaDropPlane {
     }
 }
 
-/// VERA's bound on a `ParaDrop*.Count=`. Ares resizes the plane list by the
-/// raw value (`SW_ParaDrop::LoadFromINI`'s GetParadropPlane, no upper bound),
-/// so a value near `i32::MAX` exhausts memory there. Outside data never stops
-/// the game: the count clamps here, far above any drop a mod flies.
+/// VERA's bound on a `ParaDrop*.Count=` and on `SpyPlane.Count=`. Ares
+/// resizes the plane list by the raw value (`SW_ParaDrop::LoadFromINI`'s
+/// GetParadropPlane, no upper bound), so a value near `i32::MAX` exhausts
+/// memory there, and a Spy Plane launch flies its planes one at a time.
+/// Outside data never stops the game: the count clamps here, far above any
+/// flight a mod sends.
 const PARADROP_PLANE_LIMIT: i32 = 1024;
 
 impl AresParaDropRules {
@@ -1724,6 +1726,20 @@ pub(crate) struct AresLightningRules {
     pub(crate) radar_outage_affects: crate::rules::superweapon_targeting::HouseMask,
 }
 
+/// VERA's bound on `Lightning.ScatterCount=`: the tries a scattered cloud
+/// makes for a free cell, each a random draw, so a value near `i32::MAX`
+/// hangs the tick while every candidate is refused. Ares reads it with no
+/// upper bound (LoadFromINI10072CF0); its default is 1. Every value below
+/// the bound draws as before.
+const LIGHTNING_SCATTER_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on `Lightning.DebrisMin=` and `Lightning.DebrisMax=`: a
+/// striking bolt draws its debris count between them and spawns one anim per
+/// piece, so a value near `i32::MAX` hangs the tick. Ares reads them with no
+/// upper bound (LoadFromINI10072CF0); its defaults are 2 and 4. Every pair
+/// below the bound draws as before.
+const LIGHTNING_DEBRIS_LIMIT: i32 = 256;
+
 impl Default for AresLightningRules {
     fn default() -> Self {
         Self {
@@ -1768,13 +1784,19 @@ impl AresLightningRules {
         self.hit_delay = section.read_ares_nullable_int("Lightning.HitDelay", self.hit_delay);
         self.scatter_delay =
             section.read_ares_nullable_int("Lightning.ScatterDelay", self.scatter_delay);
-        self.scatter_count = section.read_ares_int("Lightning.ScatterCount", self.scatter_count);
+        self.scatter_count = section
+            .read_ares_int("Lightning.ScatterCount", self.scatter_count)
+            .min(LIGHTNING_SCATTER_COUNT_LIMIT);
         self.separation = section.read_ares_nullable_int("Lightning.Separation", self.separation);
         self.print_text = section.read_ares_nullable_bool("Lightning.PrintText", self.print_text);
         self.ignore_lightning_rod =
             section.read_ares_bool("Lightning.IgnoreLightningRod", self.ignore_lightning_rod);
-        self.debris_min = section.read_ares_int("Lightning.DebrisMin", self.debris_min);
-        self.debris_max = section.read_ares_int("Lightning.DebrisMax", self.debris_max);
+        self.debris_min = section
+            .read_ares_int("Lightning.DebrisMin", self.debris_min)
+            .min(LIGHTNING_DEBRIS_LIMIT);
+        self.debris_max = section
+            .read_ares_int("Lightning.DebrisMax", self.debris_max)
+            .min(LIGHTNING_DEBRIS_LIMIT);
         self.cloud_height = section.read_ares_int("Lightning.CloudHeight", self.cloud_height);
         if reads.bolt_explosion.is_some() {
             self.bolt_explosion = reads.bolt_explosion;
@@ -2242,7 +2264,11 @@ impl AresSuperWeaponLaunch {
         } else if is("SpyPlane") {
             // 10075880: Count, Type, Mission. An unknown mission keeps it.
             let spy_plane = &mut self.spy_plane;
-            spy_plane.count = section.read_ares_int("SpyPlane.Count", spy_plane.count);
+            // Each plane flies one at a time from the launch loop, so the
+            // count stops at the paradrop plane bound.
+            spy_plane.count = section
+                .read_ares_int("SpyPlane.Count", spy_plane.count)
+                .min(PARADROP_PLANE_LIMIT);
             if let Some(plane) = reads.spy_plane_type {
                 spy_plane.plane = plane;
             }
@@ -2612,6 +2638,36 @@ mod tests {
             count(AresParaDropOwner::Country("Russians".to_owned())),
             limit
         );
+    }
+
+    #[test]
+    fn huge_lightning_counts_clamp_at_their_limits() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Storm]\nLightning.ScatterCount=2147483647\n\
+             Lightning.DebrisMin=2147483647\nLightning.DebrisMax=2147483647\n",
+        );
+        let mut lightning = AresLightningRules::default();
+        lightning.read_pass(ini.section_or_empty("Storm"), AresLightningReads::default());
+        assert_eq!(lightning.scatter_count, LIGHTNING_SCATTER_COUNT_LIMIT);
+        assert_eq!(
+            (lightning.debris_min, lightning.debris_max),
+            (LIGHTNING_DEBRIS_LIMIT, LIGHTNING_DEBRIS_LIMIT)
+        );
+    }
+
+    #[test]
+    fn a_huge_spy_plane_count_clamps_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str("[Spy]\nSpyPlane.Count=2147483647\n");
+        let mut launch = AresSuperWeaponLaunch::default();
+        launch.read_pass(
+            ini.section_or_empty("Spy"),
+            Some("SpyPlane"),
+            true,
+            AresHandlerReads::default(),
+        );
+        assert_eq!(launch.spy_plane().count, PARADROP_PLANE_LIMIT);
     }
 
     #[test]

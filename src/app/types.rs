@@ -214,9 +214,7 @@ impl TypeSelectOutcome {
 
 // Cursor identity and software-cursor DTOs are render-owned (F06);
 // re-exported so app consumers keep their paths.
-pub(crate) use crate::render::cursor_atlas::{
-    CursorId, SoftwareCursor, SoftwareCursorFrame, SoftwareCursorSequence,
-};
+pub(crate) use crate::render::cursor_atlas::{CursorId, SoftwareCursor, SoftwareCursorSequence};
 
 #[cfg(all(test, tests_app))]
 mod tests {

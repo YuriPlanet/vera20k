@@ -15,6 +15,7 @@ use super::{
     csf, joined_game_line, lobby, lobby_mut, message_line, modern_lobby, nickname, open_game_room,
     quick_match_runner, refill_games, refill_lobbies, refill_players, replace_box_body, request,
     request_listed, selected_admits, setup_channel_left, show_box, sort_lobby, switch_lobby,
+    switching_room, take_visit,
 };
 
 pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
@@ -48,6 +49,18 @@ pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
         return;
     };
     let rejoin = lobby.pending.take().is_some();
+    if matches!(lobby.step, Step::SwitchingRoom { .. }) {
+        // The server refused the destination before changing membership.
+        lobby.step = Step::Ready;
+        lobby.shown = true;
+        lobby.covered = false;
+        close_wait(state);
+        let join = selected_admits(state);
+        if let Some(lobby) = lobby_mut(state) {
+            lobby.ui.enable_commands(join);
+        }
+        return;
+    }
     lobby.current = None;
     lobby.members.clear();
     let entry = matches!(lobby.step, Step::JoiningLobby { entry: true, .. });
@@ -111,10 +124,19 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
         || (online
             && (!matches!(
                 runner.step,
-                Step::JoiningGame { .. } | Step::JoiningLobby { .. }
+                Step::JoiningGame { .. } | Step::JoiningLobby { .. } | Step::SwitchingRoom { .. }
             ) || runner.step.online_request().is_none()))
     {
         log::debug!("stale WOL join result");
+        return;
+    }
+    if matches!(runner.step, Step::SwitchingRoom { .. })
+        && let Ok(joined) = &result
+        && runner
+            .pending
+            .as_ref()
+            .is_none_or(|target| target.name != joined.channel.name)
+    {
         return;
     }
     if matches!(runner.step, Step::JoiningGame { .. }) && runner.shown {
@@ -131,6 +153,10 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             return;
         }
     };
+    if switching_room(state) {
+        take_visit(state);
+        lobby_mut(state).expect("checked").shown = false;
+    }
     let runner = lobby_mut(state).expect("checked");
     runner.pending = None;
     let entry = matches!(runner.step, Step::JoiningLobby { entry: true, .. });
@@ -340,14 +366,13 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
         return;
     };
     let Step::Creating {
-        observe,
-        channel,
-        request,
-    } = lobby.step.clone()
+        observe, request, ..
+    } = &lobby.step
     else {
         log::debug!("stale WOL create result");
         return;
     };
+    let observe = *observe;
     if online && request.is_none() {
         return;
     }
@@ -395,9 +420,13 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
             // 0x7A57C7..0x7A57EB: the created channel is the current one
             // ([0xB76B10]) and this user its host ([0xB77E4C]).
             let listed = members.clone();
+            // The create's step ends here and hands over its channel.
+            let Step::Creating { channel, .. } = std::mem::replace(&mut lobby.step, Step::Ready)
+            else {
+                unreachable!("closing the wait box and reading the nickname keep the create step")
+            };
             lobby.current = Some(channel);
             lobby.members = members;
-            lobby.step = Step::Ready;
             let buddy = lobby.runner == Runner::Buddy;
             request_listed(state, &listed);
             if quick_match {

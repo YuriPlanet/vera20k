@@ -380,6 +380,7 @@ impl App {
             Vec::new()
         };
         let dialog_background = state.frontend.shell_dialog_background.clone();
+        let started = crate::util::time::Instant::now();
         state.frontend.skirmish_shell_chrome =
             crate::render::skirmish_shell_chrome::build_skirmish_shell_chrome_atlas(
                 &state.renderer.gpu,
@@ -392,6 +393,14 @@ impl App {
                     .map(|(image, palette)| (image.as_str(), palette.as_str())),
             );
         let ready = state.frontend.skirmish_shell_chrome.is_some();
+        if ready {
+            // The pack above logged the atlas size; this is the whole build,
+            // the decoding of its SHPs included.
+            log::info!(
+                "Skirmish shell chrome built in {:.0} ms",
+                started.elapsed().as_secs_f64() * 1e3
+            );
+        }
         if !ready {
             log::warn!(
                 "Could not prepare Skirmish shell chrome from the registered retail archives"
@@ -1760,6 +1769,7 @@ impl App {
                 y,
             );
             Self::drain_skirmish_shell_ui_sounds(state);
+            Self::run_skirmish_menu_pick(state);
             return;
         }
         if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {

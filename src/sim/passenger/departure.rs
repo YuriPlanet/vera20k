@@ -56,8 +56,8 @@ pub fn depart_cargo_head(
     rules: &RuleSet,
     transport_id: u64,
     route: DepartureRoute,
-    attempt: impl FnOnce(&mut Simulation, u64) -> Result<(), DepartureFailure>,
-    effects: FrameEffects<'_>,
+    attempt: impl FnOnce(&mut Simulation, u64, &mut FrameEffects<'_>) -> Result<(), DepartureFailure>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
     let transport = sim
         .substrate
@@ -99,7 +99,7 @@ pub fn depart_cargo_head(
         transport_id,
         open_topped: prior.is_some_and(|link| link.open_topped),
     };
-    let result = attempt(sim, passenger_id);
+    let result = attempt(sim, passenger_id, effects);
     if let Err(failure) = result.as_ref()
         && route != DepartureRoute::Hospital
     {
@@ -125,7 +125,7 @@ fn restore_departure(
     passenger_size: f64,
     route: DepartureRoute,
     failure: DepartureFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let reveal_outcome = match failure {
         DepartureFailure::GroundReveal(outcome) | DepartureFailure::ParachuteReveal(outcome) => {
@@ -255,7 +255,7 @@ pub fn reveal_unloaded_passenger(
     position: RevealPosition,
     placement: PlacementEvidence,
     unlimbo_facing: Option<u8>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
     if let Some(passenger) = sim.substrate.entities.get_mut(passenger_id) {
         debug_assert_eq!(

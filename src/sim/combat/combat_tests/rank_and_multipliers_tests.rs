@@ -36,6 +36,7 @@ fn gsi_08_12_a_grizzly_promotes_through_the_damage_path() {
         // Each victim is a fresh shot: clear the reload the last kill armed.
         if let Some(attacker) = store.get_mut(1) {
             attacker
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::default());
         }
@@ -88,7 +89,7 @@ fn gsi_08_05_elite_rof_and_firepower_abilities_reach_the_fire_path() {
         let dealt = 400 - store.get(2).expect("target").health.current();
         let reload = store
             .get(1)
-            .map(|attacker| attacker.rearm_timer.duration() as u16)
+            .map(|attacker| attacker.seldom.rearm_timer.duration() as u16)
             .expect("the shot armed a reload");
         (dealt, reload)
     };
@@ -325,6 +326,7 @@ fn gsi_08_12_a_dont_score_victim_pays_no_experience() {
         // Each victim is a fresh shot: clear the reload the last kill armed.
         if let Some(attacker) = store.get_mut(1) {
             attacker
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::default());
         }
@@ -464,7 +466,7 @@ fn gsi_08_05_a_mixed_garrison_rearms_with_the_next_occupants_weapon() {
     );
     // SlowGun's 120 over two occupants is about 60 frames; FastGun's 10 would
     // be about 5.
-    let rearm = building.rearm_timer.duration();
+    let rearm = building.seldom.rearm_timer.duration();
     assert!(rearm > 40, "rearm {rearm} follows the slow gun");
 }
 

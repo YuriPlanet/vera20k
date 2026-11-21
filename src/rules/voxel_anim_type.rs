@@ -183,7 +183,9 @@ impl VoxelAnimType {
         // `Share*Data=` flags keep the constructor's values: only the ordered
         // Process owner reads them (`VoxelAnimTypeReferences`,
         // `voxel_anim_type_projections`), and `RuleSet` publishes them.
-        out.spawn_count = section.read_int("SpawnCount", out.spawn_count);
+        out.spawn_count = section
+            .read_int("SpawnCount", out.spawn_count)
+            .min(crate::rules::art_data::SPAWN_COUNT_LIMIT);
         out.start_sound = section
             .read_type_name("StartSound", 0x80)
             .map(str::to_string);
@@ -276,6 +278,13 @@ mod tests {
         assert_eq!(vat.spawn_count, 0);
         // Literal stores at74ADC4/74AE01 establish the constructor default.
         assert_eq!(vat.max_angular_velocity.bits(), 0x3fc6_56ed_1ce6_4946);
+    }
+
+    #[test]
+    fn a_huge_spawn_count_stops_at_the_spawn_bound() {
+        let ini = section("[HUGE]\nSpawnCount=2147483647\n");
+        let vat = VoxelAnimType::from_ini_section("HUGE", ini.section("HUGE").unwrap());
+        assert_eq!(vat.spawn_count, crate::rules::art_data::SPAWN_COUNT_LIMIT);
     }
 
     #[test]

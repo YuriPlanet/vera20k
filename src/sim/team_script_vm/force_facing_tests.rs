@@ -131,7 +131,7 @@ fn script42_and_class_turns_match_original_controls() {
             row["first"].as_bool().unwrap(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.team_script_vm.team(team).unwrap().advance_pending(),

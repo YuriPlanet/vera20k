@@ -144,7 +144,7 @@ fn order(s: &mut Scene, command: crate::sim::command::Command) {
         &command,
         &s.rules,
         Some(registry()),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 
@@ -217,7 +217,7 @@ fn retail_war_miner_area_guard_returns_to_harvesting() {
             &command.payload,
             &s.rules,
             Some(&registry),
-            Default::default(),
+            &mut Default::default(),
         ));
         let mut harvested = false;
         for _ in 0..180 {
@@ -276,7 +276,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
                 &command,
                 &s.rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
         };
         if on_ore {

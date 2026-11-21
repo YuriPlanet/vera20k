@@ -249,7 +249,7 @@ fn receive_damage_scatter_admitted(
     let refused = retaliation == DamageRetaliation::Refused;
     if refused
         && (!mission_permits_scatter(entity, rules)
-            || entity.tether.partner().is_some()
+            || entity.seldom.tether.partner().is_some()
             || super::motion_query::is_moving(entity)
                 .ok_or("damage Scatter requires an active locomotor Is_Moving")?)
     {
@@ -295,7 +295,7 @@ impl Simulation {
         retaliation: DamageRetaliation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -336,7 +336,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if self.session.binary_frame() & 0x3F != 0x3F {
             return Ok(false);
@@ -385,7 +385,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -436,7 +436,7 @@ impl Simulation {
         id: u64,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
@@ -480,7 +480,7 @@ impl Simulation {
         source: DriveCoord,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(unit) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -573,7 +573,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let mut admitted = self
             .substrate
@@ -608,7 +608,7 @@ impl Simulation {
         target: crate::sim::combat::TargetKind,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(actor) = self.substrate.entities.get(firer) else {
             return Ok(false);

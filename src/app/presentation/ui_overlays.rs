@@ -5,7 +5,6 @@
 use crate::app::AppState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
-    software_cursor_frame_index,
 };
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
@@ -143,15 +142,17 @@ impl HudFacts {
                     rules.ares(),
                 )
             }),
-            foundation_leptons: entity.type_facts.foundation().dimensions_leptons(),
+            foundation_leptons: entity.seldom.type_facts.foundation().dimensions_leptons(),
             toggled_off: entity.ares_toggled_off(),
             shows_production_to_observer: at
                 .observer_id
                 .is_some_and(|viewer| entity.shows_production_to(viewer)),
         });
         let more = HudMore {
+            // Owned rows, as the frame outlives this tick; an object with no
+            // pip rows gets an empty list, which allocates nothing.
             scale_pips: scale_pip_rows(sim, entity, rules),
-            controller: entity.mind_control.controller(),
+            controller: entity.seldom.mind_control.controller(),
             capture_links: if entity.capture_manager.is_some() {
                 sim.capture_link_coordinates(id, rules)
             } else {
@@ -163,6 +164,8 @@ impl HudFacts {
                     .is_some_and(|viewer| sim.bomb_seen_by(id, viewer)),
                 clock_frame: sim.bomb_clock_frame(id, rules, 0),
                 clock: sim.bomb_clock(id, rules),
+                // Owned, as the frame outlives this tick; only a bombed object
+                // holds any.
                 images: sim.bomb_images(id, rules).to_vec(),
             }),
             #[cfg(feature = "phobos")]
@@ -198,12 +201,9 @@ impl HudFacts {
             // Convenience Help's rows: captured only while it is on, and only
             // for the observer's and its allies' objects, which alone draw them.
             info: if at.status_rows
-                && at.observer.is_some_and(|viewer| {
-                    crate::map::houses::is_allied_with(
-                        sim.house_alliances().as_map(),
-                        viewer,
-                        sim.interner().resolve(entity.owner()),
-                    )
+                && at.observer_id.is_some_and(|viewer| {
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), viewer, entity.owner())
                 }) {
                 StatusInfo::capture(entity, object, rules, at.binary_frame)
             } else {
@@ -214,6 +214,8 @@ impl HudFacts {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
             location,
             structure,
+            // Boxed so a record without extras, most of them, stays small;
+            // only one with extras allocates.
             more: (!more.is_empty()).then(|| Box::new(more)),
         }
     }
@@ -1586,7 +1588,6 @@ fn shield_pip_frame(
 /// `bracket` is the native bracket anchor after the class fixed offsets;
 /// `bracket_delta` is the shield's own `BracketDelta` (foot only).
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn shield_bar_instances(
     entity: &ObjectRecord,
     rules: &RuleSet,
@@ -1752,7 +1753,6 @@ fn phobos_insignia_type<'r>(
 /// hook replaces the native rank block whenever the Phobos capability is
 /// compiled in, so the stock negative-rank frame19 arm is not reached.
 #[cfg(feature = "phobos")]
-#[allow(clippy::too_many_arguments)]
 fn phobos_insignia_draw<'a>(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,
@@ -2506,6 +2506,17 @@ pub(crate) struct ScalePipDraw {
     pub offset_pixels: [i32; 2],
 }
 
+/// VERA's bound on the pips one scale row draws. A row's count comes from
+/// INI keys gameplay keeps raw (`Passengers=`, `MaxNumberOccupants=`,
+/// `Ammo=`, a MindControl weapon's `Damage=`), and each frame builds one pip
+/// per slot, so a value near `i32::MAX` would freeze the game or exhaust
+/// memory as soon as the row draws. At 4 pixels a pip, a longer row runs off
+/// any screen; retail rows hold at most 100. The storage row is bound the
+/// same way (`GetPipMax` grows with a custom foundation's width). A stock
+/// passenger row longer than the bound that carries more than the bound
+/// drops its row, as an overfull one does.
+const PIP_ROW_LIMIT: usize = 256;
+
 /// PIPS2's infantry/unit filler count: the draw owner loads current Type+380
 /// Size, subtracts 1.0 in x87, then calls FTOL and consumes positive results.
 pub(super) fn passenger_pip_filler_count(size: f64) -> i32 {
@@ -2536,7 +2547,9 @@ fn ares_passenger_pip_frames(
 ) -> (Vec<usize>, usize) {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
 
-    let max = usize::try_from(object.pip_max(rules)).unwrap_or(0);
+    let max = usize::try_from(object.pip_max(rules))
+        .unwrap_or(0)
+        .min(PIP_ROW_LIMIT);
     let pip_of = |id: u64| {
         let passenger = sim.entities().get(id)?;
         let kind = sim.interner().object_type(passenger.type_ref(), rules)?;
@@ -2658,7 +2671,8 @@ fn scale_pip_rows(
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
         let occupants = entity.passenger_role().occupants().ids();
-        pips.extend((0..object.max_number_occupants as usize).map(|slot| {
+        let slots = (object.max_number_occupants as usize).min(PIP_ROW_LIMIT);
+        pips.extend((0..slots).map(|slot| {
             let frame = occupants
                 .get(slot)
                 .and_then(|id| sim.entities().get(*id))
@@ -2689,7 +2703,9 @@ fn scale_pip_rows(
         return pips;
     }
     if object.passengers > 0 && !rules.ares() {
-        let slots = usize::try_from(object.pip_max(rules)).unwrap_or(0);
+        let slots = usize::try_from(object.pip_max(rules))
+            .unwrap_or(0)
+            .min(PIP_ROW_LIMIT);
         let row_start = pips.len();
         pips.extend((0..slots).map(|slot| {
             //709F50..A06F: later Gunner slots advance two extra steps.
@@ -2789,7 +2805,8 @@ fn scale_pip_rows(
         }
         let filled = entity
             .techno_pip_fill_level(object, rules, None)
-            .clamp(0, object.pip_max(rules).max(0));
+            .clamp(0, object.pip_max(rules).max(0))
+            .min(PIP_ROW_LIMIT as i32);
         //70A3B7 resets this arm three pixels above the ordinary Y anchor,
         //even after a preceding spawn row. No empty Ammo outlines are drawn.
         pips.extend((0..filled as usize).map(|slot| pip(slot, 13, row_y - 3)));
@@ -2799,7 +2816,7 @@ fn scale_pip_rows(
         //716290 case5 reads current primary Weapon.Damage, independently of
         //the manager's retained admission capacity.
         let maximum = object.pip_max(rules);
-        let slots = usize::try_from(maximum).unwrap_or(0);
+        let slots = usize::try_from(maximum).unwrap_or(0).min(PIP_ROW_LIMIT);
         let manager = entity.capture_manager.as_ref();
         // Phobos `GetControlledCount` may sum `MindControlSize=` instead of
         // the node count; the fill and overload read that effective count.
@@ -2833,7 +2850,7 @@ fn scale_pip_rows(
         .count();
     let ore = bales.len() - gems;
     let maximum = object.pip_max(rules);
-    let slots = usize::try_from(maximum).unwrap_or(0);
+    let slots = usize::try_from(maximum).unwrap_or(0).min(PIP_ROW_LIMIT);
     //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
     //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
     //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
@@ -2925,7 +2942,11 @@ pub(crate) fn build_software_cursor_instances(
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
     // leaving the node restarts the next cursor's animation.
-    let Some(animated) = software_cursor_frame_index(id, sequence) else {
+    let Some(animated) = state
+        .match_state
+        .input
+        .software_cursor_frame_index(id, sequence)
+    else {
         return (Vec::new(), None);
     };
     let (id, sequence, index) = if id == CursorId::Default
@@ -3061,6 +3082,28 @@ mod tests {
         );
         assert_eq!(rows(unit), [reload]);
         assert_eq!(rows(building), rows(unit));
+    }
+
+    /// A huge `Ammo=` or `Passengers=` builds a pip row of
+    /// [`super::PIP_ROW_LIMIT`] pips, not one per unit of the key.
+    #[test]
+    fn huge_pip_counts_stop_at_the_row_bound() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[VehicleTypes]\n0=AMMO\n1=BUS\n\
+             [AMMO]\nStrength=100\nAmmo=100000\nPipScale=Ammo\n\
+             [BUS]\nStrength=100\nPassengers=100000\nPipScale=Passengers\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        for (name, cell) in [("AMMO", 8), ("BUS", 14)] {
+            let id = sim
+                .spawn_object(name, "Americans", cell, cell, 0, &rules)
+                .unwrap();
+            let entity = sim.entities().get(id).unwrap();
+            let rows = super::scale_pip_rows(&sim, entity, &rules);
+            assert_eq!(rows.len(), super::PIP_ROW_LIMIT, "{name}");
+        }
     }
 
     #[cfg(not(feature = "phobos"))]
@@ -3305,7 +3348,7 @@ mod tests {
             false,
         );
         actor.lifecycle.set_in_limbo_for_test(false);
-        actor.selection.set_selected_for_test(true);
+        actor.seldom.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(actor);
         sim.resubmit_entity_display_for_test(1);
         sim.session_mut_for_test()
@@ -3349,6 +3392,7 @@ mod tests {
         );
         sim.entity_mut_for_test(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(false);
         assert!(!admitted(&sim, None));
@@ -3421,14 +3465,18 @@ mod tests {
                 if disguised {
                     let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                     disguise.acquire(0, None, None);
-                    entity.disguise = Some(disguise);
+                    entity.seldom.disguise = Some(disguise);
                 }
                 entity
+                    .seldom
                     .selection
                     .set_selected_for_test(input["selected"].as_bool().unwrap());
-                entity.discovery.set_discovered_by_current_house_for_test(
-                    input["discovered"].as_bool().unwrap(),
-                );
+                entity
+                    .seldom
+                    .discovery
+                    .set_discovered_by_current_house_for_test(
+                        input["discovered"].as_bool().unwrap(),
+                    );
                 sim.entities_mut_for_test().insert(entity);
                 sim.resubmit_entity_display_for_test(1);
                 sim.session_mut_for_test()
@@ -3509,10 +3557,10 @@ mod tests {
                 false,
             );
             entity.lifecycle.set_in_limbo_for_test(false);
-            entity.selection.set_selected_for_test(selected);
+            entity.seldom.selection.set_selected_for_test(selected);
             let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
             disguise.acquire(0, None, None);
-            entity.disguise = Some(disguise);
+            entity.seldom.disguise = Some(disguise);
             sim.entities_mut_for_test().insert(entity);
             sim.resubmit_entity_display_for_test(1);
             health_bar_drawable(
@@ -3672,7 +3720,7 @@ mod tests {
             if disguised {
                 let mut disguise = crate::sim::cloak_disguise::DisguiseRuntime::new(0);
                 disguise.acquire(0, None, None);
-                entity.disguise = Some(disguise);
+                entity.seldom.disguise = Some(disguise);
             }
             sim.entities_mut_for_test().insert(entity);
             sim.session_mut_for_test()
@@ -3743,7 +3791,7 @@ mod tests {
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);
-        assert!(!target.selection.is_selected());
+        assert!(!target.seldom.selection.is_selected());
         println!(
             "CATIME01 raw_anchor_mapped={} hover={hover:?}",
             sim.fog()

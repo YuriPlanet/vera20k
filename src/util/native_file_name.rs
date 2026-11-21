@@ -97,6 +97,7 @@ fn open_read(directory: &Path, name: &NativeFileName) -> std::io::Result<std::fs
     if handle as isize == -1 {
         return Err(std::io::Error::last_os_error());
     }
+    // SAFETY: a valid handle CreateFileA just returned, owned by nothing else.
     Ok(unsafe { std::fs::File::from_raw_handle(handle) })
 }
 
@@ -123,6 +124,7 @@ pub fn available(directory: &Path, name: &NativeFileName) -> bool {
     if handle as isize == -1 {
         return false;
     }
+    // SAFETY: a valid handle CreateFileA just returned, owned by nothing else.
     drop(unsafe { std::fs::File::from_raw_handle(handle) });
     true
 }
@@ -238,6 +240,7 @@ pub fn enumerate(directory: &Path, pattern: &str) -> Vec<(NativeFileName, u32, u
     };
     // SAFETY: FindData is the C-layout WIN32_FIND_DATAA with initialized storage.
     let mut data: FindData = unsafe { std::mem::zeroed() };
+    // SAFETY: `pattern` is NUL-terminated and `data` is a writable record.
     let handle = unsafe { FindFirstFileA(pattern.as_ptr(), &mut data) };
     if handle as isize == -1 {
         return Vec::new();
@@ -245,6 +248,8 @@ pub fn enumerate(directory: &Path, pattern: &str) -> Vec<(NativeFileName, u32, u
     struct FindHandle(*mut std::ffi::c_void);
     impl Drop for FindHandle {
         fn drop(&mut self) {
+            // SAFETY: the handle came from a successful FindFirstFileA and
+            // is closed once, here.
             unsafe {
                 FindClose(self.0);
             }

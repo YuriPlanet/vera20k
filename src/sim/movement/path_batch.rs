@@ -1132,7 +1132,7 @@ impl Simulation {
             mission: actor.mission.current(),
             nav_com: actor.navigation.nav_com(),
             attack_target: actor.attack_target.target(),
-            radio_contacts: actor.radio_contacts.clone(),
+            radio_contacts: actor.seldom.radio_contacts.clone(),
         })
     }
 }

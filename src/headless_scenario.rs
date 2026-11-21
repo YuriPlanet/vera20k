@@ -851,7 +851,7 @@ impl HeadlessScenario {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed; prior world mutations remain");
     }
@@ -1310,7 +1310,7 @@ mod retail_construction_tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            Default::default(),
+            &mut Default::default(),
         );
         assert_eq!(
             loaded.terrain_objects().get(alias_id).unwrap().health(),
@@ -1326,7 +1326,7 @@ mod retail_construction_tests {
             [ordinary_id]
         );
         assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
-        loaded.process_pending_delete_with(rules, Default::default(), 1, true);
+        loaded.process_pending_delete_with(rules, &mut Default::default(), 1, true);
         assert!(loaded.terrain_objects().get(alias_id).is_none());
         assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
         assert_eq!(
@@ -2142,7 +2142,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -2393,7 +2393,7 @@ mod retail_construction_tests {
                     &[deploy],
                     SIM_TICK_MS,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("simulation frame failed; prior world mutations remain");
             for _ in 0..1500 {
@@ -2606,9 +2606,9 @@ mod retail_construction_tests {
                 seeking = members
                     .iter()
                     .find(|&&id| {
-                        sim.entities()
-                            .get(id)
-                            .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(bunker))
+                        sim.entities().get(id).is_some_and(|entity| {
+                            entity.seldom.radio_contacts.slot(0) == Some(bunker)
+                        })
                     })
                     .map(|&id| (frame, id));
             }
@@ -2680,7 +2680,8 @@ mod retail_construction_tests {
                 on_61 = Some((frame, members));
             } else if line.cursor() >= 2 && on_61.is_some() {
                 let held = sim.entities().get(free).is_none_or(|bunker| {
-                    bunker.bunker.occupant().is_some() || bunker.radio_contacts.slot(0).is_some()
+                    bunker.bunker.occupant().is_some()
+                        || bunker.seldom.radio_contacts.slot(0).is_some()
                 });
                 past = Some((frame, members, held));
                 break;
@@ -3153,7 +3154,7 @@ mod retail_construction_tests {
                 &commands,
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("simulation frame failed")
     }
@@ -3299,7 +3300,7 @@ mod retail_construction_tests {
             rhino,
             Some(TargetKind::Entity(gi)),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
         let now = sim.session.binary_frame();
@@ -3555,7 +3556,7 @@ mod retail_construction_tests {
                 if capturing.is_none()
                     && entity.mission.current().known() == Some(MissionType::Capture)
                 {
-                    let worn = entity.disguise.as_ref().filter(|d| d.is_disguised());
+                    let worn = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised());
                     capturing = Some((frame, worn.map(|d| (d.type_id(), d.house()))));
                 }
             }
@@ -3658,7 +3659,7 @@ mod retail_construction_tests {
             tanya,
             Some(TargetKind::Entity(reactor)),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let (mut sabotage, mut planted, mut died) = (None, None, None);
@@ -3730,7 +3731,7 @@ mod retail_construction_tests {
                     entity.owner() == soviet
                         && !entity.death.is_dying()
                         && sim.interner.resolve(entity.type_ref()) == "HARV"
-                        && entity.radio_contacts.is_empty()
+                        && entity.seldom.radio_contacts.is_empty()
                         && entity.mission.current() == harvest
                         && entity
                             .miner
@@ -3774,7 +3775,7 @@ mod retail_construction_tests {
             tick_with_due_commands(&mut scenario);
             let sim = scenario.sim();
             let entity = sim.entities().get(miner).expect("the miner lives");
-            let refinery = entity.radio_contacts.slot(0).filter(|&dock| {
+            let refinery = entity.seldom.radio_contacts.slot(0).filter(|&dock| {
                 sim.entities().get(dock).is_some_and(|dock| {
                     dock.owner() == soviet && sim.interner.resolve(dock.type_ref()) == "NAREFN"
                 })
@@ -3785,7 +3786,7 @@ mod retail_construction_tests {
             {
                 entered = Some(frame);
             }
-            if entered.is_some() && entity.tether.partner().is_some() {
+            if entered.is_some() && entity.seldom.tether.partner().is_some() {
                 docked = Some(frame);
                 break;
             }

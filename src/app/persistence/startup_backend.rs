@@ -17,6 +17,13 @@
 //! row, and no loss was ever reported. So a start also leaves a marker from
 //! the moment it has chosen its adapter (`starting`) until startup finishes;
 //! the next start reads a leftover marker as that API's failure.
+//!
+//! `[VERA] GraphicsAPI=` names one API and wins over the record. While the
+//! key is there the next start asks for that API again, so a loss names no
+//! other ([`record_loss`]). When the named API finds no adapter or cannot
+//! start, the start goes on with what the record leaves, not with an API that
+//! failed here before ([`after_failure`]), and a box says so
+//! (`system_dialog::report_graphics_api_refused`).
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -42,9 +49,18 @@ const WINDOWS_APIS: [wgpu::Backend; 2] = [wgpu::Backend::Vulkan, wgpu::Backend::
 
 /// Where [`backends`] found the record, for [`record_loss`] and
 /// [`start_finished`].
+///
+/// This, [`STARTED`] and [`FORCED`] are process-wide because their readers
+/// have no app state in reach: the panic and device-loss boxes
+/// (`system_dialog`), which the panic hook reaches, and [`starting`], which
+/// the GPU start calls as a plain `fn`. A `static` must be `Sync`, hence the
+/// atomic.
 static SETTINGS_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// Startup has finished ([`start_finished`]): a loss from now on is play's.
 static STARTED: AtomicBool = AtomicBool::new(false);
+/// The API `[VERA] GraphicsAPI=` names, when [`backends`] heard of one, for
+/// [`after_failure`] and [`record_loss`].
+static FORCED: OnceLock<wgpu::Backend> = OnceLock::new();
 
 /// The APIs this start asks wgpu for: the one `[VERA] GraphicsAPI=` names
 /// (`forced`), else the Windows API the record leaves when the other failed
@@ -53,6 +69,9 @@ pub(crate) fn backends(
     settings_dir: Option<&Path>,
     forced: Option<wgpu::Backend>,
 ) -> wgpu::Backends {
+    if let Some(api) = forced {
+        let _ = FORCED.set(api);
+    }
     let Some(dir) = settings_dir else {
         return forced.map_or(wgpu::Backends::PRIMARY, wgpu::Backends::from);
     };
@@ -67,6 +86,46 @@ pub(crate) fn backends(
     if !cfg!(target_os = "windows") {
         return wgpu::Backends::PRIMARY;
     }
+    recorded_in(dir)
+}
+
+/// What the start asks wgpu for next, after `asked` found no adapter or could
+/// not start here: `None` after wgpu's primary set, the last. After the API
+/// `[VERA] GraphicsAPI=` names, it is what the start would have asked for
+/// without the key, so an API the record says failed at a start (a Vulkan
+/// driver that hangs) is not tried in its place. After the record's API
+/// (DirectX 12 on a Windows without it), it is the primary set; the record
+/// stays.
+pub(crate) fn after_failure(asked: wgpu::Backends) -> Option<wgpu::Backends> {
+    // The attempt returned, so it did not hang: its marker blames no API.
+    forget_start();
+    after_failure_of(asked, FORCED.get().copied(), || match SETTINGS_DIR.get() {
+        Some(dir) if cfg!(target_os = "windows") => recorded_in(dir),
+        _ => wgpu::Backends::PRIMARY,
+    })
+}
+
+fn after_failure_of(
+    asked: wgpu::Backends,
+    forced: Option<wgpu::Backend>,
+    recorded: impl FnOnce() -> wgpu::Backends,
+) -> Option<wgpu::Backends> {
+    if asked == wgpu::Backends::PRIMARY {
+        return None;
+    }
+    if forced.map(wgpu::Backends::from) == Some(asked) {
+        let recorded = recorded();
+        // The record can leave the very API the key names.
+        if recorded != asked {
+            return Some(recorded);
+        }
+    }
+    Some(wgpu::Backends::PRIMARY)
+}
+
+/// The Windows API the record leaves when the other failed at a start, else
+/// wgpu's primary set.
+fn recorded_in(dir: &Path) -> wgpu::Backends {
     if let Some(api) = note_unfinished_in(dir) {
         log::warn!(
             "The last start never finished on {}: the driver hung or the game was closed before its first menu",
@@ -128,8 +187,9 @@ pub(crate) fn start_finished() {
 /// The game is closing because its device was lost. Before startup finished,
 /// the loss goes into the record with its API, and the result is the API the
 /// next start uses instead, for the box that closes the game. `None` after
-/// startup, without a settings directory, off Windows, and once both APIs
-/// have failed.
+/// startup, without a settings directory, off Windows, once both APIs have
+/// failed, and while `[VERA] GraphicsAPI=` names an API, which the next start
+/// asks for again whatever the record says.
 pub(crate) fn record_loss() -> Option<wgpu::Backend> {
     if STARTED.load(Ordering::Acquire) || !cfg!(target_os = "windows") {
         return None;
@@ -145,6 +205,7 @@ pub(crate) fn record_loss() -> Option<wgpu::Backend> {
             "{:04x}:{:04x} {}",
             identity.vendor, identity.device, identity.name
         ),
+        FORCED.get().is_some(),
     )
 }
 
@@ -189,6 +250,8 @@ pub(crate) fn api_name(api: wgpu::Backend) -> &'static str {
     match api {
         wgpu::Backend::Vulkan => "Vulkan",
         wgpu::Backend::Dx12 => "DirectX 12",
+        wgpu::Backend::Gl => "OpenGL",
+        wgpu::Backend::Metal => "Metal",
         other => other.to_str(),
     }
 }
@@ -205,11 +268,26 @@ fn other_api(failed: &[wgpu::Backend]) -> Option<wgpu::Backend> {
         .find(|api| !failed.contains(api))
 }
 
-fn record_loss_in(dir: &Path, api: wgpu::Backend, adapter: &str) -> Option<wgpu::Backend> {
+/// `forced`: `[VERA] GraphicsAPI=` names an API, so the next start asks for
+/// that one again and the loss names no other.
+fn record_loss_in(
+    dir: &Path,
+    api: wgpu::Backend,
+    adapter: &str,
+    forced: bool,
+) -> Option<wgpu::Backend> {
+    // The record holds Windows' two APIs, which a start can switch between.
+    // OpenGL has no line in it: one written here would never be read back.
+    if !WINDOWS_APIS.contains(&api) {
+        return None;
+    }
     let mut lines = read_lines(dir);
     if !lines.iter().any(|line| api_of(line) == Some(api)) {
         lines.push(format!("{} {adapter}", api.to_str()));
         write_lines(dir, &lines);
+    }
+    if forced {
+        return None;
     }
     let failed: Vec<wgpu::Backend> = lines.iter().filter_map(|line| api_of(line)).collect();
     other_api(&failed)
@@ -277,7 +355,7 @@ fn api_of(line: &str) -> Option<wgpu::Backend> {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
-    use wgpu::Backend::{Dx12, Vulkan};
+    use wgpu::Backend::{Dx12, Gl, Vulkan};
 
     fn record_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("vera-{name}-{}", std::process::id()));
@@ -290,13 +368,13 @@ mod tests {
         let dir = record_dir("startup-backend-loss");
         assert_eq!(other_api(&[]), None);
         assert_eq!(
-            record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M"),
+            record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M", false),
             Some(Dx12)
         );
         assert_eq!(read_failed(&dir), [Vulkan]);
         // The same loss again adds no line.
         assert_eq!(
-            record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M"),
+            record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M", false),
             Some(Dx12)
         );
         assert_eq!(read_lines(&dir).len(), 1);
@@ -308,7 +386,7 @@ mod tests {
         );
         // DirectX 12 failing as well leaves no API to switch to.
         assert_eq!(
-            record_loss_in(&dir, Dx12, "10de:139a NVIDIA GeForce GTX 950M"),
+            record_loss_in(&dir, Dx12, "10de:139a NVIDIA GeForce GTX 950M", false),
             None
         );
         assert_eq!(read_failed(&dir), [Vulkan, Dx12]);
@@ -344,8 +422,8 @@ mod tests {
     #[test]
     fn a_start_that_finishes_takes_its_api_out_of_the_record() {
         let dir = record_dir("startup-backend-finish");
-        record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M");
-        record_loss_in(&dir, Dx12, "10de:139a NVIDIA GeForce GTX 950M");
+        record_loss_in(&dir, Vulkan, "10de:139a GeForce GTX 950M", false);
+        record_loss_in(&dir, Dx12, "10de:139a NVIDIA GeForce GTX 950M", false);
         finish_in(&dir, Dx12);
         assert_eq!(read_failed(&dir), [Vulkan]);
         // Finishing on an API the record never named changes nothing.
@@ -354,6 +432,39 @@ mod tests {
         // The last API out takes the file with it.
         finish_in(&dir, Vulkan);
         assert!(!dir.join(RECORD).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn an_api_from_vera_ini_that_cannot_start_leaves_the_records_choice() {
+        use wgpu::Backends;
+        let dir = record_dir("startup-backend-forced-failure");
+        // Vulkan hung here before, and `GraphicsAPI=opengl` finds no adapter:
+        // DirectX 12 follows, not the primary set that tries Vulkan first.
+        starting_in(&dir, Vulkan, "8086:5916 Intel(R) HD Graphics 620");
+        let after = |asked, forced| after_failure_of(asked, forced, || recorded_in(&dir));
+        assert_eq!(after(Backends::GL, Some(Gl)), Some(Backends::DX12));
+        // The record's API failing too leaves the primary set, the last.
+        assert_eq!(after(Backends::DX12, Some(Gl)), Some(Backends::PRIMARY));
+        assert_eq!(after(Backends::PRIMARY, Some(Gl)), None);
+        // The record leaves the very API the key names: no second try of it.
+        assert_eq!(after(Backends::DX12, Some(Dx12)), Some(Backends::PRIMARY));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_loss_on_the_api_vera_ini_names_promises_no_other() {
+        let dir = record_dir("startup-backend-forced-loss");
+        let intel = "8086:5916 Intel(R) HD Graphics 620";
+        assert_eq!(record_loss_in(&dir, Vulkan, intel, false), Some(Dx12));
+        // `GraphicsAPI=opengl` lost its device too. The next start asks for
+        // OpenGL again, so DirectX 12 is not promised, and the record, which
+        // holds Windows' two APIs, gains no line.
+        assert_eq!(record_loss_in(&dir, Gl, intel, true), None);
+        assert_eq!(read_lines(&dir).len(), 1);
+        // A named Windows API is recorded for the day the key goes.
+        assert_eq!(record_loss_in(&dir, Dx12, intel, true), None);
+        assert_eq!(read_failed(&dir), [Vulkan, Dx12]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

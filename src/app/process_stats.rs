@@ -261,12 +261,14 @@ mod platform {
         let cpu_seconds = std::fs::read_to_string("/proc/self/stat")
             .ok()
             .and_then(|stat| {
+                // SAFETY: sysconf takes no pointers.
                 let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
                 cpu_seconds_from_stat(&stat, hz)
             })
             .unwrap_or(0.0);
         // sysconf units vary across systems; do not assume 4 KiB pages or 100 Hz.
         // https://man7.org/linux/man-pages/man3/sysconf.3.html
+        // SAFETY: sysconf takes no pointers.
         let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) }.max(0) as u64;
         let resident_pages = std::fs::read_to_string("/proc/self/statm")
             .ok()
@@ -336,6 +338,7 @@ mod platform {
                 size,
             )
         };
+        // SAFETY: a call that wrote the whole record initialized it (above).
         (written == size).then(|| unsafe { info.assume_init() })
     }
 
@@ -346,6 +349,7 @@ mod platform {
         if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
             return (0.0, working, working);
         }
+        // SAFETY: getrusage succeeded, so it initialized `usage`.
         let usage = unsafe { usage.assume_init() };
         let seconds = |time: libc::timeval| time.tv_sec as f64 + time.tv_usec as f64 / 1e6;
         // Darwin's calcru copies resident_size_max directly: ru_maxrss is bytes,

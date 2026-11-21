@@ -142,7 +142,7 @@ impl FireWorld for LiveFire<'_> {
                     &FireSource::of_entity(entity),
                     sim.object_type(entity.type_ref(), rules)?,
                     0,
-                    (entity.weapon_burst.index() & 1) as u8,
+                    (entity.seldom.weapon_burst.index() & 1) as u8,
                     crate::rules::flh::Flh::default(),
                 )
                 .coord;

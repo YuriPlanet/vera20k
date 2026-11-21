@@ -66,7 +66,7 @@ impl Simulation {
             return;
         };
         if entity.deactivated.is_offline() {
-            if entity.ares.radar_jam.jammer.is_some() {
+            if entity.seldom.ares.radar_jam.jammer.is_some() {
                 self.unjam_all(id);
             }
             return;
@@ -79,7 +79,7 @@ impl Simulation {
         }
         let frame = self.session.binary_frame() as i32;
         let entity = self.substrate.entities.get_mut(id).expect("same jammer");
-        let jammer = entity.ares.radar_jam.jammer.get_or_insert_default();
+        let jammer = entity.seldom.ares.radar_jam.jammer.get_or_insert_default();
         if frame.wrapping_sub(jammer.last_scan) < SCAN_INTERVAL {
             return;
         }
@@ -136,11 +136,17 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get_mut(building) else {
             return;
         };
-        if target.ares.radar_jam.registered_jammers.contains(&jammer) {
+        if target
+            .seldom
+            .ares
+            .radar_jam
+            .registered_jammers
+            .contains(&jammer)
+        {
             return;
         }
-        target.ares.radar_jam.registered_jammers.push(jammer);
-        let first = target.ares.radar_jam.registered_jammers.len() == 1;
+        target.seldom.ares.radar_jam.registered_jammers.push(jammer);
+        let first = target.seldom.ares.radar_jam.registered_jammers.len() == 1;
         let owner = target.owner();
         if first {
             self.power_states.house_mut(owner).recheck_radar();
@@ -149,7 +155,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(jammer)
-            .and_then(|entity| entity.ares.radar_jam.jammer.as_mut())
+            .and_then(|entity| entity.seldom.ares.radar_jam.jammer.as_mut())
         {
             state.registered = true;
         }
@@ -162,6 +168,7 @@ impl Simulation {
             return;
         };
         let Some(index) = target
+            .seldom
             .ares
             .radar_jam
             .registered_jammers
@@ -170,8 +177,13 @@ impl Simulation {
         else {
             return;
         };
-        target.ares.radar_jam.registered_jammers.remove(index);
-        if target.ares.radar_jam.registered_jammers.is_empty() {
+        target
+            .seldom
+            .ares
+            .radar_jam
+            .registered_jammers
+            .remove(index);
+        if target.seldom.ares.radar_jam.registered_jammers.is_empty() {
             let owner = target.owner();
             self.power_states.house_mut(owner).recheck_radar();
         }
@@ -184,7 +196,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(jammer)
-            .and_then(|entity| entity.ares.radar_jam.jammer.as_mut())
+            .and_then(|entity| entity.seldom.ares.radar_jam.jammer.as_mut())
         else {
             return;
         };
@@ -207,7 +219,7 @@ impl Simulation {
     pub(crate) fn remove_radar_jammer(&mut self, jammer: u64) {
         self.unjam_all(jammer);
         if let Some(entity) = self.substrate.entities.get_mut(jammer) {
-            entity.ares.radar_jam.jammer = None;
+            entity.seldom.ares.radar_jam.jammer = None;
         }
     }
 
@@ -216,7 +228,7 @@ impl Simulation {
     /// scan.
     pub(crate) fn clear_registered_jammers(&mut self, building: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(building) {
-            entity.ares.radar_jam.registered_jammers.clear();
+            entity.seldom.ares.radar_jam.registered_jammers.clear();
         }
     }
 }

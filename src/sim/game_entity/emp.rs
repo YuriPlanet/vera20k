@@ -233,7 +233,7 @@ mod receiver {
             source: Option<u64>,
             warhead: &WarheadType,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) {
             if !warhead.ares_rules().is_some_and(|emp| emp.duration() != 0) {
                 return;
@@ -392,7 +392,7 @@ mod receiver {
             source: Option<u64>,
             warhead: &WarheadType,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) -> EmpDelivery {
             let Some(settings) = warhead
                 .ares_rules()
@@ -528,8 +528,15 @@ mod receiver {
                 // Ares3.0 10062526..10062563: healing EMP raises65 then64.
                 // Natural expiry calls Disable directly and raises neither.
                 // Both calls resolve the current Tag; actions may remove it.
-                let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
-                self.dispatch_object_tag_event(target, 65, Some(target), source, context);
+                let mut context =
+                    crate::sim::world::UninitContext::new(rules).with_effects(effects);
+                self.dispatch_object_tag_event(
+                    target,
+                    65,
+                    Some(target),
+                    source,
+                    context.reborrow(),
+                );
                 if self
                     .substrate
                     .entities
@@ -544,14 +551,21 @@ mod receiver {
                 //62. The generic raise has no source; retain the current Tag
                 //rather than a pre-callback attachment. Neither check skips
                 //the common threshold/sparkle tail in the native body.
-                let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+                let mut context =
+                    crate::sim::world::UninitContext::new(rules).with_effects(effects);
                 if self
                     .substrate
                     .entities
                     .get(target)
                     .is_some_and(|entity| entity.lifecycle.object_alive())
                 {
-                    self.dispatch_object_tag_event(target, 63, Some(target), source, context);
+                    self.dispatch_object_tag_event(
+                        target,
+                        63,
+                        Some(target),
+                        source,
+                        context.reborrow(),
+                    );
                     if self
                         .substrate
                         .entities
@@ -627,7 +641,7 @@ mod receiver {
             target: u64,
             source: Option<u64>,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) -> bool {
             let Some(entity) = self.substrate.entities.get(target) else {
                 return false;
@@ -737,7 +751,7 @@ mod receiver {
             &mut self,
             target: u64,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) {
             use crate::sim::combat::{UnderAttackEvent, UnderAttackLine};
             let Some(entity) = self.substrate.entities.get(target) else {
@@ -801,7 +815,12 @@ mod receiver {
                 );
             }
         }
-        fn disable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+        fn disable_ares_emp(
+            &mut self,
+            target: u64,
+            rules: &RuleSet,
+            effects: &mut FrameEffects<'_>,
+        ) {
             let building = self
                 .substrate
                 .entities
@@ -893,7 +912,7 @@ mod receiver {
             &mut self,
             target: u64,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) {
             let Some(entity) = self.substrate.entities.get(target) else {
                 return;
@@ -968,7 +987,7 @@ mod receiver {
             &mut self,
             target: u64,
             rules: &RuleSet,
-            effects: FrameEffects<'_>,
+            effects: &mut FrameEffects<'_>,
         ) {
             let Some(entity) = self.substrate.entities.get_mut(target) else {
                 return;
@@ -1196,12 +1215,12 @@ mod receiver {
                         Some(source),
                         rules.warhead("EMPWH").unwrap(),
                         &rules,
-                        FrameEffects::empty(),
+                        &mut FrameEffects::empty(),
                     ),
                     EmpDelivery::Applied,
                 );
                 let victim = sim.entities().get(target).unwrap();
-                assert!(victim.deactivated.is_offline() && victim.selection.is_selected());
+                assert!(victim.deactivated.is_offline() && victim.seldom.selection.is_selected());
                 assert_eq!(emp_event_kinds(&sim), expected);
             }
         }
@@ -1213,25 +1232,25 @@ mod receiver {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
             let (mut sim, rules, target, source) = tagged_emp_scene(0, 2);
             let wh = rules.warhead("EMPWH").unwrap();
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, FrameEffects::empty());
+            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
             assert_eq!(emp_event_kinds(&sim), [63, 62]);
             assert!(sim.trigger_local_is_set_for_test(0));
             assert!(sim.trigger_local_is_set_for_test(1));
             assert!(!sim.trigger_local_is_set_for_test(2));
             assert!(!sim.trigger_local_is_set_for_test(3));
             sim.clear_tag_dispatch_trace_for_test();
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, FrameEffects::empty());
+            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
             assert!(
                 emp_event_kinds(&sim).is_empty(),
                 "capped repeat is not a transition"
             );
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
             assert!(
                 emp_event_kinds(&sim).is_empty(),
                 "timer expiry has no removal events"
             );
-            sim.deliver_ares_emp(target, Some(source), wh, &rules, FrameEffects::empty());
+            sim.deliver_ares_emp(target, Some(source), wh, &rules, &mut FrameEffects::empty());
             sim.clear_tag_dispatch_trace_for_test();
             let healing = self::rules("EMP.Duration=-3\nEMP.Cap=-1\n");
             sim.deliver_ares_emp(
@@ -1239,7 +1258,7 @@ mod receiver {
                 Some(source),
                 healing.warhead("EMPWH").unwrap(),
                 &healing,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             assert_eq!(emp_event_kinds(&sim), [65, 64]);
             assert!(sim.trigger_local_is_set_for_test(2));
@@ -1256,7 +1275,7 @@ mod receiver {
                     source_present.then_some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 assert_eq!(emp_event_kinds(&sim), [63, 62]);
                 assert!(sim.trigger_local_is_set_for_test(0));
@@ -1267,7 +1286,7 @@ mod receiver {
                     source_present.then_some(source),
                     healing.warhead("EMPWH").unwrap(),
                     &healing,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 assert!(sim.trigger_local_is_set_for_test(2));
                 assert!(!sim.trigger_local_is_set_for_test(3));
@@ -1278,15 +1297,21 @@ mod receiver {
         fn ares_emp_tag_predicates_require_matching_kind_actor_and_live_counter() {
             let _ares = crate::rules::ares_switch::read_ares_way(true);
             let (mut sim, rules, target, source) = tagged_emp_scene(0, 2);
-            let context = crate::sim::world::UninitContext::new(&rules);
+            let mut context = crate::sim::world::UninitContext::new(&rules);
             for kind in [62, 63] {
-                sim.dispatch_object_tag_event(target, kind, Some(target), Some(source), context);
+                sim.dispatch_object_tag_event(
+                    target,
+                    kind,
+                    Some(target),
+                    Some(source),
+                    context.reborrow(),
+                );
             }
             assert!(!sim.trigger_local_is_set_for_test(0));
             assert!(!sim.trigger_local_is_set_for_test(1));
             // A source alone cannot replace the affected actor argument.
             for kind in [64, 65] {
-                sim.dispatch_object_tag_event(target, kind, None, Some(source), context);
+                sim.dispatch_object_tag_event(target, kind, None, Some(source), context.reborrow());
             }
             assert!(!sim.trigger_local_is_set_for_test(2));
             assert!(!sim.trigger_local_is_set_for_test(3));
@@ -1295,10 +1320,16 @@ mod receiver {
                 Some(source),
                 rules.warhead("EMPWH").unwrap(),
                 &rules,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             for kind in [64, 65] {
-                sim.dispatch_object_tag_event(target, kind, Some(target), Some(source), context);
+                sim.dispatch_object_tag_event(
+                    target,
+                    kind,
+                    Some(target),
+                    Some(source),
+                    context.reborrow(),
+                );
             }
             assert!(!sim.trigger_local_is_set_for_test(2));
             assert!(!sim.trigger_local_is_set_for_test(3));
@@ -1316,7 +1347,7 @@ mod receiver {
                         Some(source),
                         rules.warhead("EMPWH").unwrap(),
                         &rules,
-                        FrameEffects::empty(),
+                        &mut FrameEffects::empty(),
                     );
                     sim.attach_object_trigger_tag(target, Some("EMP"));
                 }
@@ -1330,7 +1361,7 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 let (specific, specific_flag, generic_flag) =
                     if healing { (65, 3, 2) } else { (63, 1, 0) };
@@ -1354,7 +1385,7 @@ mod receiver {
                         Some(source),
                         initial.warhead("EMPWH").unwrap(),
                         &initial,
-                        FrameEffects::empty(),
+                        &mut FrameEffects::empty(),
                     );
                 }
                 let rules = rules(&format!(
@@ -1387,7 +1418,7 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 assert!(
                     sim.entities()
@@ -1441,7 +1472,7 @@ mod receiver {
             let slot = sim
                 .set_building_anim_slot(target, 3, false, false, 0, &rules)
                 .unwrap();
-            sim.visit_building_operational(target, &rules, None, FrameEffects::empty());
+            sim.visit_building_operational(target, &rules, None, &mut FrameEffects::empty());
             sim.substrate
                 .entities
                 .get_mut(target)
@@ -1501,13 +1532,13 @@ mod receiver {
                 },
                 &rules,
                 None,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
             assert_eq!(bullets.len(), 1);
             let emp_bullet = bullets[0];
             for bullet in bullets {
-                sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
+                sim.object_ai_visit_one(bullet, Some(&rules), &mut ObjectAiCtx::default());
             }
             assert_eq!(sim.entities().get(target).unwrap().emp_remaining(), 5);
             assert_eq!(sim.building_operational_state(target, &rules), Some(false));
@@ -1532,7 +1563,7 @@ mod receiver {
                 .unwrap()
                 .set_total_output_for_test(0);
             for remaining in (0..5).rev() {
-                assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+                assert!(sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default()));
                 assert_eq!(
                     sim.entities().get(target).unwrap().emp_remaining(),
                     remaining
@@ -1547,7 +1578,7 @@ mod receiver {
             );
             assert!(sim.entities().get(target).unwrap().emp_sparkle().is_none());
             assert_eq!(sim.anim(sparkle).unwrap().runtime().loop_remaining, 0);
-            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
             assert!(sim.entities().get(target).unwrap().deactivated.is_offline());
             sim.power_states
                 .map_mut_for_test()
@@ -1556,7 +1587,7 @@ mod receiver {
                 .set_total_output_for_test(100);
             // First operational edge resumes the existing powered slot. The reached
             //Techno head then activates; it must not invent a delayed EnableStuff.
-            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
             assert!(!sim.entities().get(target).unwrap().deactivated.is_offline());
             assert!(
                 !sim.entities()
@@ -1581,7 +1612,7 @@ mod receiver {
                 target,
                 Some(TargetKind::Entity(source)),
                 &rules,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             )
             .unwrap();
             sim.substrate
@@ -1592,7 +1623,7 @@ mod receiver {
                 )
                 .unwrap();
             let health = sim.entities().get(source).unwrap().health.current();
-            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
             // UnInit removes the old EMP Bullet from Logic55BAE0 immediately,
             // but its physical storage survives until the725C70 late drain.
             // These direct object visits do not advance that drain. Advancing
@@ -1613,7 +1644,7 @@ mod receiver {
                 "restored real tower Mission_Attack emits a Bullet"
             );
             for bullet in bullets {
-                sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
+                sim.object_ai_visit_one(bullet, Some(&rules), &mut ObjectAiCtx::default());
             }
             assert!(sim.entities().get(source).unwrap().health.current() < health);
             assert_eq!(sim.entities().get(target).unwrap().emp_remaining(), 0);
@@ -1652,7 +1683,7 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 assert_eq!(
                     result == EmpDelivery::Rejected,
@@ -1697,7 +1728,7 @@ mod receiver {
                     },
                     &rules,
                     None,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 );
                 let bullet_id = *sim.projectiles.iter().next().unwrap().0;
                 let target = target.map_or(
@@ -1861,16 +1892,18 @@ mod receiver {
                 for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
                     match step["action"].as_str().unwrap() {
                         "prepared" => {}
-                        "head" => {
-                            sim.update_ares_emp_operability(target, &rules, FrameEffects::empty())
-                        }
+                        "head" => sim.update_ares_emp_operability(
+                            target,
+                            &rules,
+                            &mut FrameEffects::empty(),
+                        ),
                         "hit" => assert_eq!(
                             sim.deliver_ares_emp(
                                 target,
                                 Some(source),
                                 rules.warhead("EMPWH").unwrap(),
                                 &rules,
-                                FrameEffects::empty()
+                                &mut FrameEffects::empty()
                             ),
                             EmpDelivery::Applied
                         ),
@@ -1878,9 +1911,9 @@ mod receiver {
                             target,
                             &rules,
                             None,
-                            FrameEffects::empty(),
+                            &mut FrameEffects::empty(),
                         ),
-                        "tick" => sim.tick_ares_emp(target, &rules, FrameEffects::empty()),
+                        "tick" => sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty()),
                         "power" => {
                             output = int(&step["output"]);
                             sim.power_states
@@ -2054,7 +2087,7 @@ mod receiver {
                     sim.object_ai_visit_one(
                         slot,
                         Some(&rules),
-                        crate::sim::world::ObjectAiCtx::default(),
+                        &mut crate::sim::world::ObjectAiCtx::default(),
                     );
                     let runtime = sim.anim(slot).unwrap().runtime();
                     let expected = &row["result"][name];
@@ -2194,7 +2227,7 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty()
+                    &mut FrameEffects::empty()
                 ),
                 EmpDelivery::Applied
             );
@@ -2213,12 +2246,12 @@ mod receiver {
                     .deactivated
                     .is_offline()
             );
-            assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+            assert!(sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default()));
             assert_eq!(
                 sim.substrate.entities.get(target).unwrap().emp_remaining(),
                 1
             );
-            assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+            assert!(sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default()));
             let victim = sim.substrate.entities.get(target).unwrap();
             assert_eq!(victim.emp_remaining(), 0);
             assert!(!victim.deactivated.is_offline());
@@ -2268,7 +2301,7 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty()
+                    &mut FrameEffects::empty()
                 ),
                 EmpDelivery::Applied
             );
@@ -2282,7 +2315,7 @@ mod receiver {
             for frame in 1..=3 {
                 assert!(!sim.can_deploy_slash_unload(target, &rules));
                 sim.session.set_binary_frame_for_test(frame);
-                assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+                assert!(sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default()));
                 assert!(
                     sim.substrate
                         .entities
@@ -2318,7 +2351,7 @@ mod receiver {
             assert!(sim.can_deploy_slash_unload(target, &rules));
             for frame in 4..=20 {
                 sim.session.set_binary_frame_for_test(frame);
-                sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+                sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
                 if sim
                     .substrate
                     .entities
@@ -2439,13 +2472,13 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty()
+                    &mut FrameEffects::empty()
                 ),
                 EmpDelivery::Applied
             );
             assert!(!sim.can_deploy_slash_unload(target, &rules));
             sim.session.set_binary_frame_for_test(1);
-            assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+            assert!(sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default()));
             let mcv = sim
                 .substrate
                 .entities
@@ -2496,7 +2529,7 @@ mod receiver {
                     .mission
                     .set_current_for_test(crate::sim::mission::MissionId::from_raw(2), 7);
                 let rng = sim.rng_state();
-                sim.techno_reactivate(target, &rules, FrameEffects::empty());
+                sim.techno_reactivate(target, &rules, &mut FrameEffects::empty());
                 let victim = sim.substrate.entities.get(target).unwrap();
                 let remains_offline = row["after"]["deactivated"].as_bool().unwrap();
                 assert_eq!(
@@ -2539,6 +2572,7 @@ mod receiver {
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .seldom
                 .selection
                 .select();
             assert_eq!(
@@ -2547,22 +2581,22 @@ mod receiver {
                     Some(source),
                     rules.warhead("EMPWH").unwrap(),
                     &rules,
-                    FrameEffects::empty()
+                    &mut FrameEffects::empty()
                 ),
                 EmpDelivery::Applied
             );
             let owner = sim.substrate.entities.get(target).unwrap().owner();
             assert!(!sim.has_powered_center(owner));
-            sim.powered_center_edge(center, true, &rules, FrameEffects::empty());
+            sim.powered_center_edge(center, true, &rules, &mut FrameEffects::empty());
             assert!(sim.has_powered_center(owner));
             let victim = sim.substrate.entities.get(target).unwrap();
             assert!(
                 victim.deactivated.is_offline(),
                 "House50E010 must pass the shared EMP veto"
             );
-            assert!(victim.selection.is_selected());
+            assert!(victim.seldom.selection.is_selected());
             assert_eq!(victim.emp_remaining(), 2);
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
             assert!(
                 sim.substrate
                     .entities
@@ -2571,7 +2605,7 @@ mod receiver {
                     .deactivated
                     .is_offline()
             );
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
             assert!(
                 !sim.substrate
                     .entities
@@ -2619,7 +2653,7 @@ mod receiver {
                         Some(source),
                         warhead,
                         &rules,
-                        FrameEffects::empty()
+                        &mut FrameEffects::empty()
                     ),
                     EmpDelivery::Applied
                 );
@@ -2652,7 +2686,7 @@ mod receiver {
                         Some(source),
                         warhead,
                         &rules,
-                        FrameEffects::empty()
+                        &mut FrameEffects::empty()
                     ),
                     EmpDelivery::Applied
                 );
@@ -2848,7 +2882,7 @@ mod receiver {
                     victim
                         .deactivated
                         .set_for_test(f["deactivated"].as_bool().unwrap_or(false));
-                    victim.selection.select();
+                    victim.seldom.selection.select();
                     victim
                         .mission
                         .set_current_for_test(crate::sim::mission::MissionId::from_raw(5), 0);
@@ -2871,7 +2905,7 @@ mod receiver {
                         source,
                         rules.warhead("EMPWH").unwrap(),
                         &rules,
-                        FrameEffects::empty(),
+                        &mut FrameEffects::empty(),
                     );
                     assert_ne!(verdict, EmpDelivery::Unsupported, "{}", row["name"]);
                     let actual = sim.substrate.entities.get(target).unwrap();
@@ -2894,7 +2928,7 @@ mod receiver {
                         row["name"]
                     );
                     assert_eq!(
-                        actual.selection.is_selected(),
+                        actual.seldom.selection.is_selected(),
                         expected["selected"].as_bool().unwrap(),
                         "{}",
                         row["name"]
@@ -2919,7 +2953,7 @@ mod receiver {
                     victim
                         .deactivated
                         .set_for_test(row["fixture"]["deactivated"].as_bool().unwrap_or(false));
-                    victim.selection.select();
+                    victim.seldom.selection.select();
                 }
                 let rng = sim.scenario_rng.logical_state();
                 for (index, mission) in row["missions"].as_array().unwrap().iter().enumerate() {
@@ -2932,7 +2966,7 @@ mod receiver {
                             crate::sim::mission::MissionId::from_raw(int(mission)),
                             0,
                         );
-                    sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+                    sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
                     let actual = sim.substrate.entities.get(target).unwrap();
                     let expected = &row["result"][index];
                     assert_eq!(
@@ -2954,7 +2988,7 @@ mod receiver {
                         row["name"]
                     );
                     assert_eq!(
-                        actual.selection.is_selected(),
+                        actual.seldom.selection.is_selected(),
                         expected["selected"].as_bool().unwrap(),
                         "{} visit{index}",
                         row["name"]
@@ -2983,7 +3017,7 @@ mod receiver {
                 victim
                     .mission
                     .set_current_for_test(crate::sim::mission::MissionId::from_raw(5), 0);
-                victim.selection.select();
+                victim.seldom.selection.select();
             }
             let coord = crate::sim::movement::ground_pose::position_world_coord(
                 &sim.substrate.entities.get(target).unwrap().position,
@@ -2999,7 +3033,7 @@ mod receiver {
                 Some(source),
                 rules.warhead("EMPWH").unwrap(),
                 &rules,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             let expected = &corpus()["connected"][0]["result"];
             let assert_state = |sim: &Simulation, phase: usize| {
@@ -3010,7 +3044,7 @@ mod receiver {
                     expected[phase]["deactivated"].as_bool().unwrap()
                 );
                 assert_eq!(
-                    victim.selection.is_selected(),
+                    victim.seldom.selection.is_selected(),
                     expected[phase]["selected"].as_bool().unwrap()
                 );
                 assert_eq!(
@@ -3076,9 +3110,9 @@ mod receiver {
                 .sim;
             sim.resolve_type_handles(&rules);
             assert_state(&sim, 0);
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
             assert_state(&sim, 1);
-            sim.tick_ares_emp(target, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(target, &rules, &mut FrameEffects::empty());
             assert_state(&sim, 2);
             assert!(sim.techno_player_controllable(target, &rules));
             assert_eq!(
@@ -3176,12 +3210,18 @@ mod receiver {
                 }
                 let wh = rules.warhead("EMPWH").unwrap();
                 assert_eq!(
-                    sim.deliver_ares_emp(jet, Some(source), wh, &rules, FrameEffects::empty()),
+                    sim.deliver_ares_emp(jet, Some(source), wh, &rules, &mut FrameEffects::empty()),
                     EmpDelivery::Applied
                 );
                 assert!(destroyed(&sim, jet), "{extra}");
                 assert_eq!(
-                    sim.deliver_ares_emp(jumpjet, Some(source), wh, &rules, FrameEffects::empty()),
+                    sim.deliver_ares_emp(
+                        jumpjet,
+                        Some(source),
+                        wh,
+                        &rules,
+                        &mut FrameEffects::empty()
+                    ),
                     EmpDelivery::Applied
                 );
                 assert_eq!(destroyed(&sim, jumpjet), jumpjet_dies, "{extra}");
@@ -3245,7 +3285,13 @@ mod receiver {
                 .spawn_manager = Some(Box::new(manager));
             let wh = rules.warhead("EMPWH").unwrap();
             assert_eq!(
-                sim.deliver_ares_emp(spawner, Some(source), wh, &rules, FrameEffects::empty()),
+                sim.deliver_ares_emp(
+                    spawner,
+                    Some(source),
+                    wh,
+                    &rules,
+                    &mut FrameEffects::empty()
+                ),
                 EmpDelivery::Applied
             );
             assert!(destroyed(&sim, rocket));
@@ -3264,9 +3310,9 @@ mod receiver {
             };
             assert_eq!(timer(&sim), (-1, 20));
             sim.session.set_binary_frame_for_test(105);
-            sim.tick_ares_emp(spawner, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(spawner, &rules, &mut FrameEffects::empty());
             assert_eq!(timer(&sim), (-1, 20));
-            sim.tick_ares_emp(spawner, &rules, FrameEffects::empty());
+            sim.tick_ares_emp(spawner, &rules, &mut FrameEffects::empty());
             assert_eq!(
                 sim.substrate.entities.get(spawner).unwrap().emp_remaining(),
                 0

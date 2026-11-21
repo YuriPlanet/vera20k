@@ -388,6 +388,12 @@ pub const DEBRIS_LIMIT: i32 = 256;
 /// value near `i32::MAX` exhausts memory; no carrier needs more.
 pub const SPAWNS_NUMBER_LIMIT: i32 = 128;
 
+/// VERA's bound on `SlavesNumber=`, read by `TechnoTypeClass::ReadINI`'s
+/// ReadInt (`0x00714E29`, `+0xD44`). `TechnoClass::Init_Managers` builds
+/// that many slaves the moment an `Enslaves=` master is constructed, so a
+/// value near `i32::MAX` exhausts memory; retail's Slave Miner has 5.
+pub const SLAVES_NUMBER_LIMIT: i32 = 128;
+
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
 pub const WEAPON_SLOT_PRIMARY: usize = 0;
@@ -1571,14 +1577,17 @@ pub struct ObjectType {
     /// YR parent sets it, so the 9-frame branch is unreachable in stock play.
     pub missile_spawn: bool,
     /// `NoSpawnAlt=yes` — swap to the `<TYPE>WO` art while the pool is empty.
-    pub no_spawn_alt: bool,
+    /// Holds that art's name, built once from the section name; `None` for
+    /// `NoSpawnAlt=no`.
+    no_spawn_alt_model: Option<String>,
 
     // -- Slave Miner / economy fields --
     /// Infantry type enslaved/spawned by this unit (Enslaves= in rules.ini, YR only).
     /// Used by Slave Miner (SMIN) to spawn SLAV workers.
     pub enslaves: Option<String>,
     /// `TechnoType+0xD44`, `SlavesNumber=`: the slaves Init_Managers builds.
-    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0.
+    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0, at
+    /// most [`SLAVES_NUMBER_LIMIT`].
     pub slaves_number: i32,
     /// `TechnoType+0xD48`, `SlaveRegenRate=`: frames before a lost slave is
     /// regrown. ReadInt at `0x00714E08`; constructor 0.
@@ -2210,6 +2219,9 @@ pub struct ObjectType {
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
     /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
+    /// Derived: `debris_types` as the RuleSet that built the type resolved
+    /// it (`RuleSet::resolve_handles`).
+    resolved_debris: crate::rules::ruleset::ResolvedDebris,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,

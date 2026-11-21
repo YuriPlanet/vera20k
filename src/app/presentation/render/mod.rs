@@ -327,6 +327,9 @@ pub(crate) fn render_game(
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
+    // The sidebar chrome of the side the local player draws, built on the
+    // frame that first needs it (`SidebarChromeSet::ensure_side`).
+    crate::app::presentation::sidebar_render::ensure_current_sidebar_chrome(state);
     let after_snapshot = render_started.map(|_| Instant::now());
 
     // Trigger action 0x28 mutates scroll/radar authority inside the committed

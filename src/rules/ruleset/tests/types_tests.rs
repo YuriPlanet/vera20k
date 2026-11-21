@@ -272,6 +272,68 @@ SpawnCount=3
     assert_eq!(meteor.spawn_count, 3);
 }
 
+/// A type's and a warhead's `DebrisTypes=`, here from a map layer, read as
+/// the `[VoxelAnims]` ids their names resolve to, in list order and in any
+/// case, from the ids the set resolved at build; a copy another set never
+/// resolved reads its names.
+#[test]
+fn debris_types_read_the_ids_their_names_resolve_to() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[VoxelAnims]\n0=PIECE\n1=TIRE\n[PIECE]\nDuration=75\n[TIRE]\nDuration=150\n\
+         [VehicleTypes]\n0=TRUCK\n[TRUCK]\nStrength=100\n[Warheads]\n0=WH\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[TRUCK]\nDebrisTypes=tire,Piece,TIRE\nDebrisMaximums=1,1,1\n\
+             [WH]\nDebrisTypes=piece\n",
+        ),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).expect("layered debris rules parse");
+    let by_name = |names: &[String]| -> Vec<_> {
+        names
+            .iter()
+            .map(|name| rules.voxel_anim_type_id_by_name(name))
+            .collect()
+    };
+    let (piece, tire) = (
+        rules.voxel_anim_type_id_by_name("PIECE"),
+        rules.voxel_anim_type_id_by_name("TIRE"),
+    );
+    let truck = rules.object("TRUCK").unwrap();
+    let debris = rules.object_debris_types(truck);
+    assert!(matches!(debris, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(*debris, [tire, piece, tire]);
+    assert_eq!(*debris, *by_name(&truck.debris_types));
+    let warhead = rules.warhead("WH").unwrap();
+    let debris = rules.warhead_debris_types(warhead);
+    assert!(matches!(debris, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(*debris, [piece]);
+    let other = RuleSet::from_rules_layers(&layers).unwrap();
+    assert_eq!(*other.object_debris_types(truck), [tire, piece, tire]);
+    assert_eq!(*other.warhead_debris_types(warhead), [piece]);
+}
+
+/// `[Radiation] RadSiteWarhead=` reads the warhead its name resolves to, in
+/// any case, from a later layer too.
+#[test]
+fn radiation_site_warhead_reads_the_warhead_its_name_names() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Radiation]\nRadSiteWarhead=RadSite\n[Warheads]\n0=RadSite\n1=Hot\n",
+    ));
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert!(std::ptr::eq(
+        rules.radiation_site_warhead().unwrap(),
+        rules.warhead("RADSITE").unwrap()
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Radiation]\nRadSiteWarhead=hot\n"),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert_eq!(rules.radiation_site_warhead().unwrap().id, "Hot");
+}
+
 #[test]
 fn test_object_lookup() {
     let ini: IniFile = IniFile::from_str(&make_test_rules());
@@ -1606,6 +1668,17 @@ fn a_huge_spawn_count_stops_at_the_spawn_bound() {
     .unwrap();
     let limit = crate::rules::object_type::SPAWNS_NUMBER_LIMIT;
     assert_eq!(rules.object("CARRIER").unwrap().spawns_number, limit);
+}
+
+#[test]
+fn a_huge_slave_count_stops_at_the_slave_bound() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=SLAV\n[VehicleTypes]\n0=SMIN\n\
+             [SLAV]\nStrength=100\n[SMIN]\nEnslaves=SLAV\nSlavesNumber=2147483647\n",
+    ))
+    .unwrap();
+    let limit = crate::rules::object_type::SLAVES_NUMBER_LIMIT;
+    assert_eq!(rules.object("SMIN").unwrap().slaves_number, limit);
 }
 
 #[test]

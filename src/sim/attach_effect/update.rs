@@ -581,7 +581,7 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -673,7 +673,7 @@ impl Simulation {
         self.update_phobos_attach_effects_with(
             id,
             rules,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
             None,
         );
     }
@@ -682,7 +682,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -743,7 +743,9 @@ impl Simulation {
             }
         }
         // One record per instance, at the instance's index; the removal below
-        // drops both together so they stay aligned.
+        // drops both together so they stay aligned. Built per object that
+        // holds effects, as long as its effect list; only the `phobos` build
+        // runs this.
         let mut records: Vec<InstanceFrame> = list
             .instances
             .iter()
@@ -809,9 +811,10 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get_mut(id) else {
                 continue;
             };
-            let remaining = entity.rearm_timer.remaining(frame);
+            let remaining = entity.seldom.rearm_timer.remaining(frame);
             if remaining > 0 {
                 entity
+                    .seldom
                     .rearm_timer
                     .start(frame, scale_i32(remaining, effect.rof_multiplier));
             }

@@ -106,7 +106,7 @@ fn first_yard_distance_accepts(
         return false;
     };
     if yard.category() != EntityCategory::Structure
-        || !yard.type_facts.build_const_eligible()
+        || !yard.seldom.type_facts.build_const_eligible()
         || !yard.lifecycle.object_alive()
         || yard.lifecycle.in_limbo()
         || !yard.lifecycle.cell_marked()

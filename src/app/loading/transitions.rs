@@ -930,6 +930,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // Main_Game 0x0048CE7E: State_Machine's admission latch.
             state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
+            // The skirmish shell's chrome atlas draws nothing in a match until
+            // the in-game menu or a network dialog opens: the menu's opening
+            // (`App::enter_in_game_menu_state`) and the frame loop build it
+            // again then, and the shell's return to its page builds it as
+            // every entry does (`App::ensure_skirmish_shell_chrome`).
+            state.frontend.skirmish_shell_chrome = None;
+            // The main menu's chrome atlas likewise: the first shell screen
+            // after the match builds it again
+            // (`App::ensure_main_menu_shell_chrome`).
+            state.frontend.main_menu_shell_chrome = None;
             if !initial_replay_effects.is_empty() {
                 crate::app::match_runtime::sim_tick::apply_trigger_effects(
                     state,

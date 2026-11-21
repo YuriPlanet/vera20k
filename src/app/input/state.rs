@@ -197,10 +197,22 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
+    /// chooses the cursor notes it there.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
+    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
+    /// chosen, inside the shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
+    /// state by `&`: the sprite they build borrows the cursor's texture and
+    /// the rest of the frame's draw state from it until the frame is drawn.
+    /// Stepping it before the draw under `&mut` would choose the frame apart
+    /// from the targets and planning-node test that pick the sequence.
+    software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
-    /// beside a lent tick may not read.
+    /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
+    /// `cursor_feedback_seen`: the asking draws hold the app state through `&`.
     pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
     pub(crate) tactical_tip_seen: super::tooltips::TacticalTipAnswer,
     pub(crate) cursor_feedback_seen:
@@ -537,6 +549,33 @@ impl MatchInputState {
         self.shown_cursor.set(kind);
     }
 
+    /// The index of the frame of `sequence` the software cursor draws for
+    /// `id` right now, stepping its phase
+    /// ([`crate::app::input::cursor::CursorAnimation::frame_index`]).
+    pub(crate) fn software_cursor_frame_index(
+        &self,
+        id: crate::app::types::CursorId,
+        sequence: &crate::app::types::SoftwareCursorSequence,
+    ) -> Option<usize> {
+        let mut animation = self.software_cursor_animation.get();
+        let index = animation.frame_index(id, sequence);
+        self.software_cursor_animation.set(animation);
+        index
+    }
+
+    /// Whether the drawn software cursor's next frame is due.
+    pub(crate) fn software_cursor_step_due(&self) -> bool {
+        self.software_cursor_animation.get().step_due()
+    }
+
+    /// DisplayCancel4AEAD0 resets the cursor shape through its animation
+    /// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary
+    /// draw starts the default shape at frame 0.
+    pub(crate) fn reset_cursor_shape(&mut self) {
+        *self.software_cursor_animation.get_mut() =
+            crate::app::input::cursor::CursorAnimation::new();
+    }
+
     /// The cursor the last drawn frame showed, which stays where nothing
     /// writes one.
     pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
@@ -580,6 +619,9 @@ impl MatchInputState {
         Self {
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
+            software_cursor_animation: std::cell::Cell::new(
+                crate::app::input::cursor::CursorAnimation::new(),
+            ),
             cursor_targets_seen: Default::default(),
             tactical_tip_seen: Default::default(),
             cursor_feedback_seen: Default::default(),

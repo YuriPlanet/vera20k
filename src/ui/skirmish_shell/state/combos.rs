@@ -25,13 +25,19 @@ pub fn combo_rect(
     state: &SkirmishShellState,
     id: SkirmishComboId,
 ) -> Option<RectPx> {
-    let slot = state.row_slot(combo_player_row(id), layout.shown_rows)?;
+    match id {
+        SkirmishComboId::TeamMenu => return Some(layout.team_menu),
+        SkirmishComboId::SeatMenu => return Some(layout.seat_menu),
+        _ => {}
+    }
+    let slot = state.row_slot(combo_player_row(id)?, layout.shown_rows)?;
     match id {
         SkirmishComboId::AiType(_) => layout.rows.ai_type_combos.get(slot.checked_sub(1)?),
         SkirmishComboId::Side(_) => layout.rows.side_combos.get(slot),
         SkirmishComboId::Color(_) => layout.color_combos.get(slot),
         SkirmishComboId::Start(_) => layout.rows.start_combos.get(slot),
         SkirmishComboId::Team(_) => layout.rows.team_combos.get(slot),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
     .copied()
 }
@@ -71,6 +77,7 @@ fn combo_popup(
     if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
         face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
     }
+    let menu = matches!(id, SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu);
     let mut popup = ComboPopup::new(
         face,
         layout.scale,
@@ -78,10 +85,20 @@ fn combo_popup(
         cap as usize,
         top_index,
     );
+    // VERA's menus under the options list their items whole, from their
+    // face's left edge, as wide as their longest caption needs.
+    if menu {
+        popup.rect.w = layout
+            .scale
+            .derive_rect(RectPx::new(0, 0, MENU_LIST_W, 0), |rect| rect)
+            .w
+            .max(face.w);
+    }
     // VERA: on the longer player list a low row's list would run over the
     // status line or off the screen, so it opens upward instead. gamemd's
     // eight rows never reach it, and the retail page never flips.
-    if layout.shown_rows > SKIRMISH_ROW_COUNT && popup.rect.y + popup.rect.h > layout.status_help.y
+    if (menu || layout.shown_rows > SKIRMISH_ROW_COUNT)
+        && popup.rect.y + popup.rect.h > layout.status_help.y
     {
         popup.rect.y = face.y - 1 - popup.rect.h;
     }
@@ -92,9 +109,16 @@ pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
-        SkirmishComboId::AiType(_) | SkirmishComboId::Team(_) => 0,
+        SkirmishComboId::AiType(_)
+        | SkirmishComboId::Team(_)
+        | SkirmishComboId::TeamMenu
+        | SkirmishComboId::SeatMenu => 0,
     }
 }
+
+/// The width VERA's menus open at, in 800x600 pixels: room for Fill with
+/// AI's longest caption.
+const MENU_LIST_W: i32 = 250;
 
 pub fn combo_dropdown_visible_row_count(
     state: &SkirmishShellState,
@@ -320,6 +344,8 @@ pub fn combo_items(
             )
         }
         SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
+        SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
+        SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
 }
 
@@ -450,6 +476,8 @@ pub fn selected_combo_item(
             .opponents
             .get(row - 1)
             .map(|opponent| SkirmishComboItem::Team(opponent.team)),
+        // A menu shows its caption, not a choice.
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -464,13 +492,15 @@ pub fn selected_combo_item_index(
         .position(|item| *item == selected)
 }
 
-fn combo_player_row(id: SkirmishComboId) -> usize {
+/// The player row `id` belongs to; none for VERA's menus under the rows.
+pub(super) fn combo_player_row(id: SkirmishComboId) -> Option<usize> {
     match id {
-        SkirmishComboId::AiType(idx) => idx + 1,
+        SkirmishComboId::AiType(idx) => Some(idx + 1),
         SkirmishComboId::Side(row)
         | SkirmishComboId::Color(row)
         | SkirmishComboId::Start(row)
-        | SkirmishComboId::Team(row) => row,
+        | SkirmishComboId::Team(row) => Some(row),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -479,7 +509,8 @@ pub fn combo_enabled(
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
 ) -> bool {
-    player_row_visible(state, maps, combo_player_row(id)) && combo_open(state, id)
+    combo_player_row(id).is_none_or(|row| player_row_visible(state, maps, row))
+        && combo_open(state, id)
 }
 
 /// Whether the combo takes a pick wherever its row shows: the row's player
@@ -511,6 +542,9 @@ pub(super) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> boo
                     .get(row.saturating_sub(1))
                     .is_some_and(SkirmishShellOpponent::is_active)
         }
+        // Teams follow the same gate; the seats are always the player's.
+        SkirmishComboId::TeamMenu => state.selected_mode_allies_allowed,
+        SkirmishComboId::SeatMenu => true,
     }
 }
 
@@ -611,7 +645,7 @@ fn evict_other_color_claimants(state: &mut SkirmishShellState, row: usize, color
 }
 
 fn combo_hit_order(state: &SkirmishShellState, shown: usize) -> Vec<SkirmishComboId> {
-    let mut ids = Vec::new();
+    let mut ids = vec![SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu];
     for slot in (0..shown).rev() {
         let row = state.slot_row(slot);
         ids.push(SkirmishComboId::Team(row));
@@ -727,6 +761,24 @@ pub(super) fn apply_combo_selection(
                 opponent.team = team;
             }
         }
+        (
+            SkirmishComboId::TeamMenu,
+            SkirmishComboItem::TeamTool {
+                tool,
+                refusal: None,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Team(tool));
+        }
+        (
+            SkirmishComboId::SeatMenu,
+            SkirmishComboItem::SeatAction {
+                action,
+                enabled: true,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Seats(action));
+        }
         _ => {}
     }
 }
@@ -800,6 +852,10 @@ pub(super) fn handle_combo_mouse_down(
         if let ComboPress::Pick(row) = press
             && let Some(item) = combo_items(state, maps, open.id).get(row).copied()
         {
+            // A menu's greyed item or heading keeps the list open.
+            if !item.pickable() {
+                return true;
+            }
             apply_combo_selection(state, open.id, item);
         }
         state.open_combo_dropdown = None;

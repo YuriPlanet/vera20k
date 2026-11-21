@@ -45,7 +45,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(10, 10)));
         }
         if input["suppression"] == true {
-            entity.suppress_deploy_voice.suppress();
+            entity.seldom.suppress_deploy_voice.suppress();
         }
         let archive_before = entity.archive_target();
         let mission_before = save_codec::serialize(&entity.mission).unwrap();
@@ -149,7 +149,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         &mut sim,
         &retail.rules,
         1,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let requests = sim.take_sound_events_for_test();
     sound_dispatch::dispatch_sim_sound_events(
@@ -161,7 +161,13 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         &mut events,
         None,
     );
-    playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
+    playback.consume(
+        &mut player,
+        &events.drain(),
+        Some(&sim),
+        Some(retail.rules.sound_names()),
+        Some("Local"),
+    );
     assert!(player.pending_unit_voice_owners().contains(&1));
 
     // Original Techno destructor6F4607 ->405C00 stops its handle and forgets
@@ -171,7 +177,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
     assert!(player.pending_unit_voice_owners().contains(&1));
     sim.process_pending_delete_with(
         &retail.rules,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
         1,
         true,
     );
@@ -186,13 +192,20 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         &mut events,
         None,
     );
-    playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
+    playback.consume(
+        &mut player,
+        &events.drain(),
+        Some(&sim),
+        Some(retail.rules.sound_names()),
+        Some("Local"),
+    );
     assert!(!player.pending_unit_voice_owners().contains(&1));
     // Even a stale downstream head cannot revive the removed owner's line.
     playback.consume(
         &mut player,
         &[GameSoundEvent::UnitVoiceVisit { owner: 1 }],
         Some(&sim),
+        Some(retail.rules.sound_names()),
         Some("Local"),
     );
     let report = player.finish_pcm_observation().unwrap().into_json();
@@ -341,7 +354,10 @@ fn retail_normal_selection_reaches_fixed_voice_list_and_queue_without_an_audio_d
                 .unwrap();
             let event = selection_voice_event(&mut sim, &fixture.rules, 1, true)
                 .expect("normal retail selection queues its resolved voice without output");
-            assert_eq!(event.sound_id(), object.voice_select[slot]);
+            assert_eq!(
+                event.sound_id(Some(fixture.rules.sound_names())),
+                object.voice_select[slot]
+            );
             events.push(event);
             for event in events.iter() {
                 let GameSoundEvent::UnitSelected {
@@ -351,7 +367,7 @@ fn retail_normal_selection_reaches_fixed_voice_list_and_queue_without_an_audio_d
                 else {
                     panic!("unexpected selection event {event:?}");
                 };
-                queue.queue(*speaker_id, sound_id);
+                queue.queue(*speaker_id, sound_id.name_in(&fixture.rules));
             }
             let _ = events.drain();
             assert_eq!(
@@ -414,7 +430,7 @@ fn selection_after_terrain_prefix_advances_existing_main_without_changing_lockst
             "VoiceSelect must consume the existing terrain-advanced Simulation Main cursor"
         );
         assert_eq!(
-            event.sound_id(),
+            event.sound_id(Some(rules.sound_names())),
             sound_name(step["voice_requests"][0]["sound_id"].as_i64().unwrap())
         );
         assert_eq!(sim.scenario_rng().logical_state(), scenario_before);
@@ -427,7 +443,7 @@ fn selection_after_terrain_prefix_advances_existing_main_without_changing_lockst
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng().next_u32()),
+            u64::from(sim.main_rng_mut_for_test().next_u32()),
             expected.as_u64().unwrap()
         );
     }
@@ -442,7 +458,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     for step in &steps[..2] {
         let event = selection_voice_event(&mut sim, &rules, 1, true).unwrap();
         assert_eq!(
-            event.sound_id(),
+            event.sound_id(Some(rules.sound_names())),
             sound_name(step["voice_requests"][0]["sound_id"].as_i64().unwrap())
         );
     }
@@ -476,7 +492,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     for step in &steps[2..] {
         let event = selection_voice_event(&mut sim, &rules, 1, true).unwrap();
         assert_eq!(
-            event.sound_id(),
+            event.sound_id(Some(rules.sound_names())),
             sound_name(step["voice_requests"][0]["sound_id"].as_i64().unwrap())
         );
         assert_eq!(sim.scenario_rng().logical_state(), scenario_before);
@@ -489,7 +505,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     );
     for expected in history["main_next_four"].as_array().unwrap() {
         assert_eq!(
-            u64::from(sim.main_rng().next_u32()),
+            u64::from(sim.main_rng_mut_for_test().next_u32()),
             expected.as_u64().unwrap()
         );
     }

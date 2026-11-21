@@ -171,7 +171,14 @@ fn immune_types_and_full_holds_refuse_an_abduction() {
     }
     let grab = rules.weapon("Grab").unwrap();
     let abduct = |sim: &mut Simulation, id| {
-        sim.ares_conduct_abduction(catcher, id, grab, &rules, None, FrameEffects::default())
+        sim.ares_conduct_abduction(
+            catcher,
+            id,
+            grab,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        )
     };
     assert!(!abduct(&mut sim, immune));
     assert!(abduct(&mut sim, first));
@@ -207,7 +214,7 @@ fn an_open_topped_abductor_puts_only_an_allied_rider_on_guard() {
             grab,
             &rules,
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
     }
     let mission = |id| {

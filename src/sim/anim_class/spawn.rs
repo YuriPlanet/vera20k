@@ -41,9 +41,9 @@ impl Simulation {
     /// (`LightningStorm::Process @ 0x0053A6C0`).
     pub(crate) fn anim_stage_and_frames(&self, id: AnimId, rules: &RuleSet) -> Option<(i32, i32)> {
         let anim = self.anim(id)?;
-        let frames = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(anim.type_id))
+        let frames = self
+            .interner
+            .anim_type_config(anim.type_id, rules)
             .and_then(|config| config.raw_shp_frame_count)
             .unwrap_or(0);
         Some((anim.runtime.current_frame, frames))
@@ -164,7 +164,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     }
 
@@ -261,7 +261,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ) {
             Ok(id) => {
                 if let Some(house) = owner_house {
@@ -316,6 +316,8 @@ impl Simulation {
         rules: &RuleSet,
         type_id: InternedId,
     ) -> AnimConstructorInput {
+        // The set of types that affect play is keyed by name: one probe with
+        // the name uppercased on the stack, no allocation.
         if self.effect_anims_presented()
             && rules
                 .art()
@@ -338,7 +340,7 @@ impl Simulation {
             descriptor,
             world_coord,
             AnimConstructorInput::Runtime,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     }
 
@@ -358,7 +360,7 @@ impl Simulation {
         anim_type_index: i32,
         waypoint: i32,
         house: Option<InternedId>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
             return false;
@@ -478,7 +480,7 @@ impl Simulation {
             descriptor,
             world_coord,
             constructor,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ) {
             Ok(_) => true,
             Err(AnimSpawnError::Tiberium(error)) => {
@@ -632,7 +634,7 @@ impl Simulation {
         descriptor: AnimClassSpawnDescriptor,
         world_coord: AnimWorldCoord,
         constructor: AnimConstructorInput,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<AnimId, AnimSpawnError> {
         // Anim42203D assigns before registry insertion and RandomRate4221F5.
         // Death debris may already have constructed at its pick/draw boundary.
@@ -656,11 +658,12 @@ impl Simulation {
         // anim runs in every game alike, so it may name what it plays.
         let private = local && !presentation;
         // Borrowed from the rules, which outlive the spawn: the record is
-        // only read. The lookup folds case itself.
-        let config = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(descriptor.type_name))
+        // only read. Found by the type id's handle, matched as the name is.
+        let config_handle = self
+            .interner
+            .anim_type_config_handle(descriptor.type_name, rules)
             .ok_or(AnimSpawnError::MissingType(descriptor.type_name))?;
+        let config = rules.art().anim_config(config_handle);
         // The refusals name the type in uppercase, as the ART key is written.
         let (effective_end, effective_loop_end) = effective_bounds(config).ok_or_else(|| {
             AnimSpawnError::UnboundType(
@@ -763,6 +766,13 @@ impl Simulation {
         debug_assert!(previous.is_none());
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
+            // A type whose constructor draws nothing needs no stream: the
+            // local copy below would be thrown away unread.
+            AnimConstructorInput::Local | AnimConstructorInput::Presentation
+                if !constructor_draws(config) =>
+            {
+                AnimConstructorDraws::default()
+            }
             AnimConstructorInput::Runtime
             | AnimConstructorInput::AssignedIdentity(_)
             | AnimConstructorInput::Local
@@ -835,9 +845,7 @@ impl Simulation {
             .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
         self.reveal_anim(stable_id, rules, !attaches || start_reaches_display);
         //42264D..4226BF reveals DropZone before the constructor-time Start.
-        if rules.general.drop_zone_anim.as_deref().is_some_and(|name| {
-            name.eq_ignore_ascii_case(self.interner.resolve(descriptor.type_name))
-        }) {
+        if self.interner.is_drop_zone_anim(config_handle, rules) {
             self.reveal_drop_zone_from_anim(rules, initial_world_coord);
         }
         // RESIDUAL (VERA-only refusal): Start can refuse a mod's invalid
@@ -953,9 +961,8 @@ impl Simulation {
         let candidates: Vec<_> = self
             .anims()
             .filter(|(_, anim)| {
-                rules
-                    .art()
-                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                self.interner
+                    .anim_type_config(anim.type_id, rules)
                     .is_some_and(|config| config.is_animated_tiberium)
             })
             .map(|(&id, anim)| (id, anim.world_coord))
@@ -1131,7 +1138,7 @@ pub(super) fn effective_bounds(config: &AnimTypeRuntimeConfig) -> Option<(i32, i
 /// the `RandomRate=` pick (`0x004221F5`; none when the clamped bounds are
 /// equal, as for every stock debris chunk), then the `Bouncer=` arm's launch
 /// (`0x004224D9..0x00422648`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnimConstructorDraws {
     /// Present when a producer has already crossed Anim42203D. Admission must
     /// retain that constructor identity rather than consume the cursor again.
@@ -1214,6 +1221,13 @@ pub(crate) fn anim_constructor_draws(
         random_rate,
         bounce,
     })
+}
+
+/// Whether [`anim_constructor_draws`] takes any draw for `config`: only
+/// `RandomRate=`, `IsMeteor=` and `Bouncer=` draw. Without them it returns
+/// [`AnimConstructorDraws::default`] and leaves the stream as it was.
+pub(super) fn constructor_draws(config: &AnimTypeRuntimeConfig) -> bool {
+    config.random_rate_logic_frames.is_some() || config.is_meteor || config.bouncer
 }
 
 pub(super) fn anim_random_rate(

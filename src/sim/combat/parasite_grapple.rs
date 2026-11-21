@@ -161,7 +161,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -468,7 +468,7 @@ impl Simulation {
         owner: u64,
         victim: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;

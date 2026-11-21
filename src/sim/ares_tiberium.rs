@@ -49,7 +49,7 @@ fn stored_bales(entity: &GameEntity) -> impl Iterator<Item = &CargoBale> {
         .as_ref()
         .map_or(&[][..], |miner| miner.cargo())
         .iter()
-        .chain(entity.slave.cargo())
+        .chain(entity.seldom.slave.cargo())
 }
 
 /// [`crate::sim::tiberium::tiberium_cell_view`] for an Ares tiberium effect.
@@ -142,7 +142,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !rules.ares_tiberium_globals().damage_enabled() || !self.at_tiberium_height(id, rules) {
             return false;
@@ -236,7 +236,6 @@ impl Simulation {
     ///
     /// RESIDUAL: 3.0 keeps (leaks) an object whose Put fails and still
     /// returns true; VERA deletes it. A coordinate off the map creates none.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_spawn_visceroid(
         &mut self,
         coord: DriveCoord,
@@ -245,7 +244,7 @@ impl Simulation {
         ignore_map_flag: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !ignore_map_flag && !self.session.tiberium_death_to_visceroid() {
             return false;
@@ -266,11 +265,10 @@ impl Simulation {
         else {
             return false;
         };
-        let owner = self.interner.resolve(owner).to_owned();
         let level =
             u8::try_from(coord.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
         let Some(created) = self
-            .construct_object_limbo_at_height(visceroid, &owner, rx, ry, 0, level, rules, effects)
+            .construct_object_limbo_at_height(visceroid, owner, rx, ry, 0, level, rules, effects)
         else {
             return false;
         };
@@ -385,7 +383,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -449,7 +447,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -522,7 +520,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !rules.combat_damage.tiberium_explosive || self.session.harvester_immune() {
             return;
@@ -599,7 +597,6 @@ impl Simulation {
     /// through the same `MapClass::GetCellAt` lookup the walk uses; the
     /// shared Dummy has no overlay. A non-tiberium overlay passes the hook
     /// but CellChainReact ignores it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn ares_area_damage_chain_reaction(
         &mut self,
         impact: (u16, u16),
@@ -608,7 +605,7 @@ impl Simulation {
         affects_tiberium: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !affects_tiberium || !warhead.tiberium {
             return;
@@ -684,7 +681,7 @@ impl Simulation {
         cell: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(registry) = registry else {
             return;

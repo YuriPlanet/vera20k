@@ -56,11 +56,10 @@ pub(super) fn chat_line(
 }
 
 pub(super) fn project_games(state: &mut AppState) {
-    let games = state
-        .match_state
-        .lan_service
-        .as_ref()
-        .expect("visit")
+    let Some(service) = state.match_state.lan_service.as_ref() else {
+        return;
+    };
+    let games = service
         .games
         .iter()
         .map(|record| crate::ui::lan_shell::LanGameRow {
@@ -118,11 +117,15 @@ fn lobby_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .discovery_timer = Default::default();
         }
         LanServiceRequest::SelectGame { game_id, change } => {
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(super::closed_visit)?;
             service.select_game(game_id, change);
             project_players(state);
         }
@@ -155,7 +158,11 @@ fn lobby_request(
                 rules_digest: String::new(),
             };
             let join = LanMessage::join_request(&name, &[], request)?.with_session_proof(&proof)?;
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(super::closed_visit)?;
             if service.queue_setup(std::iter::once((join.as_bytes().to_vec(), direct(peer))))? {
                 service.pending_host = Some(peer);
                 service.join_nonce = Some(nonce);
@@ -166,7 +173,11 @@ fn lobby_request(
             let now = super::match_runtime::frame_pacer::frame_bucket(
                 super::match_runtime::frame_pacer::wall_clock_ms(),
             );
-            let service = state.match_state.lan_service.as_mut().expect("visit");
+            let service = state
+                .match_state
+                .lan_service
+                .as_mut()
+                .ok_or_else(super::closed_visit)?;
             if service.pending_host.is_some() {
                 service.begin_departure(
                     &state.match_state.session,
@@ -261,7 +272,7 @@ pub(super) fn accept_participant(
             .match_state
             .lan_service
             .as_ref()
-            .expect("visit")
+            .ok_or_else(super::closed_visit)?
             .accepts_participant(state.match_state.session.host(), endpoint, &name, &proof),
         "participant is outside the host's confirmed LAN admission"
     );
@@ -318,7 +329,7 @@ pub(super) fn accept_participant(
         .match_state
         .lan_service
         .as_mut()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .commit_peer_admission(endpoint, &name, &proof);
     // The host snapshot can precede Type3. Apply it through HostSetup again
     // after this binding so country/start/team cannot remain Type3 defaults.
@@ -414,7 +425,11 @@ fn send_join_denial(
     reason: u32,
     proof: &LanSessionProof,
 ) -> anyhow::Result<()> {
-    let service = state.match_state.lan_service.as_mut().expect("visit");
+    let service = state
+        .match_state
+        .lan_service
+        .as_mut()
+        .ok_or_else(super::closed_visit)?;
     let denied_proof = LanSessionProof {
         scope: service.setup_scope().unwrap_or(SessionScope {
             epoch: [0; 16],
@@ -458,7 +473,7 @@ pub(super) fn offer_join(
         .match_state
         .lan_service
         .as_ref()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .peer_admissions
         .get(&endpoint)
         .map(|record| record.identity)
@@ -470,7 +485,7 @@ pub(super) fn offer_join(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .queue_setup(std::iter::once((
                     confirmed.as_bytes().to_vec(),
                     direct(endpoint)
@@ -480,7 +495,11 @@ pub(super) fn offer_join(
         return Ok(());
     }
     let identity = {
-        let service = state.match_state.lan_service.as_mut().expect("visit");
+        let service = state
+            .match_state
+            .lan_service
+            .as_mut()
+            .ok_or_else(super::closed_visit)?;
         service.ensure_host_scope()?;
         match service.join_offer(endpoint, message, now) {
             Ok(identity) => identity,
@@ -498,7 +517,7 @@ pub(super) fn offer_join(
         .match_state
         .lan_service
         .as_ref()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .control_proof()?;
     offer_proof.join_nonce = identity.join_nonce;
     offer_proof.admission_nonce = identity.admission_nonce;
@@ -509,7 +528,7 @@ pub(super) fn offer_join(
             .match_state
             .lan_service
             .as_mut()
-            .expect("visit")
+            .ok_or_else(super::closed_visit)?
             .queue_setup(std::iter::once((
                 offer.as_bytes().to_vec(),
                 direct(endpoint)
@@ -553,7 +572,7 @@ fn confirmed_join_message(
         .match_state
         .lan_service
         .as_ref()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .control_proof()?;
     proof.join_nonce = identity.join_nonce;
     proof.admission_nonce = identity.admission_nonce;
@@ -584,13 +603,13 @@ pub(super) fn confirm_join(
         .match_state
         .lan_service
         .as_ref()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .peer_admission_matches(endpoint, &proof);
     let request = state
         .match_state
         .lan_service
         .as_mut()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .confirmed_request(endpoint, &proof, now);
     if let Some((name, request)) = request {
         if let Some(reason) = join_denial(state, endpoint, &name, &request, &proof, now) {
@@ -603,7 +622,7 @@ pub(super) fn confirm_join(
                 .match_state
                 .lan_service
                 .as_ref()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .pending_setup
                 .len()
                 < 4096,
@@ -671,7 +690,7 @@ pub(super) fn confirm_join(
             .match_state
             .lan_service
             .as_mut()
-            .expect("visit")
+            .ok_or_else(super::closed_visit)?
             .commit_peer_admission(endpoint, &name, &proof);
     } else if !duplicate {
         return Ok(());
@@ -686,7 +705,7 @@ pub(super) fn confirm_join(
             .match_state
             .lan_service
             .as_mut()
-            .expect("visit")
+            .ok_or_else(super::closed_visit)?
             .queue_setup(std::iter::once((
                 confirmed.as_bytes().to_vec(),
                 direct(endpoint)
@@ -715,7 +734,11 @@ pub(super) fn cancel_join(
         .network_setup_protocol
         .as_ref()
         .is_some_and(|protocol| protocol.editable());
-    let service = state.match_state.lan_service.as_mut().expect("visit");
+    let service = state
+        .match_state
+        .lan_service
+        .as_mut()
+        .ok_or_else(super::closed_visit)?;
     service.ensure_host_scope()?;
     let mut reply_proof = service.control_proof()?;
     reply_proof.join_nonce = proof.join_nonce;

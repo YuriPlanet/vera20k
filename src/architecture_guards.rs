@@ -516,6 +516,10 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 // A received map's case-folded name check; a file it finds is
                 // kept only when it holds the same verified bytes.
                 "map/source.rs",
+                // Mod package staging: the game-root check asks whether any
+                // entry is an asset, parts are sorted by name before they
+                // merge, and copies land at their own names.
+                "util/mod_package.rs",
             ],
         ),
         (
@@ -1090,6 +1094,13 @@ where
 {
     fixture_body();
 }
+#[cfg(all(
+    test,
+    not(target_os = "unknown")
+))]
+fn wrapped() {
+    fixture_body();
+}
 #[cfg(any(test, debug_assertions))]
 fn debug_production() { registry_ids(); }
 fn after_function() { registry_ids(); }
@@ -1104,8 +1115,9 @@ fn after_function() { registry_ids(); }
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
 /// item, braced or terminated by `;`/`,`, or a one-line item on the
 /// attribute's own line), as blanked text: `text` is `source` with
-/// comments and literals blanked. `cfg(all(test, …))` and
-/// `cfg(any(test, feature = "test-support"))` count as test-only;
+/// comments and literals blanked. `cfg(all(test, …))`, also wrapped over
+/// lines with `test` first, and `cfg(any(test, feature = "test-support"))`
+/// count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
 /// the source line, since blanking erases its string.
 fn strip_test_items(source: &str, text: &str) -> String {
@@ -1116,9 +1128,36 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut item_delimiters = Vec::new();
     let mut awaiting_function = false;
     let ends_item = |line: &str| line.trim_end().ends_with([';', ',']);
-    for (line, source_line) in text.lines().zip(source.lines()) {
+    // Lines left of a `#[cfg(all(` attribute that rustfmt wrapped with
+    // `test` on its next line; the item after it is test code.
+    let mut wrapped_attribute_lines = 0usize;
+    let mut lines = text.lines().zip(source.lines()).peekable();
+    while let Some((line, source_line)) = lines.next() {
+        if wrapped_attribute_lines > 0 {
+            wrapped_attribute_lines -= 1;
+            out.push('\n');
+            continue;
+        }
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
+        let wrapped_test_attr = skip_above.is_none()
+            && line.trim() == "#[cfg(all("
+            && lines.peek().is_some_and(|(next, _)| {
+                let next = next.trim_start();
+                next.starts_with("test,") || next.starts_with("test)")
+            });
+        if wrapped_test_attr {
+            // Skip the attribute through its closing `]`, then the item.
+            wrapped_attribute_lines = lines
+                .clone()
+                .position(|(rest, _)| rest.trim_end().ends_with(']'))
+                .map_or(0, |at| at + 1);
+            awaiting_item = true;
+            item_delimiters.clear();
+            awaiting_function = false;
+            out.push('\n');
+            continue;
+        }
         let is_test_attr = line.contains("cfg(test")
             || line.contains("cfg(all(test")
             || (line.trim_start().starts_with("#[")
@@ -1640,6 +1679,13 @@ fn composition_root_slots_are_owner_types() {
         ),
         (
             "GameEntity",
+            "seldom",
+            "the object record's seldom part is the same record stored apart \
+             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
+             so the slot opens nothing that was closed",
+        ),
+        (
+            "GameEntity",
             "damage_fires",
             "DamageFires' fields are private to the `sim::anim_class` module, whose parts are \
              separate files: `pub(super)` reaches only that module",
@@ -2039,6 +2085,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              `pub(super)` reaches only that module, whose passes fill each family",
         ),
         (
+            "rules/native_processing/processed_type.rs",
+            "read_member",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
             "rules/ruleset/lookup.rs",
             "warhead_mut",
             "private to the `rules::ruleset` module, whose parts are separate files: \
@@ -2059,13 +2111,6 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ("sim/anim_class/store.rs", "get_mut", ANIM_OBJECT),
         ("sim/anim_class/store.rs", "values_mut", ANIM_OBJECT),
         ("sim/command.rs", "payload_mut", PAYLOAD),
-        (
-            "sim/game_entity.rs",
-            "deref_mut",
-            "the object record's seldom part is the same record stored apart \
-             (docs/sim-thread.md); its fields keep their visibility and owning modules, \
-             so the deref opens nothing that was closed",
-        ),
         ("sim/cell_map.rs", "get_mut", CELL_MAP),
         ("sim/cell_map.rs", "get_or_insert_with", CELL_MAP),
         ("sim/cell_map.rs", "values_mut", CELL_MAP),
@@ -2926,3 +2971,9 @@ fn test_gated_files(files: &[SourceFile]) -> BTreeSet<String> {
     }
     gated
 }
+
+// Shared-state, worker-pool and Deref guards.
+mod shared_state;
+
+// Panic guards for the readers of outside data.
+mod outside_data;

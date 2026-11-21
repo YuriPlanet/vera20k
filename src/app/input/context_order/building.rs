@@ -31,7 +31,6 @@ use crate::sim::world::ControlProjection;
 /// without a rally line under `guard_area` ([`cell_guard_area_action`]).
 /// A query the sim cannot answer (no map cells) keeps Move: VERA-internal, as
 /// a live gamemd session always has a map.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::app::input) fn building_cell_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -117,7 +116,6 @@ pub(super) enum BuildingClick {
 /// object the player may select and has not, and nothing else happens.
 /// Shift over an object never reaches here: the caller hands it to the
 /// selection consumer first.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn building_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -191,7 +189,6 @@ pub(super) fn building_selection_click(
 /// or an allied object answers 0x1A, which has no Building ClickedAction
 /// arm; a Terrain object is no ally, so there it answers Alt's Move
 /// ([`object_key_action`]).
-#[allow(clippy::too_many_arguments)]
 pub(super) fn building_click_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -259,7 +256,6 @@ fn building_moves_over_object(
 /// rung dispatches ([`building_moves_over_object`]); any other answer is
 /// [`object_click_release`]'s, so an unarmed factory or Construction Yard
 /// selects the object as DisplayClass does for Select (`0x004ABDD3`).
-#[allow(clippy::too_many_arguments)]
 fn building_object_release(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

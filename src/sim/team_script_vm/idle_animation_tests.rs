@@ -88,7 +88,7 @@ fn idle_request_respects_action_refusal_and_other_foot_classes_are_empty_receive
             .interruptible
     );
     assert!(
-        sim.infantry_do_action(member, DO_DOWN, true, rules, FrameEffects::default())
+        sim.infantry_do_action(member, DO_DOWN, true, rules, &mut FrameEffects::default())
             .unwrap()
     );
     let actor = sim.entities().get(member).unwrap();
@@ -103,7 +103,7 @@ fn idle_request_respects_action_refusal_and_other_foot_classes_are_empty_receive
         false,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let actor = sim.entities().get(member).unwrap();
     assert_eq!(
@@ -118,7 +118,7 @@ fn idle_request_respects_action_refusal_and_other_foot_classes_are_empty_receive
         let actor = sim.entities().get(id).unwrap();
         let prior = (actor.mission_leaf, *actor.native_stage());
         let rng = sim.rng_state();
-        sim.foot_play_idle_animation(id, 1, rules, FrameEffects::default());
+        sim.foot_play_idle_animation(id, 1, rules, &mut FrameEffects::default());
         let actor = sim.entities().get(id).unwrap();
         assert_eq!((actor.mission_leaf, *actor.native_stage()), prior);
         assert_eq!(sim.rng_state(), rng);

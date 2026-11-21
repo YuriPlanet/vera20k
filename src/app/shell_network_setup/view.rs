@@ -35,6 +35,10 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
         SkirmishComboItem::Start(start) => start.shell_value(),
         SkirmishComboItem::Team(value) => value,
         SkirmishComboItem::AiType(value) => value.item_data(),
+        // Skirmish's own lists, by the room's values for them.
+        SkirmishComboItem::TeamTool { tool, .. } => tool.code(),
+        SkirmishComboItem::TeamHeading => -1,
+        SkirmishComboItem::SeatAction { action, .. } => action.code(),
     };
     SetupChoice {
         value,
@@ -44,6 +48,7 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
         } else {
             None
         },
+        greyed: !item.pickable(),
     }
 }
 
@@ -298,8 +303,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     });
     let seats = 0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8;
     let removed = |row: &u8| session.network_vacancy(*row) == Some(NetworkVacancy::Closed);
-    // The host keeps at least two seats.
-    let may_remove = seats.filter(|row| !removed(row)).count() > 2;
+    let may_remove = seats.filter(|row| !removed(row)).count() > super::team_menus::KEPT_SEATS;
     // AI play in a VERA room while people watch too, unlike in gamemd's
     // (`0x5EC9F0`'s TXT_NO_AI_WITH_OBSERVER).
     let ai_allowed = !campaign && mode.class.policy().lists_in_skirmish;
@@ -420,6 +424,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         value,
                         text,
                         swatch: None,
+                        greyed: false,
                     };
                     combos.push(SetupCombo {
                         id: team_add_ai(visible_row),
@@ -521,6 +526,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 value,
                 text,
                 swatch: None,
+                greyed: false,
             };
             let seat = adding || ai.is_some() || vacancy == Some(NetworkVacancy::Open);
             if adding {
@@ -571,6 +577,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     value: slot_value,
                     text: slot_label.clone(),
                     swatch: None,
+                    greyed: false,
                 });
             }
             if host && !is_local {
@@ -583,6 +590,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         value: 2,
                         text: label(state, "GUI:Open"),
                         swatch: None,
+                        greyed: false,
                     });
                 }
                 if observer_row == Some(usize::from(row)) {
@@ -590,12 +598,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                         value: 7,
                         text: label(state, "GUI:OpenObserver"),
                         swatch: None,
+                        greyed: false,
                     });
                 }
                 players.push(SetupChoice {
                     value: 3,
                     text: label(state, "GUI:Closed"),
                     swatch: None,
+                    greyed: false,
                 });
                 //5EB060 asks the same vtable+40 used by the Skirmish mode list.
                 if mode.class.policy().lists_in_skirmish && !observer_only {
@@ -604,6 +614,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                             value,
                             text: label(state, key),
                             swatch: None,
+                            greyed: false,
                         });
                     }
                 }
@@ -655,6 +666,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     value: -2,
                     text: label(state, "GUI:Random"),
                     swatch: None,
+                    greyed: false,
                 });
             }
             for country in state
@@ -684,6 +696,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 value: -3,
                 text: label(state, "GUI:Observer"),
                 swatch: None,
+                greyed: false,
             });
         }
         let color_claims = launch
@@ -909,6 +922,9 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             })
         })
         .collect();
+    combos.extend(super::team_menus::combos(
+        state, grouped, ai_allowed, starting,
+    ));
     // VERA's roster opens each list as wide as its widest text needs.
     if dialog.modern {
         let font = &state.renderer.bit_font;
@@ -960,9 +976,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .as_ref()
             .and_then(|ui| ui.open_box)
             .filter(|_| dialog.modern),
-        team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
-        team_colors_enabled: host && teams.is_some(),
-        balance_enabled: host && grouped && dialog.wol(),
         lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
         map_offer_open: state

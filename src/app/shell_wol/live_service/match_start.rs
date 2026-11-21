@@ -512,7 +512,7 @@ pub(crate) fn begin_spawned_match(
 /// before notifying the host and stopping the event loop.
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) fn discard_spawned_visit(state: &mut AppState) {
-    if !super::spawned_visit(state) {
+    if !crate::app::shell_wol::spawned_visit(state) {
         return;
     }
     let Some(mut visit) = state.frontend.wol.take() else {

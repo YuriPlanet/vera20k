@@ -135,12 +135,11 @@ pub(crate) fn autofill_walls(
     object_type: &ObjectType,
     origin: (u16, u16),
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(overlay_id) = linked_overlay_id(object_type, registry) else {
         return;
     };
-    let owner_name = sim.interner.resolve(owner).to_owned();
     for direction in CARDINAL_DIRECTIONS {
         let gap = scan_autofill_direction(
             sim,
@@ -158,7 +157,7 @@ pub(crate) fn autofill_walls(
             //the shared constructor owns Scenario RNG, IDs and tracking.
             let Some(filler) = sim.construct_object_limbo_at_height(
                 &object_type.id,
-                &owner_name,
+                owner,
                 rx,
                 ry,
                 0,

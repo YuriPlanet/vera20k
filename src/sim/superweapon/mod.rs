@@ -1851,7 +1851,7 @@ pub(crate) fn tick_house_superweapon_instances(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let current_frame = sim.session.binary_frame();
     let ares = rules.ares_form();
@@ -1864,6 +1864,7 @@ pub(crate) fn tick_house_superweapon_instances(
         let Some(type_id) = house_super(sim, owner, name) else {
             continue;
         };
+        // An exact-name hit in the rules' map for the order's own name.
         let sw = rules.super_weapon(name);
         let (fade, ready, drain_ended) = {
             let instance = sim
@@ -1932,12 +1933,12 @@ pub(crate) fn tick_house_superweapon_instances(
             }
         }
         if let Some([x, y, z]) = fade
-            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.clone())
+            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.as_deref())
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
             sim.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 audible_to: None,
                 rx,
                 ry,
@@ -2002,7 +2003,7 @@ pub(super) fn deactivate_ares_handler(
     typ: InternedId,
     sw: &SuperWeaponType,
     is_player: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !sw.kind.has_ares_handler() {
         return;
@@ -2037,7 +2038,7 @@ pub(super) fn raise_ares_activation_events(
     typ: InternedId,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::trigger_runtime::AresEventSource;
     let launch = AresEventSource::Launch {
@@ -2112,7 +2113,9 @@ pub(crate) fn shorten_ares_firestorm_drain(
 /// a House's set never changes after [`construct_house_supers`], and an
 /// interned name keeps its id, so asking as the walk goes answers as a copy
 /// of the order taken before it would, without building one per House per
-/// tick.
+/// tick. Each entry is one probe of the name, uppercased on the stack, with
+/// no allocation: the rules hold the order as names and the ids are the
+/// interner's, which gives a name its id only when it is first interned.
 fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
     let id = sim.interner.get(name)?;
     sim.super_weapons
@@ -2130,7 +2133,7 @@ pub(crate) fn tick_active_superweapon_effects(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let frame = sim.session.binary_frame() as i32;
     if sim.session.lighting_mut().step_nuke_flash(frame) {
@@ -2696,7 +2699,7 @@ pub(crate) fn update_owned_supers(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {

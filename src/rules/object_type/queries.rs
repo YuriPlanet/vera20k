@@ -379,6 +379,17 @@ impl ObjectType {
         self.convert_land = land.cloned();
     }
 
+    /// `NoSpawnAlt=yes`.
+    pub fn no_spawn_alt(&self) -> bool {
+        self.no_spawn_alt_model.is_some()
+    }
+
+    /// The `<TYPE>WO` art a `NoSpawnAlt=yes` type draws while no spawn is
+    /// docked, named after the section.
+    pub fn no_spawn_alt_model(&self) -> Option<&str> {
+        self.no_spawn_alt_model.as_deref()
+    }
+
     /// Read-only projection of the retained WaterImage pointer.
     pub fn water_image(&self) -> Option<&str> {
         self.water_image.as_deref()
@@ -1307,6 +1318,88 @@ impl ObjectType {
         self.vehicle_thief_sounds[usize::from(leaving)].as_deref()
     }
 
+    /// Every sound name this type's own fields hold, for the set's
+    /// sound-name table (`RuleSet::rebuild_sound_names`).
+    pub(crate) fn sound_names(&self) -> impl Iterator<Item = &str> {
+        let lists = [
+            &self.voice_select,
+            &self.voice_select_enslaved,
+            &self.voice_select_deactivated,
+            &self.voice_move,
+            &self.voice_attack,
+            &self.voice_die,
+            &self.die_sounds,
+            &self.move_sound,
+            &self.voice_comment,
+            &self.voice_feedback,
+            &self.voice_special_attack,
+        ];
+        let scalars = [
+            &self.voice_harvest,
+            &self.voice_deploy,
+            &self.voice_undeploy,
+            &self.voice_enter,
+            &self.voice_capture,
+            &self.ares_voice_repair,
+            &self.create_sound,
+            &self.damage_sound,
+            &self.crashing_sound,
+            &self.voice_crashing,
+            &self.sinking_sound,
+            &self.voice_sinking,
+            &self.voice_falling,
+            &self.turret_rotate_sound,
+            &self.activate_sound,
+            &self.deactivate_sound,
+            &self.ambient_sound,
+            &self.impact_water_sound,
+            &self.impact_land_sound,
+            &self.crush_sound,
+            &self.deploy_sound,
+            &self.buildup_sound,
+            &self.working_sound,
+            &self.not_working_sound,
+            &self.undeploy_sound,
+            &self.enter_water_sound,
+            &self.leave_water_sound,
+            &self.packup_sound,
+            &self.enter_transport_sound,
+            &self.leave_transport_sound,
+            &self.chrono_in_sound,
+            &self.chrono_out_sound,
+            &self.mind_cleared_sound,
+            &self.aux_sound1,
+            &self.aux_sound2,
+        ];
+        let overrides = self
+            .promotion_sounds
+            .iter()
+            .chain(&self.cloak_sounds)
+            .flatten();
+        let airstrike_voices = [false, true]
+            .into_iter()
+            .filter_map(|abort| self.techno_combat().presentation().airstrike_voice(abort))
+            .flatten();
+        lists
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .chain(
+                scalars
+                    .into_iter()
+                    .chain(&self.voice_attack_overrides)
+                    .chain(&self.vehicle_thief_sounds)
+                    .chain(overrides)
+                    .filter_map(|name| name.as_deref()),
+            )
+            .chain(airstrike_voices)
+            .chain(
+                self.sequence_sounds
+                    .iter()
+                    .map(|sound| sound.sound_id.as_str()),
+            )
+    }
+
     /// Storage reached by GetWeapon7177C0/7177E0; Ares1003DBC0 adds
     /// extension records, while a stock-way read keeps the fixed bound of
     /// `WEAPON_SLOT_COUNT`. Ares TechnoTypeClass_LoadFromINI_Weapons1
@@ -1472,6 +1565,20 @@ impl ObjectType {
     /// Store the weapon records resolved against the current weapons.
     pub(crate) fn project_resolved_weapons(&mut self, weapons: crate::rules::ruleset::TypeWeapons) {
         self.resolved_weapons = weapons;
+    }
+
+    /// `debris_types` as its RuleSet resolved it; reads go through
+    /// `RuleSet::object_debris_types`, which checks the resolving set.
+    pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
+        &self.resolved_debris
+    }
+
+    /// Store `debris_types` resolved against the current `[VoxelAnims]`.
+    pub(crate) fn project_resolved_debris(
+        &mut self,
+        debris: crate::rules::ruleset::ResolvedDebris,
+    ) {
+        self.resolved_debris = debris;
     }
 
     /// The ART `SiloDamage=` [`crate::rules::ruleset::RuleSet`] projected;

@@ -402,10 +402,6 @@ impl ResolvedTerrainGrid {
 
     /// Derived asset/catalog binding shared by fresh construction and saved
     /// loading. It never materializes cells or enters the variant selector.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "theater, assets, both rules projections and the selector inputs"
-    )]
     pub(super) fn bind_asset_catalogs(
         &mut self,
         theater: Option<&TheaterData>,
@@ -486,10 +482,6 @@ impl ResolvedTerrainGrid {
     /// Bind the future-restore baseline after the actual loaded cells have
     /// visited the selector. A baseline is not itself a native loaded-cell pass
     /// and must never initialize a cold table or consume additional Main draws.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the scenario's overlay types"
-    )]
     pub fn bind_saved_template_assets(
         &mut self,
         theater: &TheaterData,
@@ -519,10 +511,6 @@ impl ResolvedTerrainGrid {
     /// native iterator/variant scan. Run this after dynamic cells, before final
     /// publication. Later presentation reads use the same retained table; only
     /// presentation projections change, never Cell gameplay/Tube/Anim values.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the saved Size and selector continuation"
-    )]
     pub fn finish_loaded_assets(
         &mut self,
         theater: &TheaterData,

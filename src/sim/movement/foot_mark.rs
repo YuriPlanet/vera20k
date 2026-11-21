@@ -223,13 +223,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.tether.partner().is_some())
+            .is_some_and(|entity| entity.seldom.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,
@@ -249,7 +249,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -300,7 +300,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_mark_put_observed(id, rules, registry, &mut |_, _| {}, frame_effects)
     }
@@ -314,7 +314,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -342,7 +342,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;

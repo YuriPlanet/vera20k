@@ -319,7 +319,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     sim.flush_pending_delete();
@@ -361,7 +361,7 @@ fn crusher_driveover_destroys_wall_but_noncrusher_does_not() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     sim.flush_pending_delete();
@@ -414,7 +414,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
                     sound_id, rx, ry, ..
                 } => {
                     assert_eq!((*rx, *ry), (5, 5));
-                    Some(sound_id.clone())
+                    Some(sound_id.name_in(&rules).to_string())
                 }
                 _ => None,
             })
@@ -428,7 +428,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     sim.flush_pending_delete();
@@ -445,7 +445,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     sim.flush_pending_delete();
@@ -463,7 +463,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     sim.flush_pending_delete();
@@ -480,7 +480,7 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(wall_present(&sim));
@@ -585,7 +585,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
         crate::sim::movement::PerCellReason::TurnComplete,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     tank.flush_pending_delete();
@@ -601,7 +601,7 @@ fn a_drive_crusher_without_crusherall_leaves_a_plain_wall_standing() {
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     fortress.flush_pending_delete();

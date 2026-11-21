@@ -8,7 +8,7 @@
 //! in tools/spatial_oracle/parachute_canopy.json.
 
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectTexture, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectTexture, OwnedPlannedObject, PlannedObjects, lower_object_instances,
 };
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::detail::DetailState;
@@ -179,7 +179,7 @@ impl Scene {
                     self.canopy,
                     &self.runtime.resources.rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -213,16 +213,17 @@ impl Scene {
         light: &CellLightGrid,
         colors: &HouseColorMap,
         frame: u16,
-    ) -> PlannedObjectInstance {
+    ) -> OwnedPlannedObject {
         let sim = &self.runtime.simulation;
         let presented = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
         );
         let order = NativeDisplayOrder::from_world(&sim, None);
         let voxel_images = RefCell::new(VoxelImageCache::default());
         let zshape_skips = std::cell::RefCell::default();
-        let mut parents = Vec::new();
+        let mut parents = PlannedObjects::default();
         build_shp_instances_from_inputs(
             &ShpInputs {
                 runtime: &self.runtime,
@@ -251,6 +252,7 @@ impl Scene {
             &mut parents,
             &order,
         );
+        let parents = parents.into_owned();
         assert!(
             parents
                 .iter()
@@ -285,7 +287,9 @@ impl Scene {
             local_owner: Some(sim.interner().get(OWNER).unwrap()),
             observe_particles: false,
         };
+        let mut parents = PlannedObjects::from(parents);
         build_display_effect_instances(&input, &mut parents, &order, Default::default());
+        let parents = parents.into_owned();
         let key = ShpSpriteKey {
             palette_context: ShpPaletteContext::AnimScheme,
             type_id: "PARACH".into(),
@@ -298,6 +302,7 @@ impl Scene {
             .expect("actual selected-scheme PARACH frame");
         let mut selected = Vec::new();
         for parent in parents {
+            let draw = parent.parent;
             for piece in parent.pieces {
                 if piece.target == ObjectTexture::ShpPage(entry.page as usize)
                     && piece.instance.uv_origin == entry.uv_origin
@@ -305,7 +310,7 @@ impl Scene {
                 {
                     // Component-only replay: preserve the emitted parent and all
                     // piece fields, omit body/shadow pixels not in this oracle.
-                    selected.push(PlannedObjectInstance::object(parent.parent, vec![piece]));
+                    selected.push(OwnedPlannedObject::object(draw, vec![piece]));
                 }
             }
         }
@@ -487,7 +492,7 @@ fn retail_parachute_actual_emitter_matches_original_component_planes() {
                     transports.push(format!("{name}/{format:?}: pos {actual_position:?}/{wanted_position:?}, policy {:?}, z {} / {}, gradient {}, light {:?}",
                         piece.render_z, sprite.z_adjust, call["z_adjust"], sprite.z_gradient, sprite.palette_light));
                 }
-                let layers = lower_object_instances(vec![parent]);
+                let layers = lower_object_instances(vec![parent].into());
                 let layer = &layers[layer_index];
                 assert_eq!(layer.instances.len(), 1);
                 let mut pool = InstanceBufferPool::new();

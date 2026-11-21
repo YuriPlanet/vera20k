@@ -26,7 +26,12 @@ fn enter_power_plant(runtime: &mut SimRuntime, team: u64, spy: u64, cell: (u16, 
     for _ in 0..600 {
         let commands = runtime.simulation.take_due_commands();
         let output = runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         effects += output.sound_events.iter().filter(|event| matches!(event,
             SimSoundEvent::BuildingInfiltrated { owner: target, infiltrator, effect: InfiltrationEffect::Power, .. }

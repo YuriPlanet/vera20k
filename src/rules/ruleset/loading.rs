@@ -896,6 +896,7 @@ impl RuleSet {
         rules.project_house_masks();
         rules.rebuild_animation_sequences();
         rules.resolve_handles();
+        rules.rebuild_sound_names();
         Ok(rules)
     }
 
@@ -1268,6 +1269,7 @@ impl RuleSet {
                 object.bind_sequence_sounds(sounds);
             }
         }
+        self.rebuild_sound_names();
     }
 
     pub(crate) fn bind_terrain_type_sound_references(
@@ -1908,6 +1910,7 @@ impl RuleSet {
             object_list,
             object_index,
             serial: next_rule_set_serial(),
+            sound_names: Default::default(),
             object_category_index,
             native_techno_type_order: Vec::new(),
             ares_techno_type_first: LookupMap::default(),
@@ -2017,6 +2020,7 @@ impl RuleSet {
             allied_wall_transparency,
             elevation_model,
             radiation,
+            radiation_site_warhead: None,
             #[cfg(feature = "phobos")]
             shield_types,
             #[cfg(feature = "phobos")]
@@ -2164,7 +2168,7 @@ fn project_country_side_registry<'a>(
         side_indices
             .entry(id.to_ascii_uppercase())
             .or_insert_with(|| {
-                SideIdx(u8::try_from(index).expect("[Sides] exceeds u8 identity space"))
+                SideIdx(u8::try_from(index).expect("SIDE_LIMIT keeps the Side registry within u8"))
             });
     }
     let mut country_ids = Vec::new();
@@ -2173,7 +2177,8 @@ fn project_country_side_registry<'a>(
     let mut rules = HashMap::new();
     for (id, section, color, side, parent, veteran) in countries {
         let index = CountryIdx(
-            u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
+            u16::try_from(country_ids.len())
+                .expect("COUNTRY_LIMIT keeps the Country registry within u16"),
         );
         country_ids.push(id.to_owned());
         country_indices
@@ -2182,7 +2187,7 @@ fn project_country_side_registry<'a>(
         country_sides.push((side >= 0).then(|| {
             let index = usize::try_from(side).expect("nonnegative Side index");
             assert!(index < side_ids.len(), "retained Country Side exists");
-            SideIdx(u8::try_from(side).expect("[Sides] exceeds u8 identity space"))
+            SideIdx(u8::try_from(side).expect("SIDE_LIMIT keeps the Side registry within u8"))
         }));
         rules.entry(id.to_owned()).or_insert_with(|| {
             let mut fields = CountryRules::from_ini_section(section);

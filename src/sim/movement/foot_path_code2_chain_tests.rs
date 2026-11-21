@@ -252,7 +252,7 @@ fn a_jammed_chain_detours_the_route_and_a_clear_one_runs_through() {
         .unwrap();
 
         assert_eq!(
-            sim.foot_find_path(&request, &rules, None, FrameEffects::default()),
+            sim.foot_find_path(&request, &rules, None, &mut FrameEffects::default()),
             Ok(FindPathResult::Route)
         );
         let route = sim

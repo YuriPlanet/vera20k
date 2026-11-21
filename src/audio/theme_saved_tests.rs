@@ -66,7 +66,7 @@ fn map_music_action_follows_native_read_and_queue() {
         let effects = sim.advance_triggers(
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(effects.len(), actions.len(), "{case}");
 

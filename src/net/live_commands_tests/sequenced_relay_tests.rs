@@ -225,11 +225,12 @@ fn sequenced_match_ends_as_absent_once_its_silent_relay_route_is_released() {
     let frame = |worlds: &mut [Simulation; 2], ticks: u32| {
         for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
             boundary.now.set(ticks);
-            let effects = FrameEffects::empty().with_network_commands(boundary);
+            let mut network = boundary;
+            let mut effects = FrameEffects::empty().with_network_commands(&mut network);
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, effects);
+                let _ = world.resume_network_wait(&rules, &mut effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, &mut effects);
             }
         }
     };
@@ -584,12 +585,13 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
         service_pair(&mut worlds, &boundaries, now_ms);
         relay.pass(now_ms, |_| true);
         for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
-            let effects = FrameEffects::empty().with_network_commands(boundary);
+            let mut network = boundary;
+            let mut effects = FrameEffects::empty().with_network_commands(&mut network);
             // This match is meant to fail; its report is what is checked.
             if world.pending_network_wait() {
-                let _ = world.resume_network_wait(&rules, effects);
+                let _ = world.resume_network_wait(&rules, &mut effects);
             } else {
-                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, effects);
+                let _ = world.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, &mut effects);
             }
         }
         if boundaries

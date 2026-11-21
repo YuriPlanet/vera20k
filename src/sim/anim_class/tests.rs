@@ -56,7 +56,7 @@ fn hide_if_no_ore_threshold_moves_the_value_cut_off() {
             id,
             &rules,
             Some(&overlays),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.anim(id)
@@ -105,7 +105,7 @@ fn damage_fire_references_follow_original_owner_then_anim_expiry() {
         sim.detach_all_pointer_expired(
             building_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for phase in ["owner_expiry", "anim_expiry"] {
             if phase == "anim_expiry" {
@@ -232,7 +232,7 @@ fn next_takes_the_new_start_as_its_value_and_keeps_the_step() {
         )
         .unwrap();
     assert_eq!(sim.anim(id).unwrap().runtime.frame_step, -1);
-    sim.switch_anim_type(id, "A_NEXT", &rules, None, FrameEffects::default())
+    sim.switch_anim_type(id, "A_NEXT", &rules, None, &mut FrameEffects::default())
         .unwrap();
     let runtime = &sim.anim(id).unwrap().runtime;
     assert_eq!((runtime.current_frame, runtime.frame_step), (3, -1));
@@ -301,7 +301,7 @@ fn animation_display_owner_histories_match_native_and_survive_save() {
             .unwrap();
         // Native corpus deliberately has type+340=999 and a different
         // retained instance+104. Exercise the real Next type transition.
-        sim.switch_anim_type(id, "A_NEXT", &rules, None, FrameEffects::default())
+        sim.switch_anim_type(id, "A_NEXT", &rules, None, &mut FrameEffects::default())
             .unwrap();
         assert_eq!(
             sim.anim(id).unwrap().display.y_sort_adjust,
@@ -493,6 +493,7 @@ fn damage_fire_fixture_with_offsets(
         false,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("4x4".to_string().into());
     sim.substrate.entities.insert(building);
@@ -827,7 +828,7 @@ fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
     restored.position.put_z(512);
     restored.begin_bomb_fall();
     *sim.substrate.entities.get_mut(101).unwrap() = restored;
-    sim.object_ai_fall(101, &rules, None, FrameEffects::default())
+    sim.object_ai_fall(101, &rules, None, &mut FrameEffects::default())
         .unwrap();
     let owner = sim.substrate.entities.get(101).unwrap();
     assert!(owner.is_parachuted());
@@ -1071,7 +1072,7 @@ fn combat_anim_shadow_endpoint_retires_in_runtime_and_survives_restore() {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert!(output.tick.frame_committed);
@@ -1164,8 +1165,13 @@ fn a_negative_random_loop_delay_holds_the_anim() {
         .expect("bound art constructs");
     for frame in 1..40 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_anim(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     }
     let delay = sim.anim(id).unwrap().runtime.delay_remaining;
     assert!(delay < -3, "the pause counts on down, got {delay}");
@@ -1216,15 +1222,30 @@ fn delayed_anim_plays_its_report_when_the_delay_expires() {
     assert!(!sim.anim(id).unwrap().start_sound_active);
 
     // The first AI visit only clears the first-AI guard.
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.anim(id).unwrap().runtime.delay_remaining, 1);
     assert_eq!(starts(&sim), 0);
 
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.anim(id).unwrap().runtime.delay_remaining, 0);
     assert_eq!(starts(&sim), 1, "the expiring visit runs Start");
     assert_eq!(
@@ -1233,8 +1254,13 @@ fn delayed_anim_plays_its_report_when_the_delay_expires() {
         "and returns before advancing a frame"
     );
 
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(starts(&sim), 1, "Start runs once per delay");
 }
 
@@ -1391,7 +1417,7 @@ fn combat_explosion_uses_the_verified_constructor_row_and_plays_report() {
         sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                if *anim_id == id && sound_id == "EXPLOSION06"
+                if *anim_id == id && sound_id.name_in(&rules) == "EXPLOSION06"
         )),
         "explosion must emit its art `Report=`, got {:?}",
         sim.sound_events
@@ -1534,6 +1560,38 @@ fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
+/// A local anim skips its constructor stream exactly when the constructor
+/// would neither draw nor return a draw.
+#[test]
+fn only_random_rate_bouncer_and_meteor_constructors_draw() {
+    let rules = runtime_rules(
+        "[FLASH]\nEnd=2\n[RATED]\nRandomRate=50,150\nEnd=2\n\
+         [BOUNCY]\nBouncer=yes\nEnd=2\n[ROCK]\nIsMeteor=yes\nEnd=2\n",
+        &[("FLASH", 2), ("RATED", 2), ("BOUNCY", 2), ("ROCK", 2)],
+    );
+    let coord = AnimWorldCoord {
+        x: 128,
+        y: 128,
+        z: 20,
+    };
+    for (name, draws) in [
+        ("FLASH", false),
+        ("RATED", true),
+        ("BOUNCY", true),
+        ("ROCK", true),
+    ] {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        assert_eq!(super::spawn::constructor_draws(config), draws, "{name}");
+        let mut rng = crate::sim::rng::SimRng::new(7);
+        let before = rng.logical_state();
+        let taken = anim_constructor_draws(config, coord, &mut rng).unwrap();
+        // Equal RandomRate bounds return a rate without a draw, so only the
+        // skipped side must leave the stream as it was.
+        assert!(draws || rng.logical_state() == before, "{name}");
+        assert_eq!(taken != AnimConstructorDraws::default(), draws, "{name}");
+    }
+}
+
 #[test]
 fn preconsumed_anim_constructor_retains_identity_without_redrawing_or_reassigning() {
     let rules = runtime_rules(
@@ -1564,7 +1622,7 @@ fn preconsumed_anim_constructor_retains_identity_without_redrawing_or_reassignin
             descriptor,
             coord,
             AnimConstructorInput::Preconsumed(draws),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(sim.anim(id).unwrap().native_unique_id, native_unique_id);
@@ -1599,7 +1657,7 @@ fn authored_load_anim_retains_native_id_and_final_scalar_delete_rechecks_compact
             first,
             world,
             AnimConstructorInput::AssignedIdentity(1_010_001),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("first authored load Anim");
     let keep_id = sim
@@ -1614,7 +1672,7 @@ fn authored_load_anim_retains_native_id_and_final_scalar_delete_rechecks_compact
             second,
             world,
             AnimConstructorInput::AssignedIdentity(1_010_002),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("second authored load Anim");
 
@@ -1652,8 +1710,13 @@ fn gsi_04_12_anim_make_infantry_marks_before_first_ai_and_clears_on_natural_end(
     let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
 
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(
         sim.substrate.raw_cell_occupation.ground_bits(3, 4),
         0x04,
@@ -1662,8 +1725,13 @@ fn gsi_04_12_anim_make_infantry_marks_before_first_ai_and_clears_on_natural_end(
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
 
     sim.session.set_binary_frame_for_test(1);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
 
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
     assert!(sim.substrate.pending_delete.contains_object(&id));
@@ -1686,12 +1754,22 @@ fn gsi_04_12_anim_make_infantry_next_and_early_destroy_leave_destructive_mark_st
     descriptor.sub_y = SimFixed::from_num(192);
     let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
 
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(5, 6), 0x08);
     sim.session.set_binary_frame_for_test(1);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
 
     assert_eq!(sim.anim(id).unwrap().type_id, plain);
     assert_eq!(
@@ -2080,7 +2158,7 @@ fn bouncer_launch_matches_the_original() {
                         z: at(2),
                     },
                     AnimConstructorInput::AssignedIdentity(native_id),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(
@@ -2146,7 +2224,7 @@ fn bouncer_launch_int_min_axes_match_the_original() {
                     z: at(2),
                 },
                 AnimConstructorInput::AssignedIdentity(native_id),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         });
@@ -2317,7 +2395,7 @@ fn a_debris_chunk_lands_and_blasts_what_is_under_it() {
             chunk,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let anim = sim.anim(chunk).unwrap();
@@ -2398,8 +2476,13 @@ fn a_crater_anim_marks_the_ground_at_its_middle_frame() {
     let mut saw_middle = false;
     for frame in 1..40 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_anim(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         let Some(anim) = sim.anim(id) else {
             break;
         };
@@ -2424,8 +2507,13 @@ fn an_anim_thirty_leptons_up_leaves_no_mark() {
         let id = spawn_mark(&mut sim, &rules, world_z);
         for frame in 1..40 {
             sim.session.set_binary_frame_for_test(frame);
-            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-                .unwrap();
+            sim.visit_anim(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         }
         assert_eq!(marks_placed(&sim), expected, "z {world_z}");
     }
@@ -2454,19 +2542,39 @@ fn delay_guard_and_rate_use_passive_frame_anchor() {
         .spawn_anim_object(&rules, runtime_descriptor(type_id, 1))
         .unwrap();
 
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // constructor first-AI guard at frame 0
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // constructor first-AI guard at frame 0
     sim.session.set_binary_frame_for_test(1);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // delay 1 -> 0
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // delay 1 -> 0
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
     sim.session.set_binary_frame_for_test(2);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // constructor-anchored timer is already due
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // constructor-anchored timer is already due
 
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // a second visit in the same frame cannot advance again
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // a second visit in the same frame cannot advance again
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
     assert_eq!(sim.scenario_rng.logical_state(), rng_before);
 }
@@ -2484,8 +2592,13 @@ fn a_waiting_anims_visit_hands_it_out_to_no_one() {
         .unwrap();
     let visit = |sim: &mut Simulation, frame: u32| {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_anim(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         sim.substrate
             .anims
             .take_touched(AnimTouchReader::ExpiryListeners)
@@ -2513,15 +2626,30 @@ fn stock_naweap_a_rate_normalizes_to_six_frames_at_speed_one() {
         .unwrap();
 
     assert_eq!(sim.anim(id).unwrap().runtime.rate_reload, 6);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     sim.session.set_binary_frame_for_test(5);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
     sim.session.set_binary_frame_for_test(6);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
 }
 
@@ -2543,14 +2671,29 @@ fn next_without_preintern_reuses_identity_runs_middle_and_destroy_is_idempotent(
         [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == id
     ));
 
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // guard
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // guard
     sim.session.set_binary_frame_for_test(1);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // frame 1
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // frame 1
     sim.session.set_binary_frame_for_test(2);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // frame 2 -> SECOND in place + Middle
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // frame 2 -> SECOND in place + Middle
     let anim = sim.anim(id).unwrap();
     assert_eq!(sim.interner.resolve(anim.type_id), "SECOND");
     assert_eq!(anim.runtime.current_frame, 0);
@@ -2563,11 +2706,21 @@ fn next_without_preintern_reuses_identity_runs_middle_and_destroy_is_idempotent(
     );
 
     sim.session.set_binary_frame_for_test(3);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // SECOND frame 1 (Next does not restore guard)
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // SECOND frame 1 (Next does not restore guard)
     sim.session.set_binary_frame_for_test(4);
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap(); // SECOND frame 2 -> destroy
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap(); // SECOND frame 2 -> destroy
     sim.destroy_anim(id, &rules);
     assert!(!sim.anim(id).unwrap().runtime.inactive);
     assert!(sim.substrate.pending_delete.contains_object(&id));
@@ -2630,8 +2783,13 @@ fn trailer_without_preintern_is_visited_and_guarded_in_same_live_walk() {
         .unwrap();
 
     sim.for_each_live_object(|sim, id| {
-        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_anim(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
     });
 
     let order = sim.live_object_order_snapshot();
@@ -2687,7 +2845,7 @@ fn owner_expiry_marks_anim_inactive_until_its_next_ai_visit() {
         anim_id,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -3271,7 +3429,7 @@ fn waypoint_cue_flare_scene() -> (Simulation, RuleSet, crate::sim::intern::Inter
 }
 
 fn waypoint_cue_spring_flare(sim: &mut Simulation, rules: &RuleSet) -> AnimId {
-    sim.advance_triggers(rules, None, crate::sim::world::FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut crate::sim::world::FrameEffects::default());
     let anim = sim
         .substrate
         .anims
@@ -3300,14 +3458,19 @@ fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start
     assert_eq!(anim.z_adjust, -300);
     assert!(anim.no_effects());
     assert!(anim.runtime.first_ai_guard);
-    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
+    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id.name_in(&rules)=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
     assert!(sim.fog.is_cell_revealed(player, 10, 10));
     assert!(!sim.fog.is_cell_revealed(player, 20, 20));
     let other = sim.interner.get("Other").unwrap();
     assert!(!sim.fog.is_cell_revealed(other, 10, 10));
     sim.sound_events.clear_for_test();
-    sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.visit_anim(
+        id,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     assert!(!sim.anim(id).unwrap().runtime.first_ai_guard);
     assert!(
         sim.sound_events.is_empty(),
@@ -3362,8 +3525,13 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
         );
         sim.sound_events.clear_for_test();
         let rng = sim.rng_state();
-        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-            .unwrap();
+        sim.visit_anim(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         let anim = sim.anim(id).unwrap();
         if layer == MovementLayer::Ground {
             assert!(anim.runtime.inactive);
@@ -3372,7 +3540,7 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
                 "424358 ends the flare before consuming19C"
             );
             assert!(sim.substrate.pending_delete.contains_object(&id));
-            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id=="EXPLOSIONSHARD")));
+            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id.name_in(&rules)=="EXPLOSIONSHARD")));
             sim.process_pending_delete();
             assert!(sim.anim(id).is_none());
         } else {
@@ -3382,4 +3550,76 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
         }
         assert_eq!(sim.rng_state(), rng);
     }
+}
+
+/// An anim's type finds its ART config through the interner's handles as it
+/// does by name, in another case, and still finds one the map's
+/// `bind_scheduler_anim_assets` adds after the handles were resolved, which
+/// is also the `DropZoneAnim=` the name compare matches.
+#[test]
+fn anim_config_handles_follow_a_config_bound_after_the_resolve() {
+    let mut rules =
+        RuleSet::from_ini(&IniFile::from_str("[General]\nDropZoneAnim=late\n")).unwrap();
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n",
+    )));
+    let mut sim = crate::sim::world::Simulation::new();
+    let boom = sim.interner.intern("Boom");
+    let late = sim.interner.intern("Late");
+    sim.resolve_type_handles(&rules);
+    let by_name = |rules: &RuleSet, name| {
+        rules
+            .art()
+            .anim_runtime_config(name)
+            .map(std::ptr::from_ref)
+    };
+    let by_id = |sim: &crate::sim::world::Simulation, rules: &RuleSet, id| {
+        sim.interner
+            .anim_type_config(id, rules)
+            .map(std::ptr::from_ref)
+    };
+    assert_eq!(by_id(&sim, &rules, boom), by_name(&rules, "BOOM"));
+    assert!(by_id(&sim, &rules, boom).is_some());
+    assert_eq!(by_id(&sim, &rules, late), None);
+
+    // A theater root no AnimType holds gains an unread config at map load.
+    let root = crate::map::source::test_support::TestDirectory::new("late-anim-handle");
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_scheduler_anim_assets(&["LATE".into()], &assets, "TEM", "TEMPERATE");
+    for covered in [false, true] {
+        if covered {
+            sim.interner.cover_types(&rules);
+        }
+        assert!(by_id(&sim, &rules, late).is_some(), "covered: {covered}");
+        assert_eq!(by_id(&sim, &rules, late), by_name(&rules, "LATE"));
+        assert_eq!(by_id(&sim, &rules, boom), by_name(&rules, "BOOM"));
+        let handle = sim.interner.anim_type_config_handle(late, &rules).unwrap();
+        assert!(sim.interner.is_drop_zone_anim(handle, &rules));
+        let boom_handle = sim.interner.anim_type_config_handle(boom, &rules).unwrap();
+        assert!(!sim.interner.is_drop_zone_anim(boom_handle, &rules));
+    }
+}
+
+/// A new ART registry gives a name another slot; the handles resolved from
+/// the old one are not read against it.
+#[test]
+fn anim_config_handles_do_not_outlive_a_replaced_art_registry() {
+    let mut rules = RuleSet::from_ini(&IniFile::from_str("[General]\n")).unwrap();
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n",
+    )));
+    let mut sim = crate::sim::world::Simulation::new();
+    let boom = sim.interner.intern("BOOM");
+    sim.resolve_type_handles(&rules);
+    rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[OTHER]\nRate=1\n[BOOM]\nRate=200\n",
+    )));
+    let config = sim
+        .interner
+        .anim_type_config(boom, &rules)
+        .expect("BOOM keeps a config");
+    assert!(std::ptr::eq(
+        config,
+        rules.art().anim_runtime_config("BOOM").unwrap()
+    ));
 }

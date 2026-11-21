@@ -34,7 +34,11 @@ pub fn values_for_display(
         DigitalInfoType::Health => {
             let mut value = entity.health.current();
             let mut maximum = object.strength;
-            if entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
+            if entity
+                .seldom
+                .disguise
+                .as_ref()
+                .is_some_and(|d| d.is_disguised())
                 && !viewer.is_some_and(|viewer| {
                     sim.house_alliances()
                         .is_allied(sim.interner(), entity.owner(), viewer)
@@ -43,6 +47,7 @@ pub fn values_for_display(
                     .digital_display_health_fake_at_disguise()
                     .unwrap_or(rules.digital_display_globals().health_fake_at_disguise)
                 && let Some(disguise_type) = entity
+                    .seldom
                     .disguise
                     .as_ref()
                     .and_then(|d| d.type_id())
@@ -146,8 +151,8 @@ pub fn values_for_display(
                 return None;
             }
             (
-                entity.rearm_timer.remaining(frame),
-                entity.rearm_timer.duration(),
+                entity.seldom.rearm_timer.remaining(frame),
+                entity.seldom.rearm_timer.duration(),
             )
         }
         DigitalInfoType::Reload => {

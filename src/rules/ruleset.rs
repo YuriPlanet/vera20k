@@ -57,6 +57,7 @@ mod general;
 mod loading;
 mod lookup;
 mod sections;
+mod sound_names;
 
 pub use general::GeneralRules;
 pub(crate) use general::{
@@ -70,6 +71,7 @@ pub use sections::{
     BridgeRules, DetailRules, DifficultyRules, ElevationModel, GarrisonRules, GeneralBuildingTypes,
     ParadropList, PrismSupportRules, ProductionRules, RadiationRules,
 };
+pub use sound_names::{SoundName, SoundNameId, SoundNames};
 
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
@@ -678,6 +680,19 @@ impl TypeWeapons {
     }
 }
 
+/// A `DebrisTypes=` list, a TechnoType's or a warhead's, as the set that
+/// built it resolved its names to `[VoxelAnims]` types
+/// ([`RuleSet::resolve_handles`]): list order kept, `None` for a name no
+/// `[VoxelAnims]` section has, so a death or a hit reads the ids without
+/// hashing a name ([`RuleSet::object_debris_types`],
+/// [`RuleSet::warhead_debris_types`]). Derived: never hashed or serialized.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ResolvedDebris {
+    /// The resolving set's serial; 0 for a list no set resolved.
+    rules_serial: u64,
+    types: Box<[Option<VoxelAnimTypeId>]>,
+}
+
 /// `id` as the uppercase key the type name indexes hold: the name itself
 /// unless it has a lowercase letter. Retail type names are uppercase, so a
 /// lookup by name rarely copies it.
@@ -758,6 +773,9 @@ pub struct RuleSet {
     /// Distinct for every `RuleSet` the process builds, so a cache of this
     /// set's handles can tell it from another set ([`Self::serial`]).
     serial: u64,
+    /// Every sound name the set's fields hold, as the Copy ids sound events
+    /// carry. Kept out of the simulation's interner ([`SoundNames`]).
+    sound_names: SoundNames,
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
@@ -1015,8 +1033,13 @@ pub struct RuleSet {
     pub allied_wall_transparency: bool,
     /// `[ElevationModel]`, InRange's range bonus for a shot fired downhill.
     pub elevation_model: ElevationModel,
-    /// Per-cell radiation-field constants from [Radiation].
+    /// Per-cell radiation-field constants from [Radiation]. `site_warhead` is
+    /// resolved once when the set is built: a write to it afterwards is not
+    /// seen by [`Self::radiation_site_warhead`].
     pub radiation: RadiationRules,
+    /// Derived: the warhead `radiation.site_warhead` names, as
+    /// [`Self::resolve_handles`] resolved it ([`Self::radiation_site_warhead`]).
+    radiation_site_warhead: Option<WarheadHandle>,
     /// Phobos `[ShieldTypes]` catalog, read per Rules pass by the ordered
     /// Process owner. Empty in builds without the capability.
     #[cfg(feature = "phobos")]

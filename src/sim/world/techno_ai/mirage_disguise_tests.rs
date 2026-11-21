@@ -37,7 +37,7 @@ fn disguised(sim: &Simulation) -> bool {
     sim.substrate
         .entities
         .get(1)
-        .and_then(|entity| entity.disguise.as_ref())
+        .and_then(|entity| entity.seldom.disguise.as_ref())
         .is_some_and(|disguise| disguise.is_disguised())
 }
 
@@ -55,7 +55,14 @@ fn an_idle_retail_mirage_retains_its_disguise_without_another_scenario_draw() {
     sim.session.set_binary_frame_for_test(100);
     sim.update_unit_disguise(1, &retail.rules).unwrap();
     assert!(disguised(&sim));
-    let initial = sim.substrate.entities.get(1).unwrap().disguise.clone();
+    let initial = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .seldom
+        .disguise
+        .clone();
     let scenario = sim.scenario_rng.logical_state();
     sim.session.set_binary_frame_for_test(101);
     sim.update_unit_disguise(1, &retail.rules).unwrap();
@@ -64,7 +71,10 @@ fn an_idle_retail_mirage_retains_its_disguise_without_another_scenario_draw() {
         scenario,
         "an already-disguised idle visit must not choose another tree"
     );
-    assert_eq!(sim.substrate.entities.get(1).unwrap().disguise, initial);
+    assert_eq!(
+        sim.substrate.entities.get(1).unwrap().seldom.disguise,
+        initial
+    );
 }
 
 /// Original746A72/746A78 acquire a terrain type and NULL disguise house;
@@ -90,6 +100,7 @@ fn a_disguised_mirage_whose_drive_has_a_destination_drops_its_disguise() {
     let tree = sim.interner.intern("TREE01");
     let entity = sim.substrate.entities.get_mut(1).expect("mirage");
     entity
+        .seldom
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, Some(tree), None);
@@ -288,10 +299,11 @@ fn whole_unit_fixture(
                 signed(&foot["body_facing_words"][0]) as u16,
                 signed(&foot["body_facing_words"][2]) as u32,
             );
-            entity.disguise = Some(crate::sim::cloak_disguise::mirage_tests::state_from_native(
-                &mut fixture.sim,
-                &first["before"],
-            ));
+            entity.seldom.disguise =
+                Some(crate::sim::cloak_disguise::mirage_tests::state_from_native(
+                    &mut fixture.sim,
+                    &first["before"],
+                ));
             for key in ["archive", "target", "nav", "aux"] {
                 assert_eq!(
                     foot[key], "0x0",
@@ -366,7 +378,7 @@ fn whole_unit_fixture(
             "{role}: Limbo"
         );
         assert_eq!(
-            entity.in_logic_vector.is_member(),
+            entity.seldom.in_logic_vector.is_member(),
             before["logic_registered"] != 0,
             "{role}: Logic registration"
         );
@@ -382,8 +394,7 @@ fn whole_unit_fixture(
     );
     fixture.sim.main_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["main"].as_str().unwrap(),
-    )
-    .into();
+    );
     fixture.sim.mapgen_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
         first["rng_before"]["mapgen"].as_str().unwrap(),
     );
@@ -527,7 +538,7 @@ fn native_whole_unit_ai_preserves_foot_then_mirage_rng_order_and_retention() {
         assert_whole_unit_state(&fixture, row, "before");
         fixture
             .sim
-            .advance_live_object_turn(fixture.actor, &rules, ObjectAiCtx::default())
+            .advance_live_object_turn(fixture.actor, &rules, &mut ObjectAiCtx::default())
             .unwrap();
         assert_whole_unit_state(&fixture, row, "after");
     }

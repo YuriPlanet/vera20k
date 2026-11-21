@@ -183,7 +183,7 @@ impl Simulation {
         record: &CommandRecord,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((owner, record)) = self.house_command_record(record) else {
             return false;
@@ -266,7 +266,7 @@ impl Simulation {
             cmd,
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -277,7 +277,7 @@ impl Simulation {
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // A semantic envelope cannot promote an embedded record into an
         // authenticated source. DoList supplies this byte from its raw entry.
@@ -491,7 +491,7 @@ impl Simulation {
                         actor.category().is_foot()
                             && actor.lifecycle.object_alive()
                             && !actor.lifecycle.in_limbo()
-                            && actor.tether.partner().is_none()
+                            && actor.seldom.tether.partner().is_none()
                     });
                 if !admitted {
                     return false;
@@ -581,7 +581,7 @@ impl Simulation {
                     .entities
                     .get(*entity_id)
                     .is_some_and(|entity| {
-                        entity.tether.partner().is_some()
+                        entity.seldom.tether.partner().is_some()
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
@@ -1545,7 +1545,7 @@ impl Simulation {
         command: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         match command {
             Command::LaunchSuperWeapon {
@@ -1785,7 +1785,7 @@ impl Simulation {
         if !destination_is_building {
             return false;
         }
-        receiver.radio_contacts.slot(0) == Some(destination_id)
+        receiver.seldom.radio_contacts.slot(0) == Some(destination_id)
     }
 
     /// TargetClass `0x006E6FF0`: the object an event token names, while it
@@ -1921,7 +1921,7 @@ impl Simulation {
         destination: Option<combat::TargetKind>,
         auxiliary: MegaMissionTarget,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> MegaMissionExecution {
         // A capture after issue does not revoke an event. Event4C7353 queues
         // Move and clears Target before the class applies its own refusal.

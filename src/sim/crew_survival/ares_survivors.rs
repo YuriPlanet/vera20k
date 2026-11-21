@@ -27,7 +27,7 @@ impl Simulation {
         mut point: DriveCoord,
         radius: i32,
         selected: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let direction = self.scenario_rng.next_range_u32_inclusive(0, 7) as usize;
         let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
@@ -70,7 +70,7 @@ impl Simulation {
         mut point: DriveCoord,
         spot: u8,
         selected: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return false;
@@ -191,7 +191,7 @@ impl Simulation {
             }
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.building_entry.clear_occupy_seeks();
+            entity.seldom.building_entry.clear_occupy_seeks();
         }
         if selected {
             self.techno_select(id, UninitContext::new(rules).with_effects(effects));
@@ -206,7 +206,7 @@ impl Simulation {
         id: u64,
         dying: DyingTransport,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.record_the_kill(
             id,
@@ -225,7 +225,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         unit_id: u64,
         dying: DyingTransport,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -246,7 +246,8 @@ impl Simulation {
             .entities
             .get_mut(unit_id)
             .is_some_and(|unit| {
-                unit.ares
+                unit.seldom
+                    .ares
                     .vehicle_driver
                     .begin_survivor_release(dying.ignore_defenses)
             });
@@ -254,8 +255,8 @@ impl Simulation {
             let mut count = crew_rules.pilot_count(i32::from(crewed));
             let captor = self.substrate.entities.get(unit_id).map(|unit| {
                 (
-                    unit.capture_infantry_type_index.get(),
-                    unit.ares.vehicle_driver.captured(),
+                    unit.seldom.capture_infantry_type_index.get(),
+                    unit.seldom.ares.vehicle_driver.captured(),
                 )
             });
             if let Some((index, saved)) = captor.filter(|(index, _)| *index >= 0) {
@@ -264,6 +265,7 @@ impl Simulation {
                     .entities
                     .get_mut(unit_id)
                     .unwrap()
+                    .seldom
                     .capture_infantry_type_index
                     .record(-1);
                 if let Some(kind) =
@@ -301,7 +303,7 @@ impl Simulation {
                                 .substrate
                                 .entities
                                 .get(unit_id)
-                                .and_then(|unit| unit.mind_control.controller())
+                                .and_then(|unit| unit.seldom.mind_control.controller())
                             {
                                 self.with_object_placement_scope(|sim| {
                                     sim.free_unit(controller, unit_id, rules, registry, effects);
@@ -310,9 +312,9 @@ impl Simulation {
                                 self.substrate
                                     .queue_crew_mission(id, super::MissionType::Guard);
                             }
-                            if let Some(sound_id) = kind.leave_transport_sound.clone() {
+                            if let Some(sound_id) = kind.leave_transport_sound.as_deref() {
                                 self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                                    sound_id,
+                                    sound_id: rules.sound_name(sound_id),
                                     coordinate: origin,
                                     flags: 0,
                                 });
@@ -425,7 +427,7 @@ impl Simulation {
                 rules,
                 unit_id,
                 DepartureRoute::DeathEscape,
-                |sim, id| {
+                |sim, id, effects| {
                     let admitted = !dying.ignore_defenses
                         && if chance > 0 {
                             sim.scenario_rng.next_range_u32_inclusive(1, 100) as i32 <= chance

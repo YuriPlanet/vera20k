@@ -126,7 +126,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
             return SleepVisit::Awake;
@@ -467,8 +467,8 @@ impl Simulation {
             && infantry.fear_level() == 0
             && !infantry.is_prone()
             && !infantry.is_psycho()
-            && entity.slave.owner().is_none()
-            && !entity.mega_mission.is_attack_move()
+            && entity.seldom.slave.owner().is_none()
+            && !entity.seldom.mega_mission.is_attack_move()
             && !crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),

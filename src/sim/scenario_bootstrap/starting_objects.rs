@@ -209,14 +209,14 @@ pub(super) fn ares_place_starting_construction_yard(
 ) -> Option<bool> {
     let owner_id = sim.interner.get(owner)?;
     let house = sim.houses.get(&owner_id)?;
-    let country_name = sim.interner.resolve(house.country()?).to_owned();
-    if !rules.country_start_in_multiplayer_with_const(&country_name) {
+    let country_name = sim.interner.resolve(house.country()?);
+    if !rules.country_start_in_multiplayer_with_const(country_name) {
         return None;
     }
     let Some(yard) = crate::sim::ai_buildable::first_buildable_from_array(
         rules,
         rules.build_const_types(),
-        &country_name,
+        country_name,
         house.side_index(),
         sim.session.game_options().super_weapons,
     ) else {
@@ -237,7 +237,7 @@ pub(super) fn ares_place_starting_construction_yard(
         STARTING_MCV_FACING,
         initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ) else {
         return Some(false);
     };
@@ -261,7 +261,7 @@ pub(super) fn ares_place_starting_construction_yard(
             cell,
             rules,
             overlay_registry,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let (rx, ry) = sim.houses[&owner_id].base_origin();
@@ -404,7 +404,7 @@ fn construct_starting_object(
         facing,
         initial_z,
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )?;
     Some((stable_id, category))
 }
@@ -482,7 +482,11 @@ fn unlimbo_starting_object_near_base(
         }
     }
 
-    sim.discard_constructed_limbo(stable_id, rules, crate::sim::world::FrameEffects::default());
+    sim.discard_constructed_limbo(
+        stable_id,
+        rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     None
 }
 
@@ -512,7 +516,7 @@ fn unlimbo_starting_object_at(
         PlacementEvidence::EvaluateMark,
         rules,
         overlay_registry,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .is_some()
 }

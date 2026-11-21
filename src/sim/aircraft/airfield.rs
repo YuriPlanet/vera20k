@@ -142,7 +142,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         let entity = self.substrate.entities.get(id)?;
         let airport_bound = self

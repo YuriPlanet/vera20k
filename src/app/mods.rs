@@ -239,6 +239,16 @@ impl Mods {
     }
 }
 
+/// The mod in `dir` as its `mod.ini` names it: `Name=`, else `folder`, its
+/// folder's name in `Mods`, and `Version=`, empty when it has none.
+pub(crate) fn name_and_version(dir: &Path, folder: &str) -> (String, String) {
+    let info = ModDefinition::read(dir).unwrap_or_default();
+    (
+        info.name.unwrap_or_else(|| folder.to_owned()),
+        info.version.unwrap_or_default(),
+    )
+}
+
 /// `1`, `1.2` or `1.2.3` as three numbers, absent ones 0; anything else,
 /// such as a later scheme this build does not know, is `None`.
 fn version_parts(text: &str) -> Option<[u32; 3]> {

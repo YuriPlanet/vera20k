@@ -26,25 +26,27 @@ use crate::sim::pathfinding::zone_map::ZoneGrid;
 /// BRIDGE_OCCUPANCY_OBJECT_LISTS_GHIDRA_REPORT.md. Held factory objects and
 /// retained attached upgrades have no independent marked footprint. A dying
 /// structure still blocks until the lifecycle owner unmarks it.
-pub(super) fn marked_structure_movement_cells(
-    entity: &GameEntity,
+pub(super) fn marked_structure_movement_cells<'a>(
+    entity: &'a GameEntity,
     interner: &StringInterner,
-    rules: &RuleSet,
-) -> Vec<(u16, u16)> {
-    if entity.category() != EntityCategory::Structure || !entity.lifecycle.cell_marked() {
-        return Vec::new();
-    }
-    let object_type = interner.object_type(entity.type_ref(), rules);
-    let foundation = object_type
-        .map(|object| &object.foundation)
-        .unwrap_or_else(|| entity.type_facts.foundation());
-    let has_bib = object_type.is_some_and(|object| object.bib);
-    let foundation_cells = crate::sim::production::building_base_foundation_cells(
-        entity.position.rx(),
-        entity.position.ry(),
-        foundation,
-    );
-    crate::sim::production::building_movement_blocking_cells(&foundation_cells, has_bib)
+    rules: &'a RuleSet,
+) -> impl Iterator<Item = (u16, u16)> + 'a {
+    let marked = entity.category() == EntityCategory::Structure && entity.lifecycle.cell_marked();
+    marked
+        .then(|| {
+            let object_type = interner.object_type(entity.type_ref(), rules);
+            let foundation = object_type
+                .map(|object| &object.foundation)
+                .unwrap_or_else(|| entity.seldom.type_facts.foundation());
+            let has_bib = object_type.is_some_and(|object| object.bib);
+            crate::sim::production::building_movement_blocking_cells(
+                (entity.position.rx(), entity.position.ry()),
+                foundation,
+                has_bib,
+            )
+        })
+        .into_iter()
+        .flatten()
 }
 
 /// Structure presence over every marked structure. Consumers are
@@ -57,9 +59,7 @@ fn visit_structure_movement_cells(
     mut visit: impl FnMut((u16, u16)),
 ) {
     for entity in entities.values_of_category(EntityCategory::Structure) {
-        for cell in marked_structure_movement_cells(entity, interner, rules) {
-            visit(cell);
-        }
+        marked_structure_movement_cells(entity, interner, rules).for_each(&mut visit);
     }
 }
 

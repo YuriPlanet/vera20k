@@ -191,6 +191,7 @@ mod tests {
     /// A slope file is uploaded whole as 256 px rows, so one past the
     /// device's limit refuses the shapes instead of failing validation.
     #[test]
+    #[ignore = "requires GPU; a slope file one row past the device's texture limit"]
     fn a_slope_file_past_the_device_limit_leaves_the_shapes_out() {
         let gpu = Gpu::new();
         let limit = gpu.device.limits().max_texture_dimension_2d as usize;

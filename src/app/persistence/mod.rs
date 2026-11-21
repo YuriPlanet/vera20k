@@ -359,9 +359,11 @@ impl PreparedLoad {
         self,
         runtime: &mut crate::sim::runtime::SimRuntime,
     ) -> CommittedLoadPresentation {
+        // These fixtures keep no app process cell: the install writes a
+        // stand-in one that nothing reads.
         let (simulation, presentation) = self.into_committed(
             runtime.simulation.effective_shared_cell_dummy(),
-            runtime.simulation.main_rng(),
+            &crate::sim::rng::MainRng::new(0),
         );
         runtime.replace_simulation(simulation);
         presentation
@@ -522,6 +524,7 @@ impl SaveRepository {
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         {
+            // A process-unique serial for staging file names.
             static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let directory = path
                 .parent()
@@ -1232,7 +1235,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(runtime.simulation.session().tick(), tick_before + 1);
@@ -1315,7 +1318,7 @@ mod tests {
                 &[],
                 1,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
         assert_eq!(runtime.simulation.session().tick(), tick + 1);
@@ -1387,7 +1390,7 @@ mod tests {
                     &[],
                     1,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session().tick(), tick + 1);

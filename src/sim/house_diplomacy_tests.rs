@@ -61,7 +61,7 @@ fn set(names: &[&str]) -> BTreeSet<String> {
 }
 
 fn paranoid(sim: &mut Simulation, rules: &RuleSet) {
-    sim.computer_paranoid(rules, None, FrameEffects::default());
+    sim.computer_paranoid(rules, None, &mut FrameEffects::default());
 }
 
 /// Each computer house allies the other and turns on the human. Neutral is
@@ -271,13 +271,26 @@ fn disabling_paranoid_suppresses_human_ally_but_not_skirmish_base_activation() {
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.make_ally(ids[0], ids[1], &rules, None, FrameEffects::default(), false);
+        sim.make_ally(
+            ids[0],
+            ids[1],
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+            false,
+        );
         assert_eq!(allies(&sim, "Player1"), set(&["Player2"]));
         assert!(allies(&sim, "Computer1").is_empty());
 
         sim.spawn_object("NACNST", "Computer1", 12, 12, 0, &rules)
             .expect("spawn the computer construction yard");
-        assert!(sim.trigger_auto_base_building(ids[2], 1, &rules, None, FrameEffects::default()));
+        assert!(sim.trigger_auto_base_building(
+            ids[2],
+            1,
+            &rules,
+            None,
+            &mut FrameEffects::default()
+        ));
         assert_eq!(sim.houses[&ids[2]].base_center(), Some((12, 12)));
         assert_eq!(
             allies(&sim, "Computer1").contains("COMPUTER2"),
@@ -373,9 +386,16 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     let clients = sim.fog_viewers();
     sim.reveal_viewers.begin(clients);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
-    sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        ids[1],
+        ids[2],
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
-    sim.make_enemy(ids[1], ids[2], &rules, FrameEffects::default(), false);
+    sim.make_enemy(ids[1], ids[2], &rules, &mut FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone));
     sim.reveal_viewers.end();
 }
@@ -429,7 +449,14 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     agree(&sim, &ids);
     assert!(allied(&sim, first, late));
 
-    sim.make_ally(second, first, &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        second,
+        first,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
     assert!(
         sim.house_alliances
             .matrix
@@ -439,7 +466,7 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     );
     agree(&sim, &ids);
     assert!(allied(&sim, second, first));
-    sim.make_enemy(first, second, &rules, FrameEffects::default(), false);
+    sim.make_enemy(first, second, &rules, &mut FrameEffects::default(), false);
     agree(&sim, &ids);
     assert!(!allied(&sim, first, second) && !allied(&sim, second, first));
     assert!(allied(&sim, first, late));
@@ -535,14 +562,14 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
         &rules,
     );
     let (first, second) = (ids[1], ids[2]);
-    sim.make_enemy(first, second, &rules, FrameEffects::default(), false);
+    sim.make_enemy(first, second, &rules, &mut FrameEffects::default(), false);
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&1));
     assert_eq!(sim.houses[&first].enemy_house(), None);
     assert!(sim.houses[&second].grudge_scores().is_empty());
 
-    sim.make_enemy(first, second, &rules, FrameEffects::default(), false);
+    sim.make_enemy(first, second, &rules, &mut FrameEffects::default(), false);
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&2));
     assert_eq!(sim.houses[&first].enemy_house(), Some(second));
 }
@@ -590,7 +617,7 @@ fn initial_scope_allies_keep_targets_and_can_ally_without_a_remaining_enemy() {
         Some(TargetKind::Entity(second))
     );
     sim.with_object_placement_scope(|sim| {
-        sim.make_enemy(ids[0], ids[1], &rules, FrameEffects::default(), false)
+        sim.make_enemy(ids[0], ids[1], &rules, &mut FrameEffects::default(), false)
     });
     assert!(allies(&sim, "Computer1").is_empty());
     assert!(allies(&sim, "Computer2").is_empty());
@@ -683,8 +710,22 @@ fn only_a_human_sender_prints_the_alliance_line() {
         ],
     );
     sim.session.set_current_house_for_test(Some(ids[0]));
-    sim.make_ally(ids[0], ids[1], &rules, None, FrameEffects::default(), false);
-    sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        ids[0],
+        ids[1],
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
+    sim.make_ally(
+        ids[1],
+        ids[2],
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
     let lines: Vec<_> = sim
         .sound_events
         .iter()

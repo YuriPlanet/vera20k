@@ -106,7 +106,10 @@ fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Optio
 pub(crate) struct SelectedAnim {
     pub name: InternedId,
     /// Only the Phobos Bullet tail reads this.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "phobos"),
+        expect(dead_code, reason = "the Phobos tail reads it")
+    )]
     pub splashed: bool,
 }
 
@@ -400,6 +403,7 @@ pub(crate) fn bullet_effects(
         && let Some(source) = world.substrate.entities.get_mut(source_id)
     {
         source
+            .seldom
             .wh_anim_remaining_creation_interval
             .interval_allows(interval)
     } else {
@@ -1579,6 +1583,7 @@ CreateUnit.Owner=special
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .wh_anim_remaining_creation_interval
                 .remaining(),
             2

@@ -5,6 +5,7 @@
 use super::*;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, SpriteAtlas};
 use crate::render::tactical_compat::welding_tests as native;
 use crate::rules::ruleset::DetailRules;
@@ -97,7 +98,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         .iter()
         .find(|row| row["input"]["name"] == "unsigned_threshold_wrap")
         .unwrap();
-    let has = |parents: &[PlannedObjectInstance], id| {
+    let has = |parents: &[OwnedPlannedObject], id| {
         parents.iter().any(|parent| {
             parent.parent.id == id && (parent.body_draw.is_some() || !parent.pieces.is_empty())
         })
@@ -132,7 +133,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         // remains between System and slot; here the FPS gate rejects it first.
         let atlas = SpriteAtlas::from_test_entries(entries);
         let before = (sim.state_hash(), sim.rng_state());
-        let mut prepared = Vec::new();
+        let mut prepared = PlannedObjects::default();
         let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
         let building = frame.object(plant).unwrap();
         emit_building_anims(
@@ -169,6 +170,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             0,
             2,
         );
+        let prepared = prepared.into_owned();
         // The shared body/shadow emitter retains an empty parent when neither
         // source frame is available. That parent still reaches admission.
         assert_eq!(prepared.len(), 1);
@@ -185,7 +187,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         });
         detail.throttle_tail(0);
         let detail = RefCell::new(detail);
-        let mut parents = Vec::new();
+        let mut parents = PlannedObjects::default();
         build_display_effect_instances(
             &DisplayEffectInputs {
                 sim: &sim,
@@ -210,11 +212,9 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             },
             &mut parents,
             &order,
-            prepared
-                .into_iter()
-                .map(|parent| (parent.parent.id, parent))
-                .collect(),
+            prepared.into(),
         );
+        let parents = parents.into_owned();
         assert_eq!(
             has(&parents, system),
             control["draws"][0]["performance_passed"]

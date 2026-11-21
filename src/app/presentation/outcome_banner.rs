@@ -486,7 +486,7 @@ mod tests {
         assert_eq!(sim_outcome(&sim), Some(HouseOutcomeKind::Victory));
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime
-            .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(!runtime.simulation.houses()[&owner].has_won());
         assert_eq!(

@@ -88,7 +88,7 @@ fn first_process_publishes_raw_head_and_matching_progress_for_drive_and_ship() {
             crate::sim::components::NavTargetRef::cell(11, 8),
             &rules,
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(committed_track_head(sim.substrate.entities.get(1).unwrap()).is_none());
         sim.substrate.occupancy =

@@ -944,7 +944,7 @@ impl Simulation {
                     continue;
                 };
                 let previous = path.nodes[(index + path.nodes.len() - 1) % path.nodes.len()];
-                if previous != *path.nodes.last().unwrap()
+                if path.nodes.last() != Some(&previous)
                     && let Some(source) = self.planning.nodes[&previous]
                         .order(actor)
                         .and_then(record_coord)
@@ -970,8 +970,11 @@ impl Simulation {
                     }
                 }
                 if path.loop_start == Some(index) {
-                    let source = self.planning.nodes[path.nodes.last().unwrap()]
-                        .order(actor)
+                    let source = path
+                        .nodes
+                        .last()
+                        .and_then(|last| self.planning.nodes.get(last))
+                        .and_then(|node| node.order(actor))
                         .and_then(record_coord);
                     if let Some(source) = source {
                         if let Some(segment) = &mut loop_segment {
@@ -1029,7 +1032,10 @@ impl Simulation {
             let Some(owner) = self.planning_actor_house(actor_id) else {
                 continue;
             };
-            let entity = self.substrate.entities.get(actor_id).unwrap();
+            // `visible` above admitted only a live actor.
+            let Some(entity) = self.substrate.entities.get(actor_id) else {
+                continue;
+            };
             let actor_coord = crate::sim::movement::ground_pose::object_get_coords(
                 entity,
                 self.resolved_terrain.as_ref(),
@@ -1057,24 +1063,27 @@ impl Simulation {
                     owner,
                     bright: false,
                 });
-            let (has_mega_target, mega_target) = entity.mega_mission.planning_draw_target();
+            let (has_mega_target, mega_target) = entity.seldom.mega_mission.planning_draw_target();
             let in_limbo = entity.lifecycle.in_limbo();
             let marker_only = if in_limbo {
                 current_leg.as_ref().map(|leg| leg.target)
             } else {
                 None
             };
-            let mega_leg = (!in_limbo && has_mega_target && current_leg.is_some())
-                .then(|| mega_target.and_then(|target| self.planning_mega_target_coords(target)))
-                .flatten()
-                .map(|target| PlanningDrawSegment {
-                    source: current_leg.as_ref().unwrap().target,
-                    target,
-                    owner,
-                    bright: false,
+            let mega_leg = current_leg
+                .as_ref()
+                .filter(|_| !in_limbo && has_mega_target)
+                .and_then(|leg| {
+                    let target = self.planning_mega_target_coords(mega_target?)?;
+                    Some(PlanningDrawSegment {
+                        source: leg.target,
+                        target,
+                        owner,
+                        bright: false,
+                    })
                 });
             let planned_source = current_leg.as_ref().map_or(actor_coord, |leg| leg.target);
-            let current_badge = if entity.mega_mission.is_attack_move() && !has_mega_target {
+            let current_badge = if entity.seldom.mega_mission.is_attack_move() && !has_mega_target {
                 Some(PlanningBadgeKind::AttackMove)
             } else if mission == Some(MissionType::AreaGuard) {
                 Some(PlanningBadgeKind::AreaGuard)
@@ -1349,7 +1358,7 @@ impl Simulation {
     pub(super) fn planning_select_tail_node(
         &mut self,
         actor: u64,
-        context: super::UninitContext<'_>,
+        mut context: super::UninitContext<'_>,
     ) {
         if self.planning.select_expanding {
             return;
@@ -1361,9 +1370,9 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(member)
-                .is_some_and(|entity| entity.selection.is_selected());
+                .is_some_and(|entity| entity.seldom.selection.is_selected());
             if !selected {
-                self.techno_select(member, context);
+                self.techno_select(member, context.reborrow());
             }
         }
         self.planning.select_expanding = false;
@@ -1575,8 +1584,10 @@ impl Simulation {
     /// occurrences backwards. Both predicate and removal use the FIRST
     /// matching actor member, even when a path repeats the shared node.
     pub(super) fn prune_invalid_planning_nodes(&mut self) {
-        let actors = self.planning.token_order.clone();
-        for actor in actors {
+        // Walked by index: the prune changes paths and node members, never
+        // the token order.
+        for slot in 0..self.planning.token_order.len() {
+            let actor = self.planning.token_order[slot];
             let Some(path) = self.planning.paths.get(&actor) else {
                 continue;
             };
@@ -1617,7 +1628,7 @@ impl Simulation {
                 self.planning
                     .paths
                     .get_mut(&actor)
-                    .unwrap()
+                    .expect("the path walked above is still the actor's")
                     .remove_occurrence(index);
                 self.planning.remove_member(node, actor);
             }
@@ -1960,7 +1971,7 @@ impl Simulation {
             self.planning
                 .nodes
                 .get_mut(&id)
-                .unwrap()
+                .expect("the node found or inserted above")
                 .insert_order(member, member_record);
             let path = self
                 .planning
@@ -2031,7 +2042,11 @@ impl Simulation {
                 return false;
             }
             self.planning.register_token(actor);
-            let path = self.planning.paths.get_mut(&actor).unwrap();
+            let path = self
+                .planning
+                .paths
+                .get_mut(&actor)
+                .expect("the actor's path read above");
             path.loop_start = Some(index);
             path.loop_changed = true;
             self.planning_promote_patrol(actor, rules);
@@ -2049,7 +2064,14 @@ impl Simulation {
         let Some(source) = self.planning.paths.get(&source_actor).cloned() else {
             return false;
         };
-        let index = source.nodes.iter().position(|id| *id == node_id).unwrap();
+        // A node's live member holds the node on its path: the planner adds
+        // both together, and a restored save is refused otherwise
+        // (`PlanningState::restore_index`).
+        let index = source
+            .nodes
+            .iter()
+            .position(|id| *id == node_id)
+            .expect("a node's member has the node on its path");
         let mut suffix = source.nodes[index..].to_vec();
         if let Some(start) = source.loop_start
             && index >= start
@@ -2067,7 +2089,11 @@ impl Simulation {
         }
         for node_id in &suffix {
             self.planning.unindex_node(*node_id);
-            let node = self.planning.nodes.get_mut(node_id).unwrap();
+            let node = self
+                .planning
+                .nodes
+                .get_mut(node_id)
+                .expect("every node on a path exists (restore_index)");
             //639800 copies each suffix member for the selected source path,
             // not the node's unrelated first member.634290 finds its first.
             // PlanningTokenClass::CopyPathRangeToTechno 0x006367B0 copies
@@ -2145,7 +2171,11 @@ impl Simulation {
             return;
         }
         for id in &path.nodes[start..] {
-            let node = self.planning.nodes.get_mut(id).unwrap();
+            let node = self
+                .planning
+                .nodes
+                .get_mut(id)
+                .expect("every node on a path exists (restore_index)");
             for orders in node.orders.values_mut() {
                 for order in orders {
                     if order.record.payload()[MEGAMISSION_ACTION_OFFSET] == 2 {
@@ -2242,7 +2272,11 @@ impl Simulation {
             // Retired seats and lost actor scope cannot start a mission or
             // stage a flag-2 event. Remove this occurrence permanently so a
             // loop cannot keep retrying it and later admitted orders can run.
-            let path = self.planning.paths.get_mut(&actor).unwrap();
+            let path = self
+                .planning
+                .paths
+                .get_mut(&actor)
+                .expect("the actor's path read above");
             path.remove_occurrence(0);
             if path.nodes.is_empty() {
                 self.release_planning_charge(actor);
@@ -2263,7 +2297,12 @@ impl Simulation {
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         record.payload_mut()[MEGAMISSION_PLANNING_OFFSET] = 2;
-        let path = self.planning.paths.get_mut(&actor).unwrap();
+        // Queue_Mission above changes only the actor's mission.
+        let path = self
+            .planning
+            .paths
+            .get_mut(&actor)
+            .expect("the actor's path read above");
         let keep_member = path.loop_start == Some(0);
         path.consume();
         path.current = Some(record.clone());

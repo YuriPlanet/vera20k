@@ -18,7 +18,10 @@ use crate::util::time::{Duration, Instant};
 use crate::rules::radar_event_config::RadarEventConfig;
 use crate::sim::radar::RadarEventType;
 use crate::sim::snapshot::saved_local_view::{SavedRadarEvent, SavedRadarEvents};
-use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Ordering as Ordering, MaskedX87Value, NativeF32Bits,
+    NativeF64Bits,
+};
 
 use super::geometry::native_event_initial_radius;
 
@@ -147,6 +150,11 @@ impl ClientRadarEvent {
         }
     }
 
+    /// `TickRadarEvent @ 0x0065FE00`. Its doubles come from `[General]`
+    /// (`RadarEventSpeed=`, `RadarEventRotationSpeed=`, `RadarEventColorSpeed=`),
+    /// which a rules file or map can set to an infinity or to a value whose
+    /// sums overflow binary32, so the arithmetic is the masked x87 and each
+    /// compare follows the flag test it is read with.
     fn tick(&mut self, current_frame: u64, config: &RadarEventConfig) {
         if !self.needs_draw {
             return;
@@ -160,34 +168,35 @@ impl ClientRadarEvent {
             self.needs_draw = false;
         }
 
-        let radius = X87Chop53::sub(
+        let radius = M::sub(
             load_f32(self.radius),
-            load_native_f32(config.native_scalars.speed),
+            M::load_f32(config.native_scalars.speed),
         );
-        let min_radius_x87 = X87Chop53::load_i32(config.min_radius);
-        self.radius = store_f32(
-            if X87Chop53::compare(radius, min_radius_x87) == X87Ordering::Greater {
-                radius
-            } else {
-                min_radius_x87
-            },
-        );
+        let min_radius_x87 = M::load_i32(config.min_radius);
+        // 0x0065FE5B TEST AH,0x41: the shrunk radius stays only when Greater.
+        self.radius = store_f32(if M::compare(radius, min_radius_x87) == Ordering::Greater {
+            radius
+        } else {
+            min_radius_x87
+        });
         let snap_offset = native_rotation_remainder(self.rotation);
         if self.expanding {
-            let radius_difference = X87Chop53::sub(load_f32(self.radius), min_radius_x87);
-            let epsilon = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b))
-                .expect("native 0.01 is finite");
+            let radius_difference = M::sub(load_f32(self.radius), min_radius_x87);
+            let epsilon = M::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b));
             let absolute_difference =
-                if X87Chop53::compare(radius_difference, X87Chop53::load_i32(0))
-                    == X87Ordering::Less
-                {
-                    X87Chop53::neg(radius_difference)
+                if M::compare(radius_difference, M::load_i32(0)) == Ordering::Less {
+                    M::neg(radius_difference)
                 } else {
                     radius_difference
                 };
-            if X87Chop53::compare(absolute_difference, epsilon) != X87Ordering::Less {
+            // 0x0065FEB4 TEST AH,0x1: only Less or Unordered reaches the snap.
+            if !less_or_unordered(M::compare(absolute_difference, epsilon)) {
                 self.rotation = native_add_stored_f32(self.rotation, self.rotation_speed);
-            } else if snap_offset < self.rotation_speed {
+            } else if less_or_unordered(M::compare(
+                load_f32(snap_offset),
+                load_f32(self.rotation_speed),
+            )) {
+                // 0x0065FEC8 TEST AH,0x1.
                 self.rotation = native_add_stored_f32(self.rotation, snap_offset);
                 self.expanding = false;
                 self.phase_started_frame = Some(current_frame);
@@ -199,21 +208,33 @@ impl ClientRadarEvent {
                 );
             }
         }
-        let tau = X87Chop53::load_f64(NativeF64Bits::from_bits(0x4019_21fb_5444_2d18))
-            .expect("native two-pi is finite");
+        let tau = M::load_f64(NativeF64Bits::from_bits(0x4019_21fb_5444_2d18));
         let rotation = load_f32(self.rotation);
-        if X87Chop53::compare(rotation, tau) == X87Ordering::Greater {
-            self.rotation = store_f32(X87Chop53::sub(rotation, tau));
+        // 0x0065FF75 TEST AH,0x41: a turn comes off only when Greater.
+        if M::compare(rotation, tau) == Ordering::Greater {
+            self.rotation = store_f32(M::sub(rotation, tau));
         }
         self.tick_fade();
     }
 
+    /// `0x0065FF86..0x0065FFE7`: a fade below 0 (or unordered) bounces only
+    /// while its speed is below 0 (or unordered); one above 1 bounces only
+    /// while its speed is above 0.
+    ///
+    /// RESIDUAL: native compares the register sum before it stores it; this
+    /// compares the stored f32, as it always did. A fade that rounds to
+    /// exactly 0 or 1 on the store bounces one tick later. Not visible.
     fn tick_fade(&mut self) {
         self.fade = native_add_stored_f32(self.fade, self.fade_speed);
-        if self.fade < 0.0 && self.fade_speed < 0.0 {
+        let compare = |value: f32, with: f32| M::compare(load_f32(value), load_f32(with));
+        if less_or_unordered(compare(self.fade, 0.0))
+            && less_or_unordered(compare(self.fade_speed, 0.0))
+        {
             self.fade_speed = -self.fade_speed;
             self.fade = 0.0;
-        } else if self.fade > 1.0 && self.fade_speed > 0.0 {
+        } else if compare(self.fade, 1.0) == Ordering::Greater
+            && compare(self.fade_speed, 0.0) == Ordering::Greater
+        {
             self.fade_speed = -self.fade_speed;
             self.fade = 1.0;
         }
@@ -240,64 +261,52 @@ impl ClientRadarEvent {
     }
 }
 
-fn load_f32(value: f32) -> crate::util::native_x87::X87Value {
-    X87Chop53::load_f32(NativeF32Bits::from_bits(value.to_bits()))
-        .expect("radar-event state is finite")
+/// `TEST AH,0x1` after an FCOM: C0 is set for Less and for Unordered.
+fn less_or_unordered(ordering: Ordering) -> bool {
+    matches!(ordering, Ordering::Less | Ordering::Unordered)
 }
 
-fn load_native_f32(value: NativeF32Bits) -> crate::util::native_x87::X87Value {
-    X87Chop53::load_f32(value).expect("radar-event rule scalar is finite")
+fn load_f32(value: f32) -> MaskedX87Value {
+    M::load_f32(NativeF32Bits::from_bits(value.to_bits()))
 }
 
-fn store_f32(value: crate::util::native_x87::X87Value) -> f32 {
-    f32::from_bits(
-        X87Chop53::store_f32(value)
-            .expect("radar-event state remains finite f32")
-            .bits(),
-    )
+/// FST/FSTP float with exceptions masked: an overflow stores the largest
+/// finite binary32 under chop, an infinity or NaN stores itself.
+fn store_f32(value: MaskedX87Value) -> f32 {
+    f32::from_bits(M::store_f32_masked_chop(value).bits())
 }
 
 fn native_add_stored_f32(lhs: f32, rhs: f32) -> f32 {
-    store_f32(X87Chop53::add(load_f32(lhs), load_f32(rhs)))
+    store_f32(M::add(load_f32(lhs), load_f32(rhs)))
 }
 
 fn native_rotation_remainder(rotation: f32) -> f32 {
     // `TickRadarEvent @ 0x0065FE69..0x0065FE98`: x87 computes
-    // `(angle + pi/4) - trunc((angle + pi/4) * 2/pi) * pi/2`, then stores
-    // the remainder to f32 before comparing it with the f32 rotation speed.
-    let quarter_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fe9_21fb_5444_2d18))
-        .expect("native pi/4 is finite");
-    let two_over_pi = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fe4_5f30_6dc9_c883))
-        .expect("native two-over-pi is finite");
-    let half_turn = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3ff9_21fb_5444_2d18))
-        .expect("native pi/2 is finite");
-    let shifted = X87Chop53::add(load_f32(rotation), quarter_turn);
-    let turns = X87Chop53::ftol_i64(X87Chop53::mul(shifted, two_over_pi))
-        .expect("radar-event rotation quotient fits i64") as i32;
-    store_f32(X87Chop53::sub(
-        shifted,
-        X87Chop53::mul(X87Chop53::load_i32(turns), half_turn),
-    ))
+    // `(angle + pi/4) - trunc((angle + pi/4) * 2/pi) * pi/2` (the truncation
+    // through `0x007C5F00`, which keeps the low dword of its qword), then
+    // stores the remainder to f32 before comparing it with the f32 rotation
+    // speed.
+    let quarter_turn = M::load_f64(NativeF64Bits::from_bits(0x3fe9_21fb_5444_2d18));
+    let two_over_pi = M::load_f64(NativeF64Bits::from_bits(0x3fe4_5f30_6dc9_c883));
+    let half_turn = M::load_f64(NativeF64Bits::from_bits(0x3ff9_21fb_5444_2d18));
+    let shifted = M::add(load_f32(rotation), quarter_turn);
+    let turns = M::ftol_i32_low_masked(M::mul(shifted, two_over_pi));
+    store_f32(M::sub(shifted, M::mul(M::load_i32(turns), half_turn)))
 }
 
 fn native_decelerated_rotation_speed(current: f32, base: NativeF32Bits) -> f32 {
     // `0x0065FF23..0x0065FF58` keeps the floor extended for the compare but
-    // rounds the subtraction to the native f32 local before selecting.
-    let base = load_native_f32(base);
-    let floor = X87Chop53::mul(base, load_f32(f32::from_bits(0x3eaa_aaab)));
-    let step = X87Chop53::mul(base, load_f32(f32::from_bits(0x3ca3_d70a)));
-    let decelerated = X87Chop53::load_f32(
-        X87Chop53::store_f32(X87Chop53::sub(load_f32(current), step))
-            .expect("decelerated rotation speed remains finite"),
-    )
-    .expect("stored rotation speed reloads");
-    store_f32(
-        if X87Chop53::compare(floor, decelerated) == X87Ordering::Greater {
-            floor
-        } else {
-            decelerated
-        },
-    )
+    // rounds the subtraction to the native f32 local before selecting;
+    // TEST AH,0x41 keeps the floor only when it is Greater.
+    let base = M::load_f32(base);
+    let floor = M::mul(base, load_f32(f32::from_bits(0x3eaa_aaab)));
+    let step = M::mul(base, load_f32(f32::from_bits(0x3ca3_d70a)));
+    let decelerated = load_f32(store_f32(M::sub(load_f32(current), step)));
+    store_f32(if M::compare(floor, decelerated) == Ordering::Greater {
+        floor
+    } else {
+        decelerated
+    })
 }
 
 /// The live event array plus the independent eight-cell review ring from

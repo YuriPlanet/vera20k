@@ -265,7 +265,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             supplied(case),
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(
             mirrored_state(direct.substrate.entities.get(UNIT).unwrap()),
@@ -292,7 +292,7 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             y: y * 256 + 128,
             z: 312,
         });
-        entity.radio_contacts.set_slot(0, 2);
+        entity.seldom.radio_contacts.set_slot(0, 2);
         let current = match selector {
             67 => 0x2000,
             68 => 0x6000,
@@ -318,14 +318,14 @@ fn bunker_dispatch_matches_separate_native_force_then_owner_speed_write() {
             runtime.set_state_for_test(BunkerState::TurnToBuilding);
             runtime
         });
-        building.radio_contacts.set_slot(0, UNIT);
+        building.seldom.radio_contacts.set_slot(0, UNIT);
         sim.substrate.entities.insert(building);
         update_bunker(
             &mut sim,
             &rules,
             None,
             2,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(UNIT).unwrap();
         assert_eq!(

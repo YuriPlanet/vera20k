@@ -206,7 +206,10 @@ impl MusicPlayer {
             .ok()?;
         #[cfg(test)]
         let device = MusicOutput::Device(device);
-        #[allow(unused_mut)]
+        #[cfg_attr(
+            all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+            expect(unused_mut, reason = "the browser build sets no output health")
+        )]
         let mut player = Self::with_output(device);
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         {

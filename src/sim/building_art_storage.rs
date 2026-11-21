@@ -341,7 +341,7 @@ mod tests {
                         true,
                         rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 } else {
                     sim.update_building_storage_anims(id, rules);

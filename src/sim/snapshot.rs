@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 mod object_references;
+mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
 pub mod saved_local_view;
 #[path = "snapshot/scenario_resources.rs"]
@@ -152,10 +153,6 @@ impl SavedSidebarOrder {
         self
     }
 
-    pub fn flash(&self) -> (&[Vec<i32>; 4], i32) {
-        (&self.flash_deadlines, self.redraw_until)
-    }
-
     pub fn with_requests(mut self, states: [Vec<u8>; 4]) -> Self {
         self.request_states = states;
         self
@@ -217,9 +214,36 @@ impl SavedSidebarOrder {
         &self.strips
     }
 
-    pub fn into_parts(self) -> (InternedId, [Vec<SavedCameoId>; 4]) {
-        (self.owner, self.strips)
+    /// Hands the loader every part by value, so it validates and installs the
+    /// strips without copying them.
+    pub fn into_parts(self) -> SavedSidebarOrderParts {
+        SavedSidebarOrderParts {
+            owner: self.owner,
+            strips: self.strips,
+            flash_deadlines: self.flash_deadlines,
+            redraw_until: self.redraw_until,
+            request_states: self.request_states,
+            factory_links: self.factory_links,
+            prediction_categories: self.prediction_categories,
+            active_tab: self.active_tab,
+            #[cfg(feature = "phobos")]
+            sw_sidebar_expanded: self.sw_sidebar_expanded,
+        }
     }
+}
+
+/// [`SavedSidebarOrder`] taken apart by [`SavedSidebarOrder::into_parts`].
+pub struct SavedSidebarOrderParts {
+    pub owner: InternedId,
+    pub strips: [Vec<SavedCameoId>; 4],
+    pub flash_deadlines: [Vec<i32>; 4],
+    pub redraw_until: i32,
+    pub request_states: [Vec<u8>; 4],
+    pub factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
+    pub prediction_categories: Vec<crate::sim::production::ProductionCategory>,
+    pub active_tab: u8,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_expanded: bool,
 }
 
 /// TacticalSave6DBE00 writes the raw Tactical object; Load6DBD20 retains its
@@ -536,7 +560,8 @@ pub enum SnapshotRestoreError {
     #[error("saved Terrain {object_id} references unresolved type {type_name}")]
     MissingTerrainType { object_id: u64, type_name: String },
     #[error(
-        "saved {registry} {object_id} field {field} names interned id {id}, which the saved interner does not hold"
+        "this save is damaged and cannot be loaded: its saved {registry} {object_id} field {field} \
+         names interned id {id}, which the save's own name table does not hold"
     )]
     UnknownInternedId {
         registry: &'static str,
@@ -544,6 +569,8 @@ pub enum SnapshotRestoreError {
         field: &'static str,
         id: u32,
     },
+    #[error(transparent)]
+    UnknownSavedId(#[from] saved_ids::SavedIdError),
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
@@ -571,6 +598,8 @@ pub enum SnapshotRestoreError {
         registry: &'static str,
         identity: u64,
     },
+    #[error("this save is damaged and cannot be loaded: {reason}")]
+    InvalidTeamState { reason: &'static str },
     #[error("restored trigger runtime is inconsistent: {reason}")]
     InvalidTriggerRuntime { reason: String },
     #[error(
@@ -640,10 +669,10 @@ pub struct SnapshotMapRestoreOutput {
 }
 
 /// Retail asset admission on restored live cells, before derived map publication.
-/// The callback can advance Main without obtaining seed/replacement authority.
+/// The callback draws the candidate's Main and nothing else of it.
 pub type SnapshotTerrainAssetPreparation<'a> = dyn FnMut(
         &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
-        crate::sim::rng::MainRngDraws,
+        &mut crate::sim::rng::SimRng,
         i32,
     ) -> Result<(), String>
     + 'a;
@@ -871,6 +900,10 @@ impl GameSnapshot {
         let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
         simulation.validate_saved_interned_ids()?;
+        // The save's other parts name ids of the same interner.
+        let interned = simulation.interner.len();
+        saved_ids::check_saved_interned_ids(&self.sidebar_order, interned)?;
+        saved_ids::check_saved_interned_ids(&self.continuation, interned)?;
         simulation.retain_process_state_for_load(process);
         let retain_continuation = simulation.retains_snapshot_continuation();
         if retain_continuation != self.continuation.is_some() {

@@ -293,7 +293,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
         init(&mut sim, &map);
         sim.attach_object_trigger_tag(first, Some("TAG"));
         sim.attach_object_trigger_tag(second, Some("OTHER"));
-        sim.advance_triggers(&rules, None, super::super::FrameEffects::default());
+        sim.advance_triggers(&rules, None, &mut super::super::FrameEffects::default());
         assert_eq!(sim.substrate.spotlights.get(a).unwrap().mode, mode);
         assert_eq!(sim.substrate.spotlights.get(b).unwrap().mode, 1);
     }
@@ -360,7 +360,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
         sim.object_ai_visit_one(
             id,
             Some(&rules),
-            super::super::techno_ai::ObjectAiCtx::default(),
+            &mut super::super::techno_ai::ObjectAiCtx::default(),
         );
         assert_eq!(
             sim.trigger_local_is_set_for_test(0),

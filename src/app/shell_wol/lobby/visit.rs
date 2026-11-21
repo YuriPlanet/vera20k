@@ -11,7 +11,7 @@ use crate::ui::wol_lobby::*;
 use super::{
     LobbyVisit, Step, WolJoined, admit_row, current_channel, in_setup_channel, leave_finished,
     lobby, lobby_mut, message_line, quick_match_runner, refill_players, request, request_games,
-    request_listed, sort_lobby,
+    request_listed, sort_lobby, switching_room,
 };
 
 /// VERA: the room's Lobby (docs/lobby-protocol.md "Visiting the lobby"):
@@ -148,6 +148,13 @@ pub(in crate::app::shell_wol) fn visit_ends(state: &mut AppState) -> bool {
         return false;
     }
     runner.ui.set_visiting(false);
+    if matches!(runner.step, Step::SwitchingRoom { .. }) {
+        // The original room started before the destination admitted us.
+        runner.step = Step::Ready;
+        runner.pending = None;
+        runner.wait = None;
+        runner.message = None;
+    }
     runner.shown = false;
     runner.covered = false;
     refill_players(state);
@@ -178,9 +185,8 @@ pub(super) fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
     Some(visit)
 }
 
-/// The visitor's room was left: for another game they join from the lobby
-/// page (the leave before that join, which ended the visit too), or because
-/// it closed, which leaves them in the lobby.
+/// The visitor's room ended or the service committed their switch to
+/// another one. Keep the pending destination until its joined event.
 pub(super) fn visit_room_left(state: &mut AppState) {
     if lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. })) {
         take_visit(state);
@@ -190,10 +196,14 @@ pub(super) fn visit_room_left(state: &mut AppState) {
     let room = current_channel(state)
         .map(|room| room.name)
         .unwrap_or_default();
-    visit_settles(
-        state,
-        crate::i18n::tr_fill("VERA:VisitedRoomClosed", &[("room", &room)]),
-    );
+    // A committed switch and an independent room closure both emit
+    // channel_left. Until the destination answers, only the departure is known.
+    let key = if switching_room(state) {
+        "VERA:NoLongerInRoom"
+    } else {
+        "VERA:VisitedRoomClosed"
+    };
+    visit_settles(state, crate::i18n::tr_fill(key, &[("room", &room)]));
 }
 
 /// The visitor's room is gone for them, kicked or closed: the lobby made

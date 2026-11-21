@@ -18,6 +18,9 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
+    /// The external launch's `ExpectedRulesDigest` refused it: this game's
+    /// rules parts, which the launch report names.
+    pub(crate) external_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     /// The external launch's or online lobby match's local result, first
     /// decided wins (docs/spawn.md); see `App::record_match_result`.
     pub(crate) match_result: Option<crate::app::cncnet::ExternalMatchResult>,
@@ -62,6 +65,8 @@ pub(crate) struct FrontendState {
     /// its press/hover state is mirrored back into the per-shell structs above for
     /// the render path (substrate Slice 2).
     pub(crate) shell_controller: crate::ui::shell::controller::DialogController,
+    /// Built at startup, dropped while a match runs and built again for the
+    /// first shell screen after it (`App::ensure_main_menu_shell_chrome`).
     pub(crate) main_menu_shell_chrome:
         Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas>,
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
@@ -279,6 +284,9 @@ pub(crate) struct FrontendState {
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The language files the String Keys reload last saw
+    /// (`App::poll_language_files`).
+    pub(crate) language_files: crate::i18n::LanguageFileWatch,
     /// The mod this run reads on top of the game folder (`app::mods`).
     pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).

@@ -55,7 +55,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, kind: i32) -> bool {
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -147,7 +147,7 @@ fn counted_trigger_dispatches_both_strikes_then_continues() {
     );
     sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
-    sim.advance_triggers(&rules, None, FrameEffects::default());
+    sim.advance_triggers(&rules, None, &mut FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(sim.projectiles.iter().count(), 1);
     let entity = sim.entities().get(victim).unwrap();

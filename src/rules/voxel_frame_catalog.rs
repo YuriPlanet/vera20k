@@ -58,7 +58,7 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
         variants.push(unloading_type.to_string());
     }
 
-    if object.is_some_and(|object| object.no_spawn_alt) {
+    if object.is_some_and(ObjectType::no_spawn_alt) {
         // Native stores the `%sWO` pair in the same AuxVoxel slot used by
         // turrets. Stock NoSpawnAlt types therefore render it as one
         // composite body and cannot also own a turret. Ares gives the pair

@@ -74,7 +74,7 @@ pub(crate) fn factory_ai(
     rules: &RuleSet,
     building: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(owner) = sim.substrate.entities.get(building).map(|b| b.owner()) else {
         return;
@@ -124,7 +124,7 @@ fn exit_finished_object(
     building: u64,
     owner: InternedId,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(product) = sim
         .production
@@ -233,7 +233,7 @@ fn abandon_stopped_factory(
     rules: &RuleSet,
     building: u64,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !placement_wait_over(sim, building) {
         return;
@@ -262,7 +262,7 @@ fn start_factory(
     building: u64,
     owner: InternedId,
     factory_rtti: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // The producing building's `Naval=` decides which vehicle choice
     // `Suggest_New_Object` reads (NPSE `0xC2F130`), so resolve it first.
@@ -511,7 +511,7 @@ pub(crate) fn detach_all(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(factory) = sim.production.factories().building_factory(building) else {
         return;

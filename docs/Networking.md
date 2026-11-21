@@ -35,6 +35,14 @@ support the username form. [Account protocol](lobby-protocol.md#accounts)
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
+A slow map upload or download can stay in flight while a host changes settings
+and guests receive room events. Changing the selected map discards its queued
+work. Desktop games use a separate thread to verify upload bytes, read the map
+cache and install downloaded files. Browser games can poll the room during a map
+fetch. Local file processing shares the browser thread. Both apply upload
+acknowledgments against the current event cursor.
+The map and lobby messages are unchanged. Older clients in a compatible room, or
+a client rollback, keep their previous scheduling and can pause on a slow chunk.
 A room's map name is a logical name (`map::source::is_logical_name`): a game refuses one
 with a drive, a root, a `.` or `..` part, or a part Windows reads as a device, such as
 `CON` or `COM1`. Refusing the device part changes no packets: an older build still admits
@@ -227,6 +235,11 @@ that; gamemd's lobby asked every 30 (`SetTimer(0, 30000)`). Refresh still asks a
 once, and the lobbies list keeps its 53 seconds. A lobby that stops answering the list
 says so once until a list arrives again. No request or reply changes: an older
 game keeps asking every 30 seconds, and a rollback restores that.
+The watch list keeps its last rows when a refresh fails. The lobby chat says once
+that the watch list could not refresh, and again when a watch-list refresh
+succeeds. A room-list reply cannot clear that warning. A lobby from before
+watching still answers 404 and leaves an empty watch list. Older games
+keep their previous refresh messages.
 
 The online lobby's Options page has a Translate Chat Into list: Off, or one of 14
 languages, saved as `[VERA] TranslateChat=`, and under it a Translate in Matches box, on
@@ -525,6 +538,12 @@ network wait saves the post-Logic continuation; resuming it does not repeat Logi
 or input admission. Presentation and local input state do not select the shared
 simulation update order.
 
+An online room allows five minutes without progress on a map upload or download.
+Each accepted chunk renews the timer. A guest whose download fails can choose Retry
+in the room to check the current map again and fetch it from the beginning if needed.
+Map verification and readiness still gate the start. This uses the same requests as
+the first download. Earlier guests can rejoin to try again.
+
 The service retains admitted setup traffic in the global receive queue during
 the asynchronous lobby-to-setup transition. Loading retains the frozen setup,
 so that transition guard does not block loading progress. Row bindings and
@@ -550,6 +569,13 @@ The guest also reads the agreement before decoding the options body, so it can s
 `VERA:LanOptionsInvalid` and ends that setup. After a rollback, two games running
 the earlier build exchange its earlier layout. The lobby, relay, and VS31
 fragment framing keep their existing formats.
+
+When a room member visits the public lobby and joins another game, the client
+asks the lobby to admit them directly. A wrong password, a full room or a
+closed destination leaves their original seat, host and settings intact.
+A successful join moves them once. A lost reply retries the same command ID.
+Earlier clients leave first; a lobby without visits never offers this switch.
+The game, lobby and relay exchange the same messages.
 
 In VERA Online game rooms, the lobby sends rank badges as part of the join. The
 newcomer sees the room's badges, and everyone already there sees the newcomer's badge
@@ -672,7 +698,7 @@ guest reads and ignores it in such a host's room, which cannot start anyway, sin
 versions differ: the guest's Team list and team headers' Join stay open, that host's
 game keeps the player's team, and the guest is told the host did not acknowledge the
 choice. That host's own balance still moves the players. A released guest in a current
-host's room sees the setting off; the host's Balance button still evens the teams.
+host's room sees the setting off; the host's Balance teams, in Quick Team Setup, still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
 is free, with a team header's Join Queue or, in a room without teams, as a newcomer who
@@ -779,7 +805,9 @@ any its host sends, and the lobby refuses them there. A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
 `ExpectedRulesDigest` compares, and the start barrier compares again; it plays
 without the Building Production Queue, which its probe leaves out too, so a player's
-Options page cannot keep a launch from starting. So the room's
+Options page cannot keep a launch from starting. The probe also reports the digest in
+[parts](spawn.md#rules-parts), which only explain a difference; a launch the digest
+refuses names this game's parts in its result. So the room's
 door, the native rules hash (LAN's join check, online the room's `ex_info`), leaves
 the switches out, while the rules
 digest compares the ones each game plays.

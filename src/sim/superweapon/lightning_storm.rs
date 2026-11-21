@@ -428,7 +428,7 @@ pub(super) fn process(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let bridge_changed = if rules.ares_form() {
         ares::process_lists(sim, rules, overlay_registry, frame_effects)
@@ -481,7 +481,7 @@ fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut bridge_changed = false;
     let mut index = sim.lightning_storm.clouds_manifesting.len();
@@ -694,7 +694,7 @@ pub(super) fn ground_strike(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     [x, y, _]: [i32; 3],
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if rules.ares_form()
         && let Some(storm) = ares::current(sim, rules)
@@ -748,7 +748,7 @@ pub(super) fn ground_strike(
         }
         .to_cell_sub_z();
         sim.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sounds[pick as usize].clone(),
+            sound_id: rules.sound_name(&sounds[pick as usize]),
             audible_to: None,
             rx,
             ry,

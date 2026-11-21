@@ -1365,10 +1365,10 @@ mod tests {
 
     #[test]
     fn initial_timeout_hands_the_retained_frame_to_the_existing_failure_tail() {
-        struct Waiting(std::cell::RefCell<crate::sim::command_queue::FrameChecksumState>);
+        struct Waiting(crate::sim::command_queue::FrameChecksumState);
         impl crate::sim::world::NetworkCommandBoundary for Waiting {
             fn exchange_commands(
-                &self,
+                &mut self,
                 _: crate::sim::world::NetworkQueueContext,
                 _: &mut crate::sim::world::NetworkCommandQueues<'_>,
             ) -> Result<
@@ -1378,8 +1378,12 @@ mod tests {
                 Ok(Some(crate::sim::world::NetworkQueuePass::Waiting))
             }
 
-            fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-                self.0.borrow_mut().record_frame_checksum(frame, checksum);
+            fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
+                crate::sim::world::NetworkCommandBoundary::record_frame_checksum(
+                    &mut self.0,
+                    frame,
+                    checksum,
+                );
             }
 
             fn compare_frame_info(
@@ -1402,14 +1406,14 @@ mod tests {
             ));
         sim.session_mut_for_test().set_game_mode(SessionMode::Lan);
         let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-        let waiting = Waiting(Default::default());
+        let mut waiting = Waiting(Default::default());
         let output = sim
             .advance_app_frame(
                 &[],
                 rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty().with_network_commands(&waiting),
+                &mut crate::sim::world::FrameEffects::empty().with_network_commands(&mut waiting),
             )
             .unwrap();
         assert!(output.network_waiting);
@@ -1433,7 +1437,7 @@ mod tests {
             Some(crate::sim::world::NetworkInterruption::ConnectionFailed,)
         );
         let output = sim
-            .resume_after_network_failure(rules, crate::sim::world::FrameEffects::empty())
+            .resume_after_network_failure(rules, &mut crate::sim::world::FrameEffects::empty())
             .unwrap();
         assert!(output.tick.frame_committed);
         assert_eq!(sim.session().binary_frame(), 1);

@@ -179,6 +179,20 @@ fn lookup_exact_terrain_variant<T>(
     })
 }
 
+/// Whether the TechnoExtras path draws an entity's frozen convenience rows.
+/// Buildings are excluded: their rows are drawn by
+/// `build_building_status_instances` at the building status anchor. Drawing
+/// them here too showed two repair countdowns over a captured-and-repairing
+/// neutral building. Foot and air units keep their rows here.
+fn convenience_info_lines_admitted(
+    convenience_help: bool,
+    viewer_allied: bool,
+    category: crate::map::entities::EntityCategory,
+) -> bool {
+    use crate::map::entities::EntityCategory;
+    convenience_help && viewer_allied && category != EntityCategory::Structure
+}
+
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// Ground parents retain Display order; residual effect buckets still sort depth.
@@ -270,7 +284,7 @@ pub(super) fn build_world_instances(
             &own_order
         }
     };
-    let mut planned_objects = Vec::new();
+    let mut planned_objects = super::draw_plan_lowering::PlannedObjects::default();
     let mut bodies = Vec::new();
     instances::build_overlay_instances(
         state,
@@ -340,12 +354,15 @@ pub(super) fn build_world_instances(
             let slot = match member.kind {
                 ObjectKind::Record { slot, span } if window.reaches(span) => slot,
                 ObjectKind::Record { slot, .. } => {
-                    debug_assert!(
-                        frame
+                    // The cross-check runs the visitors on the passed-by
+                    // object into a scratch list: debug builds only.
+                    if cfg!(debug_assertions) {
+                        let draws_nothing = frame
                             .record_at(slot)
                             .zip(instances::layer_draw_band(member.layer))
                             .is_none_or(|(entity, band)| {
-                                let mut scratch = Vec::new();
+                                let mut scratch =
+                                    super::draw_plan_lowering::PlannedObjects::default();
                                 if let Some(visit) = units.as_mut() {
                                     visit(&mut scratch, entity, band);
                                 }
@@ -353,10 +370,13 @@ pub(super) fn build_world_instances(
                                     visit(&mut scratch, entity);
                                 }
                                 scratch.is_empty()
-                            }),
-                        "object {} was passed by but draws",
-                        member.id
-                    );
+                            });
+                        assert!(
+                            draws_nothing,
+                            "object {} was passed by but draws",
+                            member.id
+                        );
+                    }
                     continue;
                 }
                 ObjectKind::Debris => {
@@ -427,17 +447,13 @@ pub(super) fn build_world_instances(
         // Prepare slot binding/light pieces without querying the shared FPS
         // latch. Each Anim's retained Display encounter admits and appends its
         // pieces; preparation shares that encounter's view.
-        let mut building_anim_instances = Vec::new();
+        let mut prepared_building_anims = super::draw_plan_lowering::PlannedObjects::default();
         instances::build_building_anim_instances(
             state,
             input.tactical_admission(),
-            &mut building_anim_instances,
+            &mut prepared_building_anims,
             display_order,
         );
-        let prepared_building_anims = building_anim_instances
-            .into_iter()
-            .map(|parent| (parent.parent.id, parent))
-            .collect();
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
@@ -461,7 +477,7 @@ pub(super) fn build_world_instances(
                 palette,
                 planned_objects.iter().map(|parent| parent.parent.id),
             );
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.brackets = brackets.remove(&parent.parent.id);
         }
     }
@@ -488,7 +504,7 @@ pub(super) fn build_world_instances(
             .as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.status = frame.object(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
                     sim,
@@ -523,7 +539,16 @@ pub(super) fn build_world_instances(
                         sim.interner().resolve(entity.owner()),
                     )
                 });
-                if state.match_state.match_presentation.convenience_help && viewer_allied {
+                // Buildings' convenience rows (repair/reload) are drawn once
+                // by build_building_status_instances, which owns the building
+                // status anchor. Drawing them here as well produced two repair
+                // countdowns over a captured-and-repairing neutral building.
+                // This TechnoExtras path is for foot/air units only.
+                if convenience_info_lines_admitted(
+                    state.match_state.match_presentation.convenience_help,
+                    viewer_allied,
+                    entity.category(),
+                ) {
                     let font = &state.renderer.bit_font;
                     let camera = [
                         state.match_state.input.camera_x,
@@ -680,7 +705,7 @@ pub(super) fn build_world_instances(
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects
         .iter()
-        .filter(|parent| parent.building_pieces.is_some())
+        .filter(|parent| parent.is_building())
         .map(|parent| parent.parent.id)
         .collect();
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
@@ -704,8 +729,8 @@ pub(super) fn build_world_instances(
     let cell_sparkles: Vec<SpriteInstance> = build_pixel_fx_sparkle_instances(state, sw, sh);
 
     // One-time first-frame statistics.
-    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
         let total_grid: usize = state
             .match_state
             .match_presentation
@@ -722,7 +747,7 @@ pub(super) fn build_world_instances(
                 .map(|layer| layer.instances.len())
                 .sum::<usize>(),
         );
-    }
+    });
 
     WorldInstances {
         terrain,
@@ -1732,5 +1757,45 @@ mod tests {
 
         assert_eq!(result, None);
         assert_eq!(looked_up, vec![selected]);
+    }
+
+    #[test]
+    fn techno_extras_drops_building_rows_so_repair_countdown_draws_once() {
+        use crate::map::entities::EntityCategory;
+        // A captured-and-repairing neutral building is now friendly and has
+        // info lines; the building-status path owns its row, so this path must
+        // not draw a second one.
+        assert!(!convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Structure,
+        ));
+        // Units and aircraft still get their reload row here.
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Infantry,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Aircraft,
+        ));
+        // Existing gates still hold for the other cases.
+        assert!(!convenience_info_lines_admitted(
+            false,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(!convenience_info_lines_admitted(
+            true,
+            false,
+            EntityCategory::Unit,
+        ));
     }
 }

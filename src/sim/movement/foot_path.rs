@@ -67,6 +67,16 @@ struct FootSearchEntry<'a> {
     /// at the own cell exactly when it has that index
     /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::regular_cell_index`]).
     own_index: Option<usize>,
+    /// Whether the search asked about the own cell.
+    ///
+    /// This and [`Self::previous`] are cells because the search can only
+    /// share the entry: A* and path finishing hold the marker overlay that
+    /// [`crate::sim::pathfinding::SearchFootEntry::prepare_search_markers`]
+    /// lends out of [`Self::markers`] for the whole search while they keep
+    /// calling `classify` on the same entry, and the zone precheck, its retry
+    /// flood and A* each keep a `&dyn SearchFootEntry` copy of
+    /// [`crate::sim::pathfinding::MoverSearchFacts`]. Each search builds its
+    /// own entry on the thread that runs it, so no other thread sees them.
     read_own_cell: std::cell::Cell<bool>,
     /// The cell asked from: an expansion asks about up to eight neighbours
     /// from one cell.
@@ -81,7 +91,8 @@ struct FootSearchEntry<'a> {
 
 /// The last coordinate whose lookup found a real cell, with that cell. Such
 /// a lookup has no side effect, so it is not repeated; one that misses
-/// stamps the shared Dummy, so it is made at each ask.
+/// stamps the shared Dummy, so it is made at each ask. A cell for the reason
+/// at [`FootSearchEntry::read_own_cell`].
 #[derive(Default)]
 struct LastRealCell(std::cell::Cell<Option<((u16, u16), NativeCellIdentity)>>);
 
@@ -481,9 +492,11 @@ impl Simulation {
             return;
         };
         if actor.navigation.path_runtime().scold_latch_raw() != 0
-            && let Some(sound_id) = rules.general.scold_sound.clone()
+            && let Some(sound_id) = rules.general.scold_sound.as_deref()
         {
-            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered {
+                sound_id: rules.sound_name(sound_id),
+            });
         }
     }
 
@@ -495,7 +508,7 @@ impl Simulation {
         request: &mut FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
         // A batched request waits for the next frame's batch as if the +640
         // timer still ran (`path_batch`, a sim-scale deviation): 75AF4B..75AF66
@@ -542,7 +555,7 @@ impl Simulation {
         request: &FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -626,7 +639,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -655,7 +668,7 @@ impl Simulation {
         goal: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Result<(), CoreRefusal>, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -800,7 +813,7 @@ impl Simulation {
         last_direction: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -1060,7 +1073,7 @@ impl Simulation {
         goal: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -1191,7 +1204,7 @@ impl Simulation {
         destination: DriveCoord,
         answer: u8,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<DriveCoord, String> {
         let Some(near) = self.find_path_redirect(id, destination, answer, rules)? else {
             return Ok(destination);
@@ -1504,7 +1517,7 @@ impl Simulation {
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
         let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
-        let fine_path = &path.paths[0];
+        let fine_path = path.route(0);
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
 
@@ -1595,7 +1608,7 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         //0x4D3CBF, 0x4D3DF1 and 0x4D3FBB pass Map[cell] (0x5657A0) to
         //vt+0x480: a cell with no allocation stamps the shared Dummy, whose
@@ -1838,7 +1851,7 @@ mod tests {
                     goal,
                     &rules,
                     Some(&registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let route = sim
@@ -1914,7 +1927,7 @@ mod tests {
                 DriveCoord::cell(28, 28, 0),
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
             let sent = !human && skirmish;

@@ -431,7 +431,7 @@ fn unit_route_beside_building(
         .expect("tank spawns");
     if contact {
         let e = sim.substrate.entities.get_mut(tank).unwrap();
-        e.radio_contacts.insert(building_id);
+        e.seldom.radio_contacts.insert(building_id);
     }
     let grid = PathGrid::clone(&sim.path_grid_snapshot().expect("navigation built"));
     sim.substrate
@@ -441,7 +441,7 @@ fn unit_route_beside_building(
         tank,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -449,6 +449,7 @@ fn unit_route_beside_building(
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(building_id),
         contact,
@@ -1915,7 +1916,10 @@ fn a_group_spread_keeps_aircraft_out_of_shrouded_cells() {
             .expect("Harrier spawns");
         for id in [west, east] {
             let harrier = sim.substrate.entities.get_mut(id).unwrap();
-            harrier.discovery.set_owned_by_current_house_for_test(true);
+            harrier
+                .seldom
+                .discovery
+                .set_owned_by_current_house_for_test(true);
         }
         let owner = sim.interner.intern("Americans");
         sim.fog = crate::sim::vision::FogState::new(32, 32);

@@ -446,9 +446,13 @@ impl SidebarChromeAtlas {
 /// selected group through the same atlas builder and resolver.
 pub struct SidebarChromeSet {
     atlases: Vec<(i32, SidebarChromeAtlas)>,
+    /// Stock themes whose art the archives lack, so that
+    /// [`SidebarChromeSet::ensure_side`] asks for each once.
+    missing: Vec<SidebarTheme>,
     /// Whether [`build_sidebar_chrome_set`]'s Ares arm built it (the scenario
-    /// side's registered Side MIX group) rather than its stock arm (the three
-    /// prebuilt themes). Resolution follows the arm that built the set.
+    /// side's registered Side MIX group) rather than its stock arm (the stock
+    /// themes, built as sides draw them). Resolution follows the arm that
+    /// built the set.
     ares: bool,
 }
 
@@ -463,11 +467,7 @@ impl SidebarChromeSet {
     }
 
     pub fn resolve_theme(&self, theme: SidebarTheme) -> Option<ResolvedSidebarChrome<'_>> {
-        self.resolve_side(match theme {
-            SidebarTheme::Allied => 0,
-            SidebarTheme::Soviet => 1,
-            SidebarTheme::Yuri => 2,
-        })
+        self.resolve_side(stock_theme_side(theme))
     }
 
     pub fn resolve_side(&self, side_index: i32) -> Option<ResolvedSidebarChrome<'_>> {
@@ -496,6 +496,49 @@ impl SidebarChromeSet {
             (theme, index)
         };
         Some(resolved)
+    }
+
+    /// Build the atlas `side_index` draws when the set lacks it: the side's
+    /// theme, else the first of its fallbacks the archives hold
+    /// ([`theme_fallbacks`]). A stock match builds the local player's side at
+    /// load and another side here, on the frame a change of local house first
+    /// draws it, instead of all three at load: each is a 25 MiB texture, and
+    /// a shared-memory chip's few hundred MiB hold the whole match. The Ares
+    /// arm built its one side at load and builds nothing here.
+    pub fn ensure_side(
+        &mut self,
+        side_index: i32,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        asset_manager: &AssetManager,
+    ) {
+        if self.ares {
+            return;
+        }
+        let requested = sidebar_theme_for_side(side_index, false);
+        while let Some(theme) = next_theme_to_build(
+            requested,
+            |theme| {
+                self.atlases
+                    .iter()
+                    .any(|(side, _)| *side == stock_theme_side(theme))
+            },
+            &self.missing,
+        ) {
+            let (archive, yuri) = stock_theme_source(theme);
+            match build_theme_atlas(
+                gpu,
+                batch,
+                asset_manager,
+                theme,
+                archive,
+                SidebarArtNames::for_yuri(yuri),
+                false,
+            ) {
+                Some(atlas) => self.atlases.push((stock_theme_side(theme), atlas)),
+                None => self.missing.push(theme),
+            }
+        }
     }
 
     /// Follow the smooth sidebar's scale with the atlas `side_index` draws;
@@ -554,22 +597,68 @@ pub(crate) fn sidebar_theme_for_side(side_index: i32, ares: bool) -> SidebarThem
     }
 }
 
+/// The themes `theme` draws, in order: its own art, else an earlier side's.
+/// gamemd's side 2 reads side 1's group (`0x00534FB1`), and a game whose
+/// archives lack that falls back to Allied.
+const fn theme_fallbacks(theme: SidebarTheme) -> &'static [SidebarTheme] {
+    match theme {
+        SidebarTheme::Allied => &[SidebarTheme::Allied],
+        SidebarTheme::Soviet => &[SidebarTheme::Soviet, SidebarTheme::Allied],
+        SidebarTheme::Yuri => &[
+            SidebarTheme::Yuri,
+            SidebarTheme::Soviet,
+            SidebarTheme::Allied,
+        ],
+    }
+}
+
+/// The stock archive and Yuri filename switch `theme` is built from, as
+/// `InitSideMixFiles` (`0x00534FA0`) mounts them.
+const fn stock_theme_source(theme: SidebarTheme) -> (&'static str, bool) {
+    match theme {
+        SidebarTheme::Allied => ("sidec01.mix", false),
+        SidebarTheme::Soviet => ("sidec02.mix", false),
+        SidebarTheme::Yuri => ("sidec02md.mix", true),
+    }
+}
+
+/// The stock side index that draws `theme` ([`sidebar_theme_for_side`]).
+const fn stock_theme_side(theme: SidebarTheme) -> i32 {
+    match theme {
+        SidebarTheme::Allied => 0,
+        SidebarTheme::Soviet => 1,
+        SidebarTheme::Yuri => 2,
+    }
+}
+
+/// The theme [`SidebarChromeSet::ensure_side`] builds next for `requested`:
+/// the first of its themes ([`theme_fallbacks`]) that is not `missing`,
+/// unless that one is `built`, in which case nothing is left to build.
+fn next_theme_to_build(
+    requested: SidebarTheme,
+    built: impl Fn(SidebarTheme) -> bool,
+    missing: &[SidebarTheme],
+) -> Option<SidebarTheme> {
+    let theme = *theme_fallbacks(requested)
+        .iter()
+        .find(|theme| !missing.contains(theme))?;
+    (!built(theme)).then_some(theme)
+}
+
 pub(crate) fn select_sidebar_theme<'a, T>(
     requested_theme: SidebarTheme,
     allied: Option<&'a T>,
     soviet: Option<&'a T>,
     yuri: Option<&'a T>,
 ) -> Option<(SidebarTheme, &'a T)> {
-    match requested_theme {
-        SidebarTheme::Allied => allied.map(|atlas| (SidebarTheme::Allied, atlas)),
-        SidebarTheme::Soviet => soviet
-            .map(|atlas| (SidebarTheme::Soviet, atlas))
-            .or_else(|| allied.map(|atlas| (SidebarTheme::Allied, atlas))),
-        SidebarTheme::Yuri => yuri
-            .map(|atlas| (SidebarTheme::Yuri, atlas))
-            .or_else(|| soviet.map(|atlas| (SidebarTheme::Soviet, atlas)))
-            .or_else(|| allied.map(|atlas| (SidebarTheme::Allied, atlas))),
-    }
+    theme_fallbacks(requested_theme).iter().find_map(|&theme| {
+        match theme {
+            SidebarTheme::Allied => allied,
+            SidebarTheme::Soviet => soviet,
+            SidebarTheme::Yuri => yuri,
+        }
+        .map(|atlas| (theme, atlas))
+    })
 }
 
 /// Ares1002EAA0/1002FA60/1002FA70 consume one independent filename
@@ -621,12 +710,19 @@ pub(crate) fn ares_sidebar_config(
     ))
 }
 
+/// The match's sidebar chrome: the scenario side's own Side MIX group when
+/// Ares plays in the game (`side_index`), else the stock theme of the side
+/// the local player's house draws (`local_side`,
+/// `sidebar_render::project_sidebar_side`), with another side's built on the
+/// frame that first draws it ([`SidebarChromeSet::ensure_side`]). `None` when
+/// the archives hold no sidebar art at all.
 pub fn build_sidebar_chrome_set(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     asset_manager: &mut AssetManager,
     rules: &crate::rules::ruleset::RuleSet,
     side_index: i32,
+    local_side: i32,
 ) -> Result<Option<SidebarChromeSet>, crate::assets::error::AssetError> {
     if let Some((mix_index, yuri_names)) = ares_sidebar_config(rules, side_index) {
         if !asset_manager.activate_sidebar_archives(mix_index)? {
@@ -659,31 +755,17 @@ pub fn build_sidebar_chrome_set(
         })?;
         return Ok(Some(SidebarChromeSet {
             atlases: vec![(side_index, atlas)],
+            missing: Vec::new(),
             ares: true,
         }));
     }
-    let mut atlases = Vec::new();
-    for (index, theme, archive, yuri) in [
-        (0, SidebarTheme::Allied, "sidec01.mix", false),
-        (1, SidebarTheme::Soviet, "sidec02.mix", false),
-        (2, SidebarTheme::Yuri, "sidec02md.mix", true),
-    ] {
-        if let Some(atlas) = build_theme_atlas(
-            gpu,
-            batch,
-            asset_manager,
-            theme,
-            archive,
-            SidebarArtNames::for_yuri(yuri),
-            false,
-        ) {
-            atlases.push((index, atlas));
-        }
-    }
-    Ok((!atlases.is_empty()).then_some(SidebarChromeSet {
-        atlases,
+    let mut set = SidebarChromeSet {
+        atlases: Vec::new(),
+        missing: Vec::new(),
         ares: false,
-    }))
+    };
+    set.ensure_side(local_side, gpu, batch, asset_manager);
+    Ok((!set.atlases.is_empty()).then_some(set))
 }
 
 struct CpuGclockAtlas {
@@ -1626,7 +1708,7 @@ mod tests;
 
 #[cfg(all(test, tests_render_s_z))]
 mod provenance_tests {
-    use super::{SidebarTheme, select_sidebar_theme};
+    use super::{SidebarTheme, next_theme_to_build, select_sidebar_theme};
 
     #[test]
     fn ares_sidebar_filename_switch_matches_native_independent_side_controls() {
@@ -1655,6 +1737,26 @@ mod provenance_tests {
                 assert_eq!(actual.to_ascii_uppercase(), expected.as_str().unwrap());
             }
         }
+    }
+
+    /// A stock set builds the side's own theme first, then the fallbacks the
+    /// archives hold, one at a time, and nothing once the drawn one exists.
+    #[test]
+    fn a_side_builds_its_theme_then_the_fallbacks_it_lacks() {
+        use SidebarTheme::{Allied, Soviet, Yuri};
+        let built = |themes: &'static [SidebarTheme]| move |theme| themes.contains(&theme);
+        assert_eq!(next_theme_to_build(Yuri, built(&[]), &[]), Some(Yuri));
+        assert_eq!(next_theme_to_build(Yuri, built(&[Allied]), &[]), Some(Yuri));
+        assert_eq!(next_theme_to_build(Yuri, built(&[]), &[Yuri]), Some(Soviet));
+        assert_eq!(next_theme_to_build(Yuri, built(&[Soviet]), &[Yuri]), None);
+        assert_eq!(
+            next_theme_to_build(Allied, built(&[Soviet, Yuri]), &[]),
+            Some(Allied)
+        );
+        assert_eq!(
+            next_theme_to_build(Soviet, built(&[]), &[Soviet, Allied]),
+            None
+        );
     }
 
     #[test]

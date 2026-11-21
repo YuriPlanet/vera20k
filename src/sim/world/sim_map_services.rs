@@ -354,7 +354,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let native_growth_ready = !rules.tiberium_types.is_empty()
             && self.ore_growth_state.native_tiberium_state().classes.len()
@@ -386,10 +386,18 @@ impl Simulation {
                     )
                 })?;
             // Preserve the existing ordinary-ore Recalc batch. Structural and
-            // CellAnim Mark paths have already completed synchronously.
-            let marked =
-                self.overlay_grid.as_ref().unwrap().pending_dirty_cells()[dirty_start..].to_vec();
-            self.publish_tiberium_cells(rules, registry, &marked);
+            // CellAnim Mark paths have already completed synchronously. The
+            // tail is walked by index: a deferred Recalc writes the cell's
+            // terrain and navigation receipts, never this dirty list.
+            if let (Some(grid), Some(terrain)) =
+                (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
+            {
+                for index in dirty_start..grid.pending_dirty_cells().len() {
+                    let cell = grid.pending_dirty_cells()[index];
+                    recalculate_tiberium_cell(grid, terrain, registry, cell);
+                }
+            }
+            self.finish_terrain_navigation_changes(rules, &[]);
         }
         Ok(())
     }
@@ -409,9 +417,7 @@ impl Simulation {
             (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
         {
             for &cell in cells {
-                if grid.cell(cell.0, cell.1).overlay_id.is_some() {
-                    grid.recalculate_deferred_cell(terrain, registry, cell);
-                }
+                recalculate_tiberium_cell(grid, terrain, registry, cell);
             }
         }
         self.finish_terrain_navigation_changes(rules, &[]);
@@ -482,7 +488,7 @@ impl Simulation {
     pub fn change_visible_map_area(
         &mut self,
         raw_local_size: [i32; 4],
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         let (Some(current), Some(size_height)) =
             (self.playfield_bounds, self.playfield_size_height)
@@ -513,10 +519,8 @@ impl Simulation {
         let membership_updates = self
             .substrate
             .entities
-            .keys_sorted()
-            .into_iter()
-            .filter_map(|stable_id| {
-                let entity = self.substrate.entities.get(stable_id)?;
+            .iter_sorted()
+            .map(|(stable_id, entity)| {
                 let member = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (
                         i32::from(entity.position.rx()),
@@ -541,7 +545,7 @@ impl Simulation {
                 } else {
                     Vec::new()
                 };
-                Some((stable_id, member, clients))
+                (stable_id, member, clients)
             })
             .collect::<Vec<_>>();
         // Set_Clipped_LocalSize's exact store (`0x0056730E`).
@@ -565,11 +569,17 @@ impl Simulation {
                         false,
                         false,
                         Some(client),
-                        context,
+                        context.reborrow(),
                     );
                 }
             } else if !clients.is_empty() {
-                self.reveal_uncached_object_sight(stable_id, false, false, None, context);
+                self.reveal_uncached_object_sight(
+                    stable_id,
+                    false,
+                    false,
+                    None,
+                    context.reborrow(),
+                );
             }
         }
 
@@ -604,7 +614,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // YR LogicClass::Update polls scenario triggers before the live-object walk.
         let effects = self.advance_triggers(rules, overlay_registry, frame_effects);
@@ -612,8 +622,12 @@ impl Simulation {
     }
 
     /// Commit synchronous Tag outcomes to the existing frame-output boundary.
-    /// Object callbacks and the master-frame poll share this single queue.
-    pub(crate) fn publish_trigger_effects(&mut self, effects: Vec<TriggerEffect>) {
+    /// Object callbacks and the master-frame poll share this single queue; a
+    /// single effect comes as a one-element array.
+    pub(crate) fn publish_trigger_effects(
+        &mut self,
+        effects: impl IntoIterator<Item = TriggerEffect>,
+    ) {
         self.trigger_effects.extend(effects);
     }
 
@@ -649,5 +663,18 @@ impl Simulation {
         event: HouseAiActivationOrderTestEvent,
     ) {
         self.house_ai_activation_order_test_trace.push(event);
+    }
+}
+
+/// One cell of [`Simulation::publish_tiberium_cells`]'s batch: the deferred
+/// Recalc of a cell that still holds an overlay.
+fn recalculate_tiberium_cell(
+    grid: &mut crate::sim::overlay_grid::OverlayGrid,
+    terrain: &mut crate::map::resolved_terrain::ResolvedTerrainGrid,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    cell: (u16, u16),
+) {
+    if grid.cell(cell.0, cell.1).overlay_id.is_some() {
+        grid.recalculate_deferred_cell(terrain, registry, cell);
     }
 }

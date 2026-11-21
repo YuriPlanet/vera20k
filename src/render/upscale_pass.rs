@@ -221,7 +221,6 @@ impl WorldZoomPass {
     /// pixel over a frame pixel that changed since `composite` kept the world
     /// keeps the zoomed frame. Draws nothing unless `set_view` kept a window
     /// copy.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw_window_copy(
         &self,
         device: &wgpu::Device,

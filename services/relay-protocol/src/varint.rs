@@ -7,6 +7,18 @@
 //! bit means another byte follows. Encoders write the shortest form and
 //! decoders refuse every other one, so a value has exactly one encoding.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use crate::RelayError;
 
 /// The longest encoding: 10 bytes, which `u64::MAX` needs (§8).

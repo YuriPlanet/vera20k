@@ -55,7 +55,7 @@ fn selected_campaign_death_sounds(
     effects
         .death_sounds
         .into_iter()
-        .map(|(sound, _)| sound)
+        .map(|(sound, _)| sound.name_in(rules).to_string())
         .collect()
 }
 
@@ -110,7 +110,7 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
                     "the global request precedes the centre mark"
                 );
             },
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         );
         assert_eq!(
             sim.main_rng.state(),
@@ -121,7 +121,7 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
             assert!(
                 matches!(sim.sound_events(), [crate::sim::world::SimSoundEvent::VocAtCoord {
                 sound_id, coordinate, flags: 0,
-            }] if sound_id == "BuildingGenericDie" && *coordinate == location)
+            }] if sound_id.name_in(&rules) == "BuildingGenericDie" && *coordinate == location)
             );
         } else {
             assert!(
@@ -257,7 +257,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
                     sound_id,
                     coordinate,
                     flags: 0,
-                } if sound_id == "BuildingDamaged" => Some(*coordinate),
+                } if sound_id.name_in(&rules) == "BuildingDamaged" => Some(*coordinate),
                 _ => None,
             })
             .collect()
@@ -270,7 +270,7 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
                     sound_id,
                     coordinate,
                     flags: 0,
-                } if sound_id == "BuildingMetalDamaged" => Some(*coordinate),
+                } if sound_id.name_in(&rules) == "BuildingMetalDamaged" => Some(*coordinate),
                 _ => None,
             })
             .collect()
@@ -465,7 +465,9 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
             .filter_map(|sound| match sound {
                 SimSoundEvent::VocAt {
                     sound_id, rx, ry, ..
-                } if matches!(sound_id.as_str(), "GIFear" | "StructureFear") => Some((*rx, *ry)),
+                } if matches!(sound_id.name_in(&rules), "GIFear" | "StructureFear") => {
+                    Some((*rx, *ry))
+                }
                 _ => None,
             })
             .collect()
@@ -511,8 +513,14 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
     let order: Vec<&str> = sounds
         .iter()
         .filter_map(|sound| match sound {
-            SimSoundEvent::VocAt { sound_id, .. } if sound_id == "StructureFear" => Some("voice"),
-            SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "BuildingDamaged" => {
+            SimSoundEvent::VocAt { sound_id, .. }
+                if sound_id.name_in(&rules) == "StructureFear" =>
+            {
+                Some("voice")
+            }
+            SimSoundEvent::VocAtCoord { sound_id, .. }
+                if sound_id.name_in(&rules) == "BuildingDamaged" =>
+            {
                 Some("building")
             }
             _ => None,
@@ -599,7 +607,7 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
                 SimSoundEvent::EntityDied {
                     die_sound_id,
                     world,
-                } => Some((die_sound_id.as_str(), *world)),
+                } => Some((die_sound_id.name_in(&rules), *world)),
                 _ => None,
             })
             .collect::<Vec<_>>(),
@@ -829,7 +837,7 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         building: u64,
     }
     impl SoundBoundary for Warnings {
-        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if let SimSoundEvent::UnderAttack { miner, .. } = event {
                     let hp = sim.entities().get(self.building).unwrap().health.current();
@@ -872,12 +880,12 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         &sim.entities().get(miner).unwrap().position,
     );
     let warhead_id = sim.intern("BlimpHE");
-    let warnings = Warnings {
+    let mut warnings = Warnings {
         delivered: Cell::new(0),
         seen: RefCell::new(Vec::new()),
         building,
     };
-    let effects = FrameEffects::for_sound(&warnings);
+    let mut effects = FrameEffects::for_sound(&mut warnings);
     crate::sim::combat::world_receiver::apply_area_damage(
         &mut sim,
         &rules,
@@ -887,7 +895,7 @@ fn retail_area_damage_delivers_miner_warning_before_neighboring_base_warning() {
         warhead,
         true,
         (source, Some(source_owner), warhead_id),
-        effects,
+        &mut effects,
     );
     effects.flush_sound(&sim, &rules);
     let after_building = sim.entities().get(building).unwrap().health.current();

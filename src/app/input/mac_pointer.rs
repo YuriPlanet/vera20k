@@ -14,7 +14,8 @@ use winit::window::Window;
 use crate::render::cursor_atlas::OsCursorImage;
 
 /// Whether this module holds one `NSCursor` hide. AppKit counts hides, so
-/// each hide here is paired with exactly one unhide.
+/// each hide here is paired with exactly one unhide. Process-wide because
+/// AppKit's hide count is.
 static ARROW_HIDDEN: AtomicBool = AtomicBool::new(false);
 
 /// Hide or show the system arrow for the whole app.

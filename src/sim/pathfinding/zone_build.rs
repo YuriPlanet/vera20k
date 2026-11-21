@@ -1553,7 +1553,7 @@ mod tests {
         let ZonePrecheckOutcome::Passed(result) = outcome else {
             panic!("the ground route remains passable");
         };
-        assert_eq!(result.paths[2], vec![1, 2]);
+        assert_eq!(result.route(2), vec![1, 2]);
     }
 
     #[test]

@@ -79,6 +79,9 @@ fn debris_pieces_construct_between_picks_as_the_original() {
         object_type.max_debris = pieces + 1;
         object_type.min_debris = pieces;
         object_type.debris_types.clear();
+        // The copy keeps MTNK's resolved list; an unresolved one reads the
+        // cleared names.
+        object_type.project_resolved_debris(Default::default());
         object_type.debris_anims.clear();
         let coord = input["coord"].as_array().unwrap();
         let at = |i: usize| coord[i].as_i64().unwrap() as i32;

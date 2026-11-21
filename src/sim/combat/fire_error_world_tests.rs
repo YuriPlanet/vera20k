@@ -195,6 +195,7 @@ fn a_tethered_low_balloon_is_illegal_to_fire_at() {
         .entities
         .get_mut(2)
         .unwrap()
+        .seldom
         .tether
         .set_for_test(Some(99));
     assert_eq!(error(&sim), FireError::Illegal, "tethered to its factory");

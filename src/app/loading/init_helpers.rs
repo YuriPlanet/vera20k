@@ -205,10 +205,6 @@ pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
 /// `terrain_deformation` is the scenario rules' `[CombatDamage]
 /// TerrainDeformation=`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "theater inputs, the grid, the GPU pair and the deformation switch"
-)]
 pub(crate) fn build_tile_atlas(
     asset_manager: &AssetManager,
     lookup: &theater::TilesetLookup,
@@ -577,10 +573,6 @@ fn read_match_layouts(asset_manager: &AssetManager) -> Option<crate::rules::ini_
 /// No simulation state, HVA metadata, AI registry or overlay frame is written.
 /// Optional missing assets retain the ordinary fresh-load fallback policy;
 /// all returned resources belong to the incoming world, never the outgoing one.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "combines prepared world projections without owning gameplay"
-)]
 pub(crate) fn finish_presentation_assets(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -638,6 +630,11 @@ pub(crate) fn finish_presentation_assets(
         asset_manager,
         rules,
         simulation.session().scenario_side(),
+        crate::app::presentation::sidebar_render::project_sidebar_side(
+            Some(simulation),
+            crate::app::match_runtime::state::scenario_local_owner(simulation),
+            rules.ares(),
+        ),
     )?;
     // `Game_LoadUI_LoadSideData` (0x1002F4A0) hands the local side's
     // `GraphicalText.Image=` / `.Palette=` to the overlay slot writer at

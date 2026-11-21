@@ -72,7 +72,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::world::SimFrameOut
         rules,
         33,
         crate::sim::world::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap()
 }
@@ -236,7 +236,7 @@ fn hospital_can_load_preserves_native_ammo_admission() {
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
                 &rules,
-                Default::default()
+                &mut Default::default()
             ),
             if ammo == 0 {
                 RadioResponse::Negatory
@@ -352,7 +352,7 @@ fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
                 RadioMessage::RepairTick,
                 RadioPayload::default(),
                 &rules,
-                Default::default(),
+                &mut Default::default(),
             ),
             RadioResponse::Roger
         );

@@ -45,12 +45,14 @@ impl Simulation {
         Ok(())
     }
 
-    /// Each object's type and owner, each House's key and type and each
-    /// bullet's warhead, BulletType and Weapon must name an entry of the saved
-    /// interner: both come from the file, and `StringInterner::resolve`
+    /// Every interned id the saved Simulation holds must name an entry of the
+    /// saved interner: both come from the file, and `StringInterner::resolve`
     /// panics on an id it never produced. A save that fails this is refused
-    /// before any restore step reads one. Team, script and trigger ids are
-    /// not covered here.
+    /// before any restore step reads one. Objects, Houses and bullets are
+    /// checked first, so their refusal names the object; the walk over the
+    /// whole saved state ([`super::saved_ids`]) then covers every other
+    /// field (teams and scripts, superweapons, production, House state and
+    /// the rest) and names the saved struct and field.
     pub(super) fn validate_saved_interned_ids(&self) -> Result<(), SnapshotRestoreError> {
         let check = |registry, object_id, field, id: crate::sim::intern::InternedId| {
             self.interner
@@ -82,6 +84,7 @@ impl Simulation {
                 check("bullet", bullet_id, "weapon", weapon)?;
             }
         }
+        super::saved_ids::check_saved_interned_ids(self, self.interner.len())?;
         Ok(())
     }
 
@@ -102,7 +105,7 @@ impl Simulation {
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
-            if !entity.type_facts.foundation().valid() {
+            if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
                     object_id: entity.stable_id(),
                 });
@@ -131,6 +134,9 @@ impl Simulation {
             .map_err(SnapshotRestoreError::InvalidRadiationSiteOrder)?;
         self.validate_planning_references()
             .map_err(|reason| SnapshotRestoreError::InvalidPlanningReferences { reason })?;
+        self.team_script_vm
+            .validate_restored_task_forces()
+            .map_err(|reason| SnapshotRestoreError::InvalidTeamState { reason })?;
         if let Some(owner) = self.session.current_house()
             && !self.houses.contains_key(&owner)
         {
@@ -612,7 +618,7 @@ impl Simulation {
                 self.resolved_terrain
                     .as_mut()
                     .expect("validated terrain cache"),
-                self.main_rng.draws(),
+                &mut self.main_rng,
                 size_width,
             )
             .map_err(|reason| SnapshotRestoreError::TerrainAssetPreparationFailed { reason })?;

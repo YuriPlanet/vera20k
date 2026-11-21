@@ -176,7 +176,7 @@ fn receive(sim: &mut Simulation, rules: &RuleSet, id: u64, damage: i32) {
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(rules, None, hit, &mut FrameEffects::default());
 }
 
 #[test]
@@ -204,6 +204,7 @@ fn a_unit_disguised_without_a_house_stays_dark_to_the_enemy_player() {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .disguise
             .get_or_insert_with(|| DisguiseRuntime::new(0))
             .acquire(0, worn, None);
@@ -296,6 +297,7 @@ fn a_building_flashes_unless_its_raw_disguise_flag_is_up() {
         .entities
         .get_mut(power)
         .unwrap()
+        .seldom
         .disguise
         .get_or_insert_with(|| DisguiseRuntime::new(0))
         .acquire(0, None, Some(americans));

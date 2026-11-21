@@ -90,7 +90,12 @@ fn retail_parked_jumpjet_planning_blocks_scanning_until_player_load_drops_the_qu
     // The full frame also has legitimate mission RNG. Isolate the passive
     // gate's own no-draw contract only after the production visit above.
     let rng = sim.scenario_rng.native_state_hex();
-    super::super::techno_ai::passive_target_acquire(&mut sim, actor, &rules, Default::default());
+    super::super::techno_ai::passive_target_acquire(
+        &mut sim,
+        actor,
+        &rules,
+        &mut Default::default(),
+    );
     assert_eq!(sim.entities().get(actor).unwrap().passive_scan, before);
     assert_eq!(sim.scenario_rng.native_state_hex(), rng);
     let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "planning", 0);
@@ -111,7 +116,7 @@ fn retail_parked_jumpjet_planning_blocks_scanning_until_player_load_drops_the_qu
         &mut restored,
         actor,
         &rules,
-        Default::default(),
+        &mut Default::default(),
     );
     let scan = restored.entities().get(actor).unwrap().passive_scan;
     assert_eq!(scan.last_scan_frame(), now);
@@ -152,7 +157,7 @@ fn step(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
         rules,
         33,
         super::super::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap();
 }
@@ -228,7 +233,7 @@ fn retail_plan_publication_uses_final_timing_and_yields_to_an_existing_player_mo
                 &rules,
                 33,
                 super::super::TickLane::Ordinary,
-                Default::default(),
+                &mut Default::default(),
             )
             .unwrap();
         assert!(output.network_failure.is_none() && output.tick.frame_committed);
@@ -335,7 +340,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
                 &[],
                 33,
                 super::super::TickLane::Ordinary,
-                Default::default(),
+                &mut Default::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed && output.network_failure.is_none());
@@ -349,7 +354,7 @@ fn retail_rate_one_plans_replay_with_the_same_publication_order_and_state() {
                 &commands,
                 33,
                 super::super::TickLane::Ordinary,
-                Default::default(),
+                &mut Default::default(),
             )
             .unwrap();
         assert!(replayed.tick.frame_committed && replayed.network_failure.is_none());
@@ -640,7 +645,7 @@ fn retail_planned_depot_and_refinery_orders_reach_their_dock_owners() {
             docked |= sim
                 .entities()
                 .get(actor)
-                .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(target));
+                .is_some_and(|entity| entity.seldom.radio_contacts.slot(0) == Some(target));
             let completed = sim.entities().get(actor).is_some_and(|entity| {
                 if refinery {
                     entity

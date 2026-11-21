@@ -576,7 +576,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                     object.bunker
                         && entity.building.bunker_runtime.is_some()
                         && entity.bunker.occupant().is_none()
-                        && entity.radio_contacts.slot(0).is_none()
+                        && entity.seldom.radio_contacts.slot(0).is_none()
                 });
             spread(actors, &targets, 1)
                 .into_iter()

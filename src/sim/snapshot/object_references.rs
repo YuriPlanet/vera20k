@@ -3,6 +3,18 @@
 //! saved pointer slot to resolve to an object of an admitted kind while
 //! clearing only deliberate weak identities.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::SnapshotRestoreError;
@@ -311,7 +323,7 @@ pub(super) fn restore_object_references(
                 anim_id,
             )?;
         }
-        if entity.tesla_charger.is_active()
+        if entity.seldom.tesla_charger.is_active()
             && !matches!(
                 entity.category(),
                 crate::map::entities::EntityCategory::Unit
@@ -355,7 +367,7 @@ pub(super) fn restore_object_references(
         }
         // Do not require a current reciprocal TarCom or recompute +661:
         // native saves can lie between retarget/expiry and Building AI.
-        for contact_id in entity.radio_contacts.iter_live() {
+        for contact_id in entity.seldom.radio_contacts.iter_live() {
             require_resolved_reference(
                 entity_ids.contains(&contact_id),
                 "EntityStore",
@@ -402,7 +414,7 @@ pub(super) fn restore_object_references(
                 sim.substrate
                     .entities
                     .get(owner)
-                    .is_some_and(|owner| owner.airstrike.owns_manager()),
+                    .is_some_and(|owner| owner.seldom.airstrike.owns_manager()),
                 "EntityStore",
                 entity_id,
                 "airstrike.link",
@@ -410,7 +422,7 @@ pub(super) fn restore_object_references(
                 owner,
             )?;
         }
-        for referenced_id in entity.airstrike.referenced_ids() {
+        for referenced_id in entity.seldom.airstrike.referenced_ids() {
             require_resolved_reference(
                 entity_ids.contains(&referenced_id),
                 "EntityStore",
@@ -458,7 +470,7 @@ pub(super) fn restore_object_references(
         // TechnoClass__Load @ 0x0070BF50 queues the spawned-child parent
         // pointer at Techno+0x2D4. It is an independently swizzled slot: native
         // load does not require a reciprocal SpawnControl entry.
-        if let Some(parent_id) = entity.spawn_owner_id.owner() {
+        if let Some(parent_id) = entity.seldom.spawn_owner_id.owner() {
             require_resolved_reference(
                 entity_ids.contains(&parent_id),
                 "EntityStore",
@@ -492,7 +504,8 @@ pub(super) fn restore_object_references(
                 target_id,
             )?;
         }
-        if let Some(TargetKind::Entity(target_id)) = entity.suspended_attack_target.target() {
+        if let Some(TargetKind::Entity(target_id)) = entity.seldom.suspended_attack_target.target()
+        {
             require_object_reference(
                 &entity_ids,
                 sim.terrain_objects.objects(),
@@ -526,7 +539,7 @@ pub(super) fn restore_object_references(
             }
         }
 
-        if let Some(target_id) = entity.tether.partner() {
+        if let Some(target_id) = entity.seldom.tether.partner() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
@@ -549,7 +562,7 @@ pub(super) fn restore_object_references(
                 )?;
             }
         }
-        if let Some(controller_id) = entity.mind_control.controller() {
+        if let Some(controller_id) = entity.seldom.mind_control.controller() {
             require_resolved_reference(
                 entity_ids.contains(&controller_id),
                 "EntityStore",
@@ -591,7 +604,7 @@ pub(super) fn restore_object_references(
                 target_id,
             )?;
         }
-        if let Some(master_id) = entity.slave.owner() {
+        if let Some(master_id) = entity.seldom.slave.owner() {
             require_resolved_reference(
                 entity_ids.contains(&master_id),
                 "EntityStore",
@@ -626,18 +639,21 @@ pub(super) fn restore_object_references(
         }
 
         for (field, system_id) in [
-            ("fire_particle_system", entity.fire_particle_system.system()),
+            (
+                "fire_particle_system",
+                entity.seldom.fire_particle_system.system(),
+            ),
             (
                 "spark_particle_system",
-                entity.spark_particle_system.system(),
+                entity.seldom.spark_particle_system.system(),
             ),
             (
                 "railgun_particle_system",
-                entity.railgun_particle_system.system(),
+                entity.seldom.railgun_particle_system.system(),
             ),
             (
                 "damage_smoke_system_id",
-                entity.damage_smoke_system_id.system(),
+                entity.seldom.damage_smoke_system_id.system(),
             ),
             (
                 "natural_particle_system",

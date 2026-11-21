@@ -106,6 +106,7 @@ pub(crate) mod random_map_file;
 mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod restart;
+pub(crate) mod rules_parts;
 pub(crate) mod scenario_catalog;
 mod shell_campaign;
 pub(crate) mod shell_lan;
@@ -123,6 +124,7 @@ mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_skirmish_setups;
+mod shell_skirmish_team_menus;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]
@@ -186,6 +188,9 @@ pub struct App {
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
     /// `-SPAWN`: where the launch result is written (docs/spawn.md).
     spawn_result_path: Option<std::path::PathBuf>,
+    /// `-SPAWN` refused for its `ExpectedRulesDigest`: this game's rules
+    /// parts, which the launch result names.
+    spawn_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
     /// `--mod <folder>` or `--no-mod`, in place of config.toml's choice.
@@ -253,6 +258,7 @@ impl App {
             startup_options,
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -278,6 +284,7 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -305,6 +312,7 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,
@@ -332,6 +340,7 @@ impl App {
             },
             spawn_request: None,
             spawn_result_path: None,
+            spawn_rules_mismatch: None,
             replay_request: None,
             startup_failure: None,
             mod_switch: None,

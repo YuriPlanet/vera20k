@@ -517,7 +517,7 @@ fn dummy_sweep_keeps_shared_overlay_but_never_fabricates_grid_residents() {
                 (super::super::RAD_NO_ATTACKER, None, wh),
                 Some(center_impact(0)),
                 0,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert!(result.receivers.is_empty());
             assert_eq!(
@@ -1704,6 +1704,7 @@ fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         dispatch_timer: MissionDispatchTimer::at_frame(0),
     });
     restored
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Cell(8, 8)));
     entities.insert(restored);
@@ -1745,7 +1746,7 @@ fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         (super::super::RAD_NO_ATTACKER, None, wh),
         Some(center_impact(0)),
         0,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let overlays = world.overlay_grid.as_ref().unwrap();
     let entities = &world.substrate.entities;
@@ -1864,7 +1865,7 @@ fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
         listener
             .attack_target
             .set_for_test(Some(TargetKind::Cell(8, 8)));
-        listener.suspended_attack_target.set_for_test(saved);
+        listener.seldom.suspended_attack_target.set_for_test(saved);
         listener.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Attack),
             suspended: MissionId::from_known(MissionType::Guard),
@@ -1904,7 +1905,7 @@ fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
             (super::super::RAD_NO_ATTACKER, None, warhead_ref),
             Some(center_impact(0)),
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -3168,7 +3169,7 @@ fn gsi_04_07_damage_nonfatal_infantry_scatter_precedes_fear() {
             ));
         }
         world.session.set_binary_frame_for_test(100);
-        world.main_rng = SimRng::new(7).into();
+        world.main_rng = SimRng::new(7);
         world.scenario_rng = SimRng::new(1);
         // Some(false) models campaign PlayerControl without IsHuman.
         world.session.set_game_mode(
@@ -3192,6 +3193,7 @@ fn gsi_04_07_damage_nonfatal_infantry_scatter_precedes_fear() {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
         let victim = world
             .substrate
@@ -3757,7 +3759,7 @@ fn gsi_04_10_spawning_terrain_c4_precedes_uninit_and_guards_reentry() {
             }),
             AreaDamageReceiver::Entity(later_parent_receiver),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(
@@ -3890,7 +3892,7 @@ fn gsi_04_10_scenario_no_damage_blocks_entity_terrain_and_nested_c4() {
                 near_center_ic_isolation_eligible: true,
             }),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(

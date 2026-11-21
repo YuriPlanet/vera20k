@@ -256,7 +256,7 @@ fn test_destroyed_bridge_arms_fall_over_water_below() {
     sim.resolve_type_handles(&rules);
     // Supplied CellClass::BlowUpBridge47DD70 callback. Ordinary concrete
     // damage57CCF0 does not enter this structural ground/deck receiver.
-    blow_up_bridge_cell_fallout(&mut sim, &rules, 5, 5, None, FrameEffects::default());
+    blow_up_bridge_cell_fallout(&mut sim, &rules, 5, 5, None, &mut FrameEffects::default());
 
     // DropAsBomb leaves HP and Location intact until ObjectAI lands it.
     let e = sim
@@ -334,7 +334,7 @@ fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
     sim.resolve_type_handles(&rules);
     // Supplied CellClass::BlowUpBridge47DD70 callback. Ordinary concrete
     // damage57CCF0 does not enter this structural ground/deck receiver.
-    blow_up_bridge_cell_fallout(&mut sim, &rules, 5, 5, None, FrameEffects::default());
+    blow_up_bridge_cell_fallout(&mut sim, &rules, 5, 5, None, &mut FrameEffects::default());
 
     let e = sim
         .substrate
@@ -509,7 +509,7 @@ fn test_bridge_walker_collapses_full_3_cell_strip_on_single_hit() {
                 is_ion_cannon: true,
                 impact_z_leptons: 0,
             }],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     assert_eq!(changed, native["result"]["returned"].as_u64() == Some(1));
     assert_concrete_damage_result(&sim, &native);
@@ -604,13 +604,13 @@ fn test_structural_bridge_collapse_preserves_dynamic_navigation_and_snapshot() {
         // Move_To before any frame-final projection rebuild; its Process
         // searches the live grid.
         let unit = sim.substrate.entities.get_mut(2).unwrap();
-        unit.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(Some(
-            crate::sim::combat::TargetKind::Cell(6, 3),
-        ));
+        unit.seldom.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(
+            Some(crate::sim::combat::TargetKind::Cell(6, 3)),
+        );
         assert!(sim.foot_continue_mega_mission(
             2,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         let unit = sim.substrate.entities.get(2).unwrap();
         assert_eq!(
@@ -660,7 +660,7 @@ fn test_bridge_collapse_is_deterministic_under_replay() {
                 warhead_ref: crate::sim::intern::InternedId::default(),
                 is_ion_cannon: false, impact_z_leptons: 0,
             }],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert_concrete_damage_result(&sim, &native);
         assert_ne!(sim.state_hash(), before_hash);
@@ -714,7 +714,7 @@ fn test_bridge_dispatcher_consumes_one_path_gate_draw_per_non_ion_event() {
                 is_ion_cannon: false,
                 impact_z_leptons: 0,
             }],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     assert!(!collapsed);
     assert_concrete_damage_result(&sim, &native);
@@ -767,7 +767,7 @@ fn drive_water_mover(
         crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     // Plain OverlayTypes 0..=25: the structural deck's anchor holds 25, and
     // Unit Can_Enter_Cell reads the type of any overlay it meets.

@@ -285,7 +285,7 @@ fn ares_nuke_without_a_silo_drops_its_payload() {
         typ,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let bullets: Vec<_> = sim.projectiles.iter().collect();
@@ -321,7 +321,7 @@ fn ares_nuke_without_a_silo_drops_its_payload() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "DigCue"
+        SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "DigCue"
     )));
 }
 
@@ -478,7 +478,7 @@ fn ares_dominator_captures_through_its_state_machine() {
             typ,
             cell,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         )
     };
@@ -488,7 +488,7 @@ fn ares_dominator_captures_through_its_state_machine() {
             sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     tick(&mut sim);
@@ -505,7 +505,7 @@ fn ares_dominator_captures_through_its_state_machine() {
     assert_eq!(sim.psychic_dominator.status_number(), 3);
     let captured = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(captured.owner(), americans);
-    assert!(!captured.mind_control.permanent());
+    assert!(!captured.seldom.mind_control.permanent());
     assert_eq!(
         sim.substrate.entities.get(immune).unwrap().owner(),
         russians
@@ -560,7 +560,7 @@ fn ares_mutator_spares_cyborgs_and_kills_natural_infantry() {
         typ,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(

@@ -332,8 +332,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&ini));

@@ -501,7 +501,6 @@ impl MessageList {
 
     /// `text`/`silent` override the `post` fields: the wrap recursion re-adds
     /// the remainder with the SAME prefix/color/timeout but always silently.
-    #[allow(clippy::too_many_arguments)]
     fn add_inner(
         &mut self,
         post: &MessagePost,

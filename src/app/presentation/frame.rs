@@ -316,6 +316,8 @@ pub(crate) struct Place {
     pub(crate) contact0: Option<Contact>,
     /// `presentation::lighting::body_extra_light`.
     pub(crate) extra_light: i32,
+    /// Infantry5192C9 reads the navigation cell for top lighting.
+    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
@@ -349,7 +351,7 @@ pub(crate) struct AirstrikeDesignation {
 impl AirstrikeDesignation {
     fn of(entity: &GameEntity, at: &Capture<'_>) -> Option<Self> {
         let id = entity.stable_id();
-        if !entity.airstrike.links_to(id) {
+        if !entity.seldom.airstrike.links_to(id) {
             return None;
         }
         Some(Self {
@@ -434,7 +436,8 @@ impl Place {
         // attack line of a `TargetLaser=` Unit, selected or not, are drawn
         // (`target_lines`, `target_laser_draws`).
         let draws_action_line = psychically_detected
-            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure)
+            || (entity.seldom.selection.is_selected()
+                && entity.category() != EntityCategory::Structure)
             || (entity.category() == EntityCategory::Unit
                 && entity.attack_target.target().is_some()
                 && at
@@ -464,6 +467,15 @@ impl Place {
             ),
             moving: crate::sim::movement::motion_query::is_moving(entity),
             center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
+            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
+                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
+                .flatten()
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
@@ -502,6 +514,7 @@ impl Place {
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
             contact0: entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|id| sim.entities().get(id))
@@ -541,7 +554,7 @@ impl Seen {
         let visual_character = entity.visual_character(
             observer.cloaking_stages,
             observer.invisible,
-            entity.discovery.owned_by_current_house(),
+            entity.seldom.discovery.owned_by_current_house(),
             crate::sim::cloak_disguise::VisualCharacterQuery::screen(
                 true,
                 observer.observer_present,
@@ -627,6 +640,8 @@ impl ObjectRecord {
                 nav_com: entity.navigation.nav_com(),
             },
             last_fire_frame: entity.last_fire_frame,
+            // The frame owns what it draws: the simulation moves on before
+            // the frame reaches the screen. Only a Structure holds art.
             building_art: entity.building_art.clone(),
             animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
@@ -658,13 +673,13 @@ impl ObjectRecord {
             rocking: entity.rocking.as_ref().map(|_| ()),
             mission: Mission::of(&entity.mission),
             tether: Tether {
-                partner: entity.tether.partner().is_some(),
+                partner: entity.seldom.tether.partner().is_some(),
             },
-            disguise: entity.disguise,
+            disguise: entity.seldom.disguise,
             display_type_override: DisplayTypeOverride {
-                image: entity.display_type_override.image(),
+                image: entity.seldom.display_type_override.image(),
             },
-            selection: entity.selection,
+            selection: entity.seldom.selection,
             applied_fraction: entity.foot_speed.native_applied_fraction(),
             // Only an Aircraft can be a Carryall.
             drawn_cargo: (entity.category() == EntityCategory::Aircraft)
@@ -1171,7 +1186,7 @@ pub(crate) struct PresentationFrame {
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
-    /// the first draw that asks ([`Self::display_order`]). The frame is
+    /// the first live-world read or before publishing a detached copy. The frame is
     /// dropped before that world can change, so every later draw of it reads
     /// the same order.
     display_order: crate::util::sync::OnceLock<

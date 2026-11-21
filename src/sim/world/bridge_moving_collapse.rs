@@ -19,7 +19,7 @@ pub(super) fn apply(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
     point: (i16, i16),
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let (selected, probe) = {
         let terrain = sim

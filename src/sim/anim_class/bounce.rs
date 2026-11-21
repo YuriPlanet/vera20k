@@ -110,7 +110,7 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<bool>, RuntimeOverlayError> {
         let Some(mut body) = self.anim(id).and_then(|anim| anim.bounce) else {
             return Ok(None);
@@ -170,7 +170,7 @@ impl Simulation {
         rules: &RuleSet,
         _overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         position: glam::IVec3,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if let (Some(bounce_anim), Some(coord)) =
             (config.bounce_anim.as_deref(), self.anim_absolute_coord(id))
@@ -208,7 +208,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         position: glam::IVec3,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
         let location = AnimWorldCoord {
             x: position.x,
@@ -224,8 +224,8 @@ impl Simulation {
         if self.bounce_cell_is_water(position, rules) && !above_deck {
             //423CDB..423DE2: a meteor uses the LAST splash, without a Wake.
             if !config.is_meteor {
-                let wake = rules.general.wake.name.clone();
-                self.spawn_named_anim(rules, &wake, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
+                let wake = &rules.general.wake.name;
+                self.spawn_named_anim(rules, wake, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
             }
             let splash = if config.is_meteor {
                 rules.combat_damage.splash_list.last()
@@ -315,7 +315,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         position: glam::IVec3,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), RuntimeOverlayError> {
         use crate::sim::tiberium::{NewTiberiumAdmission, TiberiumPlacementObjectContext};
         let Some(registry) = registry else {

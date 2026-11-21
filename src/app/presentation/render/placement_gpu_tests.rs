@@ -29,7 +29,7 @@ fn ordinary_frame(
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
 }

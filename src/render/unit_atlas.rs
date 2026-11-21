@@ -199,6 +199,8 @@ pub struct UnitAtlas {
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
     pub frame_counts: BTreeMap<(smol_str::SmolStr, VxlLayer, i32), u32>,
     /// The pictures drawn so far, where they sit, and the keys still to draw.
+    /// A `RefCell`, like `shadow_masks`: the Display-order visitors place
+    /// pictures while they share the atlas through `&AppState`.
     resident: RefCell<Resident>,
     /// First eligible composed-body mask for each supported shadow key, with
     /// the image cache's flush count when it was composed: a flush frees it
@@ -1541,7 +1543,10 @@ impl UnitModel {
 
     /// What a posed draw rasterizes, its parameters and its native draw
     /// bounds: a ground part alone, or the body with its gun parts.
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "one private draw tuple, named by its doc"
+    )]
     fn pose_draw(
         &self,
         key: &UnitSpriteKey,
@@ -1678,7 +1683,6 @@ impl UnitModel {
     /// instead selects no HVA and separately renders its shadow. Neither
     /// stores the image: `use_buffer` is 0xB43180 at the draw, and `depth`
     /// the shared depth map it reads and writes (None: a clear one).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_matrix(
         &self,
         matrix: glam::Mat4,

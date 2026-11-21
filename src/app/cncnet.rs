@@ -19,7 +19,10 @@ pub(crate) enum ExternalMatchResult {
     Won,
     Lost,
     /// Reserved by the contract; no current end-of-match owner decides it.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "docs/spawn.md reserves exit code 12 for a draw")
+    )]
     Draw,
     Disconnected,
     Quit,
@@ -84,7 +87,10 @@ pub(crate) struct ExternalLaunchProgress {
     /// Scripted actions (docs/spawn.md "Scripted leave and resign") waiting
     /// to run, and which desktop test switches already fired.
     pub(crate) pending_actions: Vec<SpawnAction>,
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+    #[cfg_attr(
+        all(target_arch = "wasm32", target_os = "unknown"),
+        expect(dead_code, reason = "the browser build runs no scripted actions")
+    )]
     pub(crate) actions_fired: SpawnActionsFired,
 }
 
@@ -115,7 +121,10 @@ pub(crate) struct SpawnActionTimers {
     resign: Option<std::time::Duration>,
 }
 
-#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    expect(dead_code, reason = "the browser build runs no scripted actions")
+)]
 impl SpawnActionTimers {
     /// Unset or unparsable values leave a switch off.
     pub(crate) fn from_values(leave: Option<&str>, resign: Option<&str>) -> Self {
@@ -173,6 +182,14 @@ pub(crate) struct ExternalLaunchReport {
     /// Relay matches only: the match's network quality record.
     pub(crate) network_quality:
         Option<crate::app::match_runtime::network_quality::NetworkQualityReport>,
+    /// `rules_mismatch` when spawn.ini's `ExpectedRulesDigest` refused the
+    /// launch; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) failure: Option<&'static str>,
+    /// With that failure: this game's rules parts for the launched mode
+    /// (docs/spawn.md, "Rules parts").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) rules_parts: Option<crate::app::rules_parts::RulesParts>,
 }
 
 impl ExternalLaunchReport {
@@ -208,7 +225,15 @@ impl ExternalLaunchReport {
             opponents_left: progress.opponents_left,
             reason: failure.map(str::to_owned),
             network_quality: None,
+            failure: None,
+            rules_parts: None,
         }
+    }
+
+    /// The launch failed because its rules differ from the expected ones.
+    pub(crate) fn rules_mismatch(&mut self, parts: crate::app::rules_parts::RulesParts) {
+        self.failure = Some("rules_mismatch");
+        self.rules_parts = Some(parts);
     }
 
     pub(crate) fn json(&self) -> String {
@@ -581,7 +606,7 @@ impl App {
             SpawnGame::Campaign(_) => None,
         };
         let map = session.and_then(|session| session.selected_map_file.as_deref());
-        request.expected.mismatch(
+        let checked = request.expected.mismatch(
             &crate::app::shell_network_setup::agreement::version(),
             || {
                 let session = session.context("launch has no game mode")?;
@@ -609,7 +634,27 @@ impl App {
                         .source_sha256,
                 )
             },
-        )
+        );
+        checked.map_err(|mut error| {
+            if let (Some(mismatch), Some(session)) = (
+                error.downcast_mut::<crate::app::frontend::cncnet_spawn::RulesMismatch>(),
+                session,
+            ) {
+                match state
+                    .process_assets
+                    .multiplayer_rules_parts(&[session.mode.override_file.as_str()])
+                {
+                    Ok(mut parts) => {
+                        mismatch.parts = parts.pop();
+                        if let Some(parts) = &mismatch.parts {
+                            log::info!("Rules parts: {}", parts.json());
+                        }
+                    }
+                    Err(parts_error) => log::warn!("No rules parts: {parts_error}"),
+                }
+            }
+            error
+        })
     }
 
     /// Sample the running match for the launch report (docs/spawn.md):
@@ -656,9 +701,14 @@ impl App {
     }
 
     /// This launch's report from its final state.
+    ///
+    /// `rules_mismatch` names this game's rules parts when its spawn.ini's
+    /// `ExpectedRulesDigest` refused the launch and the state that read them
+    /// is gone.
     pub(crate) fn external_launch_report(
         state: Option<&AppState>,
         failure: Option<&str>,
+        rules_mismatch: Option<&crate::app::rules_parts::RulesParts>,
     ) -> ExternalLaunchReport {
         let failure = failure
             .or_else(|| state.and_then(|state| state.frontend.external_launch_error.as_deref()));
@@ -668,6 +718,11 @@ impl App {
             failure,
         );
         report.network_quality = state.and_then(|state| state.match_state.network_quality.report());
+        if let Some(parts) = rules_mismatch
+            .or_else(|| state.and_then(|state| state.frontend.external_rules_mismatch.as_ref()))
+        {
+            report.rules_mismatch(parts.clone());
+        }
         report
     }
 
@@ -676,8 +731,11 @@ impl App {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn finish_spawn_launch(&self) -> Option<i32> {
         let path = self.spawn_result_path.as_deref()?;
-        let report =
-            Self::external_launch_report(self.state.as_ref(), self.startup_failure.as_deref());
+        let report = Self::external_launch_report(
+            self.state.as_ref(),
+            self.startup_failure.as_deref(),
+            self.spawn_rules_mismatch.as_ref(),
+        );
         log::info!("External launch result: {}", report.json());
         if let Err(error) = write_spawn_result(path, &report) {
             log::error!("Could not write {}: {error:#}", path.display());

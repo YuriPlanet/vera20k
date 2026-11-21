@@ -85,8 +85,7 @@ fn f64_hex(value: f64) -> String {
 /// no Rust seed/search supplies a replacement Random2 decision.
 fn import_rng(sim: &mut Simulation, native: &Value) {
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["scenario"]["before_hex"].as_str().unwrap());
     sim.mapgen_rng =
@@ -362,7 +361,7 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let producer = sim
@@ -374,7 +373,7 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     Fixture {
@@ -397,6 +396,7 @@ fn actor_input(actor: &mut GameEntity, native: &Value) {
         .lifecycle
         .set_cell_marked_for_test(native["marked"] == 1);
     actor
+        .seldom
         .in_logic_vector
         .set_for_test(native["logic_registered"] == 1);
     actor.set_in_playfield(native["in_playfield"] == 1);
@@ -497,6 +497,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
             .entities
             .get(*product)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .is_none()
@@ -510,7 +511,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                     message,
                     RadioPayload::default(),
                     rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .code(),
                 1
@@ -522,6 +523,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
             .entities
             .get(*product)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some()
@@ -534,7 +536,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                 *product,
                 RadioMessage::RequestClearance,
                 rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .code(),
             23
@@ -553,7 +555,7 @@ fn assert_actor(actor: &GameEntity, native: &Value, name: &str) {
         ("alive", actor.lifecycle.object_alive()),
         ("limbo", actor.lifecycle.in_limbo()),
         ("marked", actor.lifecycle.cell_marked()),
-        ("logic_registered", actor.in_logic_vector.is_member()),
+        ("logic_registered", actor.seldom.in_logic_vector.is_member()),
         ("in_playfield", actor.in_playfield()),
         ("on_bridge", actor.on_bridge()),
     ] {
@@ -617,17 +619,17 @@ fn assert_snapshot(fixture: &Fixture, native: &Value, name: &str) {
     ] {
         let expected = &native["radio_pair"][role];
         assert_eq!(
-            json!(actor.radio_contacts.capacity()),
+            json!(actor.seldom.radio_contacts.capacity()),
             expected["contact_capacity"]
         );
         let contact = (expected["contacts"][0] != "0x0").then_some(other);
         assert_eq!(
-            actor.radio_contacts.slot(0),
+            actor.seldom.radio_contacts.slot(0),
             contact,
             "{name}: {role} Contact0"
         );
         assert_eq!(
-            actor.tether.partner(),
+            actor.seldom.tether.partner(),
             (expected["tether"] == 1).then_some(other),
             "{name}: {role} tether"
         );
@@ -723,7 +725,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
                     &mut fixture.sim,
                     fixture.producer,
                     &rules,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                 )
                 .unwrap();
                 assert_eq!(
@@ -926,7 +928,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let product = sim
@@ -938,7 +940,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for (id, actor) in [(yard, &before["producer"]), (product, &before["product"])] {
@@ -952,16 +954,19 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             entity
                 .lifecycle
                 .set_cell_marked_for_test(actor["marked"] == 1);
-            entity.in_logic_vector.set_for_test(actor["logic"] == 1);
+            entity
+                .seldom
+                .in_logic_vector
+                .set_for_test(actor["logic"] == 1);
             entity.set_in_playfield(actor["in_playfield"] == 1);
             assert_eq!(actor["contacts"], json!([0]));
-            assert!(entity.radio_contacts.is_empty());
+            assert!(entity.seldom.radio_contacts.is_empty());
             assert_eq!(
-                json!(entity.radio_contacts.capacity()),
+                json!(entity.seldom.radio_contacts.capacity()),
                 actor["radio_capacity"]
             );
             assert_eq!(actor["tether"], 0);
-            assert_eq!(entity.tether.partner(), None);
+            assert_eq!(entity.seldom.tether.partner(), None);
             entity.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_raw(int(&actor["current"])),
                 suspended: MissionId::NONE,
@@ -1037,7 +1042,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         }
         sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
         sim.mapgen_rng =
@@ -1052,7 +1057,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             .anim_slots();
         let production_before =
             slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime().clone()));
-        let delay = mission_unload(&mut sim, yard, &rules, ObjectAiCtx::default()).unwrap();
+        let delay = mission_unload(&mut sim, yard, &rules, &mut ObjectAiCtx::default()).unwrap();
         assert_eq!(
             json!(delay),
             call["return_eax"],
@@ -1159,7 +1164,7 @@ fn original_harvester_and_weeder_primary_controls_use_shared_mission_authority()
                 PerCellReason::Arrival,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_snapshot(&fixture, &row["after"], name);
@@ -1255,7 +1260,8 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
 
         // The arena's pose differs from the native crop. Only dispatch inputs
         // and effects are compared: this guard never resolves coordinates.
-        super::super::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
+        super::super::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
+            .unwrap();
 
         let entity = sim.substrate.entities.get(id).unwrap();
         let expected = &after["actor"];
@@ -1354,7 +1360,7 @@ fn a_busy_factory_exit_pushes_its_neighbours_away_from_the_head() {
             producer,
             track,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         ));
         let cell = |id: u64| match sim.substrate.entities.get(id).unwrap().navigation.nav_com() {
             Some(NavTargetRef::Cell { rx, ry }) => (rx, ry),
@@ -1433,7 +1439,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
             &mut sim,
             factory,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut bridge_changed,
         );
         assert!(
@@ -1464,7 +1470,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
             &mut sim,
             factory,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut bridge_changed,
         );
         for id in [blocker, east] {
@@ -1526,7 +1532,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                         &rules,
                         33,
                         crate::sim::world::TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::empty(),
+                        &mut crate::sim::world::FrameEffects::empty(),
                     )
                     .unwrap();
                 assert!(
@@ -1553,7 +1559,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                             unit.navigation.nav_com(),
                             unit.mission.current(),
                             unit.mission.queued(),
-                            unit.radio_contacts.slot(0),
+                            unit.seldom.radio_contacts.slot(0),
                             unit.locomotor.as_ref().map(|loco| loco.active_kind()),
                         )
                     })
@@ -1603,7 +1609,7 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(matches!(
@@ -1614,7 +1620,7 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             miner,
             (0, 0),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::ai_base_building::BuildingExit::Placed
     ));
@@ -1742,7 +1748,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                 &rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                &mut FrameEffects::default().with_production_strip(&visits),
             )
             .expect("ordinary local production frame");
         assert!(output.tick.frame_committed);
@@ -1780,8 +1786,8 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                     && !unit.lifecycle.in_limbo()
                     && unit.mission.current().known() == Some(MissionType::Move)
                     && unit.mission.queued() == MissionId::NONE
-                    && unit.radio_contacts.slot(0) == Some(factory)
-                    && unit.tether.partner() == Some(factory)
+                    && unit.seldom.radio_contacts.slot(0) == Some(factory)
+                    && unit.seldom.tether.partner() == Some(factory)
                     && bay_head(&sim, unit.stable_id()).is_some()
             })
             .map(|unit| unit.stable_id());
@@ -1836,8 +1842,8 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
         unit.navigation.nav_com(),
         Some(NavTargetRef::Object { id: transport })
     );
-    assert_eq!(unit.radio_contacts.slot(0), Some(factory));
-    assert_eq!(unit.tether.partner(), Some(factory));
+    assert_eq!(unit.seldom.radio_contacts.slot(0), Some(factory));
+    assert_eq!(unit.seldom.tether.partner(), Some(factory));
     assert_eq!(bay_head(&sim, product), Some(head));
 
     radio::take_transmit_log();
@@ -1865,12 +1871,13 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                 "Unit73A981 sends CanDock to the retained foreign NavCom after clearance: {sends:?}"
             );
             let unit = sim.substrate.entities.get(product).unwrap();
-            assert_eq!(unit.radio_contacts.slot(0), Some(transport));
+            assert_eq!(unit.seldom.radio_contacts.slot(0), Some(transport));
             assert_eq!(
                 sim.substrate
                     .entities
                     .get(transport)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .slot(0),
                 Some(product)
@@ -1880,11 +1887,12 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                     .entities
                     .get(factory)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(product)
             );
-            assert!(!unit.radio_contacts.contains(factory));
-            assert_ne!(unit.tether.partner(), Some(factory));
+            assert!(!unit.seldom.radio_contacts.contains(factory));
+            assert_ne!(unit.seldom.tether.partner(), Some(factory));
             break;
         }
     }
@@ -1967,7 +1975,7 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(matches!(
@@ -1978,7 +1986,7 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
                 tank,
                 (0, 0),
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed
         ));
@@ -1999,7 +2007,13 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
             "the capture lands before the product starts driving"
         );
         let americans = sim.interner.get("Americans").unwrap();
-        sim.change_owner_with_rules(factory, americans, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(
+            factory,
+            americans,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         let left = (0..600).any(|_| {
             tick(&mut sim);
             let unit = sim.substrate.entities.get(tank).unwrap();

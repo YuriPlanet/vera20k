@@ -30,7 +30,7 @@ fn production_air_wrapper_keeps_fly_exact_producer_and_reads_live_dummy() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let e = sim.substrate.entities.get(1).unwrap();
@@ -70,7 +70,7 @@ fn production_air_wrapper_retains_native_jumpjet_result_below_the_ground() {
             .tick_jumpjet_cruise_one(
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
             .is_some()
@@ -93,7 +93,7 @@ fn production_air_wrapper_retains_native_jumpjet_result_below_the_ground() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -167,7 +167,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
             1,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -212,7 +212,7 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
                         1,
                         &rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
             }
@@ -268,7 +268,7 @@ fn pre_logic_save_observes_input_and_unsorted_ground_before_first_tick() {
     }
     let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
     let saved = std::cell::RefCell::new(None);
-    let save = |sim: &Simulation| {
+    let mut save = |sim: &Simulation| {
         *saved.borrow_mut() = Some(GameSnapshot::save_validated(sim, 0, 0, "initial", 0));
     };
     runtime
@@ -280,7 +280,7 @@ fn pre_logic_save_observes_input_and_unsorted_ground_before_first_tick() {
             )],
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_before_logic(&save),
+            &mut FrameEffects::default().with_before_logic(&mut save),
         )
         .unwrap();
     let loaded = GameSnapshot::load(&saved.into_inner().expect("reached pre-Logic save")).unwrap();
@@ -581,7 +581,7 @@ fn jumpjet_process_compares_live_layer_queries_not_cached_registration() {
         id,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.substrate.display.layer_of(id), Some(DisplayLayer::TOP));
@@ -788,7 +788,7 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
         Some(bucket(&sim, (12, 12)))
     );
 
-    sim.advance_live_object_turn(1, &rules, super::techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut super::techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let missile = sim.substrate.entities.get(1).unwrap();

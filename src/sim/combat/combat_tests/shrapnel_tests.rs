@@ -89,6 +89,7 @@ fn projectile_shrapnel_count_measures_to_the_firers_get_coords() {
     source.set_category_for_test(EntityCategory::Structure);
     // Construction stamps the type's `Foundation=3x3`.
     source
+        .seldom
         .type_facts
         .set_foundation_for_test("3x3".to_string().into());
     source.lifecycle.set_cell_marked_for_test(true);
@@ -152,6 +153,7 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
     target.set_category_for_test(EntityCategory::Structure);
     // Construction stamps the type's `Foundation=2x2`.
     target
+        .seldom
         .type_facts
         .set_foundation_for_test("2x2".to_string().into());
     target.lifecycle.set_cell_marked_for_test(true);
@@ -372,7 +374,8 @@ fn projectile_shrapnel_needs_a_non_building_first_object_in_the_bullets_cell() {
     building.insert(firer());
     let mut hq = make_entity_owned(2, "HQ", 5, 5, 100, "Americans");
     hq.set_category_for_test(EntityCategory::Structure);
-    hq.type_facts
+    hq.seldom
+        .type_facts
         .set_foundation_for_test("1x1".to_string().into());
     building.insert(hq);
     assert!(shrapnel_at_cell_5_5(&rules, building, 1).0.is_empty());

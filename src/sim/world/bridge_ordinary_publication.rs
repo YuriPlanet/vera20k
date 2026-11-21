@@ -18,13 +18,13 @@ pub(crate) fn damage_ordinary(
     rules: &RuleSet,
     input: CellCoord,
     family: Family,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<BodyResult, String> {
     let mut live = LivePublication {
         sim,
         rules,
         collapsed: false,
-        frame_effects,
+        frame_effects: frame_effects.reborrow(),
     };
     let returned = ordinary_damage::damage(
         &mut LiveOrdinary {
@@ -45,13 +45,13 @@ pub(crate) fn repair_from_engineer(
     sim: &mut Simulation,
     rules: &RuleSet,
     engineer: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<bool, String> {
     let mut live = LivePublication {
         sim,
         rules,
         collapsed: false,
-        frame_effects,
+        frame_effects: frame_effects.reborrow(),
     };
     let (input, family) = engineer_repair_family(&mut live, engineer)?;
     let mut host = LiveOrdinary {
@@ -294,7 +294,7 @@ impl OrdinaryDamageHost for LiveOrdinary<'_, '_> {
                 cell,
                 live.rules,
                 Some(live.rules.overlay_registry()),
-                live.frame_effects,
+                &mut live.frame_effects,
             );
             self.live.coord(cell)
         });

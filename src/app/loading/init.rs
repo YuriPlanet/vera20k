@@ -156,7 +156,7 @@ mod map_wall_owner_candidate_tests {
             EntityCategory::Structure,
         );
         entity
-            .type_facts
+            .seldom.type_facts
             .set_foundation_for_test(foundation.to_string().into());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(true);
@@ -301,7 +301,7 @@ mod map_wall_owner_candidate_tests {
             assert!(entity.lifecycle.cell_marked());
             assert!(!entity.lifecycle.in_limbo());
             if entity.category() == EntityCategory::Structure {
-                for (dx, dy) in entity.type_facts.foundation().cell_offsets() {
+                for (dx, dy) in entity.seldom.type_facts.foundation().cell_offsets() {
                     let cell = terrain
                         .cell((origin.0 as i16 + dx) as u16, (origin.1 as i16 + dy) as u16)
                         .unwrap();
@@ -359,7 +359,7 @@ mod map_wall_owner_candidate_tests {
                     &[],
                     crate::app::types::SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             if let Some(id) = crate::sim::production::ready_building_entity_for_owner(
@@ -399,7 +399,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -434,7 +434,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(
@@ -951,7 +951,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(matches!(frame.lighting_events.as_slice(),
@@ -979,7 +979,7 @@ mod map_wall_owner_candidate_tests {
                 &[],
                 16,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(
@@ -2686,6 +2686,11 @@ pub(crate) fn load_map_initial_with_assets(
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
                 asset_manager.get_ref(name)
             });
+        if let Some(missing) =
+            blocks.missing_cliff_tile(&theater.lookup, resolved.ids.cliffs.cliff_set)
+        {
+            return Err(anyhow::anyhow!("random map: {missing}"));
+        }
 
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both

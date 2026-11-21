@@ -1,5 +1,5 @@
-//! Locks and once-cells that a tick and the draw can both reach: the Main
-//! RNG, and caches inside state the presentation frame shares with the live
+//! Locks and once-cells that two threads can both reach: the app's Main RNG
+//! cell, and caches inside state the presentation frame shares with the live
 //! world. In the threaded browser build a tick runs on a Web Worker beside
 //! the draw (docs/sim-thread.md, "The browser"), and the browser's main
 //! thread traps when it waits on another thread. There the mutex spins on the
@@ -45,6 +45,7 @@ pub struct NeverWaitingOnceLock<T> {
 // SAFETY: the cell owns its value as a `Box<T>` would; shared access hands
 // out `&T` and fills the cell with a `T` moved from the calling thread.
 unsafe impl<T: Send + Sync> Sync for NeverWaitingOnceLock<T> {}
+// SAFETY: moving the cell moves the owned `T` with it, as a `Box<T>` would.
 unsafe impl<T: Send> Send for NeverWaitingOnceLock<T> {}
 
 impl<T> NeverWaitingOnceLock<T> {
