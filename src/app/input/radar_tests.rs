@@ -31,6 +31,7 @@ fn query<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> Ac
         selected,
         modifier: OrderModifier::Normal,
         force_move_key: false,
+        force_fire_key: false,
         order_mode: OrderMode::Move,
         planning: false,
         mouse_over: false,
@@ -48,6 +49,7 @@ fn planning<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) ->
 fn ctrl<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
     ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(sim, rules, selected)
     }
 }
@@ -206,6 +208,7 @@ fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
     let selected = [ivan];
     let forced = ActionQuery {
         modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
         ..query(&sim, &rules, &selected)
     };
     let (cell, object) = dot(&sim, tank);

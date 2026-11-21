@@ -82,7 +82,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
         _ => unreachable!(),
     }
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    *sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
     sim
 }
 
@@ -275,7 +275,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
         assert_eq!(expected.1, CdTimer::from_raw(-1, 65536));
         // Native in-scenario load resets Scenario RNG to Seed0. Compare timer
         // persistence with both simulations on that same lifecycle boundary.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = GameSnapshot::save(&sim, 1, rules.simulation_config_hash(), "Foot timers", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
         assert_eq!(restored.state_hash(), sim.state_hash());

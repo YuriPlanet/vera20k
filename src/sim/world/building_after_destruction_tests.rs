@@ -119,22 +119,22 @@ fn sim() -> Simulation {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_clear_cell,
     ));
     // A playfield and map size the crate placer reads (as the crate tests'
     // fixture installs them).
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 20,
         off_fc: -128,
         off_100: -128,
         off_104: 256,
         off_108: 256,
     });
-    sim.playfield_size_height = Some(20);
+    *sim.playfield_size_height = Some(20);
     sim
 }
 

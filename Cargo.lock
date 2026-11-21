@@ -2081,6 +2081,7 @@ checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
 dependencies = [
  "bitflags 2.11.0",
  "objc2 0.6.4",
+ "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation 0.3.2",
 ]
@@ -3655,7 +3656,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vera20k"
-version = "0.3.9"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3682,6 +3683,7 @@ dependencies = [
  "ring",
  "rodio",
  "rustls",
+ "same-file",
  "serde",
  "serde_json",
  "sha1 0.10.6",
@@ -3692,7 +3694,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "vera20k-core",
- "vera20k-wasm-ext",
+ "vera20k-gui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
@@ -3707,7 +3709,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-android"
-version = "0.3.9"
+version = "0.4.2"
 dependencies = [
  "android-activity",
  "anyhow",
@@ -3720,13 +3722,15 @@ dependencies = [
 
 [[package]]
 name = "vera20k-core"
-version = "0.3.9"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "bytemuck",
  "chacha20",
  "fixed",
+ "flate2",
  "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "glam",
  "half",
  "hashbrown 0.16.1",
@@ -3735,11 +3739,15 @@ dependencies = [
  "libm",
  "log",
  "memmap2",
+ "miniz_oxide",
  "num-bigint",
  "num-traits",
+ "once_cell",
  "rayon",
+ "rustix 1.1.4",
  "serde",
  "serde_json",
+ "simd-adler32",
  "tempfile",
  "thiserror 2.0.18",
  "typenum",
@@ -3750,7 +3758,15 @@ dependencies = [
  "wasm_sync",
  "wat",
  "web-time",
+ "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "vera20k-gui"
+version = "0.3.8"
+dependencies = [
+ "web-time",
 ]
 
 [[package]]

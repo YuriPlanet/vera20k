@@ -68,7 +68,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         if blocked {
             overlays.place_overlay(13, 12, wall, 0);
         }
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         assert!(
             combat_targeting::should_retaliate(&sim, rules, victim, source),
             "the non-range refusal gates must admit this source"
@@ -1262,7 +1262,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         entities.insert(gi);
 
         let current_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
-            &entities, 10, current_id, &rules, &interner, None, None, None,
+            &entities, 10, current_id, &rules, &interner, None, None, None, 0,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
@@ -1277,6 +1277,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             None,
             None,
             None,
+            0,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))

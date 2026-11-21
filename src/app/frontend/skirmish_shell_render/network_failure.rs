@@ -4,10 +4,8 @@
 use super::in_game_shell::{
     InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay, render_shell_frame,
 };
-use super::text::localized_label;
 use crate::app::AppState;
-use crate::app::match_runtime::network_failure::{DIALOG, labels, vera_body};
-use crate::ui::shell::geom::ShellScale;
+use crate::app::match_runtime::network_failure::{labels, vera_body};
 
 pub(crate) fn render_network_failure(
     state: &mut AppState,
@@ -15,19 +13,21 @@ pub(crate) fn render_network_failure(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     let (width, height) = (state.render_width(), state.render_height());
-    let (body, button) = labels(state);
-    let labels = crate::ui::skirmish_shell::SkirmishValidationModalState::new(
-        vera_body(state).unwrap_or_else(|| localized_label(state, body.0, body.1)),
-        localized_label(state, button.0, button.1),
+    let (body, button) = labels(&state.match_state.sim_runtime);
+    let shell_box = crate::ui::shell::modal::ShellBox::notice(
+        vera_body(state).unwrap_or_else(|| state.csf_label(body.0, body.1)),
+        state.csf_label(button.0, button.1),
+    )
+    .on_screen();
+    let parts = super::shell_box::skirmish_parts(&shell_box, (width as i32, height as i32));
+    crate::app::match_runtime::network_failure::sync_box(
+        &mut state.frontend.shell_controller,
+        &shell_box,
+        &parts,
     );
-    let modal = crate::ui::shell::modal::body_ok_layout_in(crate::ui::shell::geom::RectPx::new(
-        0,
-        0,
-        width as i32,
-        height as i32,
-    ));
-    let pressed = state.frontend.shell_controller.top_id() == Some(DIALOG)
-        && state.frontend.shell_controller.pressed() == Some(crate::ui::shell::modal::control::OK);
+    let pressed =
+        crate::app::match_runtime::network_failure::ok_pressed(&state.frontend.shell_controller);
+    let pressed = |id| pressed && id == crate::ui::shell::modal::control::OK;
     let mut art = Vec::new();
     let mut controls = Vec::new();
     let mut texts = Vec::new();
@@ -38,17 +38,39 @@ pub(crate) fn render_network_failure(
         // and its working button through the shared text compositor.
         ShellFrameArt::Clear
     };
-    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+    let atlas = state.frontend.skirmish_shell_chrome.as_ref();
+    if let Some(atlas) = atlas {
         // Original5D3514 -> DrawEmptyBackdrop52FEC0 ->72E820. Reuse the
         // existing generic shell/right-panel owner with every slot closed.
         super::modals::push_message_box_backdrop_instances(
             &mut art,
             atlas,
-            &crate::ui::skirmish_shell::compute_layout_on(ShellScale::RETAIL, width, height),
+            &crate::ui::skirmish_shell::compute_layout_on(
+                crate::ui::shell::geom::RETAIL_SCALE,
+                width,
+                height,
+            ),
         );
-        super::modals::push_validation_modal_instances(&mut controls, atlas, &modal, pressed);
     }
-    super::text::push_validation_modal_text_draws(&mut texts, state, &labels, &modal, pressed);
+    let look =
+        super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
+    let (controls_out, texts_out) = (&mut controls, (&mut texts, false));
+    let tree = super::controller_tree(&state.frontend.shell_controller, shell_box.dialog);
+    super::shell_box::push_skirmish_box(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        atlas,
+        tree,
+        &shell_box,
+        &parts,
+        pressed,
+        look,
+        controls_out,
+        texts_out,
+    );
     render_shell_frame(
         state,
         encoder,

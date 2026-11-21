@@ -22,7 +22,10 @@ REPO = 'YuriPlanet/vera20k'
 MAINTAINER = 'hrusten'
 # AGENTS.md commits on the default branch by someone else that the maintainer
 # has read and kept. Only the maintainer adds entries.
-ACCEPTED_AGENTS_COMMITS: set[str] = set()
+ACCEPTED_AGENTS_COMMITS: set[str] = {
+    '072dfa410b92ef4052f01af85fe4fcfc16961d1c',  # libi: the browser switch names the wasm check
+    'bf86308ded6b33a80e7dd1282477432f3036a104',  # libi: Multiplayer rules and rules parts
+}
 
 # Steer agents (AGENTS.md/CLAUDE.md at any depth, skills, hooks, settings) or
 # run on maintainer machines (CI, Cargo config, build scripts, the build runner,

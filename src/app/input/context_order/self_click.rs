@@ -3,13 +3,14 @@
 
 use super::{
     LeftRelease, ReleaseAction, context_actor_viewer, context_owns_actor, left_release,
-    move_click_command,
+    move_click_command, object_guard_command,
 };
 use crate::app::input::entity_pick::HoverTargetKindWithId;
 use crate::app::types::OrderMode;
 use crate::map::entities::EntityCategory;
 use crate::sim::command::Command;
 use crate::sim::intern::InternedId;
+use crate::sim::world::ControlProjection;
 
 /// The data capability shared by self-click, self-hover and the deploy key.
 /// `UnitClass::What_Action_OnObject @ 0x0074000B` admits `IsSimpleDeployer`
@@ -129,14 +130,49 @@ pub(in crate::app::input) fn ares_deactivated_action(
     })
 }
 
-/// The left release when the selection's cursor owner
-/// ([`crate::app::input::cursor::select_best_for_action`]) is Deactivated:
-/// DetermineAction takes its action for the whole selection (`0x00692634`,
-/// `0x00692655`), which is [`ares_deactivated_action`] over an object and 0
-/// over a Cell (`Simulation::cell_move_action`). Detonate is the caller's;
-/// the other two reach [`left_release`], so no object receives an order.
-/// None without Ares.
-pub(super) fn ares_deactivated_selection_click(
+/// Ares 3.0 InfantryClass_GetActionOnObject_EMP (Ares.dll `10053DB0`, hook
+/// at InfantryClass::What_Action_OnObject's entry `0x0051E3B0`, resuming at
+/// its return `0x0051F187`): an Infantryman whose type is `Deployer=`
+/// (`+0xEC8`) answers NoDeploy (0x1E) over itself while under EMP (vt+0x37C),
+/// whatever the selection and keys. It precedes every other rung: Ares'
+/// Deactivated hook (`0x0051E440`, [`ares_deactivated_action`]), the healer
+/// self arm, the bomb and Techno's self rung. False without Ares.
+pub(in crate::app::input) fn ares_emp_deployer_refuses_itself(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+) -> bool {
+    rules.ares()
+        && actor == target
+        && sim.entities().get(actor).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                && entity.is_under_emp()
+                && sim
+                    .interner()
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.deployer)
+        })
+}
+
+/// The left release when an Ares hook at the head of the selection's cursor
+/// owner's What_Action answers
+/// ([`crate::app::input::cursor::select_best_for_action`]): DetermineAction
+/// takes the owner's action for the whole selection (`0x00692634`,
+/// `0x00692655`).
+/// - An EMP'd deployer over itself answers NoDeploy
+///   ([`ares_emp_deployer_refuses_itself`]), which dispatches
+///   ([`LeftRelease::Dispatch`], `0x004ABE88`), so the click selects nothing.
+/// - A Deactivated owner answers [`ares_deactivated_action`] over an object
+///   and 0 over a Cell (`Simulation::cell_move_action`). Detonate is the
+///   caller's; the other two reach [`left_release`], so no object receives
+///   an order.
+///
+/// None without Ares. These hooks precede Techno's Shift rung
+/// (`0x00700107`), for the click ([`super::queue::head_release`]) as for the cursor,
+/// and a Select or 0 under Shift still clears the selection first
+/// ([`super::ContextClick::Select`]).
+pub(super) fn ares_head_hook_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     current_objects: &[u64],
@@ -163,6 +199,9 @@ pub(super) fn ares_deactivated_selection_click(
             .is_some_and(|best| best.deactivated.is_offline())
             .then_some(Ok(LeftRelease::Nothing));
     };
+    if ares_emp_deployer_refuses_itself(sim, rules, best, target.stable_id) {
+        return Some(Ok(LeftRelease::Dispatch));
+    }
     Some(
         match ares_deactivated_action(sim, rules, current_objects, best, target.stable_id)? {
             AresDeactivatedAction::Detonate => Err(target.stable_id),
@@ -343,6 +382,24 @@ pub(super) fn lone_self_foot_release(
     ))
 }
 
+/// A lone healer infantryman's release over itself. Infantry What_Action's
+/// healer self arm (`0x0051E748`, [`Simulation::infantry_healer_guards_itself`])
+/// answers GuardArea in place of the object's Detonate and self answers, and
+/// the release dispatches the order [`object_guard_command`] gives. `None`
+/// when the arm does not answer.
+///
+/// [`Simulation::infantry_healer_guards_itself`]: crate::sim::world::Simulation::infantry_healer_guards_itself
+pub(super) fn lone_self_healer_guard(
+    sim: &crate::sim::world::Simulation,
+    control: &ControlProjection<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected_ids: &[u64],
+    target: u64,
+) -> Option<Option<Command>> {
+    (selected_ids == [target] && sim.infantry_healer_guards_itself(control, target, rules))
+        .then(|| object_guard_command(sim, control, rules, target, target))
+}
+
 /// Unit What_Action's NoDeploy answer (`0x0073FFF4`) for a self action its
 /// site tests or CanDeploySlashUnload refuse, and Planning Mode's for any
 /// Unit or Infantry self action.
@@ -444,7 +501,9 @@ fn self_action(
     }
     // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
     // owner's network loaded offers the unload action. Only the Ares-form sim
-    // fills a network, so this runs in every game.
+    // fills a network, so this runs in every game. Its click is the
+    // absorbers' ClickedMission(Unload) arm (0x443534), which Ares opens to
+    // tunnel entrances (100172F0, hook 0x44351A).
     if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
         return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,

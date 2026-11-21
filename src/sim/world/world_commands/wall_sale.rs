@@ -6,7 +6,7 @@ use super::trace_wall_sell_zone_repair_step;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control_authority::CommandCapability;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::overlay_grid::{
     OverlayGrid, OverlayRecalcOutcome, RecomputeResult, runtime_wall_cleanup_visit_at,
 };
@@ -73,7 +73,7 @@ impl Simulation {
             tail_grid,
             terrain,
             self.bridge_state.as_ref(),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             repair_cell,
             repair,
         );
@@ -111,7 +111,7 @@ impl Simulation {
     /// Returns whether a wall went.
     pub(crate) fn sell_wall_at_cell(
         &mut self,
-        command_owner: &str,
+        command_owner: InternKey<'_>,
         granted_source: Option<(i8, InternedId)>,
         x: i16,
         y: i16,
@@ -153,7 +153,7 @@ impl Simulation {
         // and before clearing the overlay. Locality belongs to the receiver.
         if !suppress_local_cue
             && rules.general.sell_sound.is_some()
-            && let Some(receiver) = self.interner.get(command_owner)
+            && let Some(receiver) = self.interner.key_id(command_owner)
         {
             self.sound_events.emit(SimSoundEvent::WallSold { receiver });
         }
@@ -199,7 +199,7 @@ impl Simulation {
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,
                     bridge_state: self.bridge_state.as_ref(),
-                    playfield_bounds: self.playfield_bounds,
+                    playfield_bounds: *self.playfield_bounds,
                 };
                 self.overlay_grid.as_mut().and_then(|grid| {
                     runtime_wall_cleanup_visit_at(
@@ -291,7 +291,7 @@ impl Simulation {
             } else {
                 self.rebuild_zone_grid_full(std::sync::Arc::clone(&tail_grid));
             }
-            self.path_grid = Some(tail_grid);
+            *self.path_grid = Some(tail_grid);
         }
         true
     }

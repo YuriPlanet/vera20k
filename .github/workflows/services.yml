@@ -1,8 +1,8 @@
 name: Online services
 
-# Pull requests that touch the relay protocol or the browser gateway run those
-# packages' own tests, which take a minute or two. The engine's library tests
-# stay in the manual platform workflows; relay changes also get
+# Pull requests that touch the relay, its protocol or the browser gateway run
+# those packages' own tests, which take a minute or two. The engine's library
+# tests stay in the manual platform workflows; relay changes also get
 # relay-compat.yml. The lobby Worker and its tests live in a private repository.
 on:
   pull_request:
@@ -30,7 +30,7 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo test -p vera20k-relay-protocol --lib --no-fail-fast
+      - run: cargo test -p vera20k-relay-protocol -p vera20k-relay --lib --no-fail-fast
       # The netsim runner and the load generator build only with test-support.
       - run: cargo check -p vera20k-relay-protocol --features test-support --examples
 

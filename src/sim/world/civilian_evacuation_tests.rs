@@ -80,7 +80,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
             crate::map::playfield::PlayfieldBounds::from_map_header(&map.header),
         ));
         sim.set_playfield_size_height_for_test(Some(32));
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let carrier_owner = sim.interner.get("Americans").unwrap();
         let passenger_owner = sim.interner.get("Russians").unwrap();
         for house in sim.houses.values_mut() {

@@ -2,8 +2,7 @@
 //! Native row/leaf goldens are checked separately; this gate checks caller
 //! ordering, fresh destination snapshots and real pipeline read/write policies.
 use super::super::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_ground_object_instances,
-    lower_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_ground_object_instances, lower_object_instances,
 };
 use super::*;
 use crate::render::batch::InstanceBufferPool;
@@ -59,7 +58,7 @@ fn ground_draw_order_controls_overlapping_atlas_pixels() {
                     4 => (0., 1),
                     _ => unreachable!(),
                 };
-                PlannedObjectInstance::object(
+                OwnedPlannedObject::object(
                     order.object_draw(id, SpriteEncoding::Plain).unwrap(),
                     vec![ObjectPieceInstance {
                         target: ObjectTexture::ShpPage(page),
@@ -68,7 +67,7 @@ fn ground_draw_order_controls_overlapping_atlas_pixels() {
                     }],
                 )
             })
-            .collect(),
+            .collect::<Vec<_>>(),
     );
     assert_eq!(ground.owners, [2, 3, 4, 1]);
     let mut pool = InstanceBufferPool::new();
@@ -169,7 +168,7 @@ fn unit_body_shadow_replay(layer: u8, masked: bool, initial_z: u16) {
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
-    let parents = (0..2)
+    let parents: Vec<_> = (0..2)
         .map(|i| {
             let mut body = sprite([1. + i as f32 * 4., 1.], [4., 4.], -1.);
             body.z_gradient = crate::render::native_z::pack_voxel_z_gradient(
@@ -181,7 +180,7 @@ fn unit_body_shadow_replay(layer: u8, masked: bool, initial_z: u16) {
             shadow.z_gradient = body.z_gradient;
             shadow.zshape_origin = [3., 4.];
             shadow.draw_state.fx_flags = crate::render::draw_state::FX_SHADOW;
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 ObjectDraw {
                     id: i,
                     layer: TacticalLayer(layer),
@@ -218,7 +217,7 @@ fn unit_body_shadow_replay(layer: u8, masked: bool, initial_z: u16) {
     let ground = if layer == 2 {
         lower_ground_object_instances(parents)
     } else {
-        lower_object_instances(parents)
+        lower_object_instances(parents.into())
             .into_iter()
             .nth(layer as usize)
             .unwrap()
@@ -448,7 +447,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
     ];
     let mut pool = InstanceBufferPool::new();
     for count in 1..=steps.len() {
-        let entries = steps[..count]
+        let entries: Vec<_> = steps[..count]
             .iter()
             .enumerate()
             .flat_map(|(i, &(target, render_z, z))| {
@@ -456,7 +455,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
                     // Three disjoint tile lanes exercise real multi-member waves.
                     // Every ordinary run still separates the next native event.
                     let id = i * 3 + lane;
-                    PlannedObjectInstance::object(
+                    OwnedPlannedObject::object(
                         ObjectDraw {
                             id: id as u64,
                             layer: TacticalLayer(2),
@@ -610,7 +609,7 @@ fn offscreen_ordinary_units_neither_fence_nor_split_destination_edits() {
             }
         };
         for ordinary_count in [1usize, 20_000] {
-            let entries = (0..ordinary_count + 2)
+            let entries: Vec<_> = (0..ordinary_count + 2)
                 .map(|i| {
                     let (target, instance) = if i == 0 {
                         (
@@ -633,7 +632,7 @@ fn offscreen_ordinary_units_neither_fence_nor_split_destination_edits() {
                         );
                         (ObjectTexture::UnitAtlasPage(0), instance)
                     };
-                    PlannedObjectInstance::object(
+                    OwnedPlannedObject::object(
                         ObjectDraw {
                             id: i as u64,
                             layer: TacticalLayer(layer_index as u8),
@@ -652,7 +651,7 @@ fn offscreen_ordinary_units_neither_fence_nor_split_destination_edits() {
                     )
                 })
                 .collect();
-            let layers = lower_object_instances(entries);
+            let layers = lower_object_instances(entries.into());
             let layer = &layers[layer_index];
             assert_eq!(layer.runs.len(), 3);
             assert_eq!(layer.runs[1].count, ordinary_count as u32);

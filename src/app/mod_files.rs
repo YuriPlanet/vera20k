@@ -45,6 +45,49 @@ pub(crate) fn uncompared(name: &str) -> bool {
     UNCOMPARED.contains(&name_key(name).as_str())
 }
 
+/// Kinds of file, by the ending of their [`name_key`], that players of one
+/// mod need not share ([`FileList::digest`]): what they hold only shows,
+/// plays or tells one player something. They are text tables, fonts, movies,
+/// the pictures only screens draw and documents. The simulation side (`sim`,
+/// `rules`, `map`, `net`) reads no file of these kinds. A Rules, Art, AI or
+/// mode INI or a map that includes one is compared as it was read, the
+/// included file with it (`retail_sources::select_ini`). Where one of them
+/// switches what else is read, another digest tells: in a folder of INI
+/// additions it makes the folder a mod that adds none (`mod_additions`,
+/// whose own notes are a shorter list), and beside a mod's parts it stops
+/// their assembly, which changes every path (`util::mod_package`). A mod's
+/// list still names them ([`FileList::scan`]).
+///
+/// RESIDUAL: a sound, EVA or theme INI that includes a file of these kinds
+/// is no longer compared with it. Trigger: an Ares game whose such INI
+/// names one in `[#include]`, and players whose copies of it differ. Effect:
+/// as for the original game without a mod, whose sound, EVA and theme INIs
+/// no room compares: a map trigger that takes such a list's number as a
+/// value is refused at the start by the world it certifies. Rare.
+///
+/// Sounds, music and palettes are not among them. The sound, EVA and theme
+/// lists number what a map's triggers name, a theme counts only while its
+/// WAV is there (`rules::theme_ini`), and whether a palette loads decides a
+/// building's death animation (`rules::effect_asset_catalog`). An archive
+/// can hold any file, so every archive counts whatever it is named for.
+const SHOWN_KINDS: [&str; 19] = [
+    "CSF", "FNT", "BIK", "VQA", "PCX", "PNG", "JPG", "JPEG", "BMP", "GIF", "ICO", "TXT", "MD",
+    "PDF", "RTF", "HTM", "HTML", "URL", "LOG",
+];
+/// The mouse pointer's shapes, which only the screen draws: the one file
+/// among [`SHOWN_KINDS`] known by its whole name.
+const SHOWN_NAMES: [&str; 1] = ["MOUSE.SHA"];
+/// Whether the file under `key` only shows, plays or tells something
+/// ([`SHOWN_KINDS`]). A name outside ASCII has no ending to tell by
+/// ([`name_key`]) and counts as any other file.
+fn only_shown(key: &str) -> bool {
+    let name = key.rsplit('/').next().unwrap_or(key);
+    SHOWN_NAMES.contains(&name)
+        || name
+            .rsplit_once('.')
+            .is_some_and(|(_, kind)| SHOWN_KINDS.contains(&kind))
+}
+
 /// The most files of one mod that are compared. A mod has a few thousand;
 /// folders that link into one another can list far more.
 const FILES_LIMIT: usize = 50_000;
@@ -130,13 +173,15 @@ impl FileList {
     /// match only with the same files. Each file counts by its path below the
     /// folder ([`name_key`]) and by what it holds. The folder's own name and
     /// the order the file system lists in do not count, nor do the files in
-    /// the folder itself that no match reads ([`UNCOMPARED`]). Only what can
-    /// be read as a file counts: a link to nothing, a pipe or a device is none
-    /// of the mod's files.
+    /// the folder itself that no match reads ([`UNCOMPARED`]), nor a file
+    /// that only shows, plays or tells one player something
+    /// ([`SHOWN_KINDS`]): players with another translation or other screens
+    /// play together. Only what can be read as a file counts: a link to
+    /// nothing, a pipe or a device is none of the mod's files.
     pub(crate) fn digest(&self) -> [u8; 32] {
         let mut all = crate::util::sha256::Sha256::new();
         all.update(b"VERA20k mod files v1\0");
-        for entry in &self.entries {
+        for entry in self.entries.iter().filter(|entry| !only_shown(&entry.key)) {
             all.update(&(entry.key.len() as u64).to_le_bytes());
             all.update(entry.key.as_bytes());
             all.update(&entry.digest);
@@ -145,7 +190,8 @@ impl FileList {
     }
 
     /// The start of [`FileList::digest`] in a form two players can read to
-    /// each other, such as `4F2A-91C3`: the same code is the same files.
+    /// each other, such as `4F2A-91C3`: the same code is the same compared
+    /// files.
     pub(crate) fn code(&self) -> String {
         let [a, b, c, d, ..] = self.digest();
         format!("{a:02X}{b:02X}-{c:02X}{d:02X}")
@@ -544,6 +590,42 @@ mod tests {
         write("Two/maps/Frozen.YRM", b"map");
         write("Two/tank.vxl", b"");
         assert_ne!(digest("One"), digest("Two"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Players of one mod need not share what only shows, plays or tells:
+    /// a text table, a font, a movie, a picture only a screen draws, the
+    /// pointer and a document, wherever in the folder. The mod's list still
+    /// names them, and a sound, a palette or another shape still counts.
+    #[test]
+    fn a_mods_digest_leaves_out_what_only_shows_plays_or_tells() {
+        let (root, write) = folder("shown");
+        for folder in ["One", "Two"] {
+            write(&format!("{folder}/rulesmd.ini"), b"[General]\n");
+            write(&format!("{folder}/ra2md.csf"), folder.as_bytes());
+        }
+        for path in [
+            "game.fnt",
+            "intro.bik",
+            "Movies/ending.VQA",
+            "glsl.pcx",
+            "Resources/logo.png",
+            "Mouse.sha",
+            "Readme.TXT",
+            "debug.log",
+        ] {
+            write(&format!("Two/{path}"), b"shown");
+        }
+        let found = |folder: &str| checked(&root.join(folder)).found;
+        assert_eq!(found("One").digest(), found("Two").digest());
+        assert_eq!(found("One").code(), found("Two").code());
+        assert_eq!((found("One").len(), found("Two").len()), (2, 10));
+
+        for path in ["Two/theme.wav", "Two/unittem.pal", "Two/tank.sha"] {
+            write(path, b"read");
+            assert_ne!(found("One").digest(), found("Two").digest(), "{path}");
+            std::fs::remove_file(root.join(path)).unwrap();
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

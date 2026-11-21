@@ -321,7 +321,7 @@ fn ares_nuke_without_a_silo_drops_its_payload() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "DigCue"
+        SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "DigCue"
     )));
 }
 

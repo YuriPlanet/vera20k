@@ -66,6 +66,14 @@ impl HiddenRun {
         }
     }
 
+    /// The Ares setting a capture's `--ares` gives its start, if any.
+    pub(crate) fn ares_setting(&self) -> Option<crate::util::ares_launch::AresSetting> {
+        match self {
+            Self::Capture(session) => session.request().ares_setting(),
+            Self::Picture(_) => None,
+        }
+    }
+
     /// What the run is called in its failure messages.
     pub(crate) fn name(&self) -> &'static str {
         match self {
@@ -118,7 +126,14 @@ impl HiddenRun {
             Self::Capture(session) => session
                 .complete_after_readback(state, format, pixels)
                 .map(|()| true),
-            Self::Picture(session) => session.complete_after_readback(state, format, pixels),
+            Self::Picture(session) => session.complete_after_readback(
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                format,
+                pixels,
+            ),
         }
     }
 

@@ -127,12 +127,12 @@ fn set_missions(entity: &mut GameEntity, current: MissionId, queued: MissionId) 
     });
 }
 
-fn take_centered_cues(sim: &mut Simulation) -> Vec<String> {
+fn take_centered_cues(rules: &RuleSet, sim: &mut Simulation) -> Vec<String> {
     sim.sound_events
         .take_for_test()
         .into_iter()
         .filter_map(|event| match event {
-            SimSoundEvent::VocCentered { sound_id } => Some(sound_id),
+            SimSoundEvent::VocCentered { sound_id } => Some(sound_id.name_in(rules).to_string()),
             // Canonical UnInit also retires this object's retained loop owner.
             SimSoundEvent::GattlingLoopRelease { .. } => None,
             other => panic!("unexpected uplink output {other:?}"),
@@ -155,12 +155,12 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     ));
     rules.bind_type_sound_references(&references, &sounds);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active() && sim.houses[&owner].map_is_clear());
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-    assert_eq!(take_centered_cues(&mut sim), ["Online"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Online"]);
 
     sim.reconcile_active_vision_structures(&rules);
     insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
@@ -168,7 +168,7 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     sim.uninit(1);
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "one surviving provider retains the aggregate"
     );
 
@@ -176,16 +176,16 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.houses[&owner].spy_sat_active() && !sim.houses[&owner].map_is_clear());
     assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
-    assert_eq!(take_centered_cues(&mut sim), ["Offline"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Offline"]);
     insert_structure(&mut sim, 3, owner, "GASPYSAT", 10);
     sim.reconcile_active_vision_structures(&rules);
-    assert_eq!(take_centered_cues(&mut sim), ["Online"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Online"]);
 
     // Shared crate/infiltration map callbacks are not SpySat aggregate edges.
     sim.reset_shroud_for_owner(owner, &rules);
     sim.reveal_map_for_owner(owner, &rules);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
 }
 
 #[test]
@@ -206,13 +206,13 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active());
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "human remote House is not PlayerPtr"
     );
     sim.session.set_current_house_for_test(Some(owner));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "retained active state does not replay the gain"
     );
 
@@ -224,7 +224,7 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active());
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
 }
 
 #[test]
@@ -386,7 +386,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     sim.uninit(1);
     sim.reconcile_active_vision_structures(&rules); // pending survives generator removal
     // Native Scenario deserialization resets only this RNG to Seed(0).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "shroud-current-sight", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -721,7 +721,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         clocks.reload(b, 119);
     }
     // Native Scenario deserialization resets only this RNG to Seed(0).
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot-sight-timer", 0);
     let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -855,7 +855,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     use crate::util::fixed_math::SimFixed;
     let (mut sim, _rules, owner) = fixture();
     // A live map: the reveal leaves test the stored playfield byte.
-    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    *sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
     insert_sight_unit(&mut sim, 2, owner, 13, 13);
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
     loco.set_layer_for_test(MovementLayer::Air);
@@ -1106,7 +1106,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             );
         }
         // Native Scenario deserialization resets only this RNG to Seed(0).
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let hash = sim.state_hash();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "spysat-map-latch", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -1187,7 +1187,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
             assert_eq!(sim.fog.is_cell_visible(viewer, 12, 12), building);
         }
         let bytes = save_codec::serialize(&sim.fog).unwrap();
-        sim.fog = save_codec::deserialize(&bytes).unwrap();
+        *sim.fog = save_codec::deserialize(&bytes).unwrap();
         sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         sim.reconcile_active_vision_structures(&rules);
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);

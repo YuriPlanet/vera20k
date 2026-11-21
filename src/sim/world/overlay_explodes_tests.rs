@@ -363,15 +363,15 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
     assert!(sim.voxel_anims().is_empty());
     // Isolated snapshot continuation: the native full-load RNG reset remains
     // separate; restore the supplied pre-save cursor for this equality check.
-    let rng = sim.scenario_rng.clone();
+    let rng = (*sim.scenario_rng).clone();
     let expected_hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "shared Voxel damage", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-    restored.scenario_rng = rng;
+    *restored.scenario_rng = rng;
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(
         sim.resolved_terrain().unwrap().clone(),
-        sim.terrain_speed_config.clone(),
+        (*sim.terrain_speed_config).clone(),
         &rules,
     );
     restored.resolve_type_handles(&rules);

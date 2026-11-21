@@ -2,6 +2,8 @@
 //! roster, targeting sweeps, per-entity and anim expiry forwards, and
 //! projectile target loss.
 
+use std::ops::ControlFlow;
+
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -29,37 +31,50 @@ impl Simulation {
     /// manager, its parasite). A superset of each forward's own test, so
     /// passing over a listener that is not the expiring object, names nothing
     /// expiring and returns false matches visiting it. A field or forward
-    /// added to the broadcast must be added here too.
+    /// added to the broadcast must be added here too, and its writers must
+    /// take the entity's `NameNote`.
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(in crate::sim::world) fn entity_expiry_holds(
         listener: &GameEntity,
         mut name: impl FnMut(u64),
     ) -> bool {
-        listener.held_anims().for_each(&mut name);
+        let _ = Self::entity_expiry_names(listener, |id| {
+            name(id);
+            ControlFlow::Continue(())
+        });
+        Self::entity_expiry_reaches_all(listener)
+    }
+
+    /// The ids [`Self::entity_expiry_holds`] names, to `name` until it breaks.
+    fn entity_expiry_names(
+        listener: &GameEntity,
+        mut name: impl FnMut(u64) -> ControlFlow<()>,
+    ) -> ControlFlow<()> {
+        listener.held_anims().try_for_each(&mut name)?;
         for target in [
             listener.attack_target.target(),
             listener.seldom.suspended_attack_target.target(),
             listener.archive_target(),
         ] {
             if let Some(TargetKind::Entity(id)) = target {
-                name(id);
+                name(id)?;
             }
         }
         listener
             .seldom
             .radio_contacts
             .iter_live()
-            .for_each(&mut name);
+            .try_for_each(&mut name)?;
         listener
             .building
             .tesla_charge
             .chargers()
             .iter()
             .copied()
-            .for_each(&mut name);
+            .try_for_each(&mut name)?;
         if let Some(cargo) = listener.passenger_role().cargo() {
-            cargo.passengers().iter().copied().for_each(&mut name);
+            cargo.passengers().iter().copied().try_for_each(&mut name)?;
         }
         listener
             .passenger_role()
@@ -67,7 +82,7 @@ impl Simulation {
             .ids()
             .iter()
             .copied()
-            .for_each(&mut name);
+            .try_for_each(&mut name)?;
         let navigation = &listener.navigation;
         navigation
             .suspended_nav_com()
@@ -76,7 +91,7 @@ impl Simulation {
             .chain(navigation.nav_queue().iter())
             .chain(navigation.nav_list().iter())
             .filter_map(|target| target.object_id())
-            .for_each(&mut name);
+            .try_for_each(&mut name)?;
         [
             listener.unit_follower(),
             listener.passenger_role().inside_transport_id(),
@@ -102,40 +117,55 @@ impl Simulation {
         ]
         .into_iter()
         .flatten()
-        .for_each(&mut name);
+        .try_for_each(&mut name)?;
         listener
             .seldom
             .mega_mission
             .referenced_ids()
-            .for_each(&mut name);
-        listener.distributed_fire_references().for_each(&mut name);
+            .try_for_each(&mut name)?;
+        listener
+            .distributed_fire_references()
+            .try_for_each(&mut name)?;
         // The SpawnManager, CaptureManager and TemporalClass forwards act on
         // the listener's own expiry and on the ids they hold.
         if let Some(manager) = &listener.spawn_manager {
-            manager.expiry_names().for_each(&mut name);
+            manager.expiry_names().try_for_each(&mut name)?;
         }
         if let Some(manager) = &listener.capture_manager {
-            manager.victims().for_each(&mut name);
+            manager.victims().try_for_each(&mut name)?;
         }
         listener
             .temporal
             .warp_target()
             .into_iter()
-            .for_each(&mut name);
+            .try_for_each(name)
+    }
+
+    /// Whether `listener` holds an object a forward reaches whatever expires:
+    /// an airstrike manager, its parasite.
+    fn entity_expiry_reaches_all(listener: &GameEntity) -> bool {
         listener.seldom.airstrike.owns_manager() || listener.parasite.eater().is_some()
     }
 
     /// Whether the pointer-expiry forwards an entity listener receives can
     /// change anything for `expired_id`: the listener is the expiring object,
     /// or [`Self::entity_expiry_holds`] names `expired_id` or says it acts on
-    /// every expiry.
+    /// every expiry. The walk stops at the first match.
     pub(in crate::sim::world) fn entity_expiry_listener_acts(
         listener: &GameEntity,
         listener_id: u64,
         expired_id: u64,
     ) -> bool {
-        let mut names = listener_id == expired_id;
-        Self::entity_expiry_holds(listener, |id| names |= id == expired_id) || names
+        listener_id == expired_id
+            || Self::entity_expiry_reaches_all(listener)
+            || Self::entity_expiry_names(listener, |id| {
+                if id == expired_id {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            })
+            .is_break()
     }
 
     /// Each RNG stream's cursor, which every draw moves.
@@ -185,7 +215,7 @@ impl Simulation {
                     listeners.extend(self.terrain_objects.objects().keys().map(|&id| (id, kind)));
                 }
                 ObjectKind::Smudge => {
-                    if let Some(grid) = &self.smudge_grid {
+                    if let Some(grid) = &*self.smudge_grid {
                         listeners.extend(grid.objects().map(|(id, _)| (id, kind)));
                     }
                 }
@@ -428,9 +458,11 @@ impl Simulation {
 
     /// The broadcast passes over listeners that
     /// [`Self::entity_expiry_listener_acts`] rejects, so a field compared here
-    /// must be named or flagged by [`Self::entity_expiry_holds`] too. That
-    /// enumeration may read only the listener: the expiry index re-reads an
-    /// entity only when the store hands that entity out mutably.
+    /// must be named or flagged by [`Self::entity_expiry_holds`] too, and its
+    /// writers must take the entity's `NameNote`. That enumeration may read
+    /// only the listener: the expiry index re-reads an entity only once a
+    /// writer noted it, it was stored or removed, or the store's log cannot
+    /// say which changed (`EntityStore::take_unread_names`).
     pub(in crate::sim::world) fn notify_entity_pointer_expired(
         &mut self,
         listener_id: u64,
@@ -774,8 +806,11 @@ impl Simulation {
             // `0x00707AF5`.
             listener.pending_entry.expire(expired_id);
         }
-        if clear_airfield && let Some(ammo) = listener.ammo_mut() {
-            ammo.set_dock(None);
+        if clear_airfield {
+            let note = listener.note_names();
+            if let Some(ammo) = listener.ammo_mut() {
+                ammo.set_dock(None, note);
+            }
         }
         if clear_transporter {
             listener.passenger_role_mut().clear_transporter();
@@ -1004,6 +1039,9 @@ impl Simulation {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
         }
+        // Only an Ares Anim shape joins these listeners
+        // (`AlphaShapeClass_CTOR_Anims`); it touches no other listener's state.
+        self.alpha_shapes.anim_pointer_expired(expired_id);
         // VERA-only: each callback below clears only its own entity's fields
         // that name the Anim (`GameEntity::held_anims`) and draws nothing, so
         // visiting just the entities the anim-holder index finds, ascending,
@@ -1126,14 +1164,16 @@ impl Simulation {
             let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
-            // `AnnounceInvalidPointer` hook at this dispatcher's entry
-            // (`0x7258D0`, resuming there) sends a removed building to every
-            // house's `HouseExt::OnDetach`, which clears the AI factory slots
-            // naming it; no other listener reads them.
-            let phobos_detach = context.rules.phobos() && control == PointerExpiryControl::Uninit;
+            // and Ares' `AnnounceInvalidPointer` hooks at this dispatcher's
+            // entry (`0x7258D0`, resuming there) send a removed building to
+            // every house's `HouseExt::OnDetach` / `InvalidatePointer` (Ares
+            // `100052B0`), which clear the AI factory slots naming it; no
+            // other listener reads them.
+            let slot_detach = (context.rules.phobos() || context.rules.ares())
+                && control == PointerExpiryControl::Uninit;
             for house in self.houses.values_mut() {
                 named |= house.forget_lost_building(expired_id);
-                if phobos_detach {
+                if slot_detach {
                     named |= house
                         .ai_production_mut()
                         .forget_parallel_factory(expired_id);

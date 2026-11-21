@@ -77,8 +77,9 @@ impl FrameClock {
 
 thread_local! {
     /// The running object pass's clock. Only that pass installs one, so an
-    /// unprofiled frame or a worker thread finds nothing here: the main
-    /// thread's wait for its workers is what the slot shows.
+    /// unprofiled frame or a worker thread finds nothing here: a slot shows
+    /// the simulation thread's own share of pooled work and its wait for the
+    /// workers.
     static AREAS: RefCell<Option<AreaClock>> = const { RefCell::new(None) };
 }
 

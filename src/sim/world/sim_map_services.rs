@@ -15,6 +15,7 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::trigger_runtime::TriggerEffect;
+use crate::util::forked::Forked;
 
 use super::FrameAdvanceError;
 use super::FrameEffects;
@@ -29,10 +30,15 @@ use super::lifecycle;
 use super::turret_rotate_sound;
 
 impl Simulation {
+    /// Mark the smudge grid's dirty cells. The grids are the world's fields
+    /// (`util::forked`): with no dirt pending, neither is written.
     pub(crate) fn flush_smudge_dirty(
-        smudge_grid: &mut Option<SmudgeGrid>,
-        dirty_cells: &mut DirtyCells,
+        smudge_grid: &mut Forked<Option<SmudgeGrid>>,
+        dirty_cells: &mut Forked<DirtyCells>,
     ) {
+        if !smudge_grid.as_ref().is_some_and(SmudgeGrid::has_dirty) {
+            return;
+        }
         let dirty = smudge_grid
             .as_mut()
             .map(crate::sim::smudge_grid::SmudgeGrid::drain_dirty)
@@ -313,7 +319,7 @@ impl Simulation {
     }
 
     pub(super) fn termination_frame_requested(&self) -> bool {
-        self.quit_requested || self.connection_lost || self.natural_outcome_exit_ready()
+        *self.quit_requested || *self.connection_lost || self.natural_outcome_exit_ready()
     }
 
     /// Advance the global ambient scalar before ore and active superweapons.
@@ -448,7 +454,7 @@ impl Simulation {
     /// `MapClass+0xF4/+0xF8`, the `In_Bounds` diamond's width and height.
     pub fn map_size_diamond(&self) -> Option<(i32, i32)> {
         self.playfield_bounds
-            .zip(self.playfield_size_height)
+            .zip(*self.playfield_size_height)
             .map(|(bounds, height)| (bounds.base, height))
     }
 
@@ -469,11 +475,11 @@ impl Simulation {
     /// predicate fields. Size height is retained separately because later
     /// action-40 writers normalize another raw LocalSize against the same Size.
     pub fn install_playfield_from_map_header(&mut self, header: &crate::map::map_file::MapHeader) {
-        self.playfield_size_height = Some(header.height as i32);
-        self.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds::from_map_header(
+        *self.playfield_size_height = Some(header.height as i32);
+        *self.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds::from_map_header(
             header,
         ));
-        self.playfield_revision = 0;
+        *self.playfield_revision = 0;
     }
 
     /// Apply YR trigger action 0x28's mutable visible-map-area authority.
@@ -491,7 +497,7 @@ impl Simulation {
         mut context: UninitContext<'_>,
     ) -> bool {
         let (Some(current), Some(size_height)) =
-            (self.playfield_bounds, self.playfield_size_height)
+            (*self.playfield_bounds, *self.playfield_size_height)
         else {
             // A live scenario always has MapClass Size authority. Headless
             // fixtures without a map must not invent a rectangular fallback.
@@ -502,10 +508,10 @@ impl Simulation {
             size_height,
             raw_local_size,
         );
-        self.playfield_bounds = Some(bounds);
+        *self.playfield_bounds = Some(bounds);
         // FUN_006E21E0 runs the complete radar-surface rebuild on every
         // execution. Do not deduplicate equal normalized writers.
-        self.playfield_revision = self.playfield_revision.wrapping_add(1);
+        *self.playfield_revision = self.playfield_revision.wrapping_add(1);
 
         // `MapClass::Set_Clipped_LocalSize @ 0x00567230` exact-recomputes the
         // canonical TechnoClass+0x3D5 byte for every represented Techno. This
@@ -541,9 +547,9 @@ impl Simulation {
                     && entity.is_active()
                     && !entity.lifecycle.in_limbo();
                 let clients = if see {
-                    self.human_player_clients(entity.owner())
+                    self.human_player_client_set(entity.owner())
                 } else {
-                    Vec::new()
+                    super::HumanPlayerClients::None
                 };
                 (stable_id, member, clients)
             })
@@ -563,7 +569,7 @@ impl Simulation {
         let network = self.session.execution_topology().is_lockstep();
         for (stable_id, _, clients) in membership_updates {
             if network {
-                for client in clients {
+                for &client in clients.iter() {
                     self.reveal_uncached_object_sight(
                         stable_id,
                         false,
@@ -591,7 +597,7 @@ impl Simulation {
         // not cache the outside flag; ZoneGrid does, so a full rebuild covers
         // native connectivity plus every retained hierarchy level without
         // discarding dynamic building blockers.
-        if let Some(path_grid) = self.path_grid.clone() {
+        if let Some(path_grid) = (*self.path_grid).clone() {
             self.rebuild_zone_grid_full(path_grid);
         }
 
@@ -636,7 +642,7 @@ impl Simulation {
     /// fixture replay and trigger tests drain them directly.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn drain_trigger_effects(&mut self) -> Vec<TriggerEffect> {
-        std::mem::take(&mut self.trigger_effects)
+        std::mem::take(&mut *self.trigger_effects)
     }
 
     /// Tell the fog that presentation prepared a view for the named owner
@@ -654,7 +660,7 @@ impl Simulation {
     /// Configure the command input delay (F10 boundary method; the app pushes
     /// its configured value once at match install).
     pub fn set_input_delay_ticks(&mut self, ticks: u64) {
-        self.input_delay_ticks = ticks;
+        *self.input_delay_ticks = ticks;
     }
 
     #[cfg(any(test, feature = "test-support"))]

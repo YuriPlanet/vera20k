@@ -81,6 +81,9 @@ pub(crate) struct ExternalLaunchProgress {
     pub(crate) match_last: Option<Instant>,
     /// The last observed simulation frame (`binary_frame`).
     pub(crate) frames: u32,
+    /// The spawn test switch `VERA20K_SPAWN_FRAME_COST`'s record
+    /// (`spawn_frame_cost`), kept from the match's first frame on screen.
+    pub(crate) frame_cost: Option<crate::app::spawn_frame_cost::FrameCost>,
     /// Every opposing playing participant had left or disconnected while
     /// the local player was still in the match (see [`opponents_left`]).
     pub(crate) opponents_left: bool,
@@ -111,6 +114,37 @@ pub(crate) enum SpawnAction {
 pub(crate) struct SpawnActionsFired {
     leave: bool,
     resign: bool,
+    /// `VERA20K_SPAWN_LEAVE_AT_FRAME`'s Leave in the match, and its Continue
+    /// on the score page after it.
+    leave_at_frame: bool,
+    leave_score: bool,
+}
+
+/// The desktop test switch `VERA20K_SPAWN_LEAVE_AT_FRAME=<frame>`
+/// (tools/spawn/README.md): press Leave once the match has reached that
+/// simulation frame and Continue on the score page that follows, so a
+/// launch of any kind, one human against computers too, ends by itself after
+/// a set stretch of the match. `frames` is the launch's last observed
+/// simulation frame; `on_score` whether the score page is up.
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    expect(dead_code, reason = "the browser build runs no test switch")
+)]
+fn leave_at_frame_due(
+    leave_at: u32,
+    frames: u32,
+    on_score: bool,
+    fired: &mut SpawnActionsFired,
+) -> Option<SpawnAction> {
+    if !fired.leave_at_frame {
+        fired.leave_at_frame = frames >= leave_at;
+        return fired.leave_at_frame.then_some(SpawnAction::Leave);
+    }
+    if on_score && !fired.leave_score {
+        fired.leave_score = true;
+        return Some(SpawnAction::Leave);
+    }
+    None
 }
 
 /// The desktop test switches `VERA20K_SPAWN_LEAVE_AFTER_SECONDS` and
@@ -182,6 +216,10 @@ pub(crate) struct ExternalLaunchReport {
     /// Relay matches only: the match's network quality record.
     pub(crate) network_quality:
         Option<crate::app::match_runtime::network_quality::NetworkQualityReport>,
+    /// With the spawn test switch `VERA20K_SPAWN_FRAME_COST`: what the match
+    /// cost the main thread (tools/spawn/README.md); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) frame_cost: Option<crate::app::spawn_frame_cost::FrameCostReport>,
     /// `rules_mismatch` when spawn.ini's `ExpectedRulesDigest` refused the
     /// launch; absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,6 +263,7 @@ impl ExternalLaunchReport {
             opponents_left: progress.opponents_left,
             reason: failure.map(str::to_owned),
             network_quality: None,
+            frame_cost: progress.frame_cost.as_ref().and_then(|cost| cost.report()),
             failure: None,
             rules_parts: None,
         }
@@ -381,6 +420,69 @@ impl MatchSeedClock for SpawnSeedClock {
     }
 }
 
+/// Spawn-only test switches (tools/spawn/README.md): with
+/// `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS`, a `-SPAWN`
+/// multiplayer launch plays as a slow PC once its match is on screen, each
+/// drawn picture and each simulation tick taking that many milliseconds more.
+/// The tick's delay is inside the cost the relay's pace reports carry. Read
+/// only for such launches; ordinary play never consults them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct SpawnSlowPc {
+    pub(crate) draw: std::time::Duration,
+    pub(crate) tick: std::time::Duration,
+}
+
+impl SpawnSlowPc {
+    pub(crate) fn of(frontend: &crate::app::frontend::state::FrontendState) -> Self {
+        let progress = &frontend.external_progress;
+        if !frontend.external_launch
+            || progress.mode == ExternalLaunchMode::Single
+            || progress.match_started.is_none()
+        {
+            return Self::default();
+        }
+        Self::requested()
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn requested() -> Self {
+        static REQUESTED: std::sync::OnceLock<SpawnSlowPc> = std::sync::OnceLock::new();
+        *REQUESTED.get_or_init(|| {
+            let millis = |name| {
+                std::time::Duration::from_millis(
+                    std::env::var(name)
+                        .ok()
+                        .and_then(|value| value.trim().parse().ok())
+                        .unwrap_or(0),
+                )
+            };
+            let slow = SpawnSlowPc {
+                draw: millis("VERA20K_SPAWN_SLOW_DRAW_MS"),
+                tick: millis("VERA20K_SPAWN_SLOW_TICK_MS"),
+            };
+            if slow != SpawnSlowPc::default() {
+                log::info!("Spawn test switch: playing as a slow PC, {slow:?}");
+            }
+            slow
+        })
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    fn requested() -> Self {
+        Self::default()
+    }
+
+    /// Spend `delay` on this thread, as a slow PC would.
+    pub(crate) fn spend(delay: std::time::Duration) {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = delay;
+    }
+}
+
 impl App {
     /// CnCNet runs the executable with its game directory as cwd and writes
     /// spawn.ini immediately before launch. Read once, before window creation.
@@ -494,7 +596,7 @@ impl App {
         if let Some(reason) = state.frontend.mods.refusal() {
             anyhow::bail!("{reason}");
         }
-        Self::check_spawn_expectations(state, &request)?;
+        Self::check_spawn_expectations(&state.platform, &state.process_assets, &request)?;
         state.frontend.external_launch = true;
         state.frontend.external_progress = ExternalLaunchProgress::default();
         if let SpawnGame::Network(network) = &request.game {
@@ -599,7 +701,11 @@ impl App {
     /// `[Settings] Expected*` (docs/spawn.md): reject the launch before it
     /// starts when this build, its rules or the client map differ from what
     /// the launcher probed.
-    fn check_spawn_expectations(state: &AppState, request: &SpawnRequest) -> Result<()> {
+    fn check_spawn_expectations(
+        platform: &crate::app::PlatformState,
+        process_assets: &crate::app::process_assets::ProcessAssets,
+        request: &SpawnRequest,
+    ) -> Result<()> {
         let session = match &request.game {
             SpawnGame::Skirmish(session) => Some(&**session),
             SpawnGame::Network(network) => Some(&network.session),
@@ -610,22 +716,19 @@ impl App {
             &crate::app::shell_network_setup::agreement::version(),
             || {
                 let session = session.context("launch has no game mode")?;
-                state
-                    .process_assets
+                process_assets
                     .multiplayer_rules_digest(&session.mode.override_file)
                     .map_err(anyhow::Error::msg)
             },
             || {
                 let map = map.context("launch has no map")?;
-                let root = &state
-                    .platform
+                let root = &platform
                     .game_config
                     .as_ref()
                     .context("no asset directory")?
                     .paths
                     .ra2_dir;
-                let assets = state
-                    .process_assets
+                let assets = process_assets
                     .manager()
                     .context("retail assets are unavailable")?;
                 Ok(
@@ -640,9 +743,7 @@ impl App {
                 error.downcast_mut::<crate::app::frontend::cncnet_spawn::RulesMismatch>(),
                 session,
             ) {
-                match state
-                    .process_assets
-                    .multiplayer_rules_parts(&[session.mode.override_file.as_str()])
+                match process_assets.multiplayer_rules_parts(&[session.mode.override_file.as_str()])
                 {
                     Ok(mut parts) => {
                         mismatch.parts = parts.pop();
@@ -659,31 +760,31 @@ impl App {
 
     /// Sample the running match for the launch report (docs/spawn.md):
     /// frames, time on screen and opponent departure. External launches only.
-    pub(super) fn poll_external_launch_progress(state: &mut AppState) {
-        if !state.frontend.external_launch
-            || state.frontend.screen != crate::ui::game_screen::GameScreen::InGame
+    pub(super) fn poll_external_launch_progress(
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+    ) {
+        if !frontend.external_launch
+            || frontend.screen != crate::ui::game_screen::GameScreen::InGame
         {
             return;
         }
-        let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        let Some(runtime) = match_state.sim_runtime.runtime() else {
             return;
         };
         let frame = runtime.simulation.session().binary_frame();
-        let left = state
-            .match_state
-            .session
-            .network_setup()
-            .is_some_and(|launch| {
-                opponents_left(
-                    launch,
-                    state.match_state.session.network_connected_source_indices(),
-                )
-            });
-        let progress = &mut state.frontend.external_progress;
+        let left = match_state.session.network_setup().is_some_and(|launch| {
+            opponents_left(
+                launch,
+                match_state.session.network_connected_source_indices(),
+            )
+        });
+        let progress = &mut frontend.external_progress;
         let now = Instant::now();
         if progress.match_started.is_none() {
             log::info!("External launch: match on screen at frame {frame}");
             progress.match_started = Some(now);
+            progress.frame_cost = crate::app::spawn_frame_cost::FrameCost::requested();
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::status("spawn:match_started");
         }
@@ -694,6 +795,9 @@ impl App {
             log::info!("External launch: frame {frame}");
         }
         progress.frames = progress.frames.max(frame);
+        if let Some(cost) = &mut progress.frame_cost {
+            cost.observe_frame(frame);
+        }
         if left && !progress.opponents_left {
             log::info!("External launch: every opposing participant has left the match");
             progress.opponents_left = true;
@@ -706,20 +810,21 @@ impl App {
     /// `ExpectedRulesDigest` refused the launch and the state that read them
     /// is gone.
     pub(crate) fn external_launch_report(
-        state: Option<&AppState>,
+        frontend: Option<&crate::app::frontend::state::FrontendState>,
+        network_quality: Option<&crate::app::match_runtime::network_quality::NetworkQualityStats>,
         failure: Option<&str>,
         rules_mismatch: Option<&crate::app::rules_parts::RulesParts>,
     ) -> ExternalLaunchReport {
         let failure = failure
-            .or_else(|| state.and_then(|state| state.frontend.external_launch_error.as_deref()));
+            .or_else(|| frontend.and_then(|frontend| frontend.external_launch_error.as_deref()));
         let mut report = ExternalLaunchReport::new(
-            state.and_then(Self::match_result),
-            state.map(|state| &state.frontend.external_progress),
+            frontend.and_then(Self::match_result),
+            frontend.map(|frontend| &frontend.external_progress),
             failure,
         );
-        report.network_quality = state.and_then(|state| state.match_state.network_quality.report());
+        report.network_quality = network_quality.and_then(|quality| quality.report());
         if let Some(parts) = rules_mismatch
-            .or_else(|| state.and_then(|state| state.frontend.external_rules_mismatch.as_ref()))
+            .or_else(|| frontend.and_then(|frontend| frontend.external_rules_mismatch.as_ref()))
         {
             report.rules_mismatch(parts.clone());
         }
@@ -732,7 +837,10 @@ impl App {
     pub fn finish_spawn_launch(&self) -> Option<i32> {
         let path = self.spawn_result_path.as_deref()?;
         let report = Self::external_launch_report(
-            self.state.as_ref(),
+            self.state.as_ref().map(|state| &state.frontend),
+            self.state
+                .as_ref()
+                .map(|state| &state.match_state.network_quality),
             self.startup_failure.as_deref(),
             self.spawn_rules_mismatch.as_ref(),
         );
@@ -756,11 +864,15 @@ impl App {
                 .external_launch_error
                 .get_or_insert_with(|| error.to_owned());
         }
-        Self::browser_match_ended(state, ExternalMatchResult::Quit);
+        Self::browser_match_ended(
+            &state.frontend,
+            &state.match_state,
+            ExternalMatchResult::Quit,
+        );
         crate::web::request_exit(state.frontend.external_launch_error.as_deref());
-        crate::app::shell_wol::discard_spawned_visit(state);
+        crate::app::shell_wol::discard_spawned_visit(&mut state.frontend);
         if state.match_state.lan_service.is_some() {
-            crate::app::lan_service::close(state);
+            crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         }
         if state.match_state.session.network_return_context().is_some() {
             state.match_state.session.leave_network();
@@ -776,15 +888,48 @@ impl App {
     /// `VERA20K_SPAWN_LEAVE_AFTER_SECONDS` / `VERA20K_SPAWN_RESIGN_AFTER_SECONDS`
     /// (read only here, i.e. only by `-SPAWN` multiplayer launches) or the
     /// browser exports `spawn_leave()` / `spawn_resign()`. Ordinary play,
-    /// single-player spawns and the built-in lobbies never reach this.
+    /// single-player spawns and the built-in lobbies never reach this. The
+    /// desktop test switch `VERA20K_SPAWN_LEAVE_AT_FRAME` is read here too,
+    /// by every `-SPAWN` launch ([`leave_at_frame_due`]).
     pub(super) fn poll_spawn_actions(state: &mut AppState) {
-        if !state.frontend.external_launch
-            || state.frontend.external_progress.mode == ExternalLaunchMode::Single
+        if !state.frontend.external_launch {
+            return;
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
+            use std::sync::OnceLock;
+            static LEAVE_AT_FRAME: OnceLock<Option<u32>> = OnceLock::new();
+            let leave_at = *LEAVE_AT_FRAME.get_or_init(|| {
+                std::env::var("VERA20K_SPAWN_LEAVE_AT_FRAME")
+                    .ok()
+                    .and_then(|value| value.trim().parse().ok())
+            });
+            let on_score = matches!(
+                state.frontend.screen,
+                crate::ui::game_screen::GameScreen::MissionResult { .. }
+            );
+            let progress = &mut state.frontend.external_progress;
+            if let Some(action) = leave_at.and_then(|leave_at| {
+                leave_at_frame_due(
+                    leave_at,
+                    progress.frames,
+                    on_score,
+                    &mut progress.actions_fired,
+                )
+            }) {
+                log::info!(
+                    "Spawn test switch: requesting {action:?} at frame {}",
+                    progress.frames
+                );
+                progress.pending_actions.push(action);
+            }
+        }
+        if state.frontend.external_progress.mode == ExternalLaunchMode::Single {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-            if state.frontend.external_launch && crate::web::take_spawn_action().is_some() {
+            if crate::web::take_spawn_action().is_some() {
                 log::warn!("Spawn action ignored: not a multiplayer launch");
             }
+            Self::apply_pending_spawn_action(state);
             return;
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -821,6 +966,11 @@ impl App {
                 .pending_actions
                 .push(action);
         }
+        Self::apply_pending_spawn_action(state);
+    }
+
+    /// Run the first waiting scripted action, if it can run now.
+    fn apply_pending_spawn_action(state: &mut AppState) {
         let Some(&action) = state.frontend.external_progress.pending_actions.first() else {
             return;
         };
@@ -839,8 +989,11 @@ impl App {
                 if !state.match_state.sim_runtime.is_installed()
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
-                    || Self::house_outcome_wait_pending(state)
-                    || crate::app::match_runtime::network_failure::pending(state)
+                    || Self::house_outcome_wait_pending(&state.match_state.sim_runtime)
+                    || crate::app::match_runtime::network_failure::pending(
+                        &state.frontend.screen,
+                        &state.match_state,
+                    )
                 {
                     return false;
                 }
@@ -877,10 +1030,11 @@ impl App {
             GameScreen::MissionResult { .. } => {
                 if action == SpawnAction::Leave {
                     log::info!("Spawn action: pressing Continue on the score screen");
-                    if Self::score_shell_active(state) {
+                    if Self::score_shell_active(&state.frontend) {
                         Self::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::ScoreContinue,
+                            crate::app::frontend::shell_transition::ShellSlideKind::Score,
+                            App::leave_mission_result_screen,
                         );
                     } else {
                         Self::leave_mission_result_screen(state);
@@ -917,62 +1071,74 @@ impl App {
     }
 
     /// This `-SPAWN` launch's window is the opt-in invisible test window.
-    pub(super) fn invisible_spawn_window(state: &AppState) -> bool {
-        state.frontend.external_launch
+    pub(super) fn invisible_spawn_window(
+        platform: &crate::app::PlatformState,
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> bool {
+        frontend.external_launch
             && Self::spawn_hidden_window_requested()
-            && state.platform.window.is_visible() == Some(false)
+            && platform.window.is_visible() == Some(false)
     }
 
     /// The local result of an external launch's or online lobby match's
     /// match, once it ended; the relay `finish` reports it, and launch hosts
     /// read it here.
-    pub(crate) fn match_result(state: &AppState) -> Option<ExternalMatchResult> {
-        state.frontend.match_result
+    pub(crate) fn match_result(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<ExternalMatchResult> {
+        frontend.match_result
     }
 
     /// The decided network match's winners still in it, for the online
     /// lobby's `finish`.
-    pub(crate) fn match_winners(state: &AppState) -> Option<&[String]> {
-        state.frontend.match_winners.as_deref()
+    pub(crate) fn match_winners(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<&[String]> {
+        frontend.match_winners.as_deref()
     }
 
     /// When the match's local result was decided, for the online lobby's
     /// `finish`.
-    pub(crate) fn match_result_at(state: &AppState) -> Option<Instant> {
-        state.frontend.match_result_at
+    pub(crate) fn match_result_at(
+        frontend: &crate::app::frontend::state::FrontendState,
+    ) -> Option<Instant> {
+        frontend.match_result_at
     }
 
     /// An online match starts: no earlier match's result may stand for it.
-    pub(crate) fn clear_match_result(state: &mut AppState) {
-        state.frontend.match_result = None;
-        state.frontend.match_winners = None;
-        state.frontend.match_result_at = None;
+    pub(crate) fn clear_match_result(frontend: &mut crate::app::frontend::state::FrontendState) {
+        frontend.match_result = None;
+        frontend.match_winners = None;
+        frontend.match_result_at = None;
     }
 
     /// Record the end-of-match owner's decision for an external launch or an
     /// online lobby match, as [`running_match_result`] reads it from the
     /// running match; the first decision wins.
-    pub(crate) fn record_match_result(state: &mut AppState, result: ExternalMatchResult) {
+    pub(crate) fn record_match_result(
+        frontend: &mut crate::app::frontend::state::FrontendState,
+        match_state: &crate::app::match_runtime::state::MatchState,
+        result: ExternalMatchResult,
+    ) {
         use crate::app::match_runtime::session::SessionMode;
         // A watcher has no result: the followed player's is not its own.
-        if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
-            || state.frontend.match_result.is_some()
-            || crate::app::match_runtime::watching::active(state)
+        if (!frontend.external_launch && match_state.session_mode() != SessionMode::Wol)
+            || frontend.match_result.is_some()
+            || crate::app::match_runtime::watching::active(match_state)
         {
             return;
         }
-        let sim = state
-            .match_state
+        let sim = match_state
             .sim_runtime
             .runtime()
             .map(|runtime| &runtime.simulation);
-        let Some((result, winners)) = running_match_result(result, &state.match_state.session, sim)
+        let Some((result, winners)) = running_match_result(result, &match_state.session, sim)
         else {
             return;
         };
-        state.frontend.match_result = Some(result);
-        state.frontend.match_winners = winners;
-        state.frontend.match_result_at = Some(Instant::now());
+        frontend.match_result = Some(result);
+        frontend.match_winners = winners;
+        frontend.match_result_at = Some(Instant::now());
     }
 
     /// An external launch that cannot reach or finish its match ends the
@@ -1022,6 +1188,26 @@ mod tests {
             timers.due(Duration::from_secs(100), &mut fresh),
             [SpawnAction::Resign, SpawnAction::Leave]
         );
+    }
+
+    #[test]
+    fn leave_at_frame_leaves_the_match_once_then_the_score_page_once() {
+        let mut fired = SpawnActionsFired::default();
+        assert_eq!(leave_at_frame_due(900, 899, false, &mut fired), None);
+        assert_eq!(
+            leave_at_frame_due(900, 900, false, &mut fired),
+            Some(SpawnAction::Leave)
+        );
+        // The match is still up while the Leave runs: nothing more to press.
+        assert_eq!(leave_at_frame_due(900, 905, false, &mut fired), None);
+        assert_eq!(
+            leave_at_frame_due(900, 905, true, &mut fired),
+            Some(SpawnAction::Leave)
+        );
+        assert_eq!(leave_at_frame_due(900, 905, true, &mut fired), None);
+        // A score page before the frame is another match's: it stays.
+        let mut early = SpawnActionsFired::default();
+        assert_eq!(leave_at_frame_due(900, 10, true, &mut early), None);
     }
 
     #[test]

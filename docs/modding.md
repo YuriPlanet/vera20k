@@ -13,7 +13,7 @@ extension features VERA20k supports.
 | Game files | MIX, INI, SHP, VXL, CSF and maps | The same files, searched in the same order |
 | DLL mods and exe patches | Run inside the game | Can't run |
 | Map size | Width plus height up to 512 | Up to 1024 |
-| Players | 8 | Up to 30, on maps made for it |
+| Players | 8 | Up to 120 player slots in offline Skirmish and up to 30 in LAN or online matches, on maps with enough starts |
 | Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
@@ -31,7 +31,7 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new units, buildings and weapons.
 - Replace pictures, models, sounds and music.
 - Change the AI, the game modes and the game's text.
-- Make your own maps, including bigger ones and maps for up to 30 players.
+- Make larger maps with up to 120 starting positions. Offline Skirmish can use all 120. LAN and online matches can use up to 30.
 - Play your mod online, if everyone has the same files.
 
 **Only partly:**
@@ -76,7 +76,7 @@ first, and the game folder is never changed.
 | What you can put here | What it does |
 | --- | --- |
 | A folder for your mod, inside `Mods` | Holds the mod's files. See [The Mods folder](#the-mods-folder). |
-| A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
+| A `Maps` folder of `.yrm`, `.map` or `.mpr` files | Adds your maps to Skirmish. Mods with their own client catalog use that catalog. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
 `config.toml` is here too. It says where the game folder is and which mod to play; the
@@ -118,6 +118,12 @@ You can also install a mod manually.
 The game then reads the mod's files as if you had copied them on top of the game folder.
 A mod made to be copied into the game folder works the same from its own folder.
 
+A classic Red Alert 2 mod can keep its original filenames. When the selected mod
+supplies the RA2 rules, art, AI or multiplayer mode files, VERA uses the RA2
+file family for Skirmish. A mod can replace just part of that family. For
+example, one that supplies its own `rules.ini` and `mpmodes.ini` can use the
+installed game's `ai.ini`. See [how VERA chooses the files](ini-roots.md).
+
 With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
 the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
 A selected mod can use that copy or provide its own, which takes precedence.
@@ -131,11 +137,14 @@ A mod is an external data package. VERA20k reads its files and never runs its
 executables, DLLs or launcher. A manifest selects resources and supported extensions;
 it does not install new engine code.
 
+A mod's own terms still apply. Some authors don't allow their mod in other engines:
+check a mod's terms before you use it here. VERA20k doesn't support such mods.
+
 | What you can put in a mod's folder | What it does |
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. An Ares game reads the expansion archives before those two as well. The number can be 00 to 99, and higher numbers win. `[Archives]` can select another expansion prefix. An archive with the same name as one in the game folder takes that archive's place. |
-| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text. A mod can also declare an Ares requirement without shipping this archive. |
+| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text, and so do `stringtable00.csf` to `stringtable99.csf` in the mod, later files replacing a label's earlier text. A text written `NOSTR:text` where the game expects a label, such as `UIName=NOSTR:Heavy Tank`, shows as written. A mod can also declare an Ares requirement without shipping this archive. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
@@ -208,6 +217,8 @@ Ares=yes
   Without the section, the mod inherits the host's `[ini]` settings.
 - `[Archives]` replaces names in existing startup slots, preserving their order and
   fallback rules. Omitted keys keep stock names. It does not scan for other archives.
+- `[Extensions] Kratos=yes` makes this launch play Kratos, as if the mod shipped it. With the
+  player's Kratos setting Off, VERA20k refuses the mod and says how to turn Kratos back on.
 - `[Extensions] Ares=yes` requires Ares reading from startup. With the player's Ares
   setting on Auto, it enables that reading for this launch without changing the saved
   setting. With Off, VERA20k refuses the mod and tells the player how to enable it.
@@ -246,8 +257,8 @@ The folder name is only the choice saved by the menu. Its loading rules come fro
 
 An extracted CnCNet client folder can go straight into `Mods`. Put the folder
 containing `Resources/ClientDefinitions.ini` and the game archives there, then
-choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
-complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+choose it as above. VERA uses its `MPMapsPath` catalog. A client whose files
+use other names declares them in `mod.ini`; VERA doesn't guess them. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
 VERA also uses the client theme's `splashScreen.png` and skirmish lobby
 background when present. It reads the configured `BackgroundTexture` from
@@ -258,7 +269,7 @@ This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,
 random maps, campaigns specific to the client, and multiplayer through the
 imported catalog are outside this path. An explicit loading section in
-`mod.ini` takes precedence over discovery.
+`mod.ini` takes precedence over the client folder's files.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:
@@ -300,7 +311,9 @@ a folder that is already there, and your original game isn't changed.
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
 For a mod distributed in parts, this checks the assembled files.
-Two copies with the same code hold the same compared data files. Also keep their
+Two copies with the same code hold the same compared data files: the code leaves out what
+[playing with others](#playing-with-others) leaves out, such as a translated `.csf`, though
+the list and the count name every file. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 
 A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
@@ -415,14 +428,23 @@ maps. The game's log says which files it adds.
 
 ### Add a map
 
-Give the map a `.yrm` ending and put it in the `Maps` folder, or in your mod's folder if
-the map needs the mod. As in the original, a map can change any rule for that match.
+Put your `.yrm`, `.map` or `.mpr` file in VERA20k's `Maps` folder and restart the
+game to find it in Skirmish. Skirmish also finds loose multiplayer `.mpr` and
+`.yrm` files directly in the game folder or the selected mod's folder. Put a
+map that needs a particular mod in that mod's folder. As in the original, a
+map can change any rule for that match.
 
-VERA20k adds two things. Open the map in a text editor to set them:
+New map exports and downloads use `.map`. If you already have an identical
+copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
+
+VERA20k also supports these map settings:
 
 - **Bigger maps:** under `[Map]`, the width and height in `Size=` can add up to 1024.
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
+- **Breakable ice.** Set `VeraIce=yes` under `[Map]` on a snow map, then paint
+  the crossing with the bundled ice tiles. Players only need your map file.
+  See [ice tile numbers, editor setup and Ice Lake](ts-ice.md#use-the-bundled-ice-in-a-map).
 
 If you write a map editor or tool, the [map format](map-format.md) has the details.
 
@@ -439,16 +461,24 @@ If you write a map editor or tool, the [map format](map-format.md) has the detai
 ## Playing with others
 
 A match starts only if everyone has the same VERA20k version and build, the same map, and
-the same selected Rules, Art and AI, theater INIs (such as `snowmd.ini`) and
-terrain tiles. **Terrain Deformation**, the **Superweapon Limit** and the **Building
+the same selected Rules, Art and AI. **Terrain Deformation**, the **Superweapon Limit** and the **Building
 Production Queue** don't need to match: a room plays its host's, and a match a launcher
 starts plays without the queue. With a mod in use,
-everyone also needs the same files in the mod's folder: every file there is compared by
-its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
+everyone also needs the same theater INIs (such as `snowmd.ini`) and terrain tiles, and the same
+files in the mod's folder: every file there is compared by
+its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`, and except files that
+only show, play or tell you something: text (`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures
+only a screen draws (`.pcx`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents
+(`.txt`, `.md`, `.pdf`, `.rtf`, `.htm`, `.html`, `.url`, `.log`). So a mod with its text translated plays
+with the original. Sounds, music, palettes and every `.mix` archive are still compared. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
-the file holds. Terrain tiles you put in the game folder itself, such as `clear01.sno` or
-an `isosnomd.mix`, are compared with the original game's, because they decide how high the
-ground is and where units can go. Other pictures and sounds there aren't compared.
+the file holds. Terrain tiles decide how high the ground is and where units can go, so a
+mod's are compared with the original game's. Without a mod, terrain files you put in the game
+folder itself, such as `clear01.sno`, an `isosnomd.mix` or a tile pack in `expandmd06.mix`,
+are left out of an online match on a map that uses only the original game's tiles: every
+player's game reads the original terrain there. A map that uses other tiles needs everyone
+to have the same terrain files, and the match says so when it starts. Other pictures and
+sounds there aren't compared.
 Players who don't have your map are asked whether to download it when they join your
 online room. When a match can't start because the files differ, each player's game says
 what it changes from the original game (its mod, or files such as a loose `rulesmd.ini`),
@@ -457,8 +487,9 @@ or that it plays the original, so the difference is in another player's game.
 Quick Match pairs you with anyone on the same VERA20k version, so it plays the original
 game, without anyone's Terrain Deformation, Superweapon Limit or Building Production Queue. With a mod in use it tells
 you to pick **No mod** in the Mods menu first. It also names
-any files in the game folder that change the original rules or terrain tiles, such as a
-loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left there.
+any files in the game folder that change the original rules, such as a
+loose `rulesmd.ini`, or an `expandmd99.mix` an old mod left there. Terrain files there
+don't matter: its matches read the original terrain.
 
 ## Sharing your mod
 
@@ -476,11 +507,10 @@ loose `rulesmd.ini` or `clear01.sno`, or an `expandmd99.mix` an old mod left the
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
-- [Wasm modules](wasm-modules.md): build a `rules.wasm`, put it in a mod or a map, and
-  declare its triggers in `rulesmd.ini`.
-- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to turn it on or build VERA20k with it. The official
-  downloads hold all of Ares, which a game's data turns on, and none of the others.
+- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
+  [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
+  it. The official downloads hold all of Ares, which a game's data turns on, and none of the
+  others. Kratos is at its first pieces: the per-game switch and the prone firing offset.
 
 ## Something wrong?
 

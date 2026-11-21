@@ -325,15 +325,15 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 None,
             )
             .unwrap();
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
             0,
             row["id_before"].as_u64().unwrap() as usize - 1_000_000,
         ));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&ini));
         assert_houses(&sim, &roster, &rules, &row["houses"], 0);

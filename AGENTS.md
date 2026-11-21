@@ -143,6 +143,15 @@ exchange keeps [Networking](docs/Networking.md) current and says in its PR what 
 released game, a mixed room and a rollback do with it: the older side is refused with
 a message or the feature stays off, and nothing hangs or crashes.
 
+Multiplayer rules: whatever a player's game can set that changes what a match plays (a
+file, an Options switch such as `PersonalRules`, an Ares or mod setting, a resource
+selection) enters the rules digest (`ProcessAssets::multiplayer_rules_digest`) and,
+in the same PR, the rules parts (`app::rules_parts`, docs/spawn.md "Rules parts"),
+named for players, so a refused start says what differs and not only that something
+does. A new part or setting keeps the parts' old form for a game without it (left
+out while off), and its PR says what the launcher's `src/lib/rulesDiff.ts` must add
+to name it; `every_personal_rules_switch_is_a_setting` holds `PersonalRules` to this.
+
 ## Architecture and delivery
 
 Use the simplest implementation that fully satisfies the required behavior. Avoid

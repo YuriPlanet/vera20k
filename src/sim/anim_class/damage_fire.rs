@@ -97,8 +97,7 @@ impl Simulation {
             let offsets = rules
                 .art()
                 .get(image)
-                .map(|entry| entry.damage_fire_offsets.clone())
-                .unwrap_or_default();
+                .map_or(&[][..], |entry| entry.damage_fire_offsets.as_slice());
             let (foundation_w, foundation_h) = foundation.dimensions();
             let foundation_sum = i32::from(foundation_w).wrapping_add(i32::from(foundation_h));
             let location = crate::sim::movement::ground_pose::object_location(

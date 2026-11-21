@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K hero image" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Latest Linux library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux library tests" height="23" align="middle"></a>
@@ -16,8 +16,8 @@
 # VERA20K
 
 VERA20K is a new engine for Red Alert 2: Yuri's Revenge. It plays like the original, with the same
-units, maps and look, and runs on Windows, macOS and Linux. It's built for bigger battles, with up
-to 30 players and 20,000 units on one map.
+units, maps and look, and runs on Windows, macOS and Linux. It supports battles with up to
+20,000 units on one map. Offline Skirmish has up to 120 player slots. LAN and online matches have up to 30.
 
 VERA20K is made by gamers, for gamers, and gamers have the final say in where it goes.
 
@@ -34,7 +34,7 @@ Stuck? See the [help page](https://vera20k.org/help).
 ## Project goals
 
 1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.
-2. Support bigger battles: up to **30 players** and **20,000 units** on 500×500 maps.
+2. Support bigger battles on 500×500 maps with up to **20,000 units**, **120 player slots** in offline Skirmish and **30** on LAN or online.
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
 
@@ -45,6 +45,8 @@ move VERA20K forward.
 
 Maintainers will help with review, integration and merging. You'll keep full credit for your
 contribution.
+
+Admins: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123)
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
@@ -117,7 +119,8 @@ many others.
 
 Copyright © 2026 Halvor Nikolai Rusten and VERA20K contributors.
 Licensed under the [GPLv3](LICENSE-GPL) with [additional terms](LEGAL.md#additional-terms).
-This repository contains no game files. Command &
+VERA20K includes the snow ice and shoreline artwork from Tiberian Sun: Firestorm with permission.
+Electronic Arts owns that artwork. Players supply their own Yuri's Revenge game files. Command &
 Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
 with or endorsed by Electronic Arts.
@@ -126,6 +129,8 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
+This product includes software developed by the [Kratos PP author](docs/kratos.md#original-project-and-authors).
+
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 
 ## Documentation
@@ -133,7 +138,8 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [WebAssembly preview](docs/wasm.md): an opt-in single-player build that runs in a browser.
 - [Modding guide](docs/modding.md): what mods can and can't do, and how VERA20K differs from the original game.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
-- [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md), [Kratos](docs/kratos.md),
+  [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.
 - [Developer tools](tools/README.md): builds, tests and asset inspection.
 - [Map testing](tools/map_observation.md): scripted scenarios, screenshots and match observations.

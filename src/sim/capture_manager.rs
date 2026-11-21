@@ -219,6 +219,7 @@ impl CaptureManagerState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_victims_for_test(max_control: i32, infinite: bool, victims: &[u64]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(max_control, infinite);
         state.nodes = victims
             .iter()
@@ -239,6 +240,7 @@ impl CaptureManagerState {
     /// A manager holding these `(victim, original owner)` nodes in order.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_nodes_for_test(nodes: &[(u64, InternedId)]) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         let mut state = Self::constructed(3, false);
         state.nodes = nodes
             .iter()
@@ -609,9 +611,18 @@ pub(crate) fn init_capture_manager(
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
     let warhead = rules.weapon_warhead(weapon)?;
-    warhead
-        .mind_control
-        .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))
+    warhead.mind_control.then(|| {
+        if rules.ra2() {
+            // Original RA2 reads MindControl.Damage only as the "considered
+            // offensive" flag (rules.ini Damage=10); link capacity is
+            // hardcoded 1 for both MindControl and SuperMindControl. Only YR
+            // reinterpreted Damage as the number of links (rulesmd.ini=1).
+            // Always one link on the RA2 profile, never infinite.
+            CaptureManagerState::constructed(1, false)
+        } else {
+            CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control)
+        }
+    })
 }
 
 impl Simulation {
@@ -945,19 +956,13 @@ impl Simulation {
         // 0x00471DB8: ChangeOwner(controller's house, 1). It refuses only an
         // unchanged house, which CanCapture already excluded.
         self.announce_controlled_building(target_id, controller_owner, rules);
-        self.change_owner_by_mind_control(
-            target_id,
-            controller_owner,
-            rules,
-            registry,
-            frame_effects,
-        );
-        if let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(controller_id)
-            .and_then(|controller| controller.capture_manager.as_mut())
-        {
+        self.change_owner_with_rules(target_id, controller_owner, rules, registry, frame_effects);
+        let controller = self.substrate.entities.get_mut(controller_id);
+        // A node's victim is a name the pointer-expiry index reads.
+        if let Some(manager) = controller.and_then(|controller| {
+            let _ = controller.note_names();
+            controller.capture_manager.as_mut()
+        }) {
             manager.nodes.push(ControlNode {
                 victim: target_id,
                 original_owner,
@@ -1244,7 +1249,7 @@ impl Simulation {
         ) {
             return;
         }
-        let Some(sound) = rules.mind_control.mind_control_sound.clone() else {
+        let Some(sound) = rules.mind_control.mind_control_sound.as_deref() else {
             return;
         };
         // 4692F0 rereads the bullet source after CaptureUnit's callbacks.
@@ -1290,7 +1295,7 @@ impl Simulation {
         };
         let (rx, ry, sub_x, sub_y, _) = location.to_cell_sub_z();
         self.sound_events.emit(SimSoundEvent::VocAt {
-            sound_id: sound,
+            sound_id: rules.sound_name(sound),
             audible_to: Some([firer_owner, target_owner.unwrap_or(firer_owner)]),
             rx,
             ry,
@@ -1455,10 +1460,10 @@ impl Simulation {
             if let Some(victim) = self.substrate.entities.get(victim_id) {
                 let sound = self
                     .object_type(victim.type_ref(), rules)
-                    .and_then(|object| object.mind_cleared_sound.clone())
-                    .or_else(|| rules.mind_control.mind_cleared_sound.clone());
+                    .and_then(|object| object.mind_cleared_sound.as_deref())
+                    .or(rules.mind_control.mind_cleared_sound.as_deref());
                 if let Some(sound) = sound {
-                    let event = SimSoundEvent::voc_at(sound, &victim.position);
+                    let event = SimSoundEvent::voc_at(rules.sound_name(sound), &victim.position);
                     self.sound_events.emit(event);
                 }
             }
@@ -1597,10 +1602,7 @@ impl Simulation {
             return;
         };
         let mut choice = i32::from(choice);
-        let controller_team = self
-            .team_script_vm
-            .team_for_member(controller_id)
-            .map(|(team_id, _)| team_id);
+        let controller_team = self.team_script_vm.team_of(controller_id);
         if let Some(decision) = controller_team
             .and_then(|team_id| self.team_script_vm.mind_control_decision(team_id))
             .filter(|&decision| decision != 0)
@@ -1772,9 +1774,9 @@ impl Simulation {
         );
         self.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
         if !sound_played {
-            if let Some(sound) = rules.mind_control.overload_sound.clone() {
+            if let Some(sound) = rules.mind_control.overload_sound.as_deref() {
                 self.sound_events
-                    .emit(SimSoundEvent::voc_at(sound, &position));
+                    .emit(SimSoundEvent::voc_at(rules.sound_name(sound), &position));
             }
             if let Some(manager) = self
                 .substrate

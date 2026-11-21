@@ -834,7 +834,7 @@ fn building_placement_projection_reads_actual_issuer_and_independent_saved_targe
 
     assert!(input.begin_building_placement("GAPOWR", 20, issuer));
     input.submit_building_placement(
-        &mut crate::app::sidebar_projection::SidebarProjectionState::default(),
+        &mut crate::app::sidebar_projection::SidebarModel::default(),
     );
     assert!(input.begin_building_placement("GAPILL", 40, issuer));
     let observed = MapBuildingPlacementObservation::capture(&input, &interner);
@@ -1227,12 +1227,10 @@ fn sidebar_target_resolution_reads_current_visible_slots_and_rejects_absent_cont
 fn command_bar_fixture() -> (
     crate::ui::sidebar::command_bar::CommandBarLayout,
     Vec<Option<usize>>,
-    crate::app::input::gadget_input::InGameGadgets,
+    vera20k_gui::Gui,
+    [vera20k_gui::NodeId; 12],
 ) {
-    use crate::ui::gadget::{
-        GadgetRect,
-        list::{GadgetSpec, ToggleKind},
-    };
+    use vera20k_gui::{Prop, Rect, Value};
     let layout = crate::ui::sidebar::command_bar::CommandBarLayout::new(
         [800, 600],
         168,
@@ -1246,64 +1244,62 @@ fn command_bar_fixture() -> (
     let index = command_bar_index("Guard").unwrap();
     let slots = vec![None, Some(index)];
     let rect = layout.slot(1).unwrap();
-    let mut gadgets = crate::app::input::gadget_input::InGameGadgets::new();
-    gadgets.command_bar = Some(std::array::from_fn(|i| {
-        let handle = gadgets.list.add_tail(GadgetSpec::button(
-            if i == index {
-                GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32)
-            } else if i == 11 {
-                let rect = layout.left_cap;
-                GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32)
-            } else {
-                GadgetRect::new(0, 0, 0, 0)
-            },
-            if i == 11 { 0xF0 } else { 0xD6 + i as u16 },
-            ToggleKind::Plain,
-        ));
-        gadgets.list.get_mut(handle).unwrap().is_disabled = i != index && i != 11;
-        handle
-    }));
-    (layout, slots, gadgets)
+    let (mut gui, nodes) = crate::app::input::chrome_input::test_layer();
+    let bar = nodes.command_bar;
+    for (i, node) in bar.iter().enumerate() {
+        let placed = if i == index {
+            Some(rect)
+        } else if i == 11 {
+            Some(layout.left_cap)
+        } else {
+            None
+        };
+        if let Some(rect) = placed {
+            let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
+            gui.set(*node, Prop::HitRect, Value::Rect(rect)).unwrap();
+        }
+        gui.set(*node, Prop::Enabled, Value::Bool(placed.is_some())).unwrap();
+    }
+    (layout, slots, gui, bar)
 }
 
 #[test]
 fn command_bar_gesture_resolves_current_layout_and_retained_control() {
-    let (layout, slots, mut gadgets) = command_bar_fixture();
+    use vera20k_gui::{Prop, Rect, Value};
+    let (layout, slots, mut gui, bar) = command_bar_fixture();
     let (receipt, handle) =
-        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, (&gui, bar), [800, 600])
             .unwrap();
     assert_eq!(receipt.slot, Some(1));
-    assert_eq!(
-        handle,
-        gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()]
-    );
-    let gadget = gadgets.list.get_mut(handle).unwrap();
-    assert!(gadget.rect.contains(
+    assert_eq!(handle, bar[command_bar_index("Guard").unwrap()]);
+    let rect = crate::app::input::chrome_input::rect_of(&gui, handle).unwrap();
+    assert!(rect.contains(
         receipt.resolved_position[0] as i32,
         receipt.resolved_position[1] as i32
     ));
-    assert_eq!(receipt.gadget_id, gadget.id);
+    assert_eq!(i32::from(receipt.gadget_id), gui.id_of(handle).unwrap());
     // Observed identity comes from the retained control, not a copied ID formula.
-    gadget.id = 777;
+    gui.set(handle, Prop::Id, Value::Int(777)).unwrap();
     assert_eq!(
-        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, (&gui, bar), [800, 600])
             .unwrap()
             .0
             .gadget_id,
         777
     );
-    gadgets.list.get_mut(handle).unwrap().rect.x += 1;
+    let moved = Rect::new(rect.x + 1, rect.y, rect.w, rect.h);
+    gui.set(handle, Prop::HitRect, Value::Rect(moved)).unwrap();
     assert!(
-        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
+        MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, (&gui, bar), [800, 600])
             .is_err()
     );
 }
 
 #[test]
 fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
-    use crate::ui::gadget::GadgetRect;
+    use vera20k_gui::{Prop, Rect, Value};
     for open in [true, false] {
-        let (_, slots, mut gadgets) = command_bar_fixture();
+        let (_, slots, mut gui, bar) = command_bar_fixture();
         let layout = crate::ui::sidebar::command_bar::CommandBarLayout::new(
             [800, 600],
             168,
@@ -1313,13 +1309,13 @@ fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
             open,
         )
         .unwrap();
-        let handle = gadgets.command_bar.unwrap()[11];
-        let gadget = gadgets.list.get_mut(handle).unwrap();
+        let handle = bar[11];
         let rect = layout.left_cap;
-        gadget.rect = GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
-        gadget.id = if open { 0xF0 } else { 0xF1 };
+        let rect = Rect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
+        gui.set(handle, Prop::HitRect, Value::Rect(rect)).unwrap();
+        gui.set(handle, Prop::Id, Value::Int(if open { 0xF0 } else { 0xF1 })).unwrap();
         let (receipt, observed_handle) =
-            MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, &gadgets, [800, 600])
+            MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, (&gui, bar), [800, 600])
                 .unwrap();
         assert_eq!(observed_handle, handle);
         assert_eq!(receipt.slot, None);
@@ -1334,9 +1330,9 @@ fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
             value.get("thumb").is_none(),
             "pure resolution supplies no House observation"
         );
-        gadgets.list.get_mut(handle).unwrap().is_disabled = true;
+        gui.set(handle, Prop::Enabled, Value::Bool(false)).unwrap();
         assert!(
-            MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, &gadgets, [800, 600],)
+            MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, (&gui, bar), [800, 600])
                 .is_err()
         );
     }

@@ -21,15 +21,13 @@ use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use serde_json::Value;
 use serde_json::json;
 
-pub(super) enum Request {
+pub(super) enum MapIo {
     ReadMapUpload {
-        transfer: u64,
         source: crate::map::source::TransferMapSource,
         digest: String,
         total: usize,
     },
     MapChunk {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         seed_digest: String,
         digest: String,
@@ -39,7 +37,6 @@ pub(super) enum Request {
         match_id: Option<String>,
     },
     UploadMapChunk {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         id: u64,
         digest: String,
@@ -48,20 +45,28 @@ pub(super) enum Request {
         bytes: Vec<u8>,
     },
     CachedMap {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         directory: PathBuf,
         digest: String,
         total: usize,
     },
     InstallMap {
-        transfer: u64,
         resource: crate::map::source::TransferResource,
         directory: PathBuf,
         digest: String,
         total: usize,
         bytes: Vec<u8>,
     },
+}
+
+pub(super) enum Request {
+    Map {
+        transfer: u64,
+        active: std::sync::Weak<()>,
+        io: MapIo,
+        completed: Sender<Request>,
+    },
+    MapFinished(map_io::Finished),
     OpenSession {
         attempt: u64,
         nickname: String,
@@ -125,6 +130,8 @@ pub(super) enum Request {
 pub(super) enum Credential {
     /// No password: a guest, or `name_claimed` for an account's name.
     Guest,
+    /// A name assigned by Play as Guest, which may be replaced on a collision.
+    GeneratedGuest,
     /// The typed password; `remember` asks for a `sign_in_token`.
     Password { password: String, remember: bool },
     /// The `sign_in_token` this computer remembers for the name.
@@ -135,7 +142,7 @@ pub(super) enum Credential {
 fn session_body(nickname: &str, credential: &Credential) -> Value {
     let mut body = json!({"nickname": nickname, "protocol": 4});
     match credential {
-        Credential::Guest => {}
+        Credential::Guest | Credential::GeneratedGuest => {}
         Credential::Password { password, remember } => {
             body["password"] = json!(password);
             body["remember"] = json!(remember);
@@ -327,6 +334,7 @@ pub(super) enum Response {
     },
     Authenticated {
         attempt: u64,
+        generated_guest: bool,
         player_id: String,
         nickname: String,
         motd: Option<String>,
@@ -335,6 +343,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        /// The lobby offers `campaign_rooms`.
         campaign_rooms: bool,
     },
     LoginFailed {
@@ -371,6 +380,8 @@ pub(super) enum Response {
     },
     /// A notice for the lobby's chat, by its `VERA:` label.
     Failure(&'static str),
+    /// An ordinary watch-list refresh failed; the shell retains its last rows.
+    WatchListFailed,
     Offline,
     /// The first event poll of an outage failed; polling keeps retrying.
     LobbyUnreachable,
@@ -449,6 +460,10 @@ fn sign_in_headers(changes: &str) -> [(&'static str, String); 7] {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RequestFailure {
     Status(u16),
+    /// A session nickname is in use (409), or belongs to an account
+    /// (403, with its localized message). Neither error created a session.
+    SessionNameInUse,
+    SessionNameClaimed(String),
     LostCursor,
     ChannelRejected {
         status: u16,
@@ -490,12 +505,13 @@ enum RequestFailure {
 /// including a 401 or 403 without the lobby's code.
 fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
     match failure {
-        RequestFailure::Status(409) => Response::LoginFailed {
+        RequestFailure::SessionNameInUse | RequestFailure::Status(409) => Response::LoginFailed {
             attempt,
             code: 0x8004_0064,
         },
         RequestFailure::UpgradeRequired(message) => Response::UpgradeRequired { attempt, message },
-        error @ (RequestFailure::Maintenance(_)
+        error @ (RequestFailure::SessionNameClaimed(_)
+        | RequestFailure::Maintenance(_)
         | RequestFailure::Full(_)
         | RequestFailure::Account { .. }
         | RequestFailure::Status(429)) => {
@@ -526,7 +542,9 @@ fn sign_in_refusal(failure: RequestFailure) -> String {
         RequestFailure::Full(message) => {
             message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineFull"))
         }
-        RequestFailure::Account { message, .. } => message,
+        RequestFailure::SessionNameClaimed(message) | RequestFailure::Account { message, .. } => {
+            message
+        }
         _ => crate::i18n::tr("VERA:OnlineBusy"),
     }
 }
@@ -638,8 +656,8 @@ impl RequestFailure {
     /// carry their message, since `name_unavailable` there names an account,
     /// and so do a sign-in's wrong passwords from one network and its
     /// accounts being unavailable. A sign-in's `name_unavailable` is a name
-    /// already online or reserved: the plain 409 that [`sign_in_failure`]
-    /// shows as the name in use, not a room's code. A 401 on any path is the
+    /// already online or reserved, while `name_claimed` is an account's name.
+    /// Only these two replies let the game draw another guest name. A 401 on any path is the
     /// bearer the lobby no longer knows (`session_failed`).
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
         if status == 401 {
@@ -649,8 +667,16 @@ impl RequestFailure {
         let code = value
             .as_ref()
             .and_then(|value| value["error"]["code"].as_str());
-        if path == "/v1/sessions" && status == 409 && code == Some("name_unavailable") {
-            return Self::Status(409);
+        if path == "/v1/sessions" {
+            match (status, code) {
+                (409, Some("name_unavailable")) => return Self::SessionNameInUse,
+                (403, Some("name_claimed")) => {
+                    let message = plain_message(value.as_ref())
+                        .unwrap_or_else(|| crate::i18n::tr("VERA:NameHasAccount"));
+                    return Self::SessionNameClaimed(message);
+                }
+                _ => {}
+            }
         }
         let sign_in = path == "/v1/sessions"
             && matches!(
@@ -708,9 +734,12 @@ impl RequestFailure {
     fn status(&self) -> u16 {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
-            Self::LostCursor | Self::AlreadyFinished | Self::MatchActive | Self::StaleRevision => {
-                409
-            }
+            Self::SessionNameClaimed(_) => 403,
+            Self::SessionNameInUse
+            | Self::LostCursor
+            | Self::AlreadyFinished
+            | Self::MatchActive
+            | Self::StaleRevision => 409,
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
@@ -860,6 +889,22 @@ impl Client {
         Ok(())
     }
 
+    /// A stream frame or map upload reply can arrive after a newer batch.
+    /// Discard an overtaken cursor and deliver overlapping events once.
+    fn overlapping_batch(
+        &mut self,
+        frame: Value,
+        output: &Sender<Response>,
+    ) -> Result<(), RequestFailure> {
+        if frame["cursor"]
+            .as_u64()
+            .is_some_and(|cursor| cursor < self.cursor)
+        {
+            return Ok(());
+        }
+        self.batch(frame, output)
+    }
+
     fn batch(&mut self, value: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
         let mut batch: EventBatch =
             serde_json::from_value(value).map_err(|_| RequestFailure::Status(0))?;
@@ -895,19 +940,6 @@ impl Client {
             .filter(|_| !self.spawned && !self.abandoned)
     }
 
-    /// A stream frame starts at the stream's own cursor, which command
-    /// replies and polls may have passed: a stale frame is dropped, and
-    /// `batch` drops the events this worker already delivered.
-    fn streamed(&mut self, frame: Value, output: &Sender<Response>) -> Result<(), RequestFailure> {
-        if frame["cursor"]
-            .as_u64()
-            .is_some_and(|cursor| cursor < self.cursor)
-        {
-            return Ok(());
-        }
-        self.batch(frame, output)
-    }
-
     fn request(&self, path: &str, body: Option<&Value>) -> Result<Value, RequestFailure> {
         if self.stopping.load(Ordering::Acquire) {
             return Err(RequestFailure::Status(0));
@@ -917,7 +949,8 @@ impl Client {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster. A browser
-                // game does not say so: its gateway reaches one fixed relay.
+                // game does not say so, and its gateway would not forward it
+                // (FORWARDED_HEADERS), so its matches stay on one relay.
                 request = request.header("Vera-Relay-Federation", "1");
                 for (name, value) in sign_in_headers(&self.changes) {
                     request = request.header(name, value);
@@ -1024,9 +1057,37 @@ macro_rules! platform_await {
     };
 }
 
+mod map_io;
+
 macro_rules! serial_driver {
     ($($asynchronous:tt)?) => {
         impl Client {
+    /// Retry only explicit collisions for a name this game assigned. A network
+    /// failure could already have created a session under the first name.
+    $($asynchronous)? fn open_session(
+        &self, attempt: u64, mut nickname: String, credential: &Credential,
+        mut superseded: impl FnMut() -> bool,
+    ) -> Result<Session, Response> {
+        let mut retries_left = 3;
+        loop {
+            let body = session_body(&nickname, credential);
+            let answer = platform_await!(self.request("/v1/sessions", Some(&body)));
+            match answer {
+                Err(RequestFailure::SessionNameInUse | RequestFailure::SessionNameClaimed(_))
+                    if matches!(credential, Credential::GeneratedGuest) => {}
+                other => return other.and_then(|value| decode_session(value, &nickname))
+                    .map_err(|error| sign_in_failure(attempt, error)),
+            }
+            if retries_left == 0 || self.stopping.load(Ordering::Acquire) || superseded() {
+                return Err(Response::SignInRefused {
+                    attempt, message: crate::i18n::tr("VERA:GuestNameBusy"), bad_credential: false,
+                });
+            }
+            retries_left -= 1;
+            nickname = crate::ui::wol_account::guest_nickname();
+        }
+    }
+
     /// One translation job, under the bearer it carries.
     $($asynchronous)? fn translate(&mut self, (id, token, text, target): TranslateJob) -> Response {
         self.token = Some(token);
@@ -1133,6 +1194,29 @@ macro_rules! serial_driver {
         }
     }
 
+    $($asynchronous)? fn matches_finished(
+        &mut self,
+        result: Result<MatchList, RequestFailure>,
+        refused_options: Option<u64>,
+        output: &Sender<Response>,
+    ) {
+        let list = match result {
+            Ok(list) => Some(list.matches),
+            // A lobby from before watching has no watch list.
+            Err(RequestFailure::Status(404)) => None,
+            Err(error) => {
+                let outdated = matches!(error, RequestFailure::UpgradeRequired(_));
+                if !platform_await!(self.session_failed(error, output))
+                    && refused_options.is_none() && !outdated && self.token.is_some()
+                {
+                    let _ = output.send(Response::WatchListFailed);
+                }
+                return;
+            }
+        };
+        let _ = output.send(Response::Matches { list, refused_options });
+    }
+
     $($asynchronous)? fn poll_finished(
         &mut self,
         result: Result<(), RequestFailure>,
@@ -1195,6 +1279,7 @@ macro_rules! serial_driver {
     let mut streams = stream::Streams::new(&client.base);
     let mut failed_polls = 0_u8;
     let mut refresh_failed = false;
+    let mut maps: Option<map_io::Worker> = None;
     let mut next_poll = Instant::now();
     let mut queued = VecDeque::new();
     loop {
@@ -1212,153 +1297,28 @@ macro_rules! serial_driver {
         if stopping.load(Ordering::Acquire) {
             break;
         }
+        if maps.as_ref().is_some_and(|worker| !worker.belongs_to(&client)) {
+            maps = None;
+        }
+        if matches!(&request, Some(Request::Abandon | Request::OpenSession { .. } | Request::Command { operation: "logout", .. })) {
+            maps = None;
+        }
         match request {
-            Some(Request::ReadMapUpload {
-                transfer,
-                source,
-                digest,
-                total,
-            }) => {
-                let response = match source.read(&digest, total) {
-                    Ok(bytes) => Response::MapUploadPrepared { transfer, bytes },
-                    Err(_) => Response::MapFailure {
-                        transfer,
-                        retryable: false,
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::CachedMap {
-                transfer,
-                resource,
-                directory,
-                digest,
-                total,
-            }) => {
-                let loaded =
-                    crate::map::source::load_received_asset(&directory, &digest, total, resource)
-                        .ok();
-                let _ = output.send(Response::CachedMap { transfer, loaded });
-            }
-            Some(Request::InstallMap {
-                transfer,
-                resource,
-                directory,
-                digest,
-                total,
-                bytes,
-            }) => {
-                let result = crate::map::source::install_received_asset(
-                    &directory, bytes, &digest, total, resource,
-                );
-                let response = match result {
-                    Ok(loaded) => Response::MapInstalled { transfer, loaded },
-                    Err(_) => Response::MapFailure {
-                        transfer,
-                        retryable: false,
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::MapChunk {
-                transfer,
-                resource,
-                seed_digest,
-                digest,
-                offset,
-                match_id,
-            }) => {
-                let result = if crate::map::source::valid_source_sha256(&digest) {
-                    let watched = match_id.map_or_else(String::new, |id| format!("&match_id={id}"));
-                    platform_await!(client.request(
-                        &format!(
-                            "/v1/maps/{seed_digest}?offset={offset}&resource={}{watched}",
-                            if resource == crate::map::source::TransferResource::Preview {
-                                "preview"
-                            } else {
-                                "map"
-                            }
-                        ),
-                        None,
-                    ))
-                } else {
-                    Err(RequestFailure::Status(400))
-                };
-                if let Err(error) = result.as_ref() {
-                    platform_await!(client.session_failed(error.clone(), &output));
-                }
-                let response = match result {
-                    Ok(value) => {
-                        #[derive(serde::Deserialize)]
-                        struct Chunk {
-                            digest: String,
-                            byte_length: usize,
-                            offset: usize,
-                            data: String,
-                            complete: bool,
-                        }
-                        // maps.rs's transfer checks the chunk's size and place.
-                        serde_json::from_value::<Chunk>(value)
-                            .ok()
-                            .and_then(|chunk| {
-                                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                                    .decode(&chunk.data)
-                                    .ok()?;
-                                Some(Response::MapChunk {
-                                    transfer,
-                                    digest: chunk.digest,
-                                    total: chunk.byte_length,
-                                    offset: chunk.offset,
-                                    bytes,
-                                    complete: chunk.complete,
-                                })
-                            })
-                            .unwrap_or(Response::MapFailure {
-                                transfer,
-                                retryable: false,
-                            })
+            Some(Request::Map { transfer, active, io, completed }) => {
+                if active.strong_count() != 0 {
+                    if maps.is_none() && client.token.is_some() && !client.abandoned {
+                        maps = map_io::Worker::start(&client);
                     }
-                    Err(RequestFailure::Status(409 | 429)) => Response::MapPending { transfer },
-                    Err(error) => Response::MapFailure {
-                        transfer,
-                        retryable: matches!(error.status(), 0 | 500..=599),
-                    },
-                };
-                let _ = output.send(response);
-            }
-            Some(Request::UploadMapChunk {
-                transfer,
-                resource,
-                id,
-                digest,
-                total,
-                offset,
-                bytes,
-            }) => {
-                let completed = offset + bytes.len();
-                let body = json!({"request_id":id.to_string(),"after":client.cursor,"operation":"map_upload",
-                    "payload":{"digest":digest,"byte_length":total,"offset":offset,"resource":if resource == crate::map::source::TransferResource::Preview { "preview" } else { "map" },
-                    "data":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)}});
-                let result = platform_await!(client
-                    .request("/v1/commands", Some(&body)))
-                    .and_then(|value| client.batch(value, &output));
-                if let Err(error) = result.as_ref() {
-                    platform_await!(client.session_failed(error.clone(), &output));
+                    let job = map_io::Job { transfer, active, after: client.cursor, io, completed };
+                    if !maps.as_ref().is_some_and(|worker| worker.send(job)) {
+                        let _ = output.send(Response::MapFailure { transfer, retryable: false });
+                    }
                 }
-                let response = match result {
-                    Ok(()) => Response::MapUploaded {
-                        transfer,
-                        completed,
-                    },
-                    Err(error) => Response::MapFailure {
-                        transfer,
-                        retryable: matches!(
-                            error,
-                            RequestFailure::Status(0 | 409 | 429 | 500..=599)
-                        ),
-                    },
-                };
-                let _ = output.send(response);
+            }
+            Some(Request::MapFinished(reply)) => {
+                if maps.as_ref().is_some_and(|worker| worker.owns(&reply)) {
+                    platform_await!(client.finish_map(reply, &output));
+                }
             }
             Some(Request::OpenSession {
                 attempt,
@@ -1374,9 +1334,11 @@ macro_rules! serial_driver {
                     continue;
                 }
                 client.cursor = 0;
-                let result = platform_await!(client
-                    .request("/v1/sessions", Some(&session_body(&nickname, &credential))))
-                    .and_then(|value| decode_session(value, &nickname));
+                let result = platform_await!(client.open_session(attempt, nickname, &credential, || {
+                    queue_arrivals(&input, None, &mut queued);
+                    queued.iter().any(|request| matches!(request,
+                        Request::Abandon | Request::OpenSession { .. } | Request::Command { operation: "logout", .. }))
+                }));
                 match result {
                     Ok(session) => {
                         client.token = Some(session.token);
@@ -1384,6 +1346,7 @@ macro_rules! serial_driver {
                         if output
                             .send(Response::Authenticated {
                                 attempt,
+                                generated_guest: matches!(credential, Credential::GeneratedGuest),
                                 player_id: session.player_id,
                                 nickname: session.nickname,
                                 motd: session.motd,
@@ -1398,8 +1361,8 @@ macro_rules! serial_driver {
                             break;
                         }
                     }
-                    Err(failure) => {
-                        let _ = output.send(sign_in_failure(attempt, failure));
+                    Err(refusal) => {
+                        let _ = output.send(refusal);
                     }
                 }
             }
@@ -1454,23 +1417,11 @@ macro_rules! serial_driver {
                 platform_await!(client.list_finished(list, &mut refresh_failed, &output));
             }
             Some(Request::Matches { refused_options }) => {
-                match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
+                let list = platform_await!(client.request("/v1/matches", None)).and_then(|value| {
                     serde_json::from_value::<MatchList>(value)
                         .map_err(|_| RequestFailure::Status(0))
-                }) {
-                    Ok(list) => {
-                        let _ = output.send(Response::Matches { list: Some(list.matches), refused_options });
-                    }
-                    // A lobby from before watching lists no match.
-                    Err(RequestFailure::Status(404)) => {
-                        let _ = output.send(Response::Matches { list: None, refused_options });
-                    }
-                    // The game list asked at the same time says when the
-                    // lobby could not be refreshed.
-                    Err(error) => {
-                        let _ = platform_await!(client.session_failed(error, &output));
-                    }
-                }
+                });
+                platform_await!(client.matches_finished(list, refused_options, &output));
             }
             Some(Request::Command {
                 id,
@@ -1566,7 +1517,7 @@ macro_rules! serial_driver {
         let streaming = {
             while let Some(frame) = streams.next(client.stream_bearer()) {
                 // A bad frame ends the stream; the next poll asks again.
-                if client.streamed(frame, &output).is_err() {
+                if client.overlapping_batch(frame, &output).is_err() {
                     streams.close();
                 }
             }
@@ -1627,6 +1578,9 @@ mod browser;
 mod stream;
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
 pub(super) use browser::{RequestOwner, start as start_browser};
+
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+pub(in crate::app::shell_wol) use browser::browser_stats;
 
 #[cfg(all(test, tests_app))]
 mod tests {
@@ -1821,30 +1775,209 @@ mod tests {
         );
     }
 
-    /// A lobby on a local port that reads one request until `done` holds for
-    /// what it read, answers it with `reply`, and hands back what it read.
-    fn one_request_lobby(
-        done: fn(&[u8]) -> bool,
-        reply: &'static [u8],
-    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
-        use std::io::{Read, Write};
+    /// A server holds the map response open and sends a real WebSocket room
+    /// event. Delivery must not depend on the map server answering first.
+    #[test]
+    fn a_room_event_reaches_the_game_while_its_map_request_is_stalled() {
+        for upload in [false, true] {
+            room_event_during_map_chunk(upload);
+        }
+    }
+
+    fn room_event_during_map_chunk(upload: bool) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::net::{TcpListener, TcpStream};
+        use std::sync::mpsc::channel;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (accepted, sockets) = channel();
+        let acceptor = std::thread::spawn(move || {
+            for socket in listener.incoming() {
+                if accepted.send(socket.unwrap()).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut client = signed_in_client(0);
+        client.base = format!("http://{address}");
+        let (requests, input) = channel();
+        let (output, events) = channel();
+        let stop = Arc::clone(&client.stopping);
+        let worker = std::thread::spawn(move || run_loop(client, input, output, None));
+        let timeout = Duration::from_secs(3);
+        let active = Arc::new(());
+        let mut stream = None;
+        let digest = "ab".repeat(32);
+        let mut held = loop {
+            let mut socket = sockets.recv_timeout(timeout).unwrap();
+            socket.set_read_timeout(Some(timeout)).unwrap();
+            let mut header = [0; 128];
+            let read = socket.peek(&mut header).unwrap();
+            if header[..read].starts_with(b"GET /v1/events/stream?") {
+                stream = Some(tungstenite::accept(socket).unwrap());
+                let resource = crate::map::source::TransferResource::Map;
+                let io = if upload {
+                    MapIo::UploadMapChunk {
+                        resource,
+                        id: 9,
+                        digest: digest.clone(),
+                        total: 1,
+                        offset: 0,
+                        bytes: vec![1],
+                    }
+                } else {
+                    MapIo::MapChunk {
+                        resource,
+                        seed_digest: digest.clone(),
+                        digest: digest.clone(),
+                        offset: 0,
+                        match_id: None,
+                    }
+                };
+                requests
+                    .send(Request::Map {
+                        transfer: 3,
+                        active: Arc::downgrade(&active),
+                        completed: requests.clone(),
+                        io,
+                    })
+                    .unwrap();
+            } else {
+                let mut request = BufReader::new(&socket);
+                let mut content_length = 0;
+                for header in (&mut request).lines() {
+                    let header = header.unwrap();
+                    if header.is_empty() {
+                        break;
+                    }
+                    if let Some((name, value)) = header.split_once(':')
+                        && name.eq_ignore_ascii_case("content-length")
+                    {
+                        content_length = value.trim().parse().unwrap();
+                    }
+                }
+                let mut body = vec![0; content_length];
+                request.read_exact(&mut body).unwrap();
+                if header[..read].starts_with(b"POST /v1/commands") {
+                    assert_eq!(
+                        serde_json::from_slice::<Value>(&body).unwrap()["operation"],
+                        "map_upload"
+                    );
+                    break socket;
+                }
+                if header[..read].starts_with(b"GET /v1/maps/") {
+                    break socket;
+                }
+                assert!(header[..read].starts_with(b"GET /v1/events?"));
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 24\r\nConnection: close\r\n\r\n{\"cursor\":0,\"events\":[]}").unwrap();
+            }
+        };
+        let mut stream = stream.unwrap();
+        let event =
+            json!({"cursor":1,"events":[{"sequence":1,"kind":"channel_left","payload":{}}]});
+        stream
+            .send(tungstenite::Message::text(event.to_string()))
+            .unwrap();
+        let before_map_reply = matches!(events.recv_timeout(timeout), Ok(Response::Event(envelope)) if envelope.kind == "channel_left");
+        // The host's HTTP reply started at cursor zero; the room event above
+        // has already advanced the session to one. Its upload still completed.
+        let reply = if upload {
+            json!({"cursor":0,"events":[]})
+        } else {
+            json!({"digest":digest,"byte_length":1,"offset":0,"data":"AQ","complete":true})
+        }
+        .to_string();
+        write!(
+            held,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            reply.len()
+        )
+        .unwrap();
+        drop(held);
+        let completed = match events.recv_timeout(timeout) {
+            Ok(Response::MapUploaded {
+                transfer: 3,
+                completed: 1,
+            }) => upload,
+            Ok(Response::MapChunk {
+                transfer: 3, bytes, ..
+            }) => !upload && bytes == [1],
+            _ => false,
+        };
+        stop.store(true, Ordering::Release);
+        drop(stream);
+        drop(requests);
+        worker.join().unwrap();
+        drop(sockets);
+        let _ = TcpStream::connect(address);
+        acceptor.join().unwrap();
+        assert!(
+            before_map_reply,
+            "the stalled map request held the room event (upload={upload})"
+        );
+        assert!(
+            completed,
+            "the transfer failed after the room advanced (upload={upload})"
+        );
+    }
+
+    type LobbyRequests = Vec<(String, Value)>;
+
+    /// A lobby on a local port. It reads one request per connection (the
+    /// head, then a `Content-Length` JSON body), answers with the status and
+    /// body `answer` gives for them, and closes. A connection that sends
+    /// nothing ends it ([`close_lobby`]).
+    fn local_lobby(
+        mut answer: impl FnMut(&str, &Value) -> (u16, Value) + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<LobbyRequests>) {
+        use std::io::{BufRead, Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let lobby = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let (mut request, mut chunk) = (Vec::new(), [0; 4096]);
-            while !done(&request) {
-                let read = stream.read(&mut chunk).unwrap();
-                assert_ne!(read, 0, "the request ended early");
-                request.extend_from_slice(&chunk[..read]);
+            let mut seen = Vec::new();
+            for stream in listener.incoming() {
+                let mut reader = std::io::BufReader::new(stream.unwrap());
+                let (mut head, mut length, mut line) = (String::new(), 0, String::new());
+                while reader.read_line(&mut line).unwrap_or(0) > 2 {
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        length = value.trim().parse().unwrap();
+                    }
+                    head.push_str(&line);
+                    line.clear();
+                }
+                if head.is_empty() {
+                    break;
+                }
+                let mut body = vec![0; length];
+                reader.read_exact(&mut body).unwrap();
+                let body: Value = serde_json::from_slice(&body).unwrap_or_default();
+                let (status, reply) = answer(&head, &body);
+                let reply = reply.to_string();
+                let _ = write!(
+                    reader.into_inner(),
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                seen.push((head, body));
             }
-            stream.write_all(reply).unwrap();
-            String::from_utf8_lossy(&request).into_owned()
+            seen
         });
         (address, lobby)
+    }
+
+    /// Ends a [`local_lobby`]; gives each request's head and body, in order.
+    fn close_lobby(
+        address: std::net::SocketAddr,
+        lobby: std::thread::JoinHandle<LobbyRequests>,
+    ) -> LobbyRequests {
+        drop(std::net::TcpStream::connect(address).unwrap());
+        lobby.join().unwrap()
+    }
+
+    /// The path a request's head asks for.
+    fn request_path(head: &str) -> &str {
+        head.split(' ').nth(1).unwrap_or_default()
     }
 
     /// docs/spawn.md "Watching": a watcher's bearer polls only when asked,
@@ -1852,39 +1985,18 @@ mod tests {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     #[test]
     fn a_watchers_worker_polls_on_request_and_stops_at_its_matchs_end() {
-        use std::io::{BufRead, Write};
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let lobby_seen = Arc::clone(&seen);
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let mut reader = std::io::BufReader::new(stream.unwrap());
-                let (mut path, mut line) = (String::new(), String::new());
-                while reader.read_line(&mut line).unwrap_or(0) > 2 {
-                    if path.is_empty() {
-                        path = line.split(' ').nth(1).unwrap_or_default().to_owned();
-                    }
-                    line.clear();
-                }
-                let (status, reply) = if path == "/v1/events?after=0" {
-                    (
-                        200,
-                        json!({"cursor":1,"events":[{"sequence":1,"kind":"watch_renewed",
-                            "payload":{"match_id":"m"}}]}),
-                    )
-                } else {
-                    (409, json!({"error":{"code":"unknown_match"}}))
-                };
-                let reply = reply.to_string();
-                lobby_seen.lock().unwrap().push(path.clone());
-                let _ = write!(
-                    reader.into_inner(),
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
+        let (address, lobby) = local_lobby(|head, _| {
+            if request_path(head) == "/v1/events?after=0" {
+                (
+                    200,
+                    json!({"cursor":1,"events":[{"sequence":1,"kind":"watch_renewed",
+                        "payload":{"match_id":"m"}}]}),
+                )
+            } else {
+                (409, json!({"error":{"code":"unknown_match"}}))
             }
         });
+        let base = format!("http://{address}");
         let (requests, input) = std::sync::mpsc::channel();
         let (output, responses) = std::sync::mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
@@ -1919,10 +2031,56 @@ mod tests {
         stopping.store(true, Ordering::Release);
         drop(requests);
         worker.join().unwrap();
-        assert_eq!(
-            *seen.lock().unwrap(),
-            ["/v1/events?after=0", "/v1/events?after=1"]
+        let seen = close_lobby(address, lobby);
+        let paths: Vec<_> = seen.iter().map(|(head, _)| request_path(head)).collect();
+        assert_eq!(paths, ["/v1/events?after=0", "/v1/events?after=1"]);
+    }
+
+    #[test]
+    fn only_generated_names_retry_collisions_and_they_stop_after_four_attempts() {
+        let mut asked = 0;
+        let (address, lobby) = local_lobby(move |_, _| {
+            asked += 1;
+            let (status, code) = if asked % 2 == 0 {
+                (403, "name_claimed")
+            } else {
+                (409, "name_unavailable")
+            };
+            (status, json!({"error":{"code":code}}))
+        });
+        let client = Client::new(
+            Arc::new(AtomicBool::new(false)),
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build()
+                .into(),
+            format!("http://{address}"),
         );
+        let named = client.open_session(1, "Guest00001".into(), &Credential::Guest, || false);
+        assert!(matches!(
+            named,
+            Err(Response::LoginFailed {
+                code: 0x8004_0064,
+                ..
+            })
+        ));
+        let automatic =
+            client.open_session(2, "Guest00002".into(), &Credential::GeneratedGuest, || {
+                false
+            });
+        assert!(
+            matches!(automatic, Err(Response::SignInRefused { message, .. })
+            if message == crate::i18n::tr("VERA:GuestNameBusy"))
+        );
+        let bodies = close_lobby(address, lobby);
+        assert_eq!(bodies.len(), 5);
+        for (_, body) in bodies {
+            let name = body["nickname"].as_str().unwrap();
+            let digits = name.strip_prefix("Guest").unwrap();
+            assert_eq!(digits.len(), 5);
+            assert!(digits.bytes().all(|b| b.is_ascii_digit()));
+            assert_eq!(body, json!({"nickname":name,"protocol":4}));
+        }
     }
 
     /// A bearer the shell stopped logging out (Back in an outage, or a
@@ -1931,10 +2089,7 @@ mod tests {
     /// away it stays held.
     #[test]
     fn a_held_bearer_is_logged_out_before_signing_in_again() {
-        let (address, lobby) = one_request_lobby(
-            |request| request.windows(6).any(|bytes| bytes == b"logout"),
-            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-        );
+        let (address, lobby) = local_lobby(|_, _| (200, json!({})));
         let mut client = signed_in_client(4);
         client.base = "http://127.0.0.1:1".to_owned();
         assert!(!client.release_held_session());
@@ -1942,7 +2097,8 @@ mod tests {
         client.base = format!("http://{address}");
         assert!(client.release_held_session());
         assert!(client.token.is_none());
-        lobby.join().unwrap();
+        let seen = close_lobby(address, lobby);
+        assert!(matches!(seen.as_slice(), [(_, body)] if body["operation"] == "logout"));
     }
 
     /// Quick Match leaves its room as its match starts. The match the live
@@ -1950,75 +2106,42 @@ mod tests {
     /// held bearer's logout still finishes it first.
     #[test]
     fn a_quick_match_leave_keeps_the_match_to_resume_and_to_finish() {
-        use std::io::{BufRead, Write};
         const MATCH: &str = "11111111-1111-1111-1111-111111111111";
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let lobby = std::thread::spawn(move || {
-            let (mut seen, mut left, mut reads_after_leave, mut sessions) =
-                (Vec::new(), false, 0, 0);
-            for stream in listener.incoming() {
-                let mut reader = std::io::BufReader::new(stream.unwrap());
-                let (mut path, mut length, mut line) = (String::new(), 0, String::new());
-                while reader.read_line(&mut line).unwrap_or(0) > 2 {
-                    let lower = line.to_ascii_lowercase();
-                    if let Some(value) = lower.strip_prefix("content-length:") {
-                        length = value.trim().parse().unwrap();
-                    } else if path.is_empty() {
-                        path = line.split(' ').nth(1).unwrap().to_owned();
-                    }
-                    line.clear();
+        let (mut left, mut reads_after_leave) = (false, 0);
+        let (address, lobby) = local_lobby(move |head, body| {
+            let batch = json!({"cursor":1,"events":[]});
+            match request_path(head) {
+                "/v1/sessions" => (200, session_response()),
+                "/v1/events?after=0" => (
+                    200,
+                    json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
+                        "payload":{"match_id":MATCH}}]}),
+                ),
+                "/v1/commands" => {
+                    left |= body["operation"] == "leave";
+                    (200, batch)
                 }
-                let mut body = vec![0; length];
-                std::io::Read::read_exact(&mut reader, &mut body).unwrap();
-                let body: Value = serde_json::from_slice(&body).unwrap_or_default();
-                let batch = json!({"cursor":1,"events":[]});
-                let (status, reply) = match path.as_str() {
-                    "/v1/sessions" => {
-                        sessions += 1;
-                        (200, session_response())
-                    }
-                    "/v1/events?after=0" => (
-                        200,
-                        json!({"cursor":1,"events":[{"sequence":1,"kind":"timing_confirmed",
-                            "payload":{"match_id":MATCH}}]}),
-                    ),
-                    "/v1/commands" => {
-                        left |= body["operation"] == "leave";
+                // The leave's own drain, then a poll after the lobby
+                // lost this session's history.
+                "/v1/events?after=1" if left => {
+                    reads_after_leave += 1;
+                    if reads_after_leave > 1 {
+                        (409, json!({"error":{"code":"history_expired"}}))
+                    } else {
                         (200, batch)
                     }
-                    // The leave's own drain, then a poll after the lobby
-                    // lost this session's history.
-                    "/v1/events?after=1" if left => {
-                        reads_after_leave += 1;
-                        if reads_after_leave > 1 {
-                            (409, json!({"error":{"code":"history_expired"}}))
-                        } else {
-                            (200, batch)
-                        }
-                    }
-                    "/v1/events?after=1" => (200, batch),
-                    _ if path == format!("/v1/match/resume?match_id={MATCH}") => (
-                        200,
-                        json!({"match_id":MATCH,"cursor":30,"relay":{
-                            "address":"127.0.0.1:5000","ticket":"test","packet_key":"test",
-                            "payload_key":"test","source_index":1,"ordering_certificate":"test"}}),
-                    ),
-                    _ => (404, json!({})),
-                };
-                let reply = reply.to_string();
-                let _ = write!(
-                    reader.into_inner(),
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
-                    reply.len()
-                );
-                seen.push((path, body));
-                if sessions == 2 {
-                    return seen;
                 }
+                "/v1/events?after=1" => (200, batch),
+                path if path == format!("/v1/match/resume?match_id={MATCH}") => (
+                    200,
+                    json!({"match_id":MATCH,"cursor":30,"relay":{
+                        "address":"127.0.0.1:5000","ticket":"test","packet_key":"test",
+                        "payload_key":"test","source_index":1,"ordering_certificate":"test"}}),
+                ),
+                _ => (404, json!({})),
             }
-            unreachable!()
         });
+        let base = format!("http://{address}");
         let (requests, input) = std::sync::mpsc::channel();
         let (output, responses) = std::sync::mpsc::channel();
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2065,7 +2188,7 @@ mod tests {
         stopping.store(true, Ordering::Release);
         drop(requests);
         worker.join().unwrap();
-        let seen = lobby.join().unwrap();
+        let seen = close_lobby(address, lobby);
         let held: Vec<_> = seen
             .iter()
             .filter_map(|(_, body)| body["request_id"].as_str().zip(Some(&body["payload"])))
@@ -2223,6 +2346,28 @@ mod tests {
         assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
         client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
         assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+    }
+
+    #[test]
+    fn watch_list_failure_keeps_the_rows_and_legacy_probes_keep_their_revision() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(1);
+        client.matches_finished(Err(RequestFailure::Status(503)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::WatchListFailed)));
+        // A failed option probe has no watch rows to refresh. A 404 still
+        // reaches the capability owner with the matching options revision.
+        client.matches_finished(Err(RequestFailure::Status(503)), Some(9), &output);
+        client.matches_finished(Err(RequestFailure::Status(404)), Some(9), &output);
+        assert!(matches!(
+            input.try_recv(),
+            Ok(Response::Matches {
+                list: None,
+                refused_options: Some(9)
+            })
+        ));
+        client.matches_finished(Err(RequestFailure::Status(401)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Offline)));
+        assert!(input.try_recv().is_err());
     }
 
     #[test]
@@ -2446,10 +2591,7 @@ mod tests {
     /// can do.
     #[test]
     fn a_sign_in_names_the_version_and_build() {
-        let (address, lobby) = one_request_lobby(
-            |request| request.ends_with(b"}"),
-            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-        );
+        let (address, lobby) = local_lobby(|_, _| (503, json!({})));
         let mut client = Client::new(
             Arc::new(AtomicBool::new(false)),
             ureq::Agent::config_builder()
@@ -2464,7 +2606,7 @@ mod tests {
             client.request("/v1/sessions", Some(&body)),
             Err(RequestFailure::Status(503))
         );
-        let request = lobby.join().unwrap();
+        let (request, _) = close_lobby(address, lobby).remove(0);
         let header = |name: &str| {
             request.lines().find_map(|line| {
                 let (key, value) = line.split_once(':')?;
@@ -2612,11 +2754,11 @@ mod tests {
         client.cursor = 5;
         let event = |sequence| json!({"sequence":sequence,"kind":"chat","payload":{}});
         client
-            .streamed(json!({"cursor":4,"events":[event(4)]}), &output)
+            .overlapping_batch(json!({"cursor":4,"events":[event(4)]}), &output)
             .unwrap();
         assert_eq!(client.cursor, 5);
         client
-            .streamed(
+            .overlapping_batch(
                 json!({"cursor":6,"events":[event(4), event(5), event(6)]}),
                 &output,
             )

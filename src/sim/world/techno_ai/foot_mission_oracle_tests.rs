@@ -527,10 +527,11 @@ impl SuppliedFootFixture {
         );
         // Use the persistence owner to adopt the complete supplied original
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
+        *sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         let friendly = sim.interner.intern("SuppliedFriendlyHouse");
         let enemy = sim.interner.intern("SuppliedEnemyHouse");
@@ -994,6 +995,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,
+                0,
             )
             .unwrap();
             // Actual `_ftol` receipt at6F8710, before VHPScan and Evaluate's
@@ -1314,8 +1316,8 @@ fn install_recorded_anytown_query_state(
 ) {
     let name = row["input"]["name"].as_str().unwrap();
     let source = scene.sim();
-    fixture.sim.playfield_bounds = source.playfield_bounds;
-    fixture.sim.playfield_size_height = source.playfield_size_height;
+    *fixture.sim.playfield_bounds = *source.playfield_bounds;
+    *fixture.sim.playfield_size_height = *source.playfield_size_height;
     fixture
         .sim
         .session
@@ -1324,7 +1326,7 @@ fn install_recorded_anytown_query_state(
         .sim
         .session
         .set_map_height_for_test(source.session.map_height());
-    fixture.sim.overlay_grid = source.overlay_grid.clone();
+    *fixture.sim.overlay_grid = (*source.overlay_grid).clone();
     let mut terrain = source.resolved_terrain.as_ref().unwrap().clone();
     terrain.test_set_native_allocated_cells(&fixture.cells.values().copied().collect::<Vec<_>>());
     let mut observed = BTreeMap::new();
@@ -1370,7 +1372,7 @@ fn install_recorded_anytown_query_state(
         terrain,
         &[],
         fixture.sim.map_size_diamond(),
-        fixture.sim.playfield_bounds,
+        *fixture.sim.playfield_bounds,
     );
     // Initial7 is replaced by the native fixture's supplied crop values.
     // The actual original56D230 receipts here observe2 at both source and
@@ -1381,7 +1383,7 @@ fn install_recorded_anytown_query_state(
         }
     }
     zones.test_supply_uniform_raw_zone_rows(2);
-    fixture.sim.zone_grid = Some(zones.into());
+    *fixture.sim.zone_grid = Some(zones.into());
     fixture.sim.install_fixture_path_grid(Some(&path));
     if row["house_return"].is_object() {
         let state = &row["house_return"];
@@ -1698,7 +1700,18 @@ fn run_recorded_handler(
         super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx).unwrap();
     } else {
         let actual = if row["input"]["mission"] == 21 {
-            super::evaluate_foot_rescue(&mut fixture.sim, fixture.actor, rules, ctx)
+            // The Rescue body is the shared owner
+            // (`sim::mission::rescue`), which the Foot dispatcher and the
+            // aircraft dispatcher both run.
+            super::MissionHandlerEvaluation::cadence(
+                crate::sim::mission::rescue::mission_rescue(
+                    &mut fixture.sim,
+                    rules,
+                    ctx.overlay_registry,
+                    fixture.actor,
+                    &mut ctx.effects,
+                ),
+            )
         } else {
             assert_eq!(
                 row["input"]["mission"], 11,
@@ -1959,7 +1972,11 @@ fn original_full_retail_supplied_rescue_gates_compare_distance_and_range_prerequ
         assert_eq!(range["caller"], "0x4de0f3");
         assert_eq!(range["args"][0], 1);
         assert_eq!(
-            super::foot_threat_range(&fixture.sim, fixture.actor, &rules),
+            crate::sim::combat::threat_range::object_threat_range(
+                &fixture.sim,
+                fixture.actor,
+                &rules
+            ),
             signed(&range["result_eax"]),
             "{name}: original live7012C0/707E60 range"
         );

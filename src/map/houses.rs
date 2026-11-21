@@ -253,7 +253,9 @@ pub fn parse_house_roster(
         // entry and drops the copy. Residual: that second House (and one
         // whose name differs from an earlier one only in ASCII case, which
         // native keeps as its own House) is not constructed, so such a map
-        // has one House fewer here than in gamemd.
+        // has one House fewer here than in gamemd. The map plays on without a
+        // notice, as in gamemd, which accepts the repeat silently: the player
+        // has nothing to fix, and the log names the entry for the mapper.
         if houses
             .iter()
             .any(|house: &HouseDefinition| house.name.eq_ignore_ascii_case(house_name))

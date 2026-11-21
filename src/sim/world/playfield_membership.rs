@@ -69,7 +69,8 @@ impl Simulation {
         {
             return;
         }
-        let (Some(bounds), Some(terrain)) = (self.playfield_bounds, self.resolved_terrain.as_ref())
+        let (Some(bounds), Some(terrain)) =
+            (*self.playfield_bounds, self.resolved_terrain.as_ref())
         else {
             // A partial Rust world has no Map authority for this writer.
             return;
@@ -94,7 +95,7 @@ impl Simulation {
         stable_id: u64,
         terrain: Option<&ResolvedTerrainGrid>,
     ) -> Option<bool> {
-        let bounds = self.playfield_bounds?;
+        let bounds = (*self.playfield_bounds)?;
         let entity = self.substrate.entities.get(stable_id)?;
         Some(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (

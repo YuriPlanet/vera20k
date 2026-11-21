@@ -552,6 +552,9 @@ fn acquire_slaves_single_stage(
     let Some(origin) = location(sim, target) else {
         return 0;
     };
+    // Collected: the candidates are sorted by distance before any is
+    // recruited, and recruiting writes the towers. Once per stage of an Ares
+    // prism shot that forwards, an event, not a per-tick walk.
     let entities = &sim.substrate.entities;
     let mut eligible: Vec<(u64, i32)> = (0..entities.building_registry_len())
         .filter_map(|index| entities.building_registry_at(index))
@@ -702,6 +705,8 @@ fn validate_support_tower(
 /// and the longest countdown on it ([`charge_delay_get`]), then each
 /// tower's charge delay ([`charge_delay_set`]).
 fn set_charge_delay(sim: &mut Simulation, rules: &RuleSet, master: u64, longest_chain: i32) {
+    // One slot per chain link, as long as the mod's `MaxChainLength` lets the
+    // chain grow; made once per forwarded prism shot.
     let len = usize::try_from(longest_chain.wrapping_add(1)).unwrap_or(0);
     let mut charge = vec![0i32; len];
     let mut fire = vec![0i32; len];
@@ -995,7 +1000,7 @@ fn fire_laser(sim: &mut Simulation, rules: &RuleSet, id: u64, to: ProjectileCoor
                 {
                     sim.sound_events
                         .emit(crate::sim::world::SimSoundEvent::voc_at_world_coord(
-                            report.to_owned(),
+                            rules.sound_name(report),
                             crate::sim::anim_class::AnimWorldCoord {
                                 x: from.x,
                                 y: from.y,

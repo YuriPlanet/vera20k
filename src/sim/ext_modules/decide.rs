@@ -7,16 +7,17 @@
 //! builds nothing without a decider):
 //! - `TakeDamage` → final damage: Object5F5390's port
 //!   (`combat::object_health::commit`), after the Ares cull hook
-//!   (`0x005F5456`) and before the packet's sign dispatch (`5F546A`) and
-//!   the Strength write. Observation-only receivers ask nothing. Clamped to
+//!   (`0x005F5456`) and before the packet's zero and sign tests
+//!   (`0x005F5458` and `0x005F5468`) and the Strength write. Observation-only
+//!   receivers ask nothing. Clamped to
 //!   `0..=i32::MAX`; the native `min(Health)` follows.
 //! - `ProductionAllowed` → 1 allow, 0 disallow: once per frame at a fixed
 //!   step, the start of the module phase, for every house that is not
 //!   defeated (array order) and every TechnoType a `ProductionAllowed`
 //!   decider is bound to (ascending ID). `native` is
 //!   `HouseClass::CanBuild @ 0x004F7870` as the sidebar asks it (Yes is 1).
-//!   The answers of 0 are kept in the trigger registry until the next step;
-//!   CanBuild's port ([`crate::sim::production::can_build`]) answers No for
+//!   Explicit answers of 0 are kept in the trigger registry until the next
+//!   step. CanBuild's port ([`crate::sim::production::can_build`]) answers No for
 //!   them at its entry, beside VERA's room bans, whatever its flags. So the
 //!   sidebar, a PRODUCE event, the per-frame production check, the AI's
 //!   choosers and FindFactory all read the cached result.
@@ -57,10 +58,9 @@
 //! - `random` draws from a substream of (frame, subject creation serial,
 //!   event kind) per module; later requests for the same subject and kind
 //!   in the frame continue it. The module's main stream never moves.
-//! - Each call has [`DECIDE_BUDGET`] operations; running out stops the
-//!   module. A module's decisions in one frame may use up to its frame
-//!   budget in all; past it, its links are skipped for the rest of the
-//!   frame.
+//! - Each call draws up to [`DECIDE_BUDGET`] operations from the module's
+//!   remaining frame budget. Running out during the call stops the module.
+//!   An exhausted module is skipped when admitting subsequent decisions.
 //! - No reentry (RFC 5): while a module call runs, that module's slot is
 //!   out of the slot list (`Simulation::with_ext_module`), so a decision
 //!   the call causes (an `action` dealing damage, a `SetMission` write)
@@ -69,9 +69,9 @@
 //!   decision and nothing nests deeper than two calls.
 //!
 //! Saves: decisions complete inside a frame, except the `ProductionAllowed`
-//! refusals, which the trigger registry saves and hashes. The per-frame
-//! budget use and substreams start over each frame and are neither saved
-//! nor hashed; a handler's own memory is, as always.
+//! refusals, which the trigger registry saves and hashes. The substreams
+//! start over each frame and are neither saved nor hashed. A handler's
+//! memory is saved and hashed.
 //!
 //! Decision triggers with immediate actions answer `Unsupported` at
 //! `trigger_create`. RFC 6a lets a trigger have both, but no section says
@@ -121,13 +121,10 @@ use crate::sim::production::{CanBuild, can_build};
 use crate::sim::rng::SimRng;
 use crate::sim::world::{FrameEffects, Simulation};
 
-/// Decision state within one frame: each module's operations used and the
-/// `random` substreams drawn from. Not saved or hashed (module docs).
+/// The `random` substreams drawn from within one frame (module docs).
 #[derive(Default)]
 pub(super) struct DecideState {
     frame: u32,
-    /// By [`ModuleSource`].
-    used: [u64; 2],
     streams: Vec<(StreamKey, SimRng)>,
 }
 
@@ -212,10 +209,10 @@ pub(super) fn check_decide_key(
 
 impl Simulation {
     /// The decision chain for one request (module docs): returns the last
-    /// accepted answer, or `native` when no link answers. `house` (an
-    /// index) is the event's house, `None` for the trigger's; `type_id`
-    /// the bound TechnoType to look up, `None` for the subject's. `accept`
-    /// validates an answer for the kind, `None` rejecting it.
+    /// accepted answer. `None` leaves the caller's native result in place.
+    /// `house` is the event's house index, or `None` for the trigger's house.
+    /// `type_id` is the bound TechnoType, or `None` for the subject's type.
+    /// `accept` validates an answer for the kind, returning `None` to reject it.
     pub(crate) fn decide_module_event(
         &mut self,
         rules: &RuleSet,
@@ -224,11 +221,11 @@ impl Simulation {
         type_id: Option<u32>,
         native: i64,
         accept: impl Fn(i64) -> Option<i64>,
-    ) -> i64 {
+    ) -> Option<i64> {
         // No module to ask (or every one is in a call on the stack). A
         // calling module's own links find no slot below: no reentry.
         if self.ext_modules.slots.is_empty() {
-            return native;
+            return None;
         }
         let triggers = self.trigger_runtime.module_triggers();
         let type_id = type_id.or_else(|| {
@@ -240,12 +237,18 @@ impl Simulation {
         let mut handles = triggers.deciders(event.kind, event.subject, type_id);
         // Mod first, then map; creation order within each (a stable sort).
         handles.sort_by_key(|handle| triggers.get(*handle).map(|t| t.source));
-        let mut previous = native;
+        let mut previous = None;
         for handle in handles {
-            if let Some(answer) = self.ask_decider(rules, handle, event, house, native, previous)
-                && let Some(result) = accept(answer)
+            if let Some(answer) = self.ask_decider(
+                rules,
+                handle,
+                event,
+                house,
+                native,
+                previous.unwrap_or(native),
+            ) && let Some(result) = accept(answer)
             {
-                previous = result;
+                previous = Some(result);
             }
         }
         previous
@@ -275,10 +278,13 @@ impl Simulation {
             .slots
             .iter()
             .position(|slot| slot.source == source)?;
-        let slot = &self.ext_modules.slots[index];
-        let decide = &mut self.ext_modules.decide;
-        decide.roll_to(self.session.binary_frame());
-        if slot.disabled.is_some() || decide.used[source as usize] >= slot.frame_budget {
+        let frame = self.session.binary_frame();
+        let slot = &mut self.ext_modules.slots[index];
+        if slot.disabled.is_some() {
+            return None;
+        }
+        let budget = slot.remaining_frame_ops(frame).min(DECIDE_BUDGET);
+        if budget == 0 {
             return None;
         }
         let house = house
@@ -305,21 +311,22 @@ impl Simulation {
         };
         let stream_key = (source, event.subject, event.kind);
         let seed = self.session.seed();
-        let mut stream = self.ext_modules.decide.take_stream(seed, stream_key);
+        let decide = &mut self.ext_modules.decide;
+        decide.roll_to(frame);
+        let mut stream = decide.take_stream(seed, stream_key);
         std::mem::swap(&mut self.ext_modules.slots[index].rng, &mut stream);
         let result = self.with_ext_module(
             rules,
             Some(rules.overlay_registry()),
             &mut FrameEffects::empty(),
             index,
-            |module, host| module.decide(&record, DECIDE_BUDGET, host),
+            |module, host| module.decide(&record, budget, host),
         );
         std::mem::swap(&mut self.ext_modules.slots[index].rng, &mut stream);
-        let decide = &mut self.ext_modules.decide;
-        decide.streams.push((stream_key, stream));
+        self.ext_modules.decide.streams.push((stream_key, stream));
         match result {
             Ok((answer, used)) => {
-                decide.used[source as usize] += used;
+                self.ext_modules.slots[index].charge_frame_ops(used);
                 answer
             }
             Err(fault) => {
@@ -350,7 +357,8 @@ impl Simulation {
             id: type_id as i32,
             ..ModuleEvent::new(EVENT_PRODUCTION_QUEUED, 0)
         };
-        self.decide_module_event(rules, &event, Some(house as u32), Some(type_id), 1, allow) != 0
+        self.decide_module_event(rules, &event, Some(house as u32), Some(type_id), 1, allow)
+            != Some(0)
     }
 
     /// `Defeat` for `owner` (module docs): false when a decider vetoes.
@@ -362,7 +370,7 @@ impl Simulation {
             return true;
         };
         let event = ModuleEvent::new(EVENT_DEFEAT, 0);
-        self.decide_module_event(rules, &event, Some(house as u32), None, 1, allow) != 0
+        self.decide_module_event(rules, &event, Some(house as u32), None, 1, allow) != Some(0)
     }
 }
 
@@ -410,7 +418,9 @@ impl Simulation {
                     i64::from(native),
                     allow,
                 );
-                if decided == 0 {
+                // The sidebar's native answer is the input to the decision.
+                // Only a module's veto is shared with other CanBuild routes.
+                if decided == Some(0) {
                     refusals.insert((house, type_id));
                 }
             }
@@ -465,7 +475,7 @@ impl Simulation {
                 value: i64::from(request.number),
                 ..ModuleEvent::new(EVENT_COMMAND_ALLOWED, actor)
             };
-            if self.decide_module_event(rules, &event, None, None, 1, allow) != 0 {
+            if self.decide_module_event(rules, &event, None, None, 1, allow) != Some(0) {
                 allowed.push(actor);
             }
         }

@@ -1083,8 +1083,8 @@ impl Simulation {
             // `0x00738143..0x0073816E`: a computer passenger joins the unit's Team
             // (`TeamClass::Add_Member @ 0x006EA500`), or Hunts without one.
             if !sim.owner_is_human(passenger_owner) {
-                match sim.team_script_vm.team_for_member(unit_id) {
-                    Some((team_id, _)) => {
+                match sim.team_script_vm.team_of(unit_id) {
+                    Some(team_id) => {
                         sim.team_add_member(team_id, passenger, false, rules, effects);
                     }
                     None => sim

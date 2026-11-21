@@ -589,9 +589,10 @@ fn ares_process(
             .and_then(|name| super::spawn_super_anim(sim, rules, &name, coords));
             sim.psychic_dominator.anim = anim;
             let sound = match &sw.presentation.activation_sound {
-                Some(sound) => sound.clone(),
-                None => general.psychic_dominator_activate_sound.clone(),
-            };
+                Some(sound) => sound.as_deref(),
+                None => general.psychic_dominator_activate_sound.as_deref(),
+            }
+            .map(|sound| rules.sound_name(sound));
             if let Some(sound_id) = sound {
                 sim.sound_events.emit(SimSoundEvent::VocAtCoord {
                     sound_id,

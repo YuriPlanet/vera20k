@@ -128,12 +128,66 @@ impl DamageConsequences {
         }
     }
 
+    /// Whether every step of [`Self::commit`] would find its input empty. The
+    /// effects are listed whole, so a new one needs a decision here; those
+    /// bound to `_` are records no delivery reads.
+    fn carries_nothing(&self) -> bool {
+        let DeathEffects {
+            despawned_ids: _,
+            immediate_uninit_ids,
+            structure_destroyed,
+            explosion_effects,
+            voxel_debris,
+            combat_light_requests,
+            bridge_state_changed,
+            #[cfg(any(test, feature = "test-support"))]
+                wall_mutations: _,
+            #[cfg(any(test, feature = "test-support"))]
+                cell_target_detaches: _,
+            #[cfg(any(test, feature = "test-support"))]
+            tiberium_reduction_requests,
+            death_sounds,
+            smudge_spawn_requests,
+            rad_detonations,
+            under_attack_events,
+            unit_lost_events,
+            #[cfg(any(test, feature = "test-support"))]
+                receiver_stage_trace: _,
+        } = &self.effects;
+        #[cfg(any(test, feature = "test-support"))]
+        if !tiberium_reduction_requests.is_empty() {
+            return false;
+        }
+        immediate_uninit_ids.is_empty()
+            && !structure_destroyed
+            && explosion_effects.is_empty()
+            && voxel_debris.is_empty()
+            && combat_light_requests.is_empty()
+            && !bridge_state_changed
+            && death_sounds.is_empty()
+            && smudge_spawn_requests.is_empty()
+            && rad_detonations.is_empty()
+            && under_attack_events.is_empty()
+            && unit_lost_events.is_empty()
+            && self.terrain_navigation_changed_cells.is_empty()
+            && match &self.delivery {
+                DamageDelivery::Immediate => true,
+                DamageDelivery::Ordinary { fire_events } => fire_events.is_empty(),
+            }
+    }
+
     pub(super) fn commit(
         self,
         world: &mut Simulation,
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
+        // A commit that carries nothing, with no navigation receipt or smudge
+        // dirt pending, writes nothing (VERA-only, results unchanged); most
+        // fire visits fire nothing.
+        if self.carries_nothing() && !world.commit_work_pending() {
+            return DamageCommitReceipt::default();
+        }
         let Self {
             mut effects,
             terrain_navigation_changed_cells,
@@ -176,16 +230,21 @@ impl DamageConsequences {
         for fx in std::mem::take(&mut effects.explosion_effects) {
             admit_explosion_effect(world, rules, fx);
         }
-        world
-            .combat_light_requests
-            .emit_all(effects.combat_light_requests.drain(..));
+        // A channel is written only for a fact it takes (`util::forked`).
+        if !effects.combat_light_requests.is_empty() {
+            world
+                .combat_light_requests
+                .emit_all(effects.combat_light_requests.drain(..));
+        }
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
         // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
         // constant-type call sites never pass type 0 (the 25th,
         // `TriggerAction::Execute`, takes its type from map data), and the one
         // in `BulletClass::AI` (`0x00467EA7`) is the silent type 13 of the
         // `NUKE` payload (`sim::superweapon::nuke::impact`).
-        if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
+        if let DamageDelivery::Ordinary { fire_events, .. } = delivery
+            && !fire_events.is_empty()
+        {
             world.fire_events.emit_all(fire_events);
         }
         for (die_sound_id, location) in effects.death_sounds.drain(..) {
@@ -213,6 +272,21 @@ impl DamageConsequences {
             structure_destroyed: effects.structure_destroyed,
             bridge_state_changed,
         }
+    }
+}
+
+impl Simulation {
+    /// Whether a commit that carries nothing still has work: every commit
+    /// publishes the overlay grid's pending navigation receipts, and an
+    /// ordinary one the smudge grid's dirty cells.
+    pub(super) fn commit_work_pending(&self) -> bool {
+        self.overlay_grid
+            .as_ref()
+            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
+            || self
+                .smudge_grid
+                .as_ref()
+                .is_some_and(|grid| grid.has_dirty())
     }
 }
 

@@ -43,8 +43,18 @@ both, both constraints apply before production starts. Clearing a choice does no
 unsatisfied building-plan node or guarantee the mobile chooser selects an uncapped type.
 
 `[General] DisableParallelAIQueues=` defaults to no and requires `npatch`.
-The native reader preserves the current byte (`0xC30303..0xC3031A`); the Rules
-constructor zeroes it (`0x66569B`). With yes, Factory_AI reserves one of five House
+NPatch Extended (ext173) spells the same global switch
+`DisableAIParallelProduction=` ("whether we should prevent AI factories from
+'cloning' units"). ext173's `ReadGeneral` hook reaches the reader at
+`0xC2BDDA..0xC2BDE7`, which writes `Rules+0x640`, immediately before
+`EnableAIBuildLimitation` at `Rules+0x641`; `0xC2D482` gates the same five
+counters. VERA reads the NPSE name first and falls through to the ext173 name
+when it is absent or unparsable. The 2022-era revision that
+[PR #2877](https://github.com/YuriPlanet/vera20k/pull/2877) discusses sets the
+name per type; only `[General]` is consulted here, so a type-section key stays
+unread instead of driving this global switch. The NPSE native reader preserves
+the current byte (`0xC30303..0xC3031A`); the Rules constructor zeroes it
+(`0x66569B`). With yes, Factory_AI reserves one of five House
 production counters before compatibility, allocation and construction (`0xC2F07C`):
 aircraft, land vehicles, naval vehicles, infantry and buildings. Only vehicles split
 by `Naval=`. The existing House AI production owner saves and hashes those counters.

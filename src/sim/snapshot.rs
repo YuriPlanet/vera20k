@@ -14,6 +14,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
+pub mod migration;
 mod object_references;
 mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
@@ -55,8 +56,25 @@ fn snapshot_layout() -> u32 {
     #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     {
         static LAYOUT: OnceLock<u32> = OnceLock::new();
-        *LAYOUT.get_or_init(traced_snapshot_layout)
+        *LAYOUT.get_or_init(traced_on_a_game_stack)
     }
+}
+
+/// [`traced_snapshot_layout`] on a thread of its own with the 8 MiB stack of
+/// the game's own threads. The trace runs under whichever caller first saves
+/// or loads, and it decodes a made-up snapshot through every saved type:
+/// unoptimized, its frames hold about 1.9 MiB of whole snapshots and worlds,
+/// more than a 2 MiB thread has left. A caller whose thread did not start or
+/// did not finish traces itself.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+fn traced_on_a_game_stack() -> u32 {
+    std::thread::Builder::new()
+        .name("snapshot layout".into())
+        .stack_size(8 << 20)
+        .spawn(traced_snapshot_layout)
+        .ok()
+        .and_then(|trace| trace.join().ok())
+        .unwrap_or_else(traced_snapshot_layout)
 }
 
 /// [`snapshot_layout`], traced from the saved types.
@@ -333,8 +351,8 @@ where
         // gamemd reads the saved ScenarioClass Random at +0x218, then
         // immediately reseeds it. MapGen starts at Seed(0) until the live
         // process cursor, if present, is bound during player-load admission.
-        simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
-        simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
     }
     Ok(simulation)
 }
@@ -600,6 +618,8 @@ pub enum SnapshotRestoreError {
         registry: &'static str,
         identity: u64,
     },
+    #[error("this save is damaged and cannot be loaded: {reason}")]
+    InvalidTeamState { reason: &'static str },
     #[error("restored trigger runtime is inconsistent: {reason}")]
     InvalidTriggerRuntime { reason: String },
     #[error(
@@ -1059,24 +1079,36 @@ impl GameSnapshot {
     pub fn load_with_resources(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         Self::read_header(bytes)?;
         let snapshot = Self::deserialize_admitted(bytes)?;
-        let resources = snapshot
+        snapshot.require_player_resources()?;
+        Ok(snapshot)
+    }
+
+    fn require_player_resources(&self) -> Result<&SavedScenarioResources, SnapshotError> {
+        let resources = self
             .scenario_resources
             .as_ref()
             .ok_or(SnapshotError::MissingScenarioResources)?;
-        if resources.map().map_hash() != snapshot.map_hash {
+        if resources.map().map_hash() != self.map_hash {
             return Err(SnapshotError::MapMismatch {
                 expected: resources.map().map_hash(),
-                found: snapshot.map_hash,
+                found: self.map_hash,
             });
         }
-        if snapshot.local_view.is_none() {
+        if self.local_view.is_none() {
             return Err(SnapshotError::MissingLocalView);
         }
-        Ok(snapshot)
+        Ok(resources)
     }
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
+        Self::validate_admitted(&mut snapshot)?;
+        Ok(snapshot)
+    }
+
+    /// The checks a decoded snapshot passes before anything reads it, in
+    /// place: a snapshot is large, and a load passes it on by value once.
+    fn validate_admitted(snapshot: &mut GameSnapshot) -> Result<(), SnapshotError> {
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
@@ -1085,7 +1117,7 @@ impl GameSnapshot {
         }
         if snapshot.map_name != snapshot.sim.session.map_name() {
             return Err(SnapshotError::MapNameMetadataMismatch {
-                header_map_name: snapshot.map_name,
+                header_map_name: snapshot.map_name.clone(),
                 simulation_map_name: snapshot.sim.session.map_name().to_owned(),
             });
         }
@@ -1105,7 +1137,7 @@ impl GameSnapshot {
         } else {
             snapshot.sim.reset_planning_after_player_load();
         }
-        Ok(snapshot)
+        Ok(())
     }
 
     /// Admit a current-layout header without deserializing Simulation. The
@@ -1120,6 +1152,10 @@ impl GameSnapshot {
                 found: preamble.layout,
             });
         }
+        Self::read_compatible_header(bytes)
+    }
+
+    fn read_compatible_header(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let header: GameSnapshotHeader = save_codec::deserialize(bytes)?;
         if !header.compatibility.matches_build() {
             return Err(SnapshotError::CapabilityMismatch {

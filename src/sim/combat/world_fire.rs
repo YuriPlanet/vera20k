@@ -59,6 +59,9 @@ pub(super) struct FireReach {
     /// routine's tail ([`infantry_fire_tail`]) follows whether the shot fired
     /// or was refused.
     pub(super) infantry_fire_frame: bool,
+    /// The hull turn a turretless Unit's FACING refusal asked for
+    /// (`0x0073701C`), which its Facing_Update applies first.
+    pub(super) hull_destination: Option<u16>,
 }
 
 pub(super) fn resolve_attacker_fire(
@@ -262,10 +265,14 @@ fn admit_attacker_fire<'r>(
     };
 
     let infantry_fire = snap.category == EntityCategory::Infantry;
-    let sequences =
+    // Only the infantry arms read the sequences.
+    let sequences = if infantry_fire {
         world
             .interner
-            .animation_sequence_in_category(snap.type_id, snap.category.into(), rules);
+            .animation_sequence_in_category(snap.type_id, snap.category.into(), rules)
+    } else {
+        None
+    };
     let firing_at_entry = infantry_fire
         && world
             .substrate
@@ -319,16 +326,47 @@ fn admit_attacker_fire<'r>(
         subject(&*world, &mut |s| code = Some(s.fire_error(true)));
         code?
     };
-    let direction = crate::sim::movement::turret::facing_toward_lepton(
-        snap.pos_rx,
-        snap.pos_ry,
-        snap.sub_x,
-        snap.sub_y,
-        target_rx,
-        target_ry,
-        target_sub_x,
-        target_sub_y,
-    );
+    // Firestorm 2.0 `UnitClass::Firing_AI` 0x0064E770 (`0x0064E7C3..
+    // 0x0064E870`), after Can_Fire: a vehicle whose selected weapon webs and
+    // whose target is an infantryman still freshly webbed drops him
+    // (Assign_Target(NULL), vt+0x2F8), takes Guard (vt+0x158) and does not
+    // fire this turn; its CANT goes to no case of the switch. Neither Infantry
+    // nor Building firing has the test.
+    if snap.category == EntityCategory::Unit
+        && let Some(web) = selected
+            .as_ref()
+            .and_then(|selected| selected.warhead.webby())
+        && let TargetKind::Entity(target_id) = snap.target
+        && world
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.web_outlasts_quarter(binary_frame as i32, web.duration))
+    {
+        let _ = world.assign_target_represented(snap.stable_id, None, rules, effects);
+        let _ = world.mission_queue_exact(
+            snap.stable_id,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+            0,
+            world.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+        return None;
+    }
+    // DirectionToTarget, a pure read, asked only by the arms below that turn
+    // toward the target (VERA-only order, results unchanged).
+    let direction = || {
+        crate::sim::movement::turret::facing_toward_lepton(
+            snap.pos_rx,
+            snap.pos_ry,
+            snap.sub_x,
+            snap.sub_y,
+            target_rx,
+            target_ry,
+            target_sub_x,
+            target_sub_y,
+        )
+    };
     match snap.category {
         // The table at `0x00737148`.
         EntityCategory::Unit => match code {
@@ -351,7 +389,7 @@ fn admit_attacker_fire<'r>(
                 {
                     // Set_Desired(+3A0)736FAC retains ROT and +6AF. Apply it
                     // now so the later Facing_Update samples this new arc.
-                    barrel.set(direction, binary_frame);
+                    barrel.set(direction(), binary_frame);
                 } else if snap.barrel_facing.is_none()
                     && world
                         .substrate
@@ -362,12 +400,8 @@ fn admit_attacker_fire<'r>(
                                 && crate::sim::movement::motion_query::is_moving(firer)
                                     != Some(true)
                         })
-                    && let Some(update) = out
-                        .unit_facing
-                        .iter_mut()
-                        .find(|u| u.entity_id == snap.stable_id)
                 {
-                    update.hull_destination = Some(direction);
+                    reach.hull_destination = Some(direction());
                 }
             }
             // Case 5 (`0x00736E7E`).
@@ -513,7 +547,7 @@ fn admit_attacker_fire<'r>(
         }
         let actor = world.substrate.entities.get_mut(snap.stable_id)?;
         actor.mission_leaf.set_foot_firing_sequence(1);
-        actor.body_facing.snap(direction, binary_frame);
+        actor.body_facing.snap(direction(), binary_frame);
         let target_is_navcom = actor.navigation.nav_com() == Some(snap.target.into());
         if target_is_navcom {
             //52093C/520946: shared FootStop4DF0D0 then the concrete+500
@@ -707,8 +741,8 @@ fn infantry_fire_without_target(world: &mut Simulation, id: u64) {
 /// Unit the visit does not admit does nothing, one that holds no target runs
 /// its tail ([`unit_fire_tail`]), and an Infantryman without a TarCom clears
 /// his latch. Answers true for those. A visit that holds a target, or of
-/// another kind, is left untouched and answers false.
-fn visit_without_target(
+/// another kind, is left untouched and answers false: [`visit_fire`] takes it.
+pub(crate) fn visit_without_target(
     world: &mut Simulation,
     visit: &FireVisit,
     rules: &RuleSet,
@@ -1012,7 +1046,11 @@ fn fireat_launch_aim(
         weapon.speed,
         speed_projectile(weapon),
         rules.general.gravity,
-        fireat_launch_distance(source, target_coord),
+        fireat_launch_distance(
+            source,
+            target_coord,
+            world.session.map_exceeds_original_size(),
+        ),
     );
     FireAtLaunchAim {
         aim: super::aim_coord::led_target_coordinate(world, rules, snap.stable_id, tarcom),
@@ -1079,7 +1117,10 @@ fn firepower_stages(
         // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
         // CanOccupyFire && an occupant for FireAt; Phobos' Bullet-init
         // helper applies the same type flags without requiring an occupant.
-        occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
+        // Original RA2 has no OccupyDamageMultiplier: the garrison gun deals
+        // its plain WeaponType damage. YR applies the global multiplier.
+        occupied: (!rules.ra2() && is_garrison)
+            .then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
             .filter(|firer| firer.category() != EntityCategory::Structure)
@@ -1179,7 +1220,7 @@ enum FireDisclosurePath {
 /// represents that client's PlayerPtr; computer Houses have no client shroud.
 /// On each client the victim leaf asks IsHumanPlayer (`0x0050B6F0`) of the
 /// victim's House with that client's PlayerPtr
-/// ([`Simulation::human_player_clients`]), and Map5673A0's House gate
+/// ([`Simulation::human_player_client_set`]), and Map5673A0's House gate
 /// (`0x0056756A..0x005675D0`) writes that client's map for its own House or,
 /// under `AllyReveal=`, an ally ([`crate::sim::vision::reveal_admits`]): a
 /// shot at a campaign PlayerControl ally reveals its attacker on the
@@ -1413,6 +1454,16 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
+            // `TechnoClass::GetROF` divides the occupied building's ROF by
+            // its occupant count in BOTH game.exe (RA2) and gamemd.exe (YR):
+            // that signed IDIV is the sole mechanism that makes a full
+            // garrison fire faster than a single occupant. RA2 differs only
+            // in WHICH gun fires (the building's own Primary, see
+            // get_weapon_record), not in how the garrison ROF is scaled.
+            // Suppressing the divisor under -ra2 left every garrison firing
+            // at a lone occupant's cadence regardless of how many troops
+            // were inside. OccupyROFMultiplier= is a YR/Ares rule absent from
+            // retail RA2, so keep its RA2 value at identity (1.0).
             occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
@@ -1515,6 +1566,15 @@ pub(super) fn emit_admitted_fire(
     // that launch no bullet.
     #[cfg(feature = "phobos")]
     world.record_phobos_attach_firing(snap.stable_id, rules);
+    // Firestorm 2.0 `TechnoClass::Fire_At @ 0x006301A0` takes a Tiberian Sun
+    // limpet shot (`LimpetFactor=`) before any other work, returning NULL
+    // (`sim::limpet`). gamemd has no such arm; it is here, past FireAt's
+    // limbo gate, so a target in limbo takes no limpet.
+    if let TargetKind::Entity(target) = snap.target
+        && world.limpet_fire_at(rules, snap.stable_id, target, weapon, effects)
+    {
+        return None;
+    }
     if weapon.suicide {
         // Techno6FDDC0..6FDE0E: the local packet is type Strength, not
         // current Health or weapon Damage. The real self receiver completes
@@ -2125,6 +2185,8 @@ pub(super) fn emit_admitted_fire(
             fire.aim_facing16,
             snap.garrison.is_some(),
             in_open_transport,
+            rules.ares(),
+            rules.ra2(),
         )
         .map(|name| world.interner.intern(name)),
         occupied_building: snap.garrison.is_some(),
@@ -2180,7 +2242,8 @@ pub(super) fn emit_admitted_fire(
                 .link_to_owner_fire_slot(system);
         }
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.fire_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.fire_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1AD..6FF1F5: after successful Bullet::Fire and recoil, before
@@ -2196,7 +2259,8 @@ pub(super) fn emit_admitted_fire(
     {
         let system = fireat_attached_system(world, rules, weapon, snap, launch);
         if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.spark_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.spark_particle_system.bind(system, note);
         }
     }
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
@@ -2245,7 +2309,8 @@ pub(super) fn emit_admitted_fire(
                 )
             });
         if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
-            firer.seldom.railgun_particle_system.bind(system);
+            let note = firer.note_names();
+            firer.seldom.railgun_particle_system.bind(system, note);
         }
     }
     // GetROF (`0x006FCFA0`) reads its weapon through GetWeapon (vt+0x3F8,
@@ -2316,7 +2381,7 @@ pub(super) fn emit_admitted_fire(
         && sound_enabled(world)
     {
         world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            world.interner.resolve(report_id).to_owned(),
+            rules.sound_name(world.interner.resolve(report_id)),
             crate::sim::anim_class::AnimWorldCoord {
                 x: launch_source.coord.x,
                 y: launch_source.coord.y,
@@ -2453,8 +2518,10 @@ pub(super) fn emit_admitted_fire(
         {
             entity.start_reloading_ammo(live_type, binary_frame as i32);
         }
-        let frames = rules
-            .unit_shp_read_state(world.interner.resolve(snap.type_id))
+        let frames = world
+            .interner
+            .object_type(snap.type_id, rules)
+            .and_then(|object| rules.unit_shp_read_state_of(object))
             .map_or(0, |layout| layout.firing_frames());
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
             crate::sim::animation::commit_unit_firing_counter(entity, frames);
@@ -2710,13 +2777,11 @@ fn commit_fire_bookkeeping(
     // `SpawnManagerClass::SetTarget` only queues a target that differs from the
     // live one; the manager's own AI pass promotes it.
     for &(parent_id, target) in &spawn_target_updates {
-        if let Some(manager) = world
-            .substrate
-            .entities
-            .get_mut(parent_id)
-            .and_then(|e| e.spawn_manager.as_mut())
-        {
-            manager.set_target(Some(target));
+        if let Some(parent) = world.substrate.entities.get_mut(parent_id) {
+            let note = parent.note_names();
+            if let Some(manager) = parent.spawn_manager.as_mut() {
+                manager.queue_target(Some(target), note);
+            }
         }
     }
     // Drain weapons: `0x0070FD70` installs the reciprocal
@@ -2780,6 +2845,19 @@ impl FireCommitBoundary {
         emit: &mut CombatEmit,
         under_attack_events: &mut Vec<UnderAttackEvent>,
     ) {
+        // A visit that emitted nothing since the capture hands each step
+        // below an empty slice, and none of them writes (VERA-only, results
+        // unchanged). The bookkeeping lists are whole: each visit empties them.
+        let emitted = emit.damage_events.len() != self.damage_start
+            || emit.effects.explosion_effects.len() != self.explosion_start
+            || emit.effects.smudge_spawn_requests.len() != self.smudge_start
+            || !emit.spawn_target_updates.is_empty()
+            || !emit.drain_links.is_empty();
+        #[cfg(any(test, feature = "test-support"))]
+        let emitted = emitted || emit.fire_events.len() != self.fire_event_start;
+        if !emitted {
+            return;
+        }
         #[cfg(any(test, feature = "test-support"))]
         let fire_event_start = self.fire_event_start;
         let Self {
@@ -2931,7 +3009,9 @@ fn infantry_fire_tail(
 }
 
 /// One inline receiver transaction for both class and mission FireAt callers.
-/// All emission remains in the existing emit_admitted_fire owner.
+/// All emission remains in the existing emit_admitted_fire owner. The caller
+/// first ends a visit that holds no target ([`visit_without_target`]), which
+/// emits nothing, before it opens the transaction.
 pub(crate) fn visit_fire(
     world: &mut Simulation,
     run: &mut ReceiverRun,
@@ -2947,18 +3027,10 @@ pub(crate) fn visit_fire(
         aircraft_release::visit(world, run, rules, id, emit, pings);
         return;
     }
-    // A visit that holds no target emits nothing, so the boundary below
-    // would commit empty slices: it ends here (VERA-only, results unchanged).
-    // The bookkeeping lists are not sliced; each firing visit empties them.
-    if visit_without_target(world, &visit, rules, run.effects()) {
-        debug_assert!(emit.spawn_target_updates.is_empty() && emit.drain_links.is_empty());
-        return;
-    }
     let boundary = FireCommitBoundary::capture(emit);
     let remove_start = emit.remove_attack.len();
     let mut unit_tail = None;
     let mut infantry_tail = None;
-    let facing_start = emit.unit_facing.len();
     let fog_enabled = fog_enabled(world);
     match visit {
         FireVisit::Building { id, shot } => {
@@ -2997,14 +3069,7 @@ pub(crate) fn visit_fire(
                 && let Some(target) = shot_target(actor, None)
             {
                 let snap = build_attacker_snapshot(actor, target, None);
-                emit.unit_facing.push(UnitFacingUpdate {
-                    entity_id: id,
-                    turret_destination: None,
-                    turret_spins: false,
-                    hull_destination: None,
-                    turret_destination_is_idle_return: false,
-                });
-                let fire_error = resolve_attacker_fire(
+                let reach = resolve_attacker_fire(
                     world,
                     rules,
                     overlay_registry,
@@ -3014,9 +3079,8 @@ pub(crate) fn visit_fire(
                     world.active_wave_id(id).is_some(),
                     emit,
                     run.effects(),
-                )
-                .code;
-                unit_tail = Some((id, fire_error));
+                );
+                unit_tail = Some((id, reach.code, reach.hull_destination));
             }
         }
         // An Infantryman that holds a target, likewise.
@@ -3105,12 +3169,7 @@ pub(crate) fn visit_fire(
     if let Some(id) = infantry_tail {
         infantry_fire_tail(world, id, rules, overlay_registry, run.effects());
     }
-    if let Some((id, fire_error)) = unit_tail {
-        let fire_hull = if emit.unit_facing.len() > facing_start {
-            emit.unit_facing.pop().and_then(|f| f.hull_destination)
-        } else {
-            None
-        };
+    if let Some((id, fire_error, fire_hull)) = unit_tail {
         unit_fire_tail(world, id, fire_error, fire_hull, rules, run.effects());
     }
 }
@@ -3197,6 +3256,11 @@ pub(crate) fn tick_combat(
             }
             FireVisit::InfantryTarget(id)
         };
+        // The bookkeeping lists are not sliced; each firing visit empties them.
+        if visit_without_target(world, &visit, rules, run.effects()) {
+            debug_assert!(emit.spawn_target_updates.is_empty() && emit.drain_links.is_empty());
+            continue;
+        }
         visit_fire(
             world,
             run,
@@ -3215,7 +3279,6 @@ pub(crate) fn tick_combat(
         damage_events,
         mut remove_attack,
         fire_events,
-        unit_facing: _,
         spawn_target_updates: _,
         drain_links: _,
     } = emit;
@@ -3745,6 +3808,11 @@ pub(crate) fn estimated_damage_on(
         return 0;
     };
     let target_obj = sim.interner.object_type(target.type_ref(), rules);
+    // By the country's name: a house holds its country as an interned name,
+    // not a `CountryIdx`, and the rules key each country's multipliers by
+    // name. The probe uppercases on the stack and allocates nothing; an index
+    // kept on the house would be a second record of its country to keep in
+    // step with the name across a load.
     let house_type_armor = sim.houses.get(&target.owner()).map_or(1.0, |house| {
         rules.country_armor_mult_for_type(sim.interner.resolve(house.house_type_id()), attacker_obj)
     });

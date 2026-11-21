@@ -28,8 +28,8 @@ use crate::rules::house_colors::{
 
 /// Rows of the per-house ramp texture: row 0 is the no-remap fallback and
 /// row `hc + 1` holds `[Colors]` entry `hc`, so every `u8` entry below
-/// `NO_REMAP` has a row. Mental Omega lists 43 schemes; its Soviet
-/// `SovietLoad` is entry 41, which a 32-row texture dropped (black vehicles).
+/// `NO_REMAP` has a row. A mod may list more than 32 schemes; a 32-row
+/// texture dropped entry 41 and drew its vehicles black.
 pub const HOUSE_RAMP_ROWS: u32 = 256;
 
 /// Number of palette entries (RA2 standard: 256 colors).
@@ -377,7 +377,6 @@ mod tests {
 
     #[test]
     fn build_house_ramp_keeps_entries_past_the_thirty_second() {
-        // Mental Omega's SovietLoad is [Colors] entry 41.
         let pal: Palette = dummy_palette();
         let schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry> = (0..255u8)
             .map(|i| crate::rules::color_scheme::ColorSchemeEntry {

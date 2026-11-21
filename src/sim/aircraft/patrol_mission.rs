@@ -185,7 +185,7 @@ impl PatrolHost for WorldPatrol<'_> {
 
     fn assign_team_target(&mut self) {
         //41738D rereads Team and NavCom after Assign_Destination41AA80.
-        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
+        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
             self.sim.team_assign_mission_target(
                 team,
                 self.nav().map(|nav| TargetKind::from(nav).into()),

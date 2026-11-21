@@ -18,7 +18,6 @@
 //! every thread in the machine, so it is refreshed at most once a second while
 //! CPU and memory refresh on every sample.
 
-use std::cell::Cell;
 use std::time::Instant;
 
 use crate::sim::telemetry::ProcessStats;
@@ -28,14 +27,13 @@ use crate::sim::telemetry::ProcessStats;
 const THREAD_REFRESH: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Stateful CPU sampler: CPU share is a delta between two readings, so the
-/// previous CPU time has to live somewhere. Cells rather than `&mut` because
-/// the dashboard reads it through a shared `&AppState`.
+/// previous CPU time has to live somewhere.
 #[derive(Debug, Default)]
 pub struct ProcessStatsSampler {
-    last_cpu_seconds: Cell<f64>,
-    last_instant: Cell<Option<Instant>>,
-    threads: Cell<u32>,
-    last_thread_poll: Cell<Option<Instant>>,
+    last_cpu_seconds: f64,
+    last_instant: Option<Instant>,
+    threads: u32,
+    last_thread_poll: Option<Instant>,
 }
 
 impl ProcessStatsSampler {
@@ -44,12 +42,12 @@ impl ProcessStatsSampler {
     /// `cpu_percent` is the share of the **whole machine** (all cores), so a
     /// single busy core on a 4-core machine reads 25%. The first call has no
     /// previous reading and reports zero.
-    pub fn sample(&self) -> ProcessStats {
+    pub fn sample(&mut self) -> ProcessStats {
         let cores = logical_cores();
         let now = Instant::now();
         let (cpu_seconds, working_set_bytes, peak_working_set_bytes) = platform::read_cpu_memory();
 
-        let cpu_percent = match (self.last_instant.get(), self.last_cpu_seconds.get()) {
+        let cpu_percent = match (self.last_instant, self.last_cpu_seconds) {
             (Some(previous_instant), previous_cpu) => {
                 let wall = now.duration_since(previous_instant).as_secs_f64();
                 let used = cpu_seconds - previous_cpu;
@@ -61,14 +59,14 @@ impl ProcessStatsSampler {
             }
             _ => 0.0,
         };
-        self.last_cpu_seconds.set(cpu_seconds);
-        self.last_instant.set(Some(now));
+        self.last_cpu_seconds = cpu_seconds;
+        self.last_instant = Some(now);
 
         // Thread count is a whole-machine walk; hold it at 1 Hz.
-        let last_poll = self.last_thread_poll.get();
+        let last_poll = self.last_thread_poll;
         if last_poll.is_none_or(|previous| now.duration_since(previous) >= THREAD_REFRESH) {
-            self.threads.set(platform::thread_count());
-            self.last_thread_poll.set(Some(now));
+            self.threads = platform::thread_count();
+            self.last_thread_poll = Some(now);
         }
 
         ProcessStats {
@@ -76,7 +74,7 @@ impl ProcessStatsSampler {
             cpu_cores: cores,
             working_set_mb: bytes_to_mb(working_set_bytes),
             peak_working_set_mb: bytes_to_mb(peak_working_set_bytes),
-            threads: self.threads.get(),
+            threads: self.threads,
             gpu_adapter: None,
             gpu_texture_mb: 0.0,
         }

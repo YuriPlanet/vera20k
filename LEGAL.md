@@ -117,8 +117,22 @@ VERA20K. Keep their credit when you share them.
 
 This product includes software developed by the Phobos Developers.
 
+## Code from Kratos
+
+Parts of the Kratos support are ported from
+[Kratos PP](https://github.com/ChrisLv-CN/KratosPP), which its author
+**双杀步枪 (ChrisLv_CN)** licenses under the LGPLv3. VERA20K conveys the port as part of its
+GPLv3 work, which the LGPLv3 allows; keep the credit and
+[its license](LICENSES/KratosPP.txt) when you share it.
+
+This product includes software developed by the Kratos PP author.
+
 ## Game files
 
-VERA20K contains none of the game's files. They belong to Electronic Arts, and no VERA20K
-license covers them. You need your own copy of Red Alert 2: Yuri's Revenge, and sharing VERA20K
-together with the game's files is piracy.
+VERA20K includes 240 ice and shoreline tiles from Command & Conquer: Tiberian Sun – Firestorm
+with permission. The [bundled ice archive](Terrain/vera_ice.mix) adapts them to the
+Yuri's Revenge tile size and snow palette. Electronic Arts owns the artwork. VERA20K's code
+and art licenses grant no rights to reuse it separately. EA has not endorsed and does not support this product.
+
+Players supply their own copy of Red Alert 2: Yuri's Revenge. Its retail files belong to
+Electronic Arts and are distributed separately from VERA20K.

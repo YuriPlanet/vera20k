@@ -216,7 +216,8 @@ impl Simulation {
             .expect("turret actor remains resident");
         let sound_id = self
             .object_type(entity.type_ref(), rules)
-            .and_then(|object| object.turret_rotate_sound.clone());
+            .and_then(|object| object.turret_rotate_sound.as_deref())
+            .map(|sound| rules.sound_name(sound));
         let world = Self::movement_sound_world(entity);
         self.sound_events.emit(SimSoundEvent::AnimationStopped {
             anim_id: owner,

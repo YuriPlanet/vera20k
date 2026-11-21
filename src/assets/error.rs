@@ -22,6 +22,10 @@ pub enum AssetError {
     #[error("Asset exceeds {maximum}-byte read limit (observed {actual} bytes)")]
     ReadLimitExceeded { maximum: usize, actual: u64 },
 
+    /// A strict mod read found more than one spelling of its file name.
+    #[error("The selected mod has multiple spellings of {name}; keep only one copy")]
+    AmbiguousLooseName { name: String },
+
     /// PAL file has wrong size. Must be exactly 768 bytes (256 colors * 3 bytes RGB).
     #[error("Invalid PAL file: expected {expected} bytes, got {actual}")]
     InvalidPalSize { expected: usize, actual: usize },

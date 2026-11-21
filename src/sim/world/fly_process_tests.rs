@@ -154,7 +154,7 @@ fn retail_harrier_move_preserves_native_acceleration_across_save() {
             let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
             loaded
                 .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
-            loaded.resolved_terrain = sim.resolved_terrain.clone();
+            *loaded.resolved_terrain = (*sim.resolved_terrain).clone();
             loaded.restore_after_snapshot_load().unwrap();
             let loaded_plane = loaded.entities().get(plane.stable_id()).unwrap();
             assert_eq!(
@@ -277,17 +277,17 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     sim.session.set_map_width_for_test(128);
     sim.session.set_map_height_for_test(128);
     let [left, top, local_width, local_height] = ints(&input["local"], [0, 0, 64, 64]);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64,
         left,
         top,
         local_width,
         local_height,
     ));
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     install_common_raw_terrain(&mut sim, 128, 128, 0, None);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
-    sim.scenario_rng = SimRng::new(31);
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
+    *sim.scenario_rng = SimRng::new(31);
     sim.session.set_binary_frame_for_test(frame);
     let [x, y] = ints(&input["cell"], [60, 64]);
     assert_eq!(sim.substrate.allocate_stable_id(), AIRCRAFT);
@@ -945,4 +945,62 @@ fn fly_death_stun_matches_native_rows() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Fly's Power_Off (`0x004CFD20`) through Deactivate, as Ares EMP reaches
+/// it on an aircraft at height 0: a Harrier given a destination spins at a
+/// SpinRate of 20 to 30 either way. Unpowered, each Process's spin step
+/// (`0x004CE5A0`) turns its PrimaryFacing by `SpinRate << 8` and steps
+/// SpinRate one toward 0; once Reactivate powers it on, the next Process
+/// ends the spin.
+#[test]
+fn a_harrier_powered_off_while_moving_spins_until_power_returns() {
+    use crate::sim::world::FrameEffects;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 17, 128);
+    let plane = sim
+        .spawn_object("ORCA", "Americans", 50, 64, 0, &rules)
+        .unwrap();
+    sim.assign_aircraft_destination(
+        plane,
+        Some(NavTargetRef::Cell { rx: 100, ry: 64 }),
+        &rules,
+        &mut FrameEffects::default(),
+    );
+    sim.techno_deactivate(plane, &rules, &mut FrameEffects::default());
+    let spin = |sim: &Simulation| {
+        let entity = sim.entities().get(plane).unwrap();
+        entity
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .fly_runtime()
+            .unwrap()
+            .spin()
+    };
+    let facing = |sim: &Simulation| {
+        let frame = sim.session.binary_frame();
+        sim.entities()
+            .get(plane)
+            .unwrap()
+            .body_facing
+            .current(frame)
+    };
+    let step = |sim: &mut Simulation| {
+        let grid = sim.path_grid_snapshot();
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), None, 33);
+    };
+    let rate = spin(&sim).expect("a moving Fly spins");
+    assert!((20..=30).contains(&rate.abs()), "{rate}");
+    for turned in [rate, rate - rate.signum()] {
+        let before = facing(&sim);
+        step(&mut sim);
+        assert_eq!(facing(&sim), before.wrapping_add((turned << 8) as u16));
+        assert_eq!(spin(&sim), Some(turned - turned.signum()));
+    }
+    sim.techno_reactivate(plane, &rules, &mut FrameEffects::default());
+    step(&mut sim);
+    assert_eq!(spin(&sim), None);
 }

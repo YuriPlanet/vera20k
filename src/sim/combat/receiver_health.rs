@@ -147,7 +147,9 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             i64::from(damage),
             |answer| Some(answer.clamp(0, i64::from(i32::MAX))),
         );
-        i32::try_from(decided).unwrap_or(damage)
+        decided
+            .and_then(|answer| i32::try_from(answer).ok())
+            .unwrap_or(damage)
     }
 
     /// Wasm module `TakeDamage` (RFC 0001 appendix 4.3): after the Strength

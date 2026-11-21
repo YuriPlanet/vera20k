@@ -138,6 +138,9 @@ struct NativeRulesSourceSnapshot {
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
     /// in a game this process loads.
     ares_keys_off: bool,
+    /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`),
+    /// which decides `RuleSet::kratos` in every game this process loads.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl NativeRulesSourceSnapshot {
@@ -375,6 +378,7 @@ impl NativeRulesProcessOwner {
             PersonalRules::default(),
             crate::rules::ares_switch::ares_way(),
             false,
+            crate::util::kratos_launch::KratosSetting::Auto,
         )
     }
 
@@ -394,6 +398,7 @@ impl NativeRulesProcessOwner {
         personal_rules: PersonalRules,
         ships_ares: bool,
         ares_keys_off: bool,
+        kratos_setting: crate::util::kratos_launch::KratosSetting,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
@@ -410,6 +415,7 @@ impl NativeRulesProcessOwner {
             personal_rules,
             ships_ares,
             ares_keys_off,
+            kratos_setting,
         };
         let cold_trace = sources.cold_registry()?;
         Ok(Self {
@@ -450,6 +456,7 @@ impl NativeRulesProcessOwner {
             sources.personal_rules,
             ships_ares,
             sources.ares_keys_off,
+            sources.kratos_setting,
         )
         .expect("the same sources cold-started once already")
     }
@@ -749,7 +756,7 @@ impl NativeRulesProcessOwner {
     }
 
     /// VERA: play the switches `rules` from the next scenario on, as a network
-    /// room plays its host's. Scenario roots compose them, so the one registry
+    /// match plays its room's. Scenario roots compose them, so the one registry
     /// and everything the shell read into it stay as they are.
     pub fn use_personal_rules(&mut self, rules: PersonalRules) {
         self.sources.personal_rules = rules;
@@ -1398,7 +1405,8 @@ impl NativeRulesProcessOwner {
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.scenario_root().into_owned())
             .with_ares_mix(self.sources.ships_ares)
-            .with_ares_keys_off(self.sources.ares_keys_off);
+            .with_ares_keys_off(self.sources.ares_keys_off)
+            .with_kratos_setting(self.sources.kratos_setting);
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

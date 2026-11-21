@@ -7,13 +7,18 @@ use std::cell::OnceCell;
 use std::path::Path;
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::loading::init::MapMenuEntry;
+use crate::app::persistence::PersistenceState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::preview::{DecodedPreview, PreviewSourceBounds};
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::rules::ini_parser::IniFile;
+use crate::ui::game_screen::GameScreen;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::skirmish_shell::RectPx;
 
@@ -64,6 +69,32 @@ const ZOOM_FRAME_RGB: [f32; 3] = [0.55, 0.55, 0.55];
 /// Above every shell draw but the cursor; shell draws keep their order.
 const ZOOM_DEPTH: f32 = 0.00020;
 
+impl SkirmishPreviewTexture {
+    /// `source` as a texture of its own size, a chooser map's thumbnail by
+    /// default; none when the device cannot hold it.
+    fn upload(renderer: &RendererState, source: DecodedPreview) -> Option<Self> {
+        let limit = renderer.gpu.device.limits().max_texture_dimension_2d;
+        if !preview_fits_texture(source.width, source.height, source.rgba.len(), limit) {
+            return None;
+        }
+        let (gpu, (width, height)) = (&renderer.gpu, (source.width, source.height));
+        let texture = (renderer.batch_renderer).create_texture(gpu, &source.rgba, width, height);
+        Some(Self {
+            selected_map_idx: usize::MAX,
+            texture,
+            width,
+            height,
+            setup_preview_generation: None,
+            received_preview: None,
+            hd_setting: false,
+            hd_picture: None,
+            source,
+            zoom: None,
+            briefing: OnceCell::new(),
+        })
+    }
+}
+
 fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
     width != 0
         && height != 0
@@ -77,56 +108,34 @@ fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: 
 
 /// A LAN guest whose map did not verify shows the host's `Preview.bin`, or
 /// nothing until it arrives (`0x005E1D3B` skips a null preview).
-pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
-    let Some((arrival, preview)) = state
-        .frontend
+pub(super) fn ensure_received_preview_texture(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+) {
+    let Some((arrival, preview)) = frontend
         .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.received_preview())
     else {
-        state.frontend.skirmish_preview_texture = None;
+        frontend.skirmish_preview_texture = None;
         return;
     };
-    // Network admission bounds the format; the live device can request a
-    // smaller edge limit. Refuse an unavailable surface before wgpu validation.
-    if !preview_fits_texture(
-        preview.width,
-        preview.height,
-        preview.rgba.len(),
-        state.renderer.gpu.device.limits().max_texture_dimension_2d,
-    ) {
-        state.frontend.skirmish_preview_texture = None;
-        return;
-    }
-    if state
-        .frontend
+    if frontend
         .skirmish_preview_texture
         .as_ref()
         .is_some_and(|texture| texture.received_preview == Some(arrival))
     {
         return;
     }
-    let texture = state.renderer.batch_renderer.create_texture(
-        &state.renderer.gpu,
-        &preview.rgba,
-        preview.width,
-        preview.height,
-    );
-    let (width, height) = (preview.width, preview.height);
-    let source = preview.clone();
-    state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
-        selected_map_idx: usize::MAX,
-        texture,
-        width,
-        height,
-        setup_preview_generation: None,
-        received_preview: Some(arrival),
-        hd_setting: false,
-        hd_picture: None,
-        source,
-        zoom: None,
-        briefing: OnceCell::from(None),
-    });
+    // Network admission bounds the format; the live device can request a
+    // smaller edge limit, and an unavailable surface is refused.
+    let preview = preview.clone();
+    frontend.skirmish_preview_texture =
+        SkirmishPreviewTexture::upload(renderer, preview).map(|texture| SkirmishPreviewTexture {
+            received_preview: Some(arrival),
+            briefing: OnceCell::from(None),
+            ..texture
+        });
 }
 
 pub(super) fn push_start_marker_sprites(
@@ -182,8 +191,8 @@ pub(crate) fn start_marker_picture(
         .collect::<Option<Vec<_>>>()?;
     let spacing = crate::render::bit_font::CHAR_SPACING as i32;
     let text_w = font.text_width(label) as i32;
-    let sprite = start_marker_top_left(0, 0, ShellScale::RETAIL);
-    let text = super::text::start_marker_label_origin(0, 0, ShellScale::RETAIL);
+    let sprite = start_marker_top_left(0, 0, crate::ui::shell::geom::RETAIL_SCALE);
+    let text = super::text::start_marker_label_origin(0, 0, crate::ui::shell::geom::RETAIL_SCALE);
     let (left, top) = (sprite.0.min(text.0), sprite.1.min(text.1));
     let right = (sprite.0 + art.width as i32).max(text.0 + text_w);
     let bottom = (sprite.1 + art.height as i32).max(text.1 + font.bitmap_rows as i32);
@@ -205,8 +214,7 @@ pub(crate) fn start_marker_picture(
         }
     };
     put(&art.rgba, art.width, sprite.0 - left, sprite.1 - top, None);
-    let tint =
-        super::text::start_marker_label_color().map(|channel| (channel * 255.0).round() as u8);
+    let tint = super::SHELL_LABEL_TEXT_RGB.map(|channel| (channel * 255.0).round() as u8);
     let mut x = text.0 - left;
     for glyph in glyphs {
         put(&glyph.rgba, glyph.width, x, text.1 - top, Some(tint));
@@ -255,37 +263,27 @@ pub(super) fn project_preview_start_positions(
         .unwrap_or_default()
 }
 
-pub(super) fn build_start_marker_instances(
-    atlas: &SkirmishShellChromeAtlas,
-    projected_positions: &[(i32, i32)],
-    scale: ShellScale,
-) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
-    push_start_marker_sprites(&mut instances, atlas, projected_positions, scale, 0.00056);
-    instances
-}
-
 pub(super) fn selected_preview_texture_is_current(
-    state: &AppState,
+    platform: &PlatformState,
+    skirmish_preview_texture: &Option<
+        crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture,
+    >,
+    persistence: &PersistenceState,
     selected_map_idx: usize,
     preview_box: RectPx,
 ) -> bool {
-    state
-        .frontend
-        .skirmish_preview_texture
-        .as_ref()
-        .is_some_and(|cached| {
-            // A setup-dialog preview happens to carry the selected index too, so it
-            // has to be rejected explicitly or closing the dialog would leave the
-            // generated image standing in for the chooser's own thumbnail.
-            cached.setup_preview_generation.is_none()
-                && cached.received_preview.is_none()
-                && cached.selected_map_idx == selected_map_idx
-                && cached.hd_setting == state.hd_map_previews()
-                && cached
-                    .hd_picture
-                    .is_none_or(|size| size == (preview_box.w, preview_box.h))
-        })
+    skirmish_preview_texture.as_ref().is_some_and(|cached| {
+        // A setup-dialog preview happens to carry the selected index too, so it
+        // has to be rejected explicitly or closing the dialog would leave the
+        // generated image standing in for the chooser's own thumbnail.
+        cached.setup_preview_generation.is_none()
+            && cached.received_preview.is_none()
+            && cached.selected_map_idx == selected_map_idx
+            && cached.hd_setting == persistence.hd_map_previews(platform.capture_choices())
+            && cached
+                .hd_picture
+                .is_none_or(|size| size == (preview_box.w, preview_box.h))
+    })
 }
 
 pub(super) fn is_random_map_sentinel_file_name(file_name: &str) -> bool {
@@ -396,9 +394,11 @@ pub(super) fn decode_preview_from_ini(ini: &IniFile, source: &str) -> Option<Dec
 /// chooser's own texture handling. While the dialog is up the box shows the
 /// generated map and nothing else — before the first generate it stays empty
 /// rather than borrowing whatever the chooser underneath had selected.
-pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> bool {
-    let Some(modal) = state
-        .frontend
+pub(super) fn ensure_random_map_setup_preview_texture(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+) -> bool {
+    let Some(modal) = frontend
         .skirmish_shell_state
         .random_map_setup_modal
         .as_ref()
@@ -406,52 +406,30 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         return false;
     };
     let Some(preview) = modal.generated_preview.as_ref() else {
-        state.frontend.skirmish_preview_texture = None;
+        frontend.skirmish_preview_texture = None;
         return true;
     };
-    if !preview_fits_texture(
-        preview.width,
-        preview.height,
-        preview.rgba.len(),
-        state.renderer.gpu.device.limits().max_texture_dimension_2d,
-    ) {
-        state.frontend.skirmish_preview_texture = None;
-        return true;
-    }
     let generation = modal.preview_generation;
-    let already_current = state
-        .frontend
+    let already_current = frontend
         .skirmish_preview_texture
         .as_ref()
         .is_some_and(|texture| texture.setup_preview_generation == Some(generation));
     if already_current {
         return true;
     }
-
-    let texture = state.renderer.batch_renderer.create_texture(
-        &state.renderer.gpu,
-        &preview.rgba,
-        preview.width,
-        preview.height,
-    );
     let source = DecodedPreview {
         width: preview.width,
         height: preview.height,
         rgba: preview.rgba.clone(),
     };
-    state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
-        selected_map_idx: state.frontend.skirmish_shell_state.selected_map_idx,
-        texture,
-        width: source.width,
-        height: source.height,
-        setup_preview_generation: Some(generation),
-        received_preview: None,
-        hd_setting: false,
-        hd_picture: None,
-        source,
-        zoom: None,
-        briefing: OnceCell::from(None),
-    });
+    let selected_map_idx = frontend.skirmish_shell_state.selected_map_idx;
+    frontend.skirmish_preview_texture =
+        SkirmishPreviewTexture::upload(renderer, source).map(|texture| SkirmishPreviewTexture {
+            selected_map_idx,
+            setup_preview_generation: Some(generation),
+            briefing: OnceCell::from(None),
+            ..texture
+        });
     true
 }
 
@@ -459,8 +437,8 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
 /// (the loop callback `0x005E66F0` reloads the preview for every new
 /// highlight and restores the session's map afterwards); otherwise the
 /// committed one.
-pub(super) fn preview_map_idx(state: &AppState) -> Option<usize> {
-    let shell = &state.frontend.skirmish_shell_state;
+pub(super) fn preview_map_idx(frontend: &FrontendState) -> Option<usize> {
+    let shell = &frontend.skirmish_shell_state;
     let chooser = shell
         .choose_map_modal
         .as_ref()
@@ -471,10 +449,9 @@ pub(super) fn preview_map_idx(state: &AppState) -> Option<usize> {
     }
     chooser
         .and_then(|modal| modal.selected_record_index())
-        .and_then(|record| state.frontend.scenario_catalog.records().get(record))
+        .and_then(|record| frontend.scenario_catalog.records().get(record))
         .and_then(|record| {
-            state
-                .frontend
+            frontend
                 .scenario_catalog
                 .shell_maps()
                 .iter()
@@ -484,10 +461,10 @@ pub(super) fn preview_map_idx(state: &AppState) -> Option<usize> {
 }
 
 pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box: RectPx) {
-    if ensure_random_map_setup_preview_texture(state) {
+    if ensure_random_map_setup_preview_texture(&state.renderer, &mut state.frontend) {
         return;
     }
-    let Some(selected_map_idx) = preview_map_idx(state) else {
+    let Some(selected_map_idx) = preview_map_idx(&state.frontend) else {
         state.frontend.skirmish_preview_texture = None;
         return;
     };
@@ -519,7 +496,13 @@ pub(super) fn ensure_map_preview_texture(
         .as_ref()
         .is_some_and(is_random_map_sentinel_entry);
     if !selected_is_random_sentinel
-        && selected_preview_texture_is_current(state, selected_map_idx, preview_box)
+        && selected_preview_texture_is_current(
+            &state.platform,
+            &state.frontend.skirmish_preview_texture,
+            &state.persistence,
+            selected_map_idx,
+            preview_box,
+        )
     {
         return;
     }
@@ -530,15 +513,20 @@ pub(super) fn ensure_map_preview_texture(
         .and_then(|entry| {
             decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
         })
-        // An online library row has no file: its catalog header holds it.
-        .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
+        // A bundled or downloadable row carries preview bytes outside the install folder.
+        .or_else(|| crate::app::map_library::catalog_preview(&state.frontend, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
     // the size the box shows it at: it is up to eight times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.
     if hd_setting
         && selected_entry.is_some()
         && !selected_is_random_sentinel
-        && let Some(picture) = crate::app::map_picture::picture_for_map(state, selected_map_idx)
+        && let Some(picture) = crate::app::map_picture::picture_for_map(
+            &state.platform,
+            &mut state.frontend,
+            &state.process_assets,
+            selected_map_idx,
+        )
         && preview_fits_texture(
             picture.width,
             picture.height,
@@ -557,7 +545,7 @@ pub(super) fn ensure_map_preview_texture(
             .filter(|&own| same_shape(own, (picture.width, picture.height)));
         let (fit_w, fit_h) = own.unwrap_or((picture.width, picture.height));
         let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
-        let texture = picture_texture(state, &picture, (fitted.w, fitted.h));
+        let texture = picture_texture(&state.renderer, &picture, (fitted.w, fitted.h));
         state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
             selected_map_idx,
             texture,
@@ -574,45 +562,23 @@ pub(super) fn ensure_map_preview_texture(
         return;
     }
 
-    let Some(decoded) = decoded else {
-        state.frontend.skirmish_preview_texture = None;
-        return;
-    };
-    if !preview_fits_texture(
-        decoded.width,
-        decoded.height,
-        decoded.rgba.len(),
-        state.renderer.gpu.device.limits().max_texture_dimension_2d,
-    ) {
-        state.frontend.skirmish_preview_texture = None;
-        return;
-    }
-
-    let texture = state.renderer.batch_renderer.create_texture(
-        &state.renderer.gpu,
-        &decoded.rgba,
-        decoded.width,
-        decoded.height,
-    );
-    state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
-        selected_map_idx,
-        texture,
-        width: decoded.width,
-        height: decoded.height,
-        setup_preview_generation: None,
-        received_preview: None,
-        hd_setting,
-        hd_picture: None,
-        source: decoded,
-        zoom: None,
-        briefing: OnceCell::new(),
-    });
+    state.frontend.skirmish_preview_texture = decoded
+        .and_then(|decoded| SkirmishPreviewTexture::upload(&state.renderer, decoded))
+        .map(|texture| SkirmishPreviewTexture {
+            selected_map_idx,
+            hd_setting,
+            ..texture
+        });
 }
 
 /// A texture of `picture` for drawing it `size` large: shrunk here by area
 /// when that is smaller, else at its own size for the GPU's linear filter to
 /// enlarge.
-fn picture_texture(state: &AppState, picture: &DecodedPreview, size: (i32, i32)) -> BatchTexture {
+fn picture_texture(
+    renderer: &RendererState,
+    picture: &DecodedPreview,
+    size: (i32, i32),
+) -> BatchTexture {
     let shrunk = (size.0 > 0 && size.1 > 0 && (size.0 as u32) < picture.width).then(|| {
         let (width, height) = (size.0 as u32, size.1 as u32);
         let rgba = crate::render::area_scale::scale(
@@ -628,9 +594,9 @@ fn picture_texture(state: &AppState, picture: &DecodedPreview, size: (i32, i32))
         Some((width, height, rgba)) => (*width, *height, rgba.as_slice()),
         None => (picture.width, picture.height, picture.rgba.as_slice()),
     };
-    let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
+    let (_, texture) = renderer.batch_renderer.create_updatable_texture(
+        &renderer.gpu.device,
+        &renderer.gpu.queue,
         rgba,
         width,
         height,
@@ -696,11 +662,7 @@ fn briefing_box(picture: RectPx, text: &str, font: &BitFont, scale: f32) -> Opti
     // Wrapped in the font's own pixels; the glyphs draw `scale` times their
     // size.
     let wrapped = font.wrap_layout(text, ((most_width - 2 * padding) as f32 / scale) as u32);
-    let mut lines: Vec<String> = wrapped
-        .lines
-        .iter()
-        .map(|line| text[line.start_byte..line.end_byte].to_owned())
-        .collect();
+    let mut lines: Vec<String> = wrapped.line_texts(text).map(str::to_owned).collect();
     if lines.len() > most_lines {
         lines.truncate(most_lines - 1);
         lines.push(BRIEFING_CUT.to_owned());
@@ -726,7 +688,7 @@ pub(super) fn ensure_zoom_texture(
     scale: ShellScale,
     shown: bool,
 ) -> Option<ZoomLayout> {
-    if !crate::app::frontend::preview_zoom::is_open(state) {
+    if !crate::app::frontend::preview_zoom::is_open(&state.frontend.preview_zoom) {
         if let Some(preview) = state.frontend.skirmish_preview_texture.as_mut() {
             preview.zoom = None;
         }
@@ -747,7 +709,12 @@ pub(super) fn ensure_zoom_texture(
         .filter(|_| shown)
         .map(|preview| {
             let briefing = preview.briefing.get_or_init(|| {
-                crate::app::map_library::briefing(shared, preview.selected_map_idx)
+                crate::app::map_library::briefing(
+                    &shared.platform,
+                    &shared.frontend,
+                    &shared.process_assets,
+                    preview.selected_map_idx,
+                )
             });
             zoom_layout(
                 area,
@@ -759,11 +726,15 @@ pub(super) fn ensure_zoom_texture(
         })
         .filter(|layout| layout.picture.w > 0 && layout.picture.h > 0);
     let Some(mut layout) = layout else {
-        crate::app::frontend::preview_zoom::close(state);
+        crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         return None;
     };
     if let Some(briefing) = &layout.briefing
-        && !crate::app::frontend::preview_zoom::shows_briefing(state, briefing.frame)
+        && !crate::app::frontend::preview_zoom::shows_briefing(
+            &mut state.frontend,
+            &state.match_state.input,
+            briefing.frame,
+        )
     {
         layout.briefing = None;
     }
@@ -779,7 +750,7 @@ pub(super) fn ensure_zoom_texture(
         .as_ref()
         .is_none_or(|(_, made_for)| *made_for != size)
     {
-        let texture = picture_texture(state, &preview.source, (fitted.w, fitted.h));
+        let texture = picture_texture(&state.renderer, &preview.source, (fitted.w, fitted.h));
         state
             .frontend
             .skirmish_preview_texture
@@ -791,41 +762,34 @@ pub(super) fn ensure_zoom_texture(
 }
 
 /// The enlarged preview's draws, made before the pass that draws them
-/// ([`draw_zoom`]): the screen darkened behind a framed picture, with the
-/// box's start markers placed over it as the box places them, and over them
-/// the map's briefing in a darkened, framed box.
-pub(super) struct ZoomDraws {
-    /// The darkening and the picture's frame, from the shell atlas.
-    backdrop: Vec<SpriteInstance>,
-    picture: SpriteInstance,
-    /// The markers from the shell atlas, their numbers in the bit font.
-    markers: Vec<SpriteInstance>,
-    numbers: Vec<SpriteInstance>,
-    /// The briefing's box from the shell atlas, its lines in the bit font.
-    briefing: Vec<SpriteInstance>,
-    briefing_text: Vec<SpriteInstance>,
-}
+/// ([`draw_zoom`]), in order, each from its texture: the screen darkened
+/// behind a framed picture, with the box's start markers placed over it as
+/// the box places them, and over them the map's briefing in a darkened,
+/// framed box.
+pub(super) struct ZoomDraws(Vec<(ZoomTexture, Vec<SpriteInstance>)>);
 
-pub(super) struct ZoomBuffers {
-    backdrop: Option<(wgpu::Buffer, u32)>,
-    picture: Option<(wgpu::Buffer, u32)>,
-    markers: Option<(wgpu::Buffer, u32)>,
-    numbers: Option<(wgpu::Buffer, u32)>,
-    briefing: Option<(wgpu::Buffer, u32)>,
-    briefing_text: Option<(wgpu::Buffer, u32)>,
+pub(super) struct ZoomBuffers(Vec<(ZoomTexture, Option<(wgpu::Buffer, u32)>)>);
+
+/// The texture a layer of the enlarged preview draws from.
+#[derive(Clone, Copy)]
+pub(super) enum ZoomTexture {
+    Atlas,
+    Picture,
+    Font,
 }
 
 /// The enlarged preview as `layout` places it, with the start markers of
 /// `bounds` when the box draws them.
 pub(super) fn zoom_draws(
-    state: &AppState,
+    renderer: &RendererState,
+    screen: &GameScreen,
     atlas: &SkirmishShellChromeAtlas,
     layout: &ZoomLayout,
     bounds: Option<&PreviewSourceBounds>,
     scale: ShellScale,
 ) -> ZoomDraws {
     let fitted = layout.picture;
-    let font = &state.renderer.bit_font;
+    let font = &renderer.bit_font;
     // The screen and the briefing's box are darkened alike, and framed as
     // the picture is.
     let darken = |out: &mut Vec<SpriteInstance>, rect: RectPx| {
@@ -855,8 +819,8 @@ pub(super) fn zoom_draws(
         RectPx::new(
             0,
             0,
-            state.render_width() as i32,
-            state.render_height() as i32,
+            renderer.render_width(screen) as i32,
+            renderer.render_height(screen) as i32,
         ),
     );
     frame(&mut backdrop, fitted);
@@ -866,7 +830,13 @@ pub(super) fn zoom_draws(
     let mut markers = Vec::new();
     push_start_marker_sprites(&mut markers, atlas, &positions, scale, ZOOM_DEPTH);
     let mut numbers = Vec::new();
-    super::text::push_start_marker_labels(&mut numbers, state, &positions, scale, ZOOM_DEPTH);
+    super::text::push_start_marker_labels(
+        &mut numbers,
+        &renderer.bit_font,
+        &positions,
+        scale,
+        ZOOM_DEPTH,
+    );
     let mut briefing = Vec::new();
     let mut briefing_text = Vec::new();
     if let Some(shown) = &layout.briefing {
@@ -886,37 +856,26 @@ pub(super) fn zoom_draws(
             ));
         }
     }
-    ZoomDraws {
-        backdrop,
-        picture: SpriteInstance {
-            position: [fitted.x as f32, fitted.y as f32],
-            size: [fitted.w as f32, fitted.h as f32],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: ZOOM_DEPTH,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        },
-        markers,
-        numbers,
-        briefing,
-        briefing_text,
-    }
+    use ZoomTexture::{Atlas, Font, Picture};
+    ZoomDraws(vec![
+        (Atlas, backdrop),
+        (Picture, vec![picture_instance(fitted, ZOOM_DEPTH)]),
+        (Atlas, markers),
+        (Font, numbers),
+        (Atlas, briefing),
+        (Font, briefing_text),
+    ])
 }
 
 impl ZoomDraws {
-    pub(super) fn buffers(&self, state: &AppState) -> ZoomBuffers {
-        let batch = &state.renderer.batch_renderer;
-        let gpu = &state.renderer.gpu;
-        ZoomBuffers {
-            backdrop: batch.create_instance_buffer(gpu, &self.backdrop),
-            picture: batch.create_instance_buffer(gpu, &[self.picture]),
-            markers: batch.create_instance_buffer(gpu, &self.markers),
-            numbers: batch.create_instance_buffer(gpu, &self.numbers),
-            briefing: batch.create_instance_buffer(gpu, &self.briefing),
-            briefing_text: batch.create_instance_buffer(gpu, &self.briefing_text),
-        }
+    pub(super) fn buffers(&self, renderer: &RendererState) -> ZoomBuffers {
+        let (batch, gpu) = (&renderer.batch_renderer, &renderer.gpu);
+        let layers = self.0.iter();
+        ZoomBuffers(
+            layers
+                .map(|(texture, layer)| (*texture, batch.create_instance_buffer(gpu, layer)))
+                .collect(),
+        )
     }
 }
 
@@ -924,28 +883,26 @@ impl ZoomDraws {
 /// scissor must cover the window.
 pub(super) fn draw_zoom<'a>(
     pass: &mut wgpu::RenderPass<'a>,
-    state: &'a AppState,
+    renderer: &'a RendererState,
+    skirmish_preview_texture: &'a Option<
+        crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture,
+    >,
     atlas: &'a SkirmishShellChromeAtlas,
     buffers: &'a ZoomBuffers,
 ) {
-    let batch = &state.renderer.batch_renderer;
-    let Some((zoom, _)) = state
-        .frontend
-        .skirmish_preview_texture
+    let batch = &renderer.batch_renderer;
+    let Some((zoom, _)) = skirmish_preview_texture
         .as_ref()
         .and_then(|preview| preview.zoom.as_ref())
     else {
         return;
     };
-    let font = state.renderer.bit_font.atlas();
-    for (buffer, texture) in [
-        (&buffers.backdrop, &atlas.texture),
-        (&buffers.picture, zoom),
-        (&buffers.markers, &atlas.texture),
-        (&buffers.numbers, font),
-        (&buffers.briefing, &atlas.texture),
-        (&buffers.briefing_text, font),
-    ] {
+    for (texture, buffer) in &buffers.0 {
+        let texture = match texture {
+            ZoomTexture::Atlas => &atlas.texture,
+            ZoomTexture::Picture => zoom,
+            ZoomTexture::Font => renderer.bit_font.atlas(),
+        };
         if let Some((buffer, count)) = buffer {
             batch.draw_with_buffer_passthrough(pass, texture, buffer, *count);
         }
@@ -1006,20 +963,21 @@ pub(super) fn build_preview_surface_instance(
     preview_height: u32,
 ) -> Option<SpriteInstance> {
     let fitted = aspect_fit_rect(dst, preview_width, preview_height);
-    if fitted.w <= 0 || fitted.h <= 0 {
-        return None;
-    }
+    (fitted.w > 0 && fitted.h > 0).then(|| picture_instance(fitted, SHELL_PREVIEW_SURFACE_DEPTH))
+}
 
-    Some(SpriteInstance {
-        position: [fitted.x as f32, fitted.y as f32],
-        size: [fitted.w as f32, fitted.h as f32],
+/// A whole picture texture drawn over `rect`.
+fn picture_instance(rect: RectPx, depth: f32) -> SpriteInstance {
+    SpriteInstance {
+        position: [rect.x as f32, rect.y as f32],
+        size: [rect.w as f32, rect.h as f32],
         uv_origin: [0.0, 0.0],
         uv_size: [1.0, 1.0],
-        depth: SHELL_PREVIEW_SURFACE_DEPTH,
+        depth,
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
         ..Default::default()
-    })
+    }
 }
 
 #[cfg(all(test, tests_app_frontend))]

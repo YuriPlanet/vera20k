@@ -61,6 +61,7 @@ fn retail_berserk_infantry_ctrl_ground_shows_no_move() {
         selected: &selected,
         modifier: OrderModifier::ForceFire,
         force_move_key: false,
+        force_fire_key: true,
         order_mode: crate::app::types::OrderMode::Move,
         planning: false,
         mouse_over: true,

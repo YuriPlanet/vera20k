@@ -222,41 +222,41 @@ pub(crate) fn with_placement_fixture<R>(
         .unwrap_or_else(|| RuleSet::empty_for_test().clone());
     rules.tiberium_types = ctx.tiberium_types.clone();
     let mut sim = Simulation::new();
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
-    sim.overlay_grid = Some(ctx.overlay_grid.clone());
-    sim.resolved_terrain = ctx.resolved_terrain.cloned();
-    sim.ore_growth_state = ctx.ore_growth_state.clone();
-    sim.scenario_rng = ctx.rng.clone();
+    *sim.overlay_grid = Some(ctx.overlay_grid.clone());
+    *sim.resolved_terrain = ctx.resolved_terrain.cloned();
+    *sim.ore_growth_state = ctx.ore_growth_state.clone();
+    *sim.scenario_rng = ctx.rng.clone();
     sim.session.set_binary_frame_for_test(ctx.binary_frame);
-    sim.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::for_test(
+    *sim.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::for_test(
         ctx.growth_enabled,
         ctx.spread_enabled,
         false,
     );
     *sim.terrain_objects.spawning_cells_mut_for_test() = ctx.source_object_cells.clone();
     if let Some(objects) = objects {
-        sim.substrate.entities = objects.entities.clone();
-        sim.substrate.occupancy = objects.occupancy.clone();
-        sim.substrate.raw_cell_occupation = objects.raw_occupation.clone();
-        sim.interner = objects.interner.clone();
+        *sim.substrate.entities = objects.entities.clone();
+        *sim.substrate.occupancy = objects.occupancy.clone();
+        *sim.substrate.raw_cell_occupation = objects.raw_occupation.clone();
+        *sim.interner = objects.interner.clone();
         *sim.terrain_objects.cell_index_mut_for_test() = objects.terrain_object_cells.clone();
     } else if let Some(objects) = ctx.live_objects {
-        sim.substrate.occupancy = objects.occupancy.clone();
+        *sim.substrate.occupancy = objects.occupancy.clone();
         *sim.terrain_objects.cell_index_mut_for_test() = objects.terrain_object_cells.clone();
     }
     if let Some(dirty) = ctx.dirty_cells.as_deref() {
-        sim.dirty_cells = dirty.clone();
+        *sim.dirty_cells = dirty.clone();
     }
     let result = run(&mut sim, &rules, ctx.overlay_registry);
     *ctx.overlay_grid = sim
         .overlay_grid
         .take()
         .expect("fixture operation preserves the grid");
-    *ctx.ore_growth_state = sim.ore_growth_state;
-    *ctx.rng = sim.scenario_rng;
+    *ctx.ore_growth_state = sim.ore_growth_state.into_inner();
+    *ctx.rng = sim.scenario_rng.into_inner();
     if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
-        *dirty = sim.dirty_cells;
+        *dirty = sim.dirty_cells.into_inner();
     }
     result
 }

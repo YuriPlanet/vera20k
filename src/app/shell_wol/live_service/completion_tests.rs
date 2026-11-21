@@ -1,7 +1,15 @@
+use base64::Engine;
+use serde_json::json;
+
+use super::match_start::{bind_relay_roster, followed_user};
+use super::requests::{
+    accepted_human_matches, check_map_capacity, create_payload, local_choices_match, request_match,
+    send_chat,
+};
 use super::*;
-use crate::app::shell_wol::live_service::events::decode_external_watch_grant;
-use crate::app::shell_wol::live_service::events::relay_ticket_is_watch;
+use crate::app::persistence::account;
 use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
+use crate::ui::wol_chat::WolChatLine;
 
 /// The reason must not land in a transcript the player is about to lose.
 #[test]
@@ -351,19 +359,21 @@ fn a_remembered_sign_in_lasts_until_its_name_or_another_account_replaces_it() {
         _ => None,
     };
     remember_sign_in(settings, &service, "Tanya", token('A'));
+    // Guest entry, even with this account's name, leaves its saved sign-in alone.
+    assert!(matches!(
+        sign_in_credential(settings, &service, "tanya", String::new(), false),
+        Some(http::Credential::Guest)
+    ));
     assert!(matches!(
         sign_in_credential(settings, &service, "tanya", String::new(), true),
-        http::Credential::Remembered(sent) if sent == token('A')
+        Some(http::Credential::Remembered(sent)) if sent == token('A')
     ));
-    assert!(matches!(
-        sign_in_credential(settings, &service, "Boris", String::new(), false),
-        http::Credential::Guest
-    ));
+    assert!(sign_in_credential(settings, &service, "Boris", String::new(), true).is_none());
     remember_sign_in(settings, &service, "Boris", token('B'));
     assert_eq!(forgotten(&input), Some(token('A')));
     assert!(matches!(
         sign_in_credential(settings, &service, "Boris", "s3cret-pw".into(), true),
-        http::Credential::Password { remember: true, .. }
+        Some(http::Credential::Password { remember: true, .. })
     ));
     assert_eq!(forgotten(&input), Some(token('B')));
     assert_eq!(account::load(directory.path(), &service.lobby), None);
@@ -781,10 +791,18 @@ fn relay_renewal_is_timed_from_grant_receipt_at_half_life() {
         (operation, payload),
         ("renew_relay", json!({"match_id":"renew-match"}))
     );
+    // The reconnect notice reads the pass's lapse on the same receipt clock.
+    assert!(!service.relay_pass_lapsed(received));
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(299_999)));
+    assert!(service.relay_pass_lapsed(received.wrapping_add(300_000)));
     // The reply's fresh grant moves the deadline half a lifetime on.
     service.relay_granted(due + 1_000);
     service.poll_renewal(due + 11_000);
     assert!(input.try_recv().is_err());
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(300_000)));
+    // A lobby session that ends mid-match cannot renew the pass any more.
+    service.clear_cleanup();
+    assert!(service.relay_pass_lapsed(due + 301_000));
 }
 
 #[test]
@@ -872,7 +890,8 @@ fn an_expired_start_says_whose_game_could_not_reach_the_relay() {
 }
 
 /// The lobby's reasons for refusing a start show as their own lines; one
-/// this game does not know keeps the general line.
+/// this game does not know keeps the general line. The fixture lists the
+/// reasons the lobby sends.
 #[test]
 fn a_refused_start_shows_the_lobbys_reason() {
     let (mut service, _input, _output) = control_service(None);
@@ -887,6 +906,24 @@ fn a_refused_start_shows_the_lobbys_reason() {
         "no start pending here"
     );
     service.pending = Some(start_waiting_until(Instant::now(), true));
+    let messages =
+        &crate::test_fixture::json("tests/fixtures/lobby/start_rejected.json")["messages"];
+    for message in messages.as_array().unwrap() {
+        let message = message.as_str().unwrap();
+        assert_ne!(
+            service.start_rejected_line(message),
+            "VERA:StartRefusedConnection",
+            "{message}"
+        );
+    }
+    assert_eq!(
+        service.start_rejected_line("A player cancelled the game start."),
+        "VERA:StartPlayerCancelled"
+    );
+    assert_eq!(
+        service.start_rejected_line("A player could not complete the peer latency check."),
+        "VERA:StartLatencyCheckFailed"
+    );
     assert_eq!(
         service.start_rejected_line(relay),
         "VERA:StartRelayNotReached",
@@ -1691,6 +1728,7 @@ fn online_exit_owner_retries_logout_after_the_visit_is_dropped_and_ignores_old_c
         output
             .send(http::Response::Authenticated {
                 attempt: 0,
+                generated_guest: false,
                 player_id: "old-player".into(),
                 nickname: "OldVisit".into(),
                 motd: None,

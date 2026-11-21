@@ -61,6 +61,15 @@ impl PathFinishingContext for Finishing<'_> {
                 .map_or(0, |cell| i32::from(cell.signed_level())),
         }
     }
+    fn fixed_deck_level(&self, cell: Cell) -> Option<i32> {
+        let Cell::Native(cell) = cell else {
+            return None;
+        };
+        self.context
+            .resolved_terrain?
+            .corrected_high_bridge_deck_at(cell)
+            .map(i32::from)
+    }
     fn flags(&self, cell: Cell) -> u32 {
         let coord = self.coord(cell);
         let raw = match cell {

@@ -1601,13 +1601,8 @@ fn load_scenario_ext_modules(
     assets: &AssetManager,
     map_ini: &crate::rules::ini_parser::IniFile,
 ) -> Result<crate::sim::ext_modules::PreparedExtModules> {
-    let mod_module = assets
-        .mod_dir()
-        .map(|dir| dir.join("rules.wasm"))
-        .filter(|path| path.is_file())
-        .map(crate::util::file_system::read)
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("the mod's rules.wasm: {e}"))?;
+    let mod_module = crate::sim::ext_modules::PreparedExtModules::read_mod_file(assets)
+        .map_err(anyhow::Error::msg)?;
     crate::sim::ext_modules::PreparedExtModules::load(
         owner.selected_rules_root(),
         mod_module.as_deref(),
@@ -1618,7 +1613,8 @@ fn load_scenario_ext_modules(
 
 /// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
 /// Process state remains in `owner`; this value carries immutable projections
-/// and the constructor receipt, never another live registry.
+/// and the constructor receipt, never another live registry. VERA: `ai_file`
+/// is the AI INI the load reads (`LoadingStartup::ai_file`).
 fn prepare_scenario_rules(
     owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
     assets: &mut AssetManager,
@@ -1626,26 +1622,24 @@ fn prepare_scenario_rules(
     map_ini: &crate::rules::ini_parser::IniFile,
     tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
     rule_policy: RulePolicy,
+    ai_file: crate::rules::retail_sources::AiFile,
 ) -> Result<PreparedScenarioRules> {
-    let mut ext_modules = load_scenario_ext_modules(owner, assets, map_ini)?;
+    if ai_file == crate::rules::retail_sources::AiFile::Original {
+        log::info!("Network match AI file: the original game's; it seats no computer");
+    }
     let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
-        let after_map = |rules_at_read| {
-            (
-                crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-                    assets,
-                    map_ini,
-                    rule_policy,
-                ),
-                rules_at_read,
-            )
-        };
-        let (loaded, after_map_result) = owner
-            .load_scenario_with_ext_rules(
-                prefix,
-                map_ini,
-                Some((tmcj4f, after_map)),
-                &mut ext_modules,
-            )
+        let (loaded, (ai, rules_at_read)) = owner
+            .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
+                (
+                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+                        assets,
+                        map_ini,
+                        rule_policy,
+                        ai_file,
+                    ),
+                    rules_at_read,
+                )
+            })
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
         let (ai, rules_at_read) =
             after_map_result.expect("TMCJ4F Rules stack includes the map boundary");
@@ -1659,9 +1653,13 @@ fn prepare_scenario_rules(
                 &mut ext_modules,
             )
             .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
-        let ai =
-            crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(assets, map_ini, rule_policy)
-                .map_err(anyhow::Error::msg)?;
+        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_for_match(
+            assets,
+            map_ini,
+            rule_policy,
+            ai_file,
+        )
+        .map_err(anyhow::Error::msg)?;
         (loaded, ai, None)
     };
     Ok(PreparedScenarioRules {
@@ -1745,6 +1743,76 @@ impl MapLoadInitial {
         Ok(self)
     }
 
+    /// `-ra2` translation of the retail Allied mission ALL02S ("Hail to the
+    /// Chief"): its Chapel trigger uses an RA2 event kind whose stock YR
+    /// descendant the engine evaluates differently.
+    ///
+    /// `Chapel Destroyed` uses event 57, "the trigger's House owns no
+    /// BuildingTypes[186]". An engineer capture moves the only Chapel out of
+    /// NeutralA's registration and zeroes that House-scoped count, which the
+    /// trigger cannot distinguish from the Chapel being destroyed. The YR
+    /// campaign master rewrites that trigger to event 61, "no TechnoType
+    /// named CACOLO01 exists anywhere" — still true when the Chapel is
+    /// destroyed, false while the captured building lives on.
+    ///
+    /// Tanya's `1,11,0,3` is deliberately left alone: event 11 is "the
+    /// trigger's House is destroyed", and Germans owns only TANY on this
+    /// map, so the stock event is already correct. Limboed passengers keep
+    /// their tracking count, so entering a transport does not fake her death.
+    ///
+    /// This is map data, applied after every other map source has been merged
+    /// and before anything reads the map's rules or triggers. It never runs in
+    /// YR mode, on another map, or on a network map.
+    pub(crate) fn with_ra2_campaign_fixups(mut self, map_file: &str) -> Result<Self> {
+        use crate::rules::ini_parser::{IniFile, IniSection};
+
+        if !crate::util::ra2_launch::enabled() {
+            return Ok(self);
+        }
+        let base_name = map_file.rsplit(['/', '\\']).next().unwrap_or(map_file);
+        if !base_name.eq_ignore_ascii_case("ALL02S.MAP") {
+            return Ok(self);
+        }
+        // Each entry as `map::events::parse_events` reads it, through the
+        // 512-byte buffer of TriggerType Read7274A6.
+        let edits: Vec<String> = self
+            .map_data
+            .ini
+            .section("Events")
+            .into_iter()
+            .flat_map(|section| {
+                section
+                    .keys()
+                    .map(move |key| (key, section.read_string(key, "", 512)))
+            })
+            .filter_map(|(key, value)| {
+                let translated = if value.eq_ignore_ascii_case("1,57,0,186") {
+                    Some("1,61,2,0,CACOLO01")
+                } else {
+                    None
+                };
+                translated.map(|value| format!("{key}={value}"))
+            })
+            .collect();
+        if edits.is_empty() {
+            return Ok(self);
+        }
+        let mut patch_events = IniSection::new("Events".to_owned());
+        for edit in &edits {
+            let (key, value) = edit.split_once('=').expect("built as key=value");
+            patch_events.set(key, value);
+        }
+        let patch = IniFile::from_sections([patch_events]);
+        let mut ini = std::mem::replace(&mut self.map_data.ini, IniFile::empty());
+        ini.merge(&patch);
+        self.map_data = crate::map::map_file::MapFile::from_ini(ini)?;
+        log::info!(
+            "-ra2 ALL02S campaign translation applied: {}",
+            edits.join(", ")
+        );
+        Ok(self)
+    }
+
     /// Physical cached .SED names must not become shared Scenario identity.
     /// ReadScenario684620 regenerates from the supplied path, while the
     /// accepted network record remains the common logical seed name.
@@ -1818,6 +1886,57 @@ fn construction_trace_after_fill(
                 "accepted generated materialization has no required construction journal"
             )
         }),
+    }
+}
+
+#[cfg(all(test, tests_app))]
+mod match_theater_tests {
+    use super::*;
+
+    /// VERA: a network match of the original game reads the original terrain
+    /// when its map names only tiles the original game has, and the game
+    /// folder's when it names another, here one the original table names and
+    /// only a tile pack holds; a skirmish reads the folder's.
+    #[test]
+    fn a_network_match_reads_the_original_terrain_unless_its_map_names_another_tile() {
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        let dir = theater::terrain_test_install("match-theater");
+        let mut assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        let map_naming = |tiles: &[i32]| {
+            let mut map = crate::map::rmg::emit::empty_map_file(&Default::default(), 16, 16);
+            map.header.theater = "SNOW".to_owned();
+            map.cells = tiles
+                .iter()
+                .map(|&tile_index| crate::map::map_file::MapCell {
+                    rx: 1,
+                    ry: 1,
+                    tile_index,
+                    sub_tile: 0,
+                    z: 0,
+                    legacy_ice_byte: 0,
+                })
+                .collect();
+            map
+        };
+        // A cell without a tile names none.
+        let original_tiles = [0, theater::NO_TILE, i32::from(u16::MAX)];
+        let original = load_match_theater(&mut assets, &map_naming(&original_tiles), true)
+            .unwrap()
+            .unwrap();
+        assert!(assets.names_pinned());
+        assert!(!original.lookup.is_morphable(0));
+
+        let skirmish = load_match_theater(&mut assets, &map_naming(&[0]), false)
+            .unwrap()
+            .unwrap();
+        assert!(!assets.names_pinned());
+        assert!(skirmish.lookup.is_morphable(0));
+
+        let folder = load_match_theater(&mut assets, &map_naming(&[0, 1]), true)
+            .unwrap()
+            .unwrap();
+        assert!(!assets.names_pinned());
+        assert!(folder.lookup.is_morphable(0));
     }
 }
 
@@ -2240,7 +2359,13 @@ impl MapLoadInitial {
         // constructor replay on that owner, the GPU-free population funnel,
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
-        let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
+        let theater_result = theater::load_scenario_theater(
+            asset_manager,
+            &map_data.header.theater,
+            &map_data.ini,
+            false,
+        )
+        .expect("generated fixture theater");
         let (mut rules, _, art_ini, native_rules_receipt) = generated_rules
             .expect("generated-map receipt includes its early Full_Init Rules")
             .native
@@ -2550,7 +2675,10 @@ pub(crate) fn load_csf(
                 )),
             },
         )?;
-    log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
+    log::info!(
+        "Loaded CSF string table: {}; supplements={supplements:?}",
+        crate::assets::csf_file::CsfFile::active_csf_name()
+    );
     crate::i18n::apply(&mut csf);
     Ok(csf)
 }
@@ -2607,6 +2735,7 @@ pub(crate) fn load_map_initial_with_assets(
     requested_map: Option<&str>,
     mode_rules_file: Option<&str>,
     full_init_entry_mode: crate::app::match_runtime::session::SessionMode,
+    ai_file: crate::rules::retail_sources::AiFile,
     the_team_enabled: bool,
     launch_seed: Option<u32>,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
@@ -2676,8 +2805,14 @@ pub(crate) fn load_map_initial_with_assets(
         options.normalize();
 
         let theater_name = crate::map::rmg::emit::theater_name(options.theater);
-        let theater = crate::map::theater::load_theater(asset_manager, theater_name)
-            .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
+        // VERA: a network room's players make one map from the original
+        // terrain files (`theater::network_terrain_files`).
+        let theater = crate::map::theater::load_theater_for_play(
+            asset_manager,
+            theater_name,
+            full_init_entry_mode.is_network(),
+        )
+        .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
 
         // Generate598A74 -> InitMap599A56 completes Full_Init before terrain
         // generation. Offline loads transfer outgoing writes; network loads
@@ -2712,6 +2847,7 @@ pub(crate) fn load_map_initial_with_assets(
             &synthetic_ini,
             tmcj4f.as_ref(),
             full_init_entry_mode.stock_rule_policy(None),
+            ai_file,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
@@ -3084,6 +3220,39 @@ pub(crate) fn load_map_from_initial(
     }
 }
 
+/// VERA: the theater a fresh map load reads. A network match of the original
+/// game reads the original theater INI and tiles
+/// (`theater::network_terrain_files`) whenever every tile the map names
+/// exists among them. Every player, and a replay, decides alike from the map
+/// and the retail files. A map naming a tile the original game lacks reads
+/// the game folder's terrain, as a selected mod's game and every other load
+/// do; its start then agrees on those files
+/// (`ProcessAssets::match_terrain_digest`).
+fn load_match_theater(
+    asset_manager: &mut crate::assets::asset_manager::AssetManager,
+    map: &crate::map::map_file::MapFile,
+    network: bool,
+) -> Result<Option<theater::TheaterData>> {
+    let Some(loaded) =
+        theater::load_scenario_theater(asset_manager, &map.header.theater, &map.ini, network)?
+    else {
+        return Ok(None);
+    };
+    if loaded.uses_bundled_ice() || !asset_manager.names_pinned() {
+        return Ok(Some(loaded));
+    }
+    if crate::map::resolved_terrain::map_tiles_exist(map, &loaded.lookup, |name| {
+        asset_manager.get_ref(name).is_some()
+    }) {
+        log::info!("Network match terrain: the original game's files");
+        return Ok(Some(loaded));
+    }
+    log::info!(
+        "Network match terrain: the game folder's files; the map names a tile the original game lacks"
+    );
+    Ok(theater::load_theater(asset_manager, &map.header.theater))
+}
+
 fn load_map_first_step(
     services: FreshMapLoadServices<'_>,
     initial: MapLoadInitial,
@@ -3109,6 +3278,7 @@ fn load_map_first_step(
         signed_new_ini_format,
     )?;
     let full_init_entry_mode = startup.session_mode();
+    let ai_file = startup.ai_file(services.asset_manager);
     let (materialization, match_seed, match_launch_descriptor, scenario_prefix_plan, campaign) =
         match fresh_scenario_context.into_parts() {
             FreshScenarioParts::StockOffline(parts) => {
@@ -3170,13 +3340,17 @@ fn load_map_first_step(
     let map_hash = match &map_source {
         LoadedMapSource::Loose { .. }
         | LoadedMapSource::Mix { .. }
+        | LoadedMapSource::Bundled { .. }
         | LoadedMapSource::Generated { .. } => Some(map_data.ini.content_hash()),
         LoadedMapSource::LegacyFallback { .. } => None,
     };
     // Load theater INI for tileset lookup, palette, and LAT configuration.
     // Also loads theater-specific MIX archives (e.g., isotemmd.mix) at highest priority.
-    let theater_result: Option<theater::TheaterData> =
-        theater::load_theater(services.asset_manager, &map_data.header.theater);
+    let theater_result: Option<theater::TheaterData> = load_match_theater(
+        services.asset_manager,
+        &map_data,
+        startup.session_mode().is_network(),
+    )?;
     if theater_cache_mismatch {
         services.progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater
@@ -3273,6 +3447,7 @@ fn load_map_first_step(
                     &map_data.ini,
                     tmcj4f_ini.as_ref(),
                     rule_policy,
+                    ai_file,
                 )?
             };
             let (
@@ -4413,7 +4588,7 @@ mod full_init_rules_gate_tests {
             7,
             "AI reads before TMCJ4F"
         );
-        let (rules, _, _, _, _) = prepared.into_parts();
+        let (rules, ..) = prepared.into_parts();
         assert_eq!(rules.powerups.weights[POWERUP_MONEY], 9);
         assert_eq!(
             owner.saved_scenario_rules().unwrap().content_hash(),
@@ -4820,6 +4995,7 @@ mod random_map_retail_tests {
                     Some(&seed_name),
                     None,
                     crate::app::match_runtime::session::SessionMode::Skirmish,
+                    crate::rules::retail_sources::AiFile::GameFolder,
                     false,
                     None,
                     &mut SilentProgress,

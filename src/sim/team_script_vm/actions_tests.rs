@@ -207,7 +207,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
     let (wall_owner, receiver) = gsi_04_07_wall_sell_seed_houses(&mut sim);
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
     grid.place_owned_wall(4, 4, 2, 0, wall_owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     sim.set_playfield_bounds_for_test(Some(crate::sim::arena_fixture::OPEN_PLAYFIELD));
     let script = sim.interner.intern("DETACH");
     let sold = Some(TeamTarget::Cell { x: 4, y: 4 });
@@ -256,7 +256,7 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
     }
 
     //70D562/70D577 compare allocations, including fixed512 aliases and Dummy.
-    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+    *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
     let team = *sim.team_script_vm.teams.keys().next().unwrap();
     sim.team_script_vm
         .teams
@@ -548,8 +548,8 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
         let entity = sim.substrate.entities.get(member).unwrap();
         entity.attack_target.target().is_none() && entity.navigation.nav_com().is_none()
     }));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
@@ -572,8 +572,8 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
     );
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame() + 1);
     sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
@@ -649,7 +649,7 @@ fn patrol_reuses_the_native_leadership_rating_member_selection() {
                 id
             })
             .collect();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.get("OWNER").unwrap();
@@ -1060,7 +1060,7 @@ fn lightning_storm_actions_start_and_end_the_storm_and_advance() {
     );
     // Only a raging storm takes the end request.
     assert!(!step(&mut sim).1);
-    sim.lightning_storm = LightningStorm::raging_for_test(owner, (5, 5));
+    *sim.lightning_storm = LightningStorm::raging_for_test(owner, (5, 5));
     assert!(step(&mut sim).1);
     // A raging storm is not restarted.
     assert_eq!(step(&mut sim), (true, true, 0, -1, -1, (5, 5), Some(owner)));

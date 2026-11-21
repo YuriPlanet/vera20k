@@ -11,7 +11,64 @@ pub enum NativeTubeRegistryBindError {
     RegistryCapacity { entries: usize },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PathWalkError {
+    DirectionData { raw_token: i32, native_address: u32 },
+    TubeIndex(i16),
+}
+
 impl ResolvedTerrainGrid {
+    /// Path walk at 0x00429780: used by both Run_AStar (0x004CBC0C) and
+    /// the tube hierarchy (0x00582D70). Direction 8 follows the tube exit.
+    pub(crate) fn walk_native_path(
+        &self,
+        mut coord: (u16, u16),
+        steps: &[i32],
+    ) -> Result<(u16, u16), PathWalkError> {
+        for &step in steps {
+            if step == 8 {
+                let index = self.raw_tube_index_at_native_coord(coord);
+                coord = if index == -1 {
+                    (0, 0)
+                } else {
+                    self.tube(crate::map::tube_facts::TubeId(index as u16))
+                        .filter(|_| index >= 0)
+                        .ok_or(PathWalkError::TubeIndex(index))?
+                        .exit
+                };
+            } else {
+                // x86 effective address89F688 + step*4 wraps in32 bits. Exact8
+                // above is special; address aliases of slot8 are ordinary reads.
+                let slot = step as u32 & 0x3fff_ffff;
+                let (dx, dy) = match slot {
+                    0..=7 => crate::util::direction::DIRECTION_DELTAS[slot as usize],
+                    // Original49F2D0/49F280 initialize slots8..12 to0; slot13
+                    // is zero BSS with no direct xrefs in the examined image.
+                    8..=13 => (0, 0),
+                    // Original startup49F0E0/49F190 at captured FPCW0xE7F.
+                    // Their initialized bytes match the unpatched process capture
+                    // (tube_startup_capture.json); arbitrary neighboring data stays open.
+                    14 => (0, 0x6000),
+                    15 => (-24418, 16502),
+                    0x3fff_fffe => (11544, 21572),
+                    0x3fff_ffff => (8699, 16377),
+                    _ => {
+                        return Err(PathWalkError::DirectionData {
+                            raw_token: step,
+                            native_address: 0x0089_f688u32
+                                .wrapping_add((step as u32).wrapping_mul(4)),
+                        });
+                    }
+                };
+                coord = (
+                    coord.0.wrapping_add(dx as u16),
+                    coord.1.wrapping_add(dy as u16),
+                );
+            }
+        }
+        Ok(coord)
+    }
+
     pub fn tube_facts(&self) -> &[TubeFact] {
         &self.tube_facts
     }
@@ -68,49 +125,6 @@ impl ResolvedTerrainGrid {
 
     pub fn tube(&self, tube_id: TubeId) -> Option<&TubeFact> {
         self.tube_facts.get(tube_id.as_usize())
-    }
-
-    /// Cell484AE0, CanDeploy700D50's tunnel-mouth exclusion. Native
-    /// neighbors use packed lookup and then the returned cell's coordinates;
-    /// absent neighbors do not become an ordinary edge cell.
-    pub(crate) fn is_tube_deploy_neighborhood(&self, cell: (i16, i16)) -> bool {
-        let Some(origin) = self.native_fixed_cell_index(cell.0, cell.1) else {
-            return false;
-        };
-        let is_tube = |index: usize| {
-            self.native_tube_indices[index]
-                .validated_id(self.tube_facts.len())
-                .is_some()
-                && self.cells[index].land_type == LandType::Tunnel.as_index()
-        };
-        if is_tube(origin) {
-            return true;
-        }
-        for (dx, dy) in [(0i16, -1i16), (-1, 0)] {
-            let next = |index: usize| {
-                let at = &self.cells[index];
-                self.native_fixed_cell_index(
-                    (at.rx as i16).wrapping_add(dx),
-                    (at.ry as i16).wrapping_add(dy),
-                )
-            };
-            let Some(first) = next(origin) else {
-                continue;
-            };
-            let Some(second) = next(first) else {
-                continue;
-            };
-            if is_tube(first) && !is_tube(second) {
-                return true;
-            }
-            if let Some(third) = next(second)
-                && is_tube(second)
-                && !is_tube(third)
-            {
-                return true;
-            }
-        }
-        false
     }
 
     pub fn tube_at_cell(&self, rx: u16, ry: u16) -> Option<&TubeFact> {
@@ -184,6 +198,51 @@ impl ResolvedTerrainGrid {
             coord = self.step_coord_by_direction(coord, direction)?;
         }
         Some(coord)
+    }
+}
+
+impl NativeCellQuery<'_> {
+    /// CellClass::IsTubeCell (0x00484AB0) also tests land; the record alone
+    /// is sufficient only for GetTubeAtCell (0x00484F20).
+    pub(crate) fn is_tube_cell(&self, cell: NativeCellIdentity) -> bool {
+        self.land_type(cell) == i32::from(LandType::Tunnel.as_index())
+            && self.terrain().tube_for_native_cell(cell).is_some()
+    }
+
+    /// CellClass::IsNearTubeNW (0x00484AE0). A run of mouths ends at the
+    /// first or second cell north or west of the receiver.
+    pub(crate) fn is_near_tube_northwest(&self, cell: NativeCellIdentity) -> bool {
+        if self.is_tube_cell(cell) {
+            return true;
+        }
+        for direction in [0, 6] {
+            let first = self.neighbor(cell, direction);
+            let second = self.neighbor(first, direction);
+            if self.is_tube_cell(first) && !self.is_tube_cell(second) {
+                return true;
+            }
+            let third = self.neighbor(second, direction);
+            if self.is_tube_cell(second) && !self.is_tube_cell(third) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// CellClass::IsAtTubeEntrance (0x00484D60), the JumpJet infantry
+    /// What_Action check at 0x0051F89D. The side cells branch from southeast.
+    pub(crate) fn is_at_tube_entrance(&self, cell: NativeCellIdentity) -> bool {
+        if self.is_tube_cell(cell) {
+            return true;
+        }
+        let southeast = self.neighbor(cell, 3);
+        let diagonal = self.neighbor(southeast, 3);
+        if self.is_tube_cell(southeast) || self.is_tube_cell(diagonal) {
+            return true;
+        }
+        let south = self.neighbor(southeast, 4);
+        let east = self.neighbor(southeast, 2);
+        self.is_tube_cell(south) || self.is_tube_cell(east)
     }
 }
 

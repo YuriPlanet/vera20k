@@ -9,6 +9,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::anim_class::{AnimClassSpawnDescriptor, AnimObject};
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::hash::Hasher;
@@ -18,6 +19,12 @@ fn corpus() -> &'static Value {
 }
 
 fn rules_from_corpus(native: &Value) -> RuleSet {
+    rules_from_corpus_with(native, "", "")
+}
+
+/// The corpus rules, with `extra` appended to FLAMEGUY's ART and `rules` to
+/// the rules.
+fn rules_from_corpus_with(native: &Value, extra: &str, rules: &str) -> RuleSet {
     // Physical lexical ART and original reader frame counts are independent
     // inputs; no expected movement, stage, or RNG result becomes a fixture prior.
     let mut text = String::new();
@@ -25,6 +32,9 @@ fn rules_from_corpus(native: &Value) -> RuleSet {
         text.push_str(&format!("[{name}]\n"));
         for (key, value) in section.as_object().unwrap() {
             text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
+        }
+        if name == "FLAMEGUY" {
+            text.push_str(extra);
         }
     }
     let art_ini = IniFile::from_str(&text);
@@ -45,7 +55,7 @@ fn rules_from_corpus(native: &Value) -> RuleSet {
         .join(",");
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(&format!(
-            "[Animations]\n{animations}[CombatDamage]\nSplashList={splashes}\n"
+            "[Animations]\n{animations}[CombatDamage]\nSplashList={splashes}\n{rules}"
         )),
         &art_ini,
     )
@@ -133,7 +143,7 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, AnimId) {
     let ty = sim.interner.intern("FLAMEGUY");
     let (rx, ry, sx, sy, z) = coord.to_cell_sub_z();
     if let Some(hex) = input["scenario_before_constructor"].as_str() {
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(hex);
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(hex);
     }
     let id = sim
         .spawn_anim_at_world(
@@ -207,7 +217,7 @@ fn physical_flaming_guy_methods_and_full_ai_histories_match_original() {
         );
         // The constructor was checked independently above. Import the full
         // measured continuation cursor rather than infer its draw count.
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         match input["kind"].as_str().unwrap() {
             "enter" => {
@@ -320,15 +330,15 @@ fn admission_reads_wall_flag_and_raw_plane_without_reserving_a_cell() {
         None,
     );
     let wall = overlays.id_for_name("FENCE").unwrap();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_overlay(33, 32, wall, 0);
     let coord = sim.anim(id).unwrap().world_coord;
-    let raw = sim.substrate.raw_cell_occupation.clone();
+    let raw = (*sim.substrate.raw_cell_occupation).clone();
     assert!(!sim.flaming_guy_can_enter(coord, (33, 32), Some(&overlays)));
-    assert_eq!(sim.substrate.raw_cell_occupation, raw);
+    assert_eq!(*sim.substrate.raw_cell_occupation, raw);
     // The bridge branch precedes the wall/ground branch and uses alternate
     // occupation; a ground wall must not deny an otherwise clear high deck.
     sim.resolved_terrain
@@ -396,7 +406,7 @@ fn runner_destination_progress_and_fall_survive_serde_and_affect_world_hash() {
     let (mut continued, continued_id) = scene(&rules, &json!({"z": 500}));
     assert_eq!(continued_id, id);
     *continued.substrate.anims.get_mut(id).unwrap() = restored;
-    continued.scenario_rng = sim.scenario_rng.clone();
+    *continued.scenario_rng = (*sim.scenario_rng).clone();
     // Continue the serialized object through production AI on the same flat
     // input scene. This is Rust serde continuation, not native SaveGame parity.
     for frame in 5..300 {
@@ -466,7 +476,7 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
         .get_mut(&opponent)
         .unwrap()
         .set_player_control_for_test(true);
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.resolve_rule_animation_lists(&rules);
@@ -558,4 +568,59 @@ fn stock_oil_derrick_death_weapon_produces_a_running_flameguy_in_master_frames()
         sim.anim(id).is_none(),
         "the runner must naturally expire and drain"
     );
+}
+
+/// Under Ares a flaming guy's glow moves at the head of its ObjectClass::AI
+/// (`0x00423B1E`, hook `0x005F3E70`), after the runner and before the fall
+/// that follows (`0x005F3F11`): on a falling visit the glow sits where the
+/// runner left it, one fall step above the Anim.
+#[test]
+fn an_ares_flaming_guys_glow_moves_before_its_fall() {
+    let native = corpus();
+    // An Ares key switches Ares on.
+    let mut rules = rules_from_corpus_with(
+        native,
+        "AlphaImage=GLOW\n",
+        "[VehicleTypes]\n0=TANK\n[TANK]\nImmuneToAbduction=yes\n",
+    );
+    assert!(rules.ares());
+    rules.supply_alpha_image_for_test(
+        "GLOW",
+        crate::rules::alpha_image_assets::AlphaImage::for_test([61, 31], [0, 0, 1, 1], vec![254]),
+    );
+    let (mut sim, id) = scene(&rules, &json!({"z": 500}));
+    let origin = |sim: &Simulation| -> Vec<[i32; 2]> {
+        sim.alpha_shape_draws(&rules)
+            .map(|draw| draw.origin)
+            .collect()
+    };
+    for frame in 0..200 {
+        let rate = sim
+            .anim(id)
+            .unwrap()
+            .flaming_guy
+            .clone()
+            .unwrap_or_default()
+            .fall;
+        visit(&mut sim, &rules, id, frame);
+        let anim = sim.anim(id).unwrap();
+        let still_falling = anim
+            .flaming_guy
+            .as_ref()
+            .is_some_and(|runner| runner.fall.falling());
+        // A step of 14 leptons or more moves the glow at least a pixel.
+        if frame % 2 == 0 || !rate.falling() || !still_falling || rate.rate() > -14 {
+            continue;
+        }
+        let after = anim.world_coord;
+        let drawn = origin(&sim);
+        sim.substrate.anims.get_mut(id).unwrap().world_coord = AnimWorldCoord {
+            z: after.z.wrapping_sub(rate.rate()),
+            ..after
+        };
+        sim.update_alpha_shape(id, ObjectKind::Anim, &rules);
+        assert_eq!(drawn, origin(&sim), "frame {frame}");
+        return;
+    }
+    panic!("the guy never fell 14 leptons in a frame");
 }

@@ -712,12 +712,13 @@ pub(crate) fn represented_assign_target_admitted(
         stored
     };
 
+    let note = entity.note_names();
     if requested.is_none() {
         // `0x006FCF38..0x006FCF4E`: a NULL target goes on to the
         // SpawnManager (`SetTarget 0x006B7B90`), which drops a queued
         // retarget while it keeps a current target.
         if let Some(manager) = entity.spawn_manager.as_mut() {
-            manager.set_target(None);
+            manager.queue_target(None, note);
         }
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
@@ -726,7 +727,7 @@ pub(crate) fn represented_assign_target_admitted(
         }
     }
     // The store (`0x006FCF3E`).
-    entity.attack_target.set(requested);
+    entity.attack_target.set(requested, note);
     // `0x006FCF61..0x006FCF86`: InRange refuses a NULL target (`0x006F7237`).
     if requested.is_none() {
         entity.release_fire_particle_system();
@@ -743,7 +744,10 @@ pub(crate) fn represented_assign_destination(
 ) {
     match requested {
         Some(target) => crate::sim::movement::navcom::publish_nav_com(entity, target),
-        None => entity.navigation.publish_nav_com(None),
+        None => {
+            let note = entity.note_names();
+            entity.navigation.publish_nav_com(None, note);
+        }
     }
 }
 

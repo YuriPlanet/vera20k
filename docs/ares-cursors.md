@@ -69,6 +69,9 @@ NoCursor=Disallowed                     ; over a cell it may not fire at
   whose `Cursor.Enter`/`NoEnter` defaults have radar frames, and an armed
   Chronosphere leaves no radar action, selection or not.
 
+Power mode's TogglePower and NoTogglePower actions (`0x69281E`,
+`0x4ABFBE`) are in [ares-commands.md](ares-commands.md).
+
 Cursor choice is presentation only: no simulation state, RNG draw or hash
 reads the list or the overrides.
 
@@ -76,9 +79,6 @@ reads the list or the overrides.
 
 - `DisplayClass_ChooseAction_CanSell` (`0x6929FC`) is ported with the unit
   sale ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
-- `DisplayClass_LeftMouseButtonUp_ExecPowerToggle` (`0x4ABFBE`) and the
-  TogglePower/NoTogglePower actions: the player's toggle-power mode (the Ares
-  TogglePower command, `0x69281E`) is not in VERA.
 - `FootClass_ActionOnObject_Allow` (`0x4D7524`) only lets the Ares
   superweapon actions reach a Foot's click; VERA's radar drops a NoCursor
   click instead of dispatching it. `0x4AB366`, `0x4AB44A` and `0x5BDD9F` are

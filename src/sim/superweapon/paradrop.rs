@@ -41,6 +41,9 @@
 //!   2^32 minus its size natively (the loop counts down through zero); VERA
 //!   sends such a plane empty. Trigger: rules authoring either; retail
 //!   authors one entry in each list. Effect: an empty plane flies the run.
+//!   A count above VERA's own `PARADROP_PASSENGER_LIMIT` boards only the
+//!   limit (native boards the full count). Trigger: rules authoring only, no
+//!   retail list comes near it. Effect: a smaller drop than asked.
 //! - An infantry name VERA has no type for. The list reader allocates a
 //!   type for an unknown name (`InfantryTypeClass::FindOrAllocate @
 //!   0x00524CB0`) and SendParadropPlanes builds it; VERA builds no passenger.
@@ -537,9 +540,19 @@ pub(super) fn send_planes(
     placed.is_some()
 }
 
+/// VERA's bound on the passengers one type puts in one plane. The counts come
+/// raw from `[General] *ParaDropNum=` and Ares' `[Side]`/`[Country]`/
+/// superweapon `ParaDrop.Num=` lists; their values are read only by this
+/// loop (the Spy Plane compares list lengths), so the bound sits here, where
+/// the loop is sized, instead of at five readers: a count near `i32::MAX`
+/// would construct passengers until the tick hangs, and outside data never
+/// stops the game. Retail lists ask far fewer (single digits).
+const PARADROP_PASSENGER_LIMIT: u32 = 256;
+
 /// SendParadropPlanes's passenger block (`0x0065E7BF..0x0065E7FB`), and
 /// SendPDPlane's for each type: `count` passengers of the `category` type
-/// `type_id`, each at the cargo's head. A plane whose type declares no
+/// `type_id`, each at the cargo's head, at most
+/// [`PARADROP_PASSENGER_LIMIT`]. A plane whose type declares no
 /// `Passengers=` gets its hold here: native carries a CargoClass in every
 /// Foot.
 fn board_passengers<'k>(
@@ -556,7 +569,7 @@ fn board_passengers<'k>(
         return;
     };
     let owner = owner.into();
-    for _ in 0..count {
+    for _ in 0..count.min(PARADROP_PASSENGER_LIMIT) {
         let Some(passenger) = sim.construct_resolved_object_limbo_at_height(
             object,
             owner,

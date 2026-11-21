@@ -19,7 +19,7 @@ fn signed_actual_and_estimated_health_survive_save_restore_independently() {
         sim.substrate.entities.insert(entity);
         // Native load resets Scenario RNG to seed zero; isolate the health
         // roundtrip from that intentional load transition.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let before = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "signed-health", 0);
         let mut restored = GameSnapshot::load(&bytes)
@@ -110,7 +110,7 @@ fn fractional_passenger_sizes_roundtrip_and_recompute_after_remove() {
         sim.substrate.entities.insert(passenger);
     }
 
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let before = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "fractional-cargo", 0);
     let mut restored = GameSnapshot::load(&bytes)
@@ -193,7 +193,7 @@ fn restore_rejects_a_live_infantryman_with_the_dying_mark() {
 #[test]
 fn authored_wall_neighbor_authority_roundtrips_v115() {
     let mut sim = Simulation::new();
-    sim.overlay_grid = Some(
+    *sim.overlay_grid = Some(
         crate::sim::overlay_grid::OverlayGrid::from_finalized_map_payload(
             crate::map::authored_overlay::FinalizedOverlayPayload::from_cells_for_test(
                 2,
@@ -226,7 +226,7 @@ fn overlay_rubble_building_type_roundtrips() {
     grid.place_overlay(1, 2, 0xEF, 4);
     grid.cell_mut_for_test(1, 2).rubble_building_type = Some(ruin);
     grid.place_overlay(2, 2, 0xEF, 0);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "rubble", 0);
     let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
@@ -331,7 +331,7 @@ fn drive_ship_active_and_stashed_slope_phase_roundtrip_without_resample_or_rng()
     let mut live_cell = crate::map::resolved_terrain::test_clear_cell(0, 0);
     live_cell.slope_type = 12;
     let live_terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![live_cell]);
-    restored.resolved_terrain = Some(live_terrain.clone());
+    *restored.resolved_terrain = Some(live_terrain.clone());
     assert_eq!(
         restored
             .substrate
@@ -394,7 +394,7 @@ fn building_loss_index_survives_transfer_and_snapshot_with_its_full_hash_value()
     let mut hashes = std::collections::BTreeSet::new();
     for retained in [0, 3, 11, -1] {
         let mut sim = Simulation::new();
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let mut building = GameEntity::test_default_of_category(
             1,
             "GAPOWR",
@@ -456,7 +456,7 @@ fn techno_constructor_word_and_installed_upgrades_roundtrip_without_a_draw_and_h
     sim.set_building_upgrade_art_name(upgrade_type, 0, "ART_UP", &rules);
     // Native load resets Scenario RNG to Seed(0); align the source before
     // comparing persistence/hash state unrelated to that separate rule.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let source_rng = sim.scenario_rng.logical_state();
     let source_hash = sim.state_hash();
 
@@ -514,7 +514,7 @@ fn native_tiberium_cargo_identity_roundtrips_and_changes_miner_and_slave_hashes(
         sim.substrate.entities.insert(entity);
         // Native loading resets Scenario RNG to Seed(0). Keep that
         // independent rule out of this cargo persistence/hash comparison.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let hash = sim.state_hash();
         let bytes = GameSnapshot::save(&sim, 0, 0, "native cargo identity", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -569,7 +569,7 @@ fn slave_manager_roundtrips_and_hashes_its_nodes_and_links() {
         slave.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), cargo);
         sim.substrate.entities.insert(slave);
     }
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let source_rng = sim.scenario_rng.logical_state();
     let source_hash = sim.state_hash();
 
@@ -775,7 +775,7 @@ fn building_anim_slot_restore_keeps_expired_slots_clear_during_deferred_destroy(
     let bytes = GameSnapshot::save(&sim, 0, 0, "expired-slot.map", 0);
     // Scenario load consumes the saved RNG state and reseeds zero; keep
     // the animation-constructor draw in the saved input, as above.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
@@ -829,7 +829,7 @@ fn building_anim_slots_roundtrip_with_runtime_and_reverse_index() {
     // Native Scenario load consumes the saved RNG bytes, then reseeds zero.
     // The RandomRate constructor draw remains observable before saving;
     // compare all saved slot/runtime state against the native load state.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected = sim.state_hash();
     assert_eq!(
         GameSnapshot::read_header(&bytes).unwrap().layout,
@@ -920,7 +920,7 @@ fn gsi_13_06_body_frame_counter_roundtrips_and_changes_hash() {
             5,
             false,
         ));
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let zero_counter_hash = sim.state_hash();
     sim.substrate
         .entities
@@ -1071,7 +1071,7 @@ fn gsi_05_10_pending_building_fire_roundtrips_and_changes_hash() {
     }
     // Full snapshot load resets Scenario RNG to Seed0. Compare the
     // authoritative delayed-fire state on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let without_latch = sim.state_hash();
     let shot = PendingBuildingFire::new(17, DelayedFire::Weapon(WeaponSlot::Secondary));
     sim.substrate
@@ -1164,7 +1164,7 @@ fn gsi_04_15_active_tube_detachment_and_exact_z_roundtrip_hash() {
         .expect("active TubeMovement fixture enters LogicClass order");
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // TubeMovement persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_15_tube", 0);
@@ -1225,7 +1225,7 @@ fn gsi_04_07_wall_sell_pending_command_house_mode_roundtrip_and_hash() {
     ));
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // pending-command/house-mode persistence on that post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     sim.houses
         .get_mut(&owner)
@@ -1335,7 +1335,7 @@ fn gsi_04_07_damage_v60_air_spatial_armor_berserk_hostile_hit_iq_smoke_capture_a
         ));
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // damage-authority persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     {
@@ -1558,7 +1558,7 @@ fn gsi_04_05_hidden_snapshot_and_hash_preserve_counter_and_exit_profile() {
 
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // hidden-occupation persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     sim.substrate.hidden_occupation.exit_building(
         (10, 10),
@@ -1644,7 +1644,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
     sim.substrate.entities.insert(building);
     let mut reservation_terrain = flat_terrain(4, 5);
     reservation_terrain.test_set_native_allocated_cells(&[(3, 4)]);
-    sim.resolved_terrain = Some(reservation_terrain);
+    *sim.resolved_terrain = Some(reservation_terrain);
     sim.substrate
         .base_reservations
         .reserve(sim.resolved_terrain.as_ref(), 3, 4, 0);
@@ -1660,7 +1660,7 @@ fn gsi_04_05_reservation_roundtrip_preserves_real_and_house_state_but_clears_dum
     );
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // base-reservation persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     sim.substrate
@@ -1773,7 +1773,7 @@ fn gsi_04_05_v40_roundtrip_restores_drive_runtime_and_cleared_foot_occupation() 
         .set_foot_occupation_enabled(false);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // Drive and Foot enable persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
 
     let bytes = GameSnapshot::save(&sim, 0, 0, "gsi_04_05", 0);
@@ -1825,17 +1825,17 @@ fn gsi_04_07_v40_roundtrip_restores_wall_owner() {
     let owner = sim.interner.intern("AMERICANS");
     let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
     overlays.place_owned_wall(3, 4, 2, 0x1A, owner);
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate
     // wall-owner persistence on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     let mut unowned = Simulation::new();
-    unowned.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *unowned.scenario_rng = crate::sim::rng::SimRng::new(0);
     let _ = unowned.interner.intern("AMERICANS");
     let mut unowned_overlays = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
     unowned_overlays.place_overlay(3, 4, 2, 0x1A);
-    unowned.overlay_grid = Some(unowned_overlays);
+    *unowned.overlay_grid = Some(unowned_overlays);
     assert_ne!(
         unowned.state_hash(),
         expected_hash,
@@ -1969,7 +1969,7 @@ fn constructor_owner_survives_transfers_and_snapshot_restore() {
     sim.substrate.entities.change_owner(1, current);
     // Match the scenario RNG's post-load seed reset for this state-only
     // snapshot test. Physical resumed capture is tested separately.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "captured-owner", 0);
     let mut loaded = GameSnapshot::load(&bytes).expect("load constructor owner");

@@ -286,7 +286,7 @@ fn fixture(row: &Value) -> Scene {
             e.health.set_for_test(health as i32);
         }
     }
-    s.sim.scenario_rng = crate::sim::rng::SimRng::new(case["seed"].as_u64().unwrap_or(1));
+    *s.sim.scenario_rng = crate::sim::rng::SimRng::new(case["seed"].as_u64().unwrap_or(1));
     radio::take_transmit_log();
     s
 }

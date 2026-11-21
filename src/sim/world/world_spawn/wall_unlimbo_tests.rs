@@ -13,29 +13,36 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::world::Simulation;
 
 const RULES: &str = "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-     [BuildingTypes]\n0=TOWER\n1=GAWALL\n2=GATE\n3=POST\n4=FENCE\n\
-     [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
+     [BuildingTypes]\n0=TOWER\n1=GAWALL\n2=GATE\n3=POST\n4=FENCE\n5=MODWALL\n\
+     [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n3=MODWALL\n\
      [General]\nWallTower=TOWER\nGDIGateOne=GATE\n\
      [TOWER]\nStrength=500\n\
      [GATE]\nStrength=500\nGate=yes\n\
      [POST]\nStrength=500\nLaserFencePost=yes\n\
      [FENCE]\nStrength=300\nLaserFence=yes\n\
      [GASAND]\nWall=yes\n[CYCL]\n[GAWALL]\nStrength=300\nWall=yes\n\
+     [MODWALL]\nStrength=300\nWall=yes\n\
      [Clear]\nBuildable=yes\nFloat=0%\n";
 
 const ART: &str = "[TOWER]\nFoundation=1x1\n[GATE]\nFoundation=1x1\n[POST]\nFoundation=1x1\n\
-     [FENCE]\nFoundation=1x1\n[GAWALL]\nFoundation=1x1\nToOverlay=GAWALL\n";
+     [FENCE]\nFoundation=1x1\n[GAWALL]\nFoundation=1x1\nToOverlay=GAWALL\n\
+     [MODWALL]\nFoundation=1x1\nToOverlay=MODWALL\n";
 
 const GAWALL: u8 = 2;
+const MODWALL: u8 = 3;
 
 fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry) {
-    let ini = IniFile::from_str(RULES);
+    arena_from(RULES)
+}
+
+fn arena_from(rules: &str) -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    let ini = IniFile::from_str(rules);
     let art = IniFile::from_str(ART);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("fixture rules");
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     (sim, rules, registry)
 }
 
@@ -66,6 +73,27 @@ fn a_gate_sells_its_owners_walls_under_its_foundation() {
     assert_eq!(
         overlays_after_placing_on_own_wall("GATE"),
         [None, Some(GAWALL)]
+    );
+}
+
+/// Ares hook 0x00440709 (100156F0): the gate its placement hook lets stand on
+/// its owner's wall of any `Wall=yes` overlay sells that wall, not only
+/// GASAND, GAWALL and NAWALL.
+#[test]
+fn an_ares_gate_sells_its_owners_mod_wall_under_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    // A key only Ares reads switches Ares on.
+    let rules = RULES.replace("[General]\n", "[General]\nDegrade.Enabled=no\n");
+    let (mut sim, rules, registry) = arena_from(&rules);
+    assert!(rules.ares_form());
+    let owner = sim.interner.get("Americans").unwrap();
+    let grid = sim.overlay_grid.as_mut().unwrap();
+    grid.place_owned_wall(10, 10, MODWALL, 0, owner);
+    sim.spawn_object_with_overlay_registry("GATE", "Americans", 10, 10, 0, &rules, &registry)
+        .expect("an Ares gate stands on its owner's wall");
+    assert_eq!(
+        sim.overlay_grid.as_ref().unwrap().cell(10, 10).overlay_id,
+        None
     );
 }
 

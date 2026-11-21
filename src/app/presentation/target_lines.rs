@@ -373,20 +373,14 @@ pub(crate) fn rally_line_coords(
     cells: &NativeCellQuery<'_>,
 ) -> Option<[crate::sim::components::DriveCoord; 2]> {
     use crate::sim::movement::ground_pose::{
-        object_get_coords, query_ground_height, target_get_coords,
+        object_get_coords, query_surface_z, target_get_coords,
     };
     if entity.category() != EntityCategory::Structure {
         return None;
     }
     let mut target = target_get_coords(entity.archive_target()?, sim, Some(cells))?;
-    let ground = query_ground_height(cells, target).ok()?;
-    target.z = ground.wrapping_add(
-        if cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0 {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        },
-    );
+    let on_bridge = cells.flags(cells.lookup_world(target.x, target.y)) & 0x100 != 0;
+    target.z = query_surface_z(cells, target, on_bridge).ok()?;
     Some([object_get_coords(entity, Some(cells.terrain())), target])
 }
 
@@ -416,24 +410,20 @@ pub(crate) fn action_line_endpoints(
         .last()
         .copied()
         .or(entity.navigation.nav_com())?;
-    use crate::sim::movement::ground_pose::{
-        object_location, query_ground_height, target_get_coords,
-    };
+    use crate::sim::movement::ground_pose::{object_location, query_surface_z, target_get_coords};
     let terrain = sim.resolved_terrain();
     let mut end = target_get_coords(TargetKind::from(nav_target), sim, cells)?;
     let end_cell = (
         crate::util::lepton::lepton_to_cell_packed(end.x),
         crate::util::lepton::lepton_to_cell_packed(end.y),
     );
-    // Foot4DC205..4DC27A: retain target+48 Z except for an in-Size cell
-    // with flag100, which replaces it with ground578080 + Foot's deck height.
+    // Foot4DC205..4DC27A keeps target+48 Z unless the in-Size cell has flag100.
+    // Use the movement surface there, including the bridge correction over dips.
     if sim.map_cell_in_bounds(end_cell)
         && let Some(cells) = cells
         && cells.flags(cells.lookup_world(end.x, end.y)) & 0x100 != 0
     {
-        end.z = query_ground_height(cells, end)
-            .ok()?
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        end.z = query_surface_z(cells, end, true).ok()?;
     }
     let start = object_location(entity, terrain);
     Some(SelectedActionLine {
