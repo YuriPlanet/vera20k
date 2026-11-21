@@ -612,6 +612,7 @@ pub(super) fn advance(
         .unwrap_or(target_cell);
     let left_behind = |unit: &Unit| cell_distance(unit.cell, tip) > STAGGER_BEHIND;
     let mut issued = 0;
+    let mut refused = 0;
     for unit in &fighters {
         if issued >= ADVANCE_ORDERS_PER_FRAME {
             break;
@@ -750,9 +751,29 @@ pub(super) fn advance(
         // gave, and a record of one holds the unit for its whole term.
         if !super::orders::issue(brain, out, rules, obs, unit.entity_id, goal) {
             brain.tracked.void(unit.entity_id, kind);
+            refused += 1;
+            if std::env::var("AUTOPLAY_TRACE_REFUSE").is_ok() && tick % 600 == 0 {
+                log::info!(
+                    "refuse probe: unit={} target={} hostile={} engage={} hurt={} in_bounds={:?}",
+                    unit.entity_id,
+                    target_id,
+                    obs.is_hostile(target_id),
+                    obs.can_engage(rules, unit.entity_id, target_id),
+                    obs.can_hurt(rules, unit.entity_id, target_id),
+                    target_cell,
+                );
+            }
             continue;
         }
         issued += 1;
+    }
+    if std::env::var("AUTOPLAY_TRACE_REFUSE").is_ok() && tick % 600 == 0 {
+        log::info!(
+            "budget probe: tick={} issued={} refused={}",
+            tick,
+            issued,
+            refused
+        );
     }
     true
 }

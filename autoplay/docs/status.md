@@ -581,6 +581,39 @@ push target 在 (146,120) 从 tick 27000 一直挂到 33600。
 下一轮的门：命令是被谁吃掉的。只剩两个候选 —— `ADVANCE_ORDERS_PER_FRAME` 的 8 条预算在轮到这些单位之前就用完；
 或者 `super::orders::issue` 在这些单位上返回 false（它只在越界时打日志，所以是静默的）。
 
+### 命令被谁吃掉了：一个不许开火的民用建筑（已定位，修法被否决）
+
+`AUTOPLAY_TRACE_REFUSE=1` 在 `super::orders::issue` 返回 false 的地方打印原因（src/sim/strategy/assist/advance.rs，
+按 tick % 600 采样），seed 4242 的结果：
+
+```
+refuse probe: unit=13465 target=2564 hostile=false engage=true hurt=true in_bounds=(146, 120)
+budget probe: tick=30000 issued=0 refused=47
+budget probe: tick=31200 issued=0 refused=53
+```
+
+298 次拒绝，全部是 `hostile=false`，而 `engage=true hurt=true` —— 目标 2564 是一栋**中立**民用建筑。
+`neutral_blocker` 把它塞进 target_id（它挡在 fist 和真目标之间），`orders::admits` 的第一条
+`obs.is_hostile(target)` 因为中立房是 passive 而返回 false，于是每一个 `Goal::Attack` 都被静默丢掉，
+整支拳头就停在那栋楼前面。这解释了之前所有的观测：engage=Ready、没有 tracked intent、没有命令、
+mission 停在 Guard、census 里周围 12 格敌方建筑数为 0（它本来就不在 census 里）。
+
+修法：`neutral_blocker` 的结果只在 `obs.is_hostile(id)` 时才替换目标，否则仍然瞄后面的建筑。
+六局（target/autoplay-results/neutral.jsonl）：
+
+| seed | 基线 | 修后 |
+|---|---|---|
+| 24301 | won 31957 own=121 enemy=1 | **timeout** own=142 enemy=1 army=75 |
+| 19 | timeout own=162 enemy=13 | timeout own=142 enemy=53 |
+| 10 | won 33912 own=162 army=86 | **won 24043** own=88 army=36 |
+| 7 | timeout own=137 enemy=37 | **won 34468** own=145 enemy=1 |
+| 4242 | timeout own=151 enemy=19 | timeout own=145 enemy=19（没变） |
+| 31337 | timeout own=144 enemy=12 | timeout own=139 enemy=67 |
+
+净结果更差：参照胜局 24301 丢了，19 与 31337 的敌方存量反而涨了三五倍，总账 own 877→801、enemy 84→153。
+所以**回退**。结论是这一层的取舍未定：瞄准民用块会让 10 提前 9869 帧获胜、让 7 首次获胜，
+但另外四局会被拖进消耗。下一轮要动的是「不瞄民用块时怎么绕过它」，不是目标替换。
+
 ## 5. 结构（改代码前必读）
 
 ```
