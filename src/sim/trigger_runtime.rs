@@ -155,6 +155,12 @@ pub enum TriggerEffect {
     EvaVoice {
         index: i32,
     },
+    /// Something about the scenario's Wasm extension modules the players
+    /// should know at the start, such as a map's ignored `Wasm.Tags` (RFC
+    /// 0001 section 2). Last, so saved effects keep their variant numbers.
+    ExtModuleNotice {
+        text: String,
+    },
 }
 
 /// Original definition pointers translated to retained registry ordinals.
@@ -1145,6 +1151,13 @@ impl TriggerRuntime {
     /// The tag attached to a cell, as its tag-storage index.
     pub(crate) fn cell_tag(&self, cell: NativeCellIdentity) -> Option<usize> {
         self.cell_tags.get(&cell).copied()
+    }
+
+    /// The tag attached to an object, as its tag-storage index.
+    pub(crate) fn object_tag(&self, object: u64) -> Option<usize> {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .copied()
     }
 
     /// A global trigger variable's current value. Out-of-range indices read

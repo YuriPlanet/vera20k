@@ -111,6 +111,9 @@ pub const NAME_TECHNO_TYPE: i32 = 0;
 pub const NAME_WEAPON: i32 = 1;
 pub const NAME_WARHEAD: i32 = 2;
 pub const NAME_PROJECTILE: i32 = 3;
+pub const NAME_ANIM: i32 = 4;
+pub const NAME_VOXEL_ANIM: i32 = 5;
+pub const NAME_PARTICLE_SYSTEM: i32 = 6;
 pub const NAME_SUPER_WEAPON: i32 = 7;
 pub const NAME_OVERLAY: i32 = 9;
 pub const NAME_COUNTRY: i32 = 11;
@@ -137,8 +140,9 @@ pub const SCOPES: i32 = 9;
 /// Every property name of appendix section 7, deduplicated (properties with
 /// the same name share an ID), in order of first appearance; the ID is the
 /// index. Provisional numbering until open question 5 fixes the tables.
-/// `Passable.<SpeedType>` (7.6) and the global numeric INI keys (7.7, 7.8)
-/// expand from rules data and are not listed yet.
+/// `Passable.<SpeedType>` (7.6) comes last, one per `SpeedType=` value in
+/// the order the INI reader numbers them; the global numeric INI keys (7.7,
+/// 7.8) expand from rules data and are not listed yet.
 #[rustfmt::skip]
 pub const PROPERTIES: &[&str] = &[
     // 7.1 Objects
@@ -181,6 +185,9 @@ pub const PROPERTIES: &[&str] = &[
     "Label", "Art", "Width", "Hold", "Gap", "Visible", "Dismissable", "Clickable",
     "Hoverable", "Items", "ItemProgress", "ItemTooltips", "Fill", "Anchor", "Palette", "Tint",
     "Anim", "HideAnchor", "Number", "Viewer", "IsSpectator", "CaptureMapClick",
+    // 7.6 Cells: Passable.<SpeedType>
+    "Passable.Foot", "Passable.Track", "Passable.Wheel", "Passable.Hover", "Passable.Winged",
+    "Passable.Float", "Passable.Amphibious", "Passable.FloatBeach",
 ];
 
 /// A property's ID by name, ASCII case-insensitive.

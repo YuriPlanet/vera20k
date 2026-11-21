@@ -13,7 +13,8 @@
 //! - the module's own random stream;
 //! - the log;
 //! - names of TechnoTypes, countries and properties (`lookup`, `name_of`);
-//! - reads of the object and house properties [`Host::get`] lists, and
+//! - reads of the object, house and type properties [`Host::get`] lists
+//!   ([`props`]), viewpoint properties in filter clauses and queries, and
 //!   `find` over objects and houses;
 //! - modifiers on objects ([`modifiers`]) and the variables modules declare
 //!   in `vera.vars` ([`vars`]);
@@ -38,14 +39,15 @@
 //! Saves carry each module's bytes, memory pages that are not all zero,
 //! mutable globals, random stream and status. A load puts them back
 //! ([`Simulation::restore_ext_modules`]) without running module code. The
-//! presentation copy carries no modules (RFC 15.1, item 8).
+//! presentation copy carries no modules (RFC 15.1, item 8). The state hash
+//! and the multiplayer frame checksum read a module's memory through its
+//! page digests, refreshed a fifteenth at a time ([`PageDigests`]).
 //!
 //! Residuals before this leaves preview:
-//! - The state hash and the multiplayer frame checksum read all of a
-//!   module's memory each time, not the RFC's 1/15 page rotation.
-//! - The in-game notice of a stopped module is English only.
+//! - The in-game notices of a stopped module and of a map's ignored
+//!   `Wasm.Tags` are English only.
 //! - House references use a provisional encoding ([`house_ref`]); the RFC
-//!   puts houses on the objects' creation counter.
+//!   puts houses on the objects' creation counter (see there).
 //! - TechnoType IDs are the rules' registry handles (`TypeHandle`), found by
 //!   name; a type whose ID two categories share reads as the first.
 //! - `set` writes `Health` (1 up to the type's Strength; a write of 0 or
@@ -60,10 +62,11 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROJECTILE, NAME_PROPERTY, NAME_SUPER_WEAPON,
-    NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Order, Query,
-    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status,
-    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE,
+    NAME_PROPERTY, NAME_SUPER_WEAPON, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE,
+    NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS, SCOPE_HOUSES,
+    SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND,
+    TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
@@ -75,6 +78,7 @@ mod held;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
+mod props;
 mod rules;
 pub(crate) mod vars;
 mod writes;
@@ -83,6 +87,7 @@ pub use actions::{ActionContext, run_action};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
 pub(crate) use orders::take_due_orders;
+use props::{View, type_property};
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
@@ -112,8 +117,15 @@ const GLOBAL_VARS: std::ops::Range<i32> = 100..150;
 pub const ACTION_ADD_MONEY: i32 = actions::ADD_MONEY;
 
 /// Provisional house reference: kind 0 with bit 47 set over the house array
-/// index. Houses here have no creation serial; the RFC's shared counter is a
-/// later step.
+/// index. Houses here have no creation serial (the RFC's appendix
+/// "References" puts them on the objects' counter). It stays so: the houses
+/// exist before the first object, so serials for them would renumber every
+/// object of every game, modules or not, and change the state hash of stock
+/// play and the meaning of serials in saves and replays already made; and the
+/// Rust SDK's `House::from_index`, which builds the reference without a host
+/// call, would need one. What the RFC asks of a house handle holds here as
+/// well: it is unique against every serial (a match allocates far fewer than
+/// 2^47), it never expires, and the house array is fixed for a match.
 const HOUSE_REF_BIT: i64 = 1 << 47;
 
 pub const fn house_ref(index: usize) -> i64 {
@@ -143,6 +155,9 @@ struct Slot {
     frame_budget: u64,
     /// Orders waiting for the next command step ([`orders`]).
     orders: Vec<orders::PendingOrder>,
+    /// The memory digests the state hash and the checksum read
+    /// ([`PageDigests`]).
+    digests: PageDigests,
 }
 
 impl ModuleSource {
@@ -168,10 +183,66 @@ struct SavedSlot {
     frame_budget: u64,
     #[serde(default)]
     orders: Vec<orders::PendingOrder>,
+    /// Saved so a loaded game hashes what the running one does; a save
+    /// from before the rotation has none, and its pages are digested at
+    /// restore.
+    #[serde(default)]
+    digests: PageDigests,
 }
 
 const fn default_frame_budget() -> u64 {
     FRAME_BUDGET
+}
+
+/// Frames for the digest rotation to visit every page (RFC 15.1, item 7).
+const DIGEST_ROTATION: usize = 15;
+
+/// One 32-bit FNV-1a digest per 64 KiB page of a module's memory, as far as
+/// it has grown (`memory.size`), for the state hash and the multiplayer
+/// checksum (RFC 15.1, item 7). [`PageDigests::refresh`] runs once a frame
+/// at the end of the module phase: it digests the pages whose index is the
+/// frame modulo 15, and any page grown since; the other pages keep their
+/// digest. A page is digested at least every 15 frames, so a divergence in
+/// module memory shows within 15 frames, and no frame digests more than a
+/// fifteenth of the memory plus its growth. Every machine refreshes the same
+/// pages on the same frames, so the digests agree wherever the memory does.
+/// A derived cache of the memory, saved with it (`SavedSlot::digests`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct PageDigests(Vec<u32>);
+
+impl PageDigests {
+    /// Every page of `memory` digested now.
+    fn of(memory: &[u8]) -> Self {
+        Self(
+            memory
+                .chunks(vera20k_wasm_ext::PAGE_BYTES)
+                .map(page_digest)
+                .collect(),
+        )
+    }
+
+    /// Digests this frame's share of `memory` (see the type).
+    fn refresh(&mut self, memory: &[u8], frame: u32) {
+        let pages: Vec<&[u8]> = memory.chunks(vera20k_wasm_ext::PAGE_BYTES).collect();
+        let known = self.0.len().min(pages.len());
+        self.0.resize(pages.len(), 0);
+        let phase = frame as usize % DIGEST_ROTATION;
+        let due = (phase..known)
+            .step_by(DIGEST_ROTATION)
+            .chain(known..pages.len());
+        for index in due {
+            self.0[index] = page_digest(pages[index]);
+        }
+    }
+
+    /// The digests as bytes, page order.
+    fn bytes(&self) -> impl Iterator<Item = u8> + '_ {
+        self.0.iter().flat_map(|digest| digest.to_le_bytes())
+    }
+}
+
+fn page_digest(page: &[u8]) -> u32 {
+    fnv1a(page.iter().copied())
 }
 
 /// The loaded simulation modules, in run order, and the modifiers and
@@ -232,6 +303,7 @@ impl serde::Serialize for ExtModules {
                 last_frame_ops: slot.last_frame_ops,
                 frame_budget: slot.frame_budget,
                 orders: slot.orders.clone(),
+                digests: slot.digests.clone(),
             })
             .collect();
         SavedExtModules {
@@ -324,15 +396,15 @@ impl ExtModules {
         Some(self.vars.get(var, holder))
     }
 
-    /// One 32-bit FNV-1a digest per module over its memory and globals, for
-    /// the multiplayer frame checksum, then one over the modifiers and the
+    /// One 32-bit FNV-1a digest per module over its globals and its memory
+    /// page digests ([`PageDigests`], the 1/15 rotation), for the
+    /// multiplayer frame checksum, then one over the modifiers and the
     /// declared variables' values when any are held. Byte-wise, in handle and
-    /// key order, so 32- and 64-bit platforms agree. Residual: it reads all
-    /// memory each frame instead of the RFC's 1/15 page rotation.
+    /// key order, so 32- and 64-bit platforms agree.
     pub(crate) fn checksum_digests(&self) -> impl Iterator<Item = u32> + '_ {
         let modules = self.slots.iter().map(|slot| {
             let globals = slot.module.globals().iter().flat_map(|g| g.to_le_bytes());
-            fnv1a(globals.chain(slot.module.memory().iter().copied()))
+            fnv1a(globals.chain(slot.digests.bytes()))
         });
         let values = &self.vars.values;
         let held = !self.modifiers.is_empty()
@@ -392,7 +464,9 @@ impl ExtModules {
             slot.disabled.is_some().hash(hasher);
             slot.rng.hash_state(hasher);
             slot.module.globals().hash(hasher);
-            slot.module.memory().hash(hasher);
+            // Memory through its page digests, the digest the checksum
+            // shares (RFC 15.1, item 7).
+            slot.digests.hash(hasher);
             slot.orders.hash(hasher);
         }
         self.modifiers.hash(hasher);
@@ -524,6 +598,9 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
                 | NAME_WEAPON
                 | NAME_WARHEAD
                 | NAME_PROJECTILE
+                | NAME_ANIM
+                | NAME_VOXEL_ANIM
+                | NAME_PARTICLE_SYSTEM
                 | NAME_SUPER_WEAPON
                 | NAME_COUNTRY
                 | NAME_TEAM_TYPE
@@ -550,6 +627,19 @@ fn rules_name_id(rules: &RuleSet, kind: i32, name: &str) -> Option<Option<i32>> 
         NAME_SUPER_WEAPON => rules
             .super_weapon_index(name)
             .and_then(|i| i32::try_from(i).ok()),
+        NAME_PROJECTILE => rules.projectile_index(name).map(|i| i as i32),
+        // The AnimType array position stock action 41 and `SpawnAnim` take;
+        // the first of a repeated name, as the native name search finds it.
+        NAME_ANIM => (0..)
+            .map_while(|i| rules.anim_type_name_by_index(i).map(|anim| (i, anim)))
+            .find(|(_, anim)| anim.eq_ignore_ascii_case(name))
+            .map(|(i, _)| i),
+        NAME_VOXEL_ANIM => rules
+            .voxel_anim_type_id_by_name(name)
+            .and_then(|id| i32::try_from(id.0).ok()),
+        NAME_PARTICLE_SYSTEM => rules
+            .ps_type_id_by_name(name)
+            .and_then(|id| i32::try_from(id.0).ok()),
         _ => return None,
     })
 }
@@ -577,6 +667,18 @@ fn rules_id_name(rules: &RuleSet, kind: i32, id: i32) -> Option<Option<&str>> {
             .ok()
             .and_then(|i| rules.super_weapon_order.get(i))
             .map(String::as_str),
+        NAME_PROJECTILE => u32::try_from(id)
+            .ok()
+            .and_then(|id| rules.projectile_at(id))
+            .map(|projectile| projectile.id.as_str()),
+        NAME_ANIM => rules.anim_type_name_by_index(id),
+        NAME_VOXEL_ANIM => usize::try_from(id)
+            .ok()
+            .and_then(|i| rules.voxel_anim_types_iter().nth(i))
+            .map(|anim| anim.name.as_str()),
+        NAME_PARTICLE_SYSTEM => rules
+            .particle_system_type_id_by_index(id)
+            .map(|id| rules.particle_system_type(id).name.as_str()),
         _ => return None,
     })
 }
@@ -600,27 +702,6 @@ fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> 
 fn techno_type(rules: &RuleSet, id: i32) -> Option<&crate::rules::object_type::ObjectType> {
     let id = usize::try_from(id).ok()?;
     rules.all_objects().nth(id)
-}
-
-/// A type's property (appendix 7.7). A wildcard or unknown ID is invalid.
-fn type_property(
-    rules: &RuleSet,
-    kind: i32,
-    id: u32,
-    name: &str,
-) -> Result<(i64, Status), Invalid> {
-    if kind != NAME_TECHNO_TYPE {
-        return Ok((0, Status::Unsupported));
-    }
-    let object = i32::try_from(id)
-        .ok()
-        .and_then(|id| techno_type(rules, id))
-        .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
-    Ok(match name {
-        "Strength" => (i64::from(object.strength), Status::Ok),
-        "Cost" => (i64::from(object.cost), Status::Ok),
-        _ => (0, Status::Unsupported),
-    })
 }
 
 impl SimHost for Host<'_, '_> {
@@ -894,6 +975,70 @@ const READABLE: &[&str] = &[
     "Frame",
     "PlayerCount",
     "GameSpeed",
+    // Objects (props.rs).
+    "Layer",
+    "Target",
+    "Experience",
+    "Storage",
+    "Transport",
+    "PassengerCount",
+    "TransportSpaceLeft",
+    "Team",
+    "Tag",
+    "DisguiseType",
+    "DisguiseOwner",
+    "Moving",
+    "Facing",
+    "TurretFacing",
+    "Armor",
+    // Viewpoint properties: in filter clauses and queries only.
+    "Relation",
+    "Revealed",
+    "Placeable",
+    // Houses.
+    "TechLevel",
+    "Country",
+    // Types and rules (props.rs).
+    "Soylent",
+    "Speed",
+    "ROT",
+    "Crushable",
+    "Selfhealing",
+    "Explodes",
+    "Power",
+    "Sight",
+    "InitialAmmo",
+    "Passengers",
+    "SizeLimit",
+    "Damage",
+    "ROF",
+    "Burst",
+    "MinimumRange",
+    "Range",
+    "CellSpread",
+    "PercentAtMax",
+    "Wall",
+    "Wood",
+    "Sparky",
+    "Fire",
+    "Conventional",
+    "Rocker",
+    "InfDeath",
+    // Globals (cells.rs).
+    "Difficulty",
+    "MissionTimer",
+    "MissionTimerRunning",
+    "AmbientLight",
+    "IonStormActive",
+    // Cells: Passable.<SpeedType>.
+    "Passable.Foot",
+    "Passable.Track",
+    "Passable.Wheel",
+    "Passable.Hover",
+    "Passable.Winged",
+    "Passable.Float",
+    "Passable.Amphibious",
+    "Passable.FloatBeach",
 ];
 
 /// Appendix 7.2's modifiable properties: `PROPERTIES` from the first to the
@@ -915,14 +1060,23 @@ impl Host<'_, '_> {
         Ok(self.sim.houses.order().get(index).copied())
     }
 
-    /// A property, as `get` reads it.
+    /// A property, as `get` reads it: without a viewpoint.
     fn read(&self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
+        self.read_in(reference, prop, View::default())
+    }
+
+    /// A property read for `view` (appendix 7, "Viewpoint"): a filter
+    /// clause reads for the trigger house, a query for its `viewpoint`. A
+    /// direct `get` has none, and the viewpoint properties answer
+    /// `Unsupported` there.
+    fn read_in(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid> {
         let name = property_name(prop).unwrap_or_default();
         let Some(reference) = decode_ref(reference)? else {
             return Ok((0, Status::Gone));
         };
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
+                Some(entity) if name == "Relation" => self.relation(entity.owner(), view),
                 Some(entity) => self.object_property(entity, name),
                 None => match self.sim.ext_modules.modifiers.get(id) {
                     Some(modifier) => modifier
@@ -931,11 +1085,17 @@ impl Host<'_, '_> {
                     None => (0, Status::Gone),
                 },
             },
+            Ref::House(index) if name == "Relation" => {
+                match self.sim.houses.order().get(index).copied() {
+                    Some(house) => self.relation(house, view),
+                    None => (0, Status::Gone),
+                }
+            }
             Ref::House(index) => self.house_property(index, name),
             Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
-            Ref::Cell { x, y } => self.cell_property(x, y, name),
+            Ref::Cell { x, y } => self.cell_property(x, y, name, view),
             Ref::Waypoint(number) => match self.waypoint_cell(number) {
-                Some((x, y)) => self.cell_property(x, y, name),
+                Some((x, y)) => self.cell_property(x, y, name, view),
                 None => (0, Status::NotFound),
             },
             Ref::Global => self.global_property(name),
@@ -1018,7 +1178,7 @@ impl Host<'_, '_> {
             "Online" => return (0, Status::Unsupported),
             _ => match Stat::wired_property(name) {
                 Some(stat) => entity.effective_stat(stat),
-                None => return (0, Status::Unsupported),
+                None => return self.more_object_property(entity, name),
             },
         };
         (value, Status::Ok)
@@ -1042,18 +1202,33 @@ impl Host<'_, '_> {
             "LowPower" => i64::from(power.is_some_and(|p| p.low_power())),
             "IsDefeated" => i64::from(house.is_defeated()),
             "IsHuman" => i64::from(house.is_human()),
+            "TechLevel" => i64::from(house.tech_level()),
+            "Country" => match self
+                .sim
+                .interner
+                .try_resolve(house.house_type_id())
+                .and_then(|name| self.rules.country_index(name))
+            {
+                Some(country) => type_ref(NAME_COUNTRY, u32::from(country.0)),
+                None => return (0, Status::NotFound),
+            },
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
     }
 
     /// Whether `candidate` passes every clause; `None` when a clause needs
-    /// what is not kept yet. Clauses read like `get`; a reading that is not
-    /// `Ok` fails its clause.
+    /// what is not kept yet. Clauses read like `get`, for the query's
+    /// viewpoint; a reading that is not `Ok` fails its clause.
     fn passes(&self, candidate: i64, query: &Query) -> Result<Option<bool>, Invalid> {
+        let view = if query.clauses.is_empty() {
+            View::default()
+        } else {
+            self.query_view(query)?
+        };
         for clause in &query.clauses {
             let (reading, status) = match clause.subject {
-                ClauseSubject::Property(prop) => self.read(candidate, prop)?,
+                ClauseSubject::Property(prop) => self.read_in(candidate, prop, view)?,
                 ClauseSubject::Var { var, subject } => {
                     self.read_var(if subject { candidate } else { 0 }, var)?
                 }
@@ -1377,6 +1552,8 @@ impl Simulation {
                 last_frame_ops: 0,
                 frame_budget,
                 orders: Vec::new(),
+                // Digested in full at the first module phase.
+                digests: PageDigests::default(),
             },
         );
         self.ext_modules.declare_vars();
@@ -1426,9 +1603,17 @@ impl Simulation {
             policy,
             modules,
             log,
+            notices,
             ini_triggers,
         } = prepared;
         self.ext_modules.log.extend(log);
+        for text in notices {
+            log::warn!(target: "ext_module", "{text}");
+            self.ext_modules.log.push(text.clone());
+            self.publish_trigger_effects([
+                crate::sim::trigger_runtime::TriggerEffect::ExtModuleNotice { text },
+            ]);
+        }
         self.ext_modules.map_ui = policy.map_ui;
         if !modules.is_empty() {
             self.ext_modules.rules_ini = Some(rules_ini);
@@ -1462,6 +1647,11 @@ impl Simulation {
         for saved in std::mem::take(&mut self.ext_modules.pending) {
             let module = SimModule::restore(&saved.bytes, saved.source.limits(), &saved.state)
                 .map_err(|e| format!("{:?} module: {e}", saved.source))?;
+            let digests = if saved.digests.0.is_empty() {
+                PageDigests::of(module.memory())
+            } else {
+                saved.digests
+            };
             self.ext_modules.slots.push(Slot {
                 source: saved.source,
                 module,
@@ -1471,6 +1661,7 @@ impl Simulation {
                 last_frame_ops: saved.last_frame_ops,
                 frame_budget: saved.frame_budget,
                 orders: saved.orders,
+                digests,
             });
         }
         self.ext_modules.declare_vars();
@@ -1560,6 +1751,12 @@ impl Simulation {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
             }
+        }
+        // This frame's share of every module's memory digests, a stopped
+        // module's frozen memory included (RFC 15.1, item 7).
+        let frame = self.session.binary_frame();
+        for slot in &mut self.ext_modules.slots {
+            slot.digests.refresh(slot.module.memory(), frame);
         }
     }
 

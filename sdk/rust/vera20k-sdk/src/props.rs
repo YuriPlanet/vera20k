@@ -1,7 +1,8 @@
 //! Property IDs (RFC 0001 appendix section 7), numbered as the engine's
 //! `vera20k_wasm_ext::PROPERTIES`: an engine test checks this file against
 //! that table, so keep one `pub const Name: Prop = Prop(id);` per line, in
-//! ID order. Provisional numbering (open question 5).
+//! ID order; a `.` in a name is written `_` (`Passable_Foot` is
+//! `Passable.Foot`). Provisional numbering (open question 5).
 
 use crate::Prop;
 
@@ -180,4 +181,12 @@ impl Prop {
     pub const Viewer: Prop = Prop(170);
     pub const IsSpectator: Prop = Prop(171);
     pub const CaptureMapClick: Prop = Prop(172);
+    pub const Passable_Foot: Prop = Prop(173);
+    pub const Passable_Track: Prop = Prop(174);
+    pub const Passable_Wheel: Prop = Prop(175);
+    pub const Passable_Hover: Prop = Prop(176);
+    pub const Passable_Winged: Prop = Prop(177);
+    pub const Passable_Float: Prop = Prop(178);
+    pub const Passable_Amphibious: Prop = Prop(179);
+    pub const Passable_FloatBeach: Prop = Prop(180);
 }

@@ -122,6 +122,9 @@ pub struct PreparedExtModules {
     pub(super) modules: Vec<PreparedModule>,
     /// Lines the modules logged before the match.
     pub(super) log: Vec<String>,
+    /// What the players are told when the match starts
+    /// ([`map_wasm_tags_notice`]).
+    pub(super) notices: Vec<String>,
     /// The mod's INI triggers (`Wasm.Tags`), built at install.
     pub(super) ini_triggers: super::ini_triggers::IniTriggers,
 }
@@ -178,6 +181,7 @@ impl PreparedExtModules {
             policy,
             modules,
             log: Vec::new(),
+            notices: map_wasm_tags_notice(map).into_iter().collect(),
             ini_triggers,
         })
     }
@@ -202,6 +206,27 @@ impl PreparedExtModules {
             .find(|m| !m.initialized && m.module.has_export(Export::Rules))
             .map(|m| m.source)
     }
+}
+
+/// RFC section 2: a map's `Wasm.Tags` is ignored, and the players are told.
+/// The notice names the map's sections that carry the key; `None` when none
+/// does.
+fn map_wasm_tags_notice(map: &IniFile) -> Option<String> {
+    let sections: Vec<&str> = map
+        .section_names()
+        .into_iter()
+        .filter(|name| {
+            map.section(name)
+                .is_some_and(|section| section.raw_value("Wasm.Tags").is_some())
+        })
+        .collect();
+    (!sections.is_empty()).then(|| {
+        format!(
+            "This map sets Wasm.Tags in [{}]. Only a mod's rulesmd.ini binds triggers to \
+             types, so the game ignores it; the map's own module can bind in code.",
+            sections.join("], [")
+        )
+    })
 }
 
 const fn source_of(layer: ExtRulesLayer) -> ModuleSource {

@@ -1369,3 +1369,279 @@ fn a_rust_built_actions_module_runs() {
     }
     assert!(!log.iter().any(|l| l == "actions-demo: failed"), "{log:?}");
 }
+
+/// `get` calls of `(reference, property)` pairs: status `i` at `512 + 4i`,
+/// value `i` at `8i`.
+fn reads_module(reads: &[(i64, &str)]) -> Vec<u8> {
+    let calls: String = reads
+        .iter()
+        .enumerate()
+        .map(|(i, (reference, name))| {
+            format!(
+                "(i32.store (i32.const {}) (call $get (i64.const {reference}) (i32.const {}) (i32.const {})))\n",
+                512 + i * 4,
+                prop(name),
+                i * 8
+            )
+        })
+        .collect();
+    wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "get" (func $get (param i64 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    {calls}))"#
+    ))
+    .expect("test module parses")
+}
+
+/// Appendix 7.1, 7.7 and 7.8 properties read what their owners hold; a
+/// viewpoint property answers `Unsupported` to a plain `get`.
+#[test]
+fn a_module_reads_object_type_and_global_properties_through_their_owners() {
+    let Some(mut scene) = scenario() else { return };
+    let (unit, _) = placed_unit(&scene);
+    let type_id = {
+        let rules = &scene.runtime.resources.rules;
+        let sim = scene.sim();
+        let object = sim
+            .entity_object_type(sim.entities().get(unit).expect("unit"), rules)
+            .expect("the unit's type");
+        rules.type_handle(&object.id).expect("a TechnoType").0
+    };
+    let ty = super::type_ref(vera20k_wasm_ext::NAME_TECHNO_TYPE, type_id);
+    let global = 4i64 << 48;
+    let object = unit as i64;
+    let reads = [
+        (object, "Layer"),
+        (object, "Facing"),
+        (object, "Armor"),
+        (object, "Transport"),
+        (object, "Relation"),
+        (ty, "Speed"),
+        (ty, "Category"),
+        (global, "Difficulty"),
+    ];
+    install(&mut scene, ModuleSource::Map, &reads_module(&reads));
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let rules = &scene.runtime.resources.rules;
+    let sim = scene.sim();
+    let entity = sim.entities().get(unit).expect("unit");
+    let object_type = sim.entity_object_type(entity, rules).expect("type");
+    let category = match object_type.category {
+        crate::rules::object_type::ObjectCategory::Infantry => 0,
+        _ => 1,
+    };
+    let expected = [
+        i64::from(
+            sim.entity_display_layer(unit, rules)
+                .expect("layer")
+                .index(),
+        ),
+        i64::from(entity.body_facing_byte(sim.session.binary_frame())),
+        object_type.armor_id().index() as i64,
+        0,
+        0,
+        i64::from(object_type.speed),
+        category,
+        i64::from(sim.trigger_difficulty()),
+    ];
+    let values: Vec<i64> = (0..reads.len())
+        .map(|i| mem_i64(&scene, 0, i * 8))
+        .collect();
+    let statuses: Vec<i32> = (0..reads.len())
+        .map(|i| mem_i32(&scene, 0, 512 + i * 4))
+        .collect();
+    assert_eq!(values, expected);
+    // Relation (the fifth read) needs a viewpoint: Unsupported (4).
+    assert_eq!(statuses, [0, 0, 0, 0, 4, 0, 0, 0]);
+}
+
+/// Query bytes: `scope`, area 0 or a 1x1 rectangle at `cell`, `owner`,
+/// `viewpoint`, and property clauses `(property, Eq, value)`.
+fn query_wat(
+    at: u32,
+    scope: i32,
+    cell: Option<i64>,
+    owner: i64,
+    viewpoint: i64,
+    clauses: &[(&str, i64)],
+) -> String {
+    let mut wat = format!(
+        "(i32.store (i32.const {at}) (i32.const {scope}))\n\
+         (i64.store (i32.const {}) (i64.const {owner}))\n\
+         (i64.store (i32.const {}) (i64.const {viewpoint}))\n\
+         (i32.store (i32.const {}) (i32.const {}))\n",
+        at + 32,
+        at + 40,
+        at + 56,
+        clauses.len()
+    );
+    if let Some(cell) = cell {
+        wat += &format!(
+            "(i32.store (i32.const {}) (i32.const 2))\n\
+             (i64.store (i32.const {}) (i64.const {cell}))\n\
+             (i32.store (i32.const {}) (i32.const 1))\n\
+             (i32.store (i32.const {}) (i32.const 1))\n",
+            at + 4,
+            at + 8,
+            at + 16,
+            at + 20
+        );
+    }
+    for (i, (name, value)) in clauses.iter().enumerate() {
+        let clause = at + 64 + 16 * i as u32;
+        wat += &format!(
+            "(i32.store (i32.const {}) (i32.const {}))\n\
+             (i64.store (i32.const {}) (i64.const {value}))\n",
+            clause + 4,
+            prop(name),
+            clause + 8
+        );
+    }
+    wat
+}
+
+/// Viewpoint properties in `find`: `Relation` for the query's viewpoint,
+/// and a cell's `Revealed` and `Passable.Foot` as the fog and the land rows
+/// hold them.
+#[test]
+fn a_query_reads_viewpoint_and_passability_properties_for_its_viewpoint() {
+    let Some(mut scene) = scenario() else { return };
+    let (unit, other) = placed_unit(&scene);
+    let (owner, (x, y)) = {
+        let sim = scene.sim();
+        let entity = sim.entities().get(unit).expect("unit");
+        let owner = sim.houses.index_of(entity.owner()).expect("owner index");
+        (owner, (entity.position.rx(), entity.position.ry()))
+    };
+    let (house, foreign) = (house_ref(owner), house_ref(other));
+    let cell = super::cell_ref(x, y);
+    // Five queries at 1024 + 256q, results at 64 + 16q, references at 4096.
+    let queries = [
+        query_wat(1024, 0, None, house, house, &[("Relation", 0)]),
+        query_wat(1280, 0, None, house, 0, &[]),
+        query_wat(1536, 0, None, house, foreign, &[("Relation", 0)]),
+        query_wat(1792, 2, Some(cell), 0, house, &[("Revealed", 1)]),
+        query_wat(2048, 2, Some(cell), 0, house, &[("Passable.Foot", 1)]),
+    ];
+    let clauses = [1, 0, 1, 1, 1];
+    let finds: String = (0..queries.len())
+        .map(|q| {
+            format!(
+                "(i32.store (i32.const {}) (call $find (i32.const {}) (i32.const {}) (i32.const 4096) (i32.const 64) (i32.const {})))\n",
+                512 + q * 4,
+                1024 + q * 256,
+                64 + 16 * clauses[q],
+                64 + q * 16
+            )
+        })
+        .collect();
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "find" (func $find (param i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    {}
+    {finds}))"#,
+        queries.concat()
+    ))
+    .expect("test module parses");
+    install(&mut scene, ModuleSource::Map, &module);
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let statuses: Vec<i32> = (0..5).map(|q| mem_i32(&scene, 0, 512 + q * 4)).collect();
+    assert_eq!(statuses, [0; 5]);
+    let count = |q: usize| mem_i32(&scene, 0, 64 + q * 16);
+    // Every object of the house is its own (Self), none the other house's.
+    assert!(count(1) > 0);
+    assert_eq!(count(0), count(1));
+    assert_eq!(count(2), 0);
+    let sim = scene.sim();
+    let viewer = sim.houses.order()[owner];
+    let revealed = sim.fog.is_cell_revealed(viewer, x, y);
+    let terrain = sim.resolved_terrain().expect("terrain");
+    let land = terrain.cell(x, y).expect("the unit's cell").land_type;
+    let passable = terrain
+        .land_speed_costs(i32::from(land))
+        .cost_for_speed_type(crate::rules::locomotor_type::SpeedType::Foot)
+        .is_some_and(|cost| !cost.is_zero());
+    assert_eq!(count(3), i32::from(revealed));
+    assert_eq!(count(4), i32::from(passable));
+}
+
+/// RFC 15.1, item 7: each frame digests a fifteenth of the pages, so a
+/// write shows within 15 frames, on the frame its page comes round; grown
+/// pages are digested at once.
+#[test]
+fn memory_digests_visit_every_page_within_fifteen_frames() {
+    use super::PageDigests;
+    let page = vera20k_wasm_ext::PAGE_BYTES;
+    let mut memory = vec![0u8; 20 * page];
+    let mut digests = PageDigests::default();
+    digests.refresh(&memory, 0);
+    assert_eq!(digests, PageDigests::of(&memory), "new pages at once");
+    let before = digests.clone();
+    memory[7 * page + 3] = 1;
+    for frame in 1..7 {
+        digests.refresh(&memory, frame);
+        assert_eq!(digests, before, "frame {frame}");
+    }
+    digests.refresh(&memory, 7);
+    assert_eq!(digests, PageDigests::of(&memory));
+    // Page 19 comes round on frames 4, 19, 34, ...
+    memory[19 * page] = 2;
+    for frame in 8..19 {
+        digests.refresh(&memory, frame);
+        assert_ne!(digests, PageDigests::of(&memory), "frame {frame}");
+    }
+    digests.refresh(&memory, 19);
+    assert_eq!(digests, PageDigests::of(&memory));
+    memory.extend(std::iter::repeat_n(5u8, page));
+    digests.refresh(&memory, 20);
+    assert_eq!(digests, PageDigests::of(&memory), "grown page at once");
+}
+
+/// `Wasm.Tags` on a weapon section binds the weapon; enum parameters take
+/// names; a wrong name refuses the start; a map's `Wasm.Tags` is noticed.
+#[test]
+fn ini_triggers_bind_weapons_and_take_enum_names() {
+    use super::ini_triggers::IniTriggers;
+    let Some(mut scene) = scenario() else { return };
+    let ini = |action: &str| {
+        IniTriggers::read(&IniFile::from_str(&format!(
+            "[M60]\nWasm.Tags=ShotTag\n[ShotTag]\nTrigger=Shot\n[Shot]\nEvent=Fire\n\
+             Action1={action}\nAction2=EndFor(House,Lose)\nRepeat=Repeating\n"
+        )))
+        .expect("INI reads")
+    };
+    let rules = &scene.runtime.resources.rules;
+    let sim = &mut scene.runtime.simulation;
+    let wrong = sim
+        .install_ini_triggers(rules, &ini("SetMission(,Panic)"))
+        .expect_err("an unknown mission refuses the start");
+    assert!(wrong.contains("\"Panic\" is not a Mission"), "{wrong}");
+    sim.install_ini_triggers(rules, &ini("SetMission(,Hunt)"))
+        .expect("INI triggers build");
+    let triggers = sim.trigger_runtime.module_triggers();
+    assert!(triggers.has_weapon_bindings());
+    let args: Vec<i32> = triggers
+        .handles()
+        .into_iter()
+        .filter_map(|handle| triggers.get(handle))
+        .filter(|trigger| trigger.ini)
+        .flat_map(|trigger| trigger.actions.iter().map(|action| action.params.arg))
+        .collect();
+    assert_eq!(args, [15, 1], "Hunt, Lose");
+
+    let notice = super::PreparedExtModules::load(
+        &IniFile::empty(),
+        None,
+        &IniFile::from_str("[E1]\nWasm.Tags=MapTag\n"),
+    )
+    .expect("the map loads")
+    .notices;
+    assert_eq!(notice.len(), 1);
+    assert!(notice[0].contains("[E1]"), "{notice:?}");
+}

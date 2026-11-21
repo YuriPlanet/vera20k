@@ -1,21 +1,49 @@
 //! Cell properties (appendix 7.6), the global rules reference (7.8) and
 //! `find` over cells (scope 2), read through their owners.
 //!
+//! | Property | Owner |
+//! | --- | --- |
+//! | `Passable.<SpeedType>` | the land row's cost for that SpeedType (`ResolvedTerrainGrid::land_speed_costs`, the 89EA40 table CheckCellPassability reads): passable when not zero. Terrain only; objects and overlays standing there are not asked |
+//! | `Revealed` | the viewpoint house's revealed map (`FogState::is_cell_revealed`) |
+//! | `Placeable` | `production::is_within_build_area` (Display4A8EB0's proximity) and `build_site::can_place_building_at` (BuildingTypeClass::CanPlaceAt `0x00464AC0`) for the viewpoint house and the query's TechnoType at this cell as the foundation's top left; 0 for a type that is not a building. Only in `find` with a type, else `Unsupported` |
+//! | `Difficulty` | the trigger difficulty (`Simulation::trigger_difficulty`), the index the `TriggerDef.difficulty` mask uses |
+//! | `MissionTimer`, `MissionTimerRunning` | the scenario countdown (TAction 23..27): frames left, also while stopped, and whether it runs |
+//! | `AmbientLight` | the scenario lighting's current ambient level |
+//! | `IonStormActive` | `lightning_storm::raging` (LightningStorm::IsActive `0x0053A100`) |
+//!
 //! Residuals:
 //! - `CellTag` reads 0 for a cell without a tag; a tagged cell answers
 //!   `Unsupported` until tags have references.
-//! - `Passable.<SpeedType>`, `Revealed` and `Placeable` are not read yet.
-//! - Global `Difficulty`, `GameMode`, `MissionTimer`, `MissionTimerRunning`,
-//!   `AmbientLight` and `IonStormActive` answer `Unsupported`.
+//! - Global `GameMode` (a string) answers `Unsupported`: string IDs are not
+//!   kept yet.
+//! - A cell `find` with an owner answers `Unsupported`; its type serves only
+//!   `Placeable`.
 
-use vera20k_wasm_ext::{Area, FindPage, Invalid, NAME_OVERLAY, Query, Status};
+use vera20k_wasm_ext::{Area, FindPage, Invalid, NAME_OVERLAY, NAME_TECHNO_TYPE, Query, Status};
 
-use super::{Host, Ref, cell_ref, decode_ref, type_ref};
+use super::{Host, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
+use crate::rules::locomotor_type::SpeedType;
+use crate::rules::object_type::ObjectCategory;
+
+/// The SpeedType a `Passable.<SpeedType>` property names.
+fn passable_speed_type(name: &str) -> Option<SpeedType> {
+    Some(match name.strip_prefix("Passable.")? {
+        "Foot" => SpeedType::Foot,
+        "Track" => SpeedType::Track,
+        "Wheel" => SpeedType::Wheel,
+        "Hover" => SpeedType::Hover,
+        "Winged" => SpeedType::Winged,
+        "Float" => SpeedType::Float,
+        "Amphibious" => SpeedType::Amphibious,
+        "FloatBeach" => SpeedType::FloatBeach,
+        _ => return None,
+    })
+}
 
 impl Host<'_, '_> {
-    /// A cell's property (appendix 7.6). A cell outside the map is
-    /// `NotFound`.
-    pub(super) fn cell_property(&self, x: u16, y: u16, name: &str) -> (i64, Status) {
+    /// A cell's property (appendix 7.6), viewpoint properties for `view`.
+    /// A cell outside the map is `NotFound`.
+    pub(super) fn cell_property(&self, x: u16, y: u16, name: &str, view: View) -> (i64, Status) {
         let Some(terrain) = self.sim.resolved_terrain() else {
             return (0, Status::Unsupported);
         };
@@ -56,31 +84,103 @@ impl Host<'_, '_> {
                 }
                 0
             }
-            _ => return (0, Status::Unsupported),
+            "Revealed" => match self.viewpoint(view) {
+                Ok(house) => i64::from(self.sim.fog.is_cell_revealed(house, x, y)),
+                Err(status) => return (0, status),
+            },
+            "Placeable" => return self.placeable(x, y, view),
+            _ => match passable_speed_type(name) {
+                Some(speed) => i64::from(
+                    terrain
+                        .land_speed_costs(i32::from(cell.land_type))
+                        .cost_for_speed_type(speed)
+                        .is_some_and(|cost| !cost.is_zero()),
+                ),
+                None => return (0, Status::Unsupported),
+            },
         };
         (value, Status::Ok)
+    }
+
+    /// `Placeable`: whether the viewpoint house may place the query's type
+    /// with its foundation's top left at (`x`, `y`) (module docs).
+    fn placeable(&self, x: u16, y: u16, view: View) -> (i64, Status) {
+        let Some(id) = view.placing else {
+            return (0, Status::Unsupported);
+        };
+        let house = match self.viewpoint(view) {
+            Ok(house) => house,
+            Err(status) => return (0, status),
+        };
+        let Some(object) = i32::try_from(id)
+            .ok()
+            .and_then(|id| techno_type(self.rules, id))
+        else {
+            return (0, Status::NotFound);
+        };
+        if object.category != ObjectCategory::Building {
+            return (0, Status::Ok);
+        }
+        let Some(owner) = self.sim.interner.try_resolve(house) else {
+            return (0, Status::Gone);
+        };
+        let placeable =
+            crate::sim::production::is_within_build_area(self.sim, self.rules, owner, object, x, y)
+                && crate::sim::build_site::can_place_building_at(
+                    self.sim,
+                    self.rules,
+                    self.overlay_registry,
+                    object,
+                    (x as i16, y as i16),
+                    Some(house),
+                    None,
+                    None,
+                );
+        (i64::from(placeable), Status::Ok)
     }
 
     /// A global rules reference property (appendix 7.8).
     pub(super) fn global_property(&self, name: &str) -> (i64, Status) {
+        let session = &self.sim.session;
         let value = match name {
-            "Frame" => i64::from(self.sim.session.binary_frame()),
+            "Frame" => i64::from(session.binary_frame()),
             "PlayerCount" => i64::from(crate::sim::crates::human_player_count(self.sim)),
-            "GameSpeed" => i64::from(self.sim.session.game_options().game_speed),
+            "GameSpeed" => i64::from(session.game_options().game_speed),
+            "Difficulty" => i64::from(self.sim.trigger_difficulty()),
+            "MissionTimer" => i64::from(session.campaign_countdown_frames()),
+            "MissionTimerRunning" => i64::from(session.scenario_timer_view().is_some()),
+            "AmbientLight" => i64::from(session.lighting().current_ambient()),
+            "IonStormActive" => {
+                i64::from(crate::sim::superweapon::lightning_storm::raging(self.sim))
+            }
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
     }
 
-    /// `find` over cells, in cell index order (y, then x). A query with a
-    /// type or owner answers `Unsupported`.
+    /// `find` over cells, in cell index order (y, then x). A query with an
+    /// owner answers `Unsupported`; its type, a TechnoType, is the one
+    /// `Placeable` places.
     pub(super) fn find_cells(
         &self,
         query: &Query,
         cap: usize,
     ) -> Result<(FindPage, Status), Invalid> {
-        if query.type_ref != 0 || query.owner != 0 {
+        if query.owner != 0 {
             return Ok((FindPage::default(), Status::Unsupported));
+        }
+        match decode_ref(query.type_ref)? {
+            None => {}
+            Some(Ref::Type {
+                kind: NAME_TECHNO_TYPE,
+                id,
+            }) if i32::try_from(id).is_ok_and(|id| techno_type(self.rules, id).is_some()) => {}
+            Some(_) => {
+                return Err(Invalid(format!(
+                    "{:#x} is not a TechnoType for a Cells query",
+                    query.type_ref
+                )));
+            }
         }
         let Some(terrain) = self.sim.resolved_terrain() else {
             return Ok((FindPage::default(), Status::Unsupported));
