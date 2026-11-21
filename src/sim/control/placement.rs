@@ -359,6 +359,16 @@ impl<'a, 'b> Placement<'a, 'b> {
             }
         }
         let cell = self.sweep(ty, attempt);
+        if std::env::var("AUTOPLAY_TRACE_SITE").is_ok() {
+            let near = cell.and_then(|cell| {
+                self.obs
+                    .ore_cells(self.rules)
+                    .iter()
+                    .map(|ore| cell_distance(cell, *ore))
+                    .min()
+            });
+            log::info!("site trace: type={} cell={cell:?} ore={near:?}", ty.id);
+        }
         log::info!(
             "auto play: site for {} from the sweep at {cell:?} (attempt {attempt})",
             ty.id

@@ -22,7 +22,7 @@
 | 项 | 结果 |
 |---|---|
 | `--profile fast` 构建 | 通过，`vera20k.exe` 约 91 MB |
-| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **172 passed** |
+| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **173 passed** |
 | 改名 `retail` → `assist` | 无行为改动，构建与测试通过 |
 | 会话重构（`AutoplaySession`） | 行为保持：同一 host 调用、同一 take_back、同一顺序 |
 | 上游合并 `0e831f2c3` | 上游 377 提交并入，冲突四处，测试通过 |
@@ -40,6 +40,7 @@
 | baseline-v2（驻扎上限后） | `7934c2764` | timeout own=130 army=68 | timeout own=108 army=63 | timeout own=121 army=72 |
 | raid（支队不再看军队大小） | `cbeb8ec34` | **won 33977** own=155 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 | 基地锚点不再被第二个指挥中心夺走 | `e75815a59` | **won 32491** own=158 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
+| 每座精炼厂三辆采矿车 | `f4189fa6e` | **won 35276** own=158 army=86 | timeout own=126 army=66 | timeout own=147 army=82 enemy=10 |
 
 读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
 两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
@@ -104,6 +105,36 @@
 基地在 (157,177)，`crates=1[(57, 86)]`，尾段 `threat=[10,2,2]`——它一直在被
 袭扰，而 24301 的 `threat=[0,1,0]` 全程安全。结论：这是防御/袭扰问题，不是
 交换比问题。下一轮该查的是「为什么袭扰能一直打断矿线」。
+
+### 每座精炼厂三辆采矿车（这条留下来了）
+
+三局的结构其实一样：`harv=6..7 ref=3`。差别在每辆车跑一趟带回多少。把
+`HARVESTERS_PER_REFINERY`（`src/sim/strategy/assist/build.rs`）从 2 抬到 3 之后，
+三局都造到九辆车三座厂，而原本 1943/min、只剩 52 个敌人的那一局变成
+own 147 / enemy 10 / army 82；赢的那局仍然赢（35276，比 32491 晚 2785 帧）。
+代价是第三局从 128/61 变成 126/70。
+
+### 精炼厂选址不是经济杠杆（已排除）
+
+加了 `AUTOPLAY_TRACE_SITE=1`（`src/sim/control/placement.rs` 的 `cell_for` 里，
+env-gated）量「所选的格子离最近一块矿多远」：seed 10 三座 `GAREFN` 落在
+离矿 10 / 8 / 9 格，seed 24301 落在 9–14 格。**两边一样远**，所以
+「把精炼厂建到矿边」这条路是死的， ore-aware 选址不要再试。
+
+### 每座精炼厂三辆采矿车（这条留下来了）
+
+三局的结构其实一样：`harv=6..7 ref=3`。差别在每辆车跑一趟带回多少。把
+`HARVESTERS_PER_REFINERY`（`src/sim/strategy/assist/build.rs`）从 2 抬到 3 之后，
+三局都造到九辆车三座厂，而原本 1943/min、只剩 52 个敌人的那一局变成
+own 147 / enemy 10 / army 82；赢的那局仍然赢（35276，比 32491 晚 2785 帧）。
+代价是第三局从 128/61 变成 126/70。
+
+### 精炼厂选址不是经济杠杆（已排除）
+
+加了 `AUTOPLAY_TRACE_SITE=1`（`src/sim/control/placement.rs` 的 `cell_for` 里，
+env-gated）量「所选的格子离最近一块矿多远」：seed 10 三座 `GAREFN` 落在
+离矿 10 / 8 / 9 格，seed 24301 落在 9–14 格。**两边一样远**，所以
+「把精炼厂建到矿边」这条路是死的，ore-aware 选址不要再试。
 
 ### 兵营/基地车那一对：第二基地确实从来没站起来过
 
