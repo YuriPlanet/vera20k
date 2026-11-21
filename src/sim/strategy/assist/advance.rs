@@ -473,7 +473,7 @@ pub(super) fn advance(
     // it for the whole term while the nearest one moved with the army.
     let anchor = army.anchor;
     let tick = obs.tick();
-    let Some(nearest) = nearest_target(&targets, anchor) else {
+    let Some(nearest) = reachable_target(&targets, anchor, &fighters, rules, obs) else {
         brain.push_gate = "no-target";
         return false;
     };
@@ -1289,6 +1289,35 @@ mod tests {
         );
         let _ = (fighters, enemies);
     }
+
+    /// The fist aims at something it can walk to, not merely at something near.
+    ///
+    /// `orders::issue` refuses a walk the zone map cannot take, and it refuses
+    /// it for every unit in turn: measured on Death.mmx seed 24301, 187
+    /// refusals of one `AttackMove` and an army idle at the bell while an enemy
+    /// object stood across water.
+    #[test]
+    fn a_target_nobody_can_walk_to_is_passed_over_for_one_somebody_can() {
+        let target = |entity_id: u64, cell: (u16, u16)| EnemyEntity {
+            entity_id,
+            type_id: crate::sim::intern::InternedId::from_index(0),
+            cell,
+        };
+        let nearest_first = [
+            target(1, (10, 10)),
+            target(2, (12, 10)),
+            target(3, (20, 10)),
+        ];
+        // The near two are across the water; only the far one is walkable.
+        let chosen =
+            pick_reachable(&nearest_first, |cell| cell.0 == 20).expect("the far one is a choice");
+        assert_eq!(chosen.entity_id, 3, "the walkable one, not the nearest");
+        // And when the map cuts the fist off from all of them, the nearest is
+        // still the answer: holding the army is the caller's job, not this
+        // one's.
+        let chosen = pick_reachable(&nearest_first, |_| false).expect("the nearest");
+        assert_eq!(chosen.entity_id, 1);
+    }
 }
 
 /// How near an enemy's own defense has to stand to the structure the fist is
@@ -1416,6 +1445,67 @@ fn neutral_blocker(
         })
         .min_by_key(|building| (cell_distance(building.cell, from), building.entity_id))
         .map(|building| (building.entity_id, building.cell))
+}
+
+/// How many candidate targets are asked whether anyone can walk to them.
+///
+/// The ordinary frame pays one zone-map lookup -- `reachable` short-circuits on
+/// the first unit that can walk -- and the bounded scan is what keeps a frame
+/// whose every candidate is cut off from that. Twelve is past the number of
+/// structures a fist ever picks between: the nearest is nearly always reachable.
+const REACHABLE_CANDIDATES: usize = 12;
+
+/// The nearest candidate `can_reach` accepts, or the nearest one when it
+/// accepts none.
+///
+/// Split out from [`reachable_target`] so the rule can be tested without a map:
+/// the choice is "the first candidate somebody can walk to", and a fixture that
+/// paints a zone map to prove it would be testing the zone map.
+fn pick_reachable(
+    nearest_first: &[EnemyEntity],
+    can_reach: impl Fn((u16, u16)) -> bool,
+) -> Option<EnemyEntity> {
+    nearest_first
+        .iter()
+        .find(|target| can_reach(target.cell))
+        .copied()
+        .or_else(|| nearest_first.first().copied())
+}
+
+/// The enemy structure nearest `from` that someone in the fist can walk to.
+///
+/// `orders::issue` refuses a walk the zone map cannot take, and it refuses it
+/// per unit, so a fist aimed at an object across water stands at home while the
+/// refusal repeats: measured on Death.mmx seed 24301, 187 refusals in one match,
+/// every one of them the same `AttackMove`, and the army idle at the bell.
+/// Nearest first, then the next, and the first candidate anybody can reach wins.
+///
+/// When nobody can reach anything the nearest is returned unchanged: that is
+/// the state this cannot fix, and the caller still has to hold the army.
+fn reachable_target(
+    targets: &[EnemyEntity],
+    from: (u16, u16),
+    fighters: &[&Unit],
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+) -> Option<EnemyEntity> {
+    let mut nearest_first: Vec<EnemyEntity> = targets.to_vec();
+    nearest_first.sort_by_key(|target| {
+        let dx = i32::from(target.cell.0) - i32::from(from.0);
+        let dy = i32::from(target.cell.1) - i32::from(from.1);
+        (dx * dx + dy * dy, target.entity_id)
+    });
+    let candidates: Vec<EnemyEntity> = nearest_first
+        .iter()
+        .take(REACHABLE_CANDIDATES)
+        .copied()
+        .collect();
+    pick_reachable(&candidates, |cell| {
+        fighters
+            .iter()
+            .any(|unit| super::orders::reachable(rules, obs, unit.entity_id, cell))
+    })
+    .or_else(|| nearest_first.into_iter().next())
 }
 
 /// The enemy structure nearest `from`, ties going to the earlier one in
