@@ -8,7 +8,7 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
+    ColorVisionMode, DisplayTarget, GraphicsApi, HealthBarMode, LauncherCue, LauncherOptionsEvent,
     LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
     OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
     admitted_volume_position,
@@ -64,6 +64,7 @@ pub(crate) fn launcher_values_from_profile(
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
         ares: profile.ares,
+        graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
@@ -119,6 +120,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_health_bars(&mut self, mode: HealthBarMode);
     /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
     fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
+    /// The `[VERA] GraphicsAPI=` list's pick; the game reads it at its next
+    /// start (`persistence::startup_backend`).
+    fn store_graphics_api(&mut self, api: GraphicsApi);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
@@ -194,6 +198,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
+        LauncherOptionsEvent::GraphicsApiSelected(api) => operations.store_graphics_api(api),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),

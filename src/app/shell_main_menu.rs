@@ -116,6 +116,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // opened its files with. Options' accept writes it out.
         self.persistence.options_profile.ares = setting;
     }
+    fn store_graphics_api(&mut self, api: crate::ui::main_menu_dialogs::options::GraphicsApi) {
+        // Read at the next start (`startup_backend`): this launch keeps the
+        // API it draws through. Options' accept writes it out.
+        self.persistence.options_profile.graphics_api = api;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'

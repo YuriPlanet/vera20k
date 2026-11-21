@@ -35,48 +35,8 @@ const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
 const VERA_SECTION: &str = "VERA";
 
-/// `[VERA] GraphicsAPI=` selects the renderer at startup. With `auto`, the
-/// Windows startup record can switch between Vulkan and DirectX 12 after a
-/// failed start. `opengl` requests the desktop OpenGL compatibility renderer.
-/// wgpu's `WGPU_BACKEND` environment variable takes precedence.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum GraphicsApi {
-    #[default]
-    Auto,
-    Vulkan,
-    DirectX12,
-    OpenGl,
-}
-
-impl GraphicsApi {
-    pub(crate) fn from_ini_value(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "vulkan" | "vk" => Self::Vulkan,
-            "dx12" | "directx12" | "directx 12" | "d3d12" => Self::DirectX12,
-            "opengl" => Self::OpenGl,
-            _ => Self::Auto,
-        }
-    }
-
-    pub(crate) fn ini_value(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Vulkan => "vulkan",
-            Self::DirectX12 => "dx12",
-            Self::OpenGl => "opengl",
-        }
-    }
-
-    /// The API asked for alone, when the key names one.
-    pub(crate) fn backend(self) -> Option<wgpu::Backend> {
-        match self {
-            Self::Auto => None,
-            Self::Vulkan => Some(wgpu::Backend::Vulkan),
-            Self::DirectX12 => Some(wgpu::Backend::Dx12),
-            Self::OpenGl => Some(wgpu::Backend::Gl),
-        }
-    }
-}
+/// `[VERA] GraphicsAPI=`: the type lives with the Options window's list.
+pub(crate) use crate::ui::main_menu_dialogs::options::GraphicsApi;
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
 /// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
