@@ -337,6 +337,28 @@ fn find_attack_cell_matches_original_searches() {
     }
 }
 
+/// The asking aircraft holds the NavCom it searches for, as it does in
+/// production: `assign_attack_cell` passes its own NavCom to
+/// `Find_Attack_Cell`. `0x004DDC60` compares the other aircraft against
+/// itself, so the asker's own reservation must not refuse the cell it
+/// asked for.
+#[test]
+fn find_attack_cell_ignores_the_asking_aircrafts_own_reservation() {
+    let input = json!({"name": "own_reservation", "param": [64, 64]});
+    let (mut sim, rules) = fixture(&input);
+    sim.substrate
+        .entities
+        .get_mut(OWNER)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(64, 64)));
+    assert_eq!(
+        sim.aircraft_find_attack_cell(OWNER, Some(NavTargetRef::cell(64, 64)), &rules),
+        Some(NavTargetRef::cell(64, 64)),
+        "the asker's own NavCom must not refuse its own cell"
+    );
+}
+
 /// The oracle's Mission_Move world: stubbed locomotor and destination/idle
 /// virtuals, the production queries for the rest.
 struct RowHost<'a> {

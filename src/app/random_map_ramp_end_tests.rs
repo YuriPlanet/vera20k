@@ -282,6 +282,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         Some(seed_name),
         None,
         crate::app::match_runtime::session::SessionMode::Skirmish,
+        crate::rules::retail_sources::AiFile::GameFolder,
         false,
         None,
         &mut SilentProgress,

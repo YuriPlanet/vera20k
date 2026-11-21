@@ -33,7 +33,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
     } else if entity.category() == EntityCategory::Aircraft {
         entity.ammo().is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
-        entity.low_bridge_tube_state.is_none()
+        entity.active_tube().is_none()
     }
 }
 
@@ -82,11 +82,17 @@ fn radar_get_height_leptons(
                 .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
         });
     // `object_world_z_leptons(entity, None)`.
-    let mut height = entity.world_z_leptons_off_map().wrapping_sub(ground);
-    if entity.on_bridge() {
-        height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    height
+    let surface = if entity.on_bridge() {
+        resolved_terrain
+            .and_then(|terrain| terrain.corrected_high_bridge_deck_level((rx as u16, ry as u16)))
+            .map_or_else(
+                || ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                |deck| i32::from(deck) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+            )
+    } else {
+        ground
+    };
+    entity.world_z_leptons_off_map().wrapping_sub(surface)
 }
 
 /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at `point`

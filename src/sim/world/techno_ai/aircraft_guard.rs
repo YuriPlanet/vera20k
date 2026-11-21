@@ -70,7 +70,7 @@ impl Simulation {
         GuardFacts {
             height: air_movement::current_fly_height(entity, self.resolved_terrain.as_ref()),
             flight_level: air_movement::type_flight_level(entity, Some((rules, &self.interner))),
-            team: self.team_script_vm.team_for_member(id).is_some(),
+            team: self.team_script_vm.team_of(id).is_some(),
             nav_com: entity.navigation.nav_com().is_some(),
             weapon: object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::primary_for_tier(object, entity.veterancy.rank())

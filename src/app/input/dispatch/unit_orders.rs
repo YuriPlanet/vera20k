@@ -110,10 +110,10 @@ pub(super) fn queue_stop_orders(
     rules
         .general
         .stop_sound
-        .as_ref()
+        .as_deref()
         .map_or_else(Vec::new, |sound_id| {
             vec![crate::audio::events::GameSoundEvent::UiSound {
-                sound_id: sound_id.clone(),
+                sound_id: rules.sound_name(sound_id),
             }]
         })
 }
@@ -235,10 +235,10 @@ pub(super) fn queue_scatter_orders(
     rules
         .general
         .scatter_sound
-        .as_ref()
+        .as_deref()
         .map_or_else(Vec::new, |sound_id| {
             vec![GameSoundEvent::UiSound {
-                sound_id: sound_id.clone(),
+                sound_id: rules.sound_name(sound_id),
             }]
         })
 }
@@ -285,10 +285,10 @@ pub(super) fn queue_area_guard_orders(
             return sounds;
         }
     }
-    if let Some(sound_id) = &rules.general.guard_sound {
+    if let Some(sound_id) = rules.general.guard_sound.as_deref() {
         // 730E73..730E8A: PlayAtPos750920, centre2000, volume1, no handle.
         sounds.push(GameSoundEvent::UiSound {
-            sound_id: sound_id.clone(),
+            sound_id: rules.sound_name(sound_id),
         });
     }
     sounds

@@ -69,6 +69,7 @@ fn retail_pavement_live_damage_changes_actual_terrain_pixels() {
         origin_y: 0.0,
         bridge_middle_tiles: None,
         deformation_tiles: Vec::new(),
+        ice_tiles: Vec::new(),
     };
     let draw = |sim: &crate::sim::world::Simulation, expected: TileKey| {
         let selected = std::cell::RefCell::new(Vec::new());

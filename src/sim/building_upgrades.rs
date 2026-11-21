@@ -550,10 +550,18 @@ impl Simulation {
         if let Some(host) = self.substrate.entities.get_mut(host_id) {
             host.commit_building_upgrade_type(type_id);
         }
-        // Ares4409F4 ->10014490/100144CD uses the installed host's retained
-        // Country, after the new upgrade pointer has been committed.
+        // Ares 0x004409F4 -> 10014490, after the new upgrade pointer is
+        // committed: the upgrade's own cash timer, then
+        // UpdateFactoryOwnersPlans (100449D0) of the upgrade being put (ESI),
+        // with its own type and retained Country, not the host's.
         if rules.ares_form() {
-            self.grant_factory_plans(host_id, rules);
+            crate::sim::credit_income::ares_produce_cash_on_put(
+                &self.session,
+                &mut self.substrate,
+                host_id,
+                upgrade.produce_cash_delay,
+            );
+            self.grant_factory_plans(temporary_id, rules);
         }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);

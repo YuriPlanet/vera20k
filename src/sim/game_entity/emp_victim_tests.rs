@@ -15,12 +15,14 @@ use std::sync::Arc;
 /// The Grizzly's and the Destroyer's guns fire one EMP shell each; the
 /// warhead's `Malicious=no` keeps the damage path's own warnings quiet. The
 /// building tests (`emp_building_tests.rs`) also take the Cloning Vats (not
-/// prone by type) and a Flak Cannon made a LaserFencePost.
+/// prone by type) and a Flak Cannon made a LaserFencePost. The weaponless
+/// civilian truck digs as a mod's Tunnel unit does, slowly (ROT 1).
 const PATCH: &str = "[MTNK]\nPrimary=EMPGun\n[DEST]\nPrimary=EMPGun\n\
      [EMPGun]\nDamage=1\nROF=1000\nRange=6\nProjectile=Invisible\nSpeed=100\nWarhead=EMPWH\n\
      [EMPWH]\nCellSpread=2\nMalicious=no\nEMP.Duration=150\n\
      [E1]\nImmuneToEMP=no\n[V3]\nImmuneToEMP=yes\n\
-     [NACLON]\nImmuneToEMP=no\n[NASAM]\nLaserFencePost=yes\n";
+     [NACLON]\nImmuneToEMP=no\n[NASAM]\nLaserFencePost=yes\n\
+     [TRUCKB]\nLocomotor={4A582743-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Subterannean\nROT=1\n";
 
 pub(super) fn rules() -> Option<RuleSet> {
     let rules = crate::test_fixture::once_per_process("ares emp victims", || {
@@ -370,6 +372,64 @@ fn ares_emp_stops_hover_and_ship_movers() {
             "{current:?} {queued:?} water={water}"
         );
     }
+}
+
+/// Installed10062320 tests no mover, so a Tunnel digger is a victim too.
+/// Hit while it digs in, it goes offline: Deactivate's ResetOrdersToGuard
+/// (`0x0070F850`) clears its destination (vt+0x480 with null), which reaches
+/// Tunnel Stop_Moving (`0x00728C00`) and turns DiggingIn into DugOut. The dig
+/// ends on the surface in its own cell, and the computer unit hunts once the
+/// counter ends.
+#[test]
+fn ares_emp_ends_a_tunnel_diggers_dig_in() {
+    use crate::sim::movement::tunnel_movement::{TunnelRuntime, TunnelState};
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(rules) = rules() else {
+        return;
+    };
+    let (mut sim, grid) = scene(&rules, false);
+    let gun = spawn(&mut sim, &rules, "MTNK", "Americans", 12, 10);
+    let digger = spawn(&mut sim, &rules, "TRUCKB", "Russians", 15, 10);
+    let tunnel = |sim: &Simulation| {
+        sim.entities()
+            .get(digger)
+            .and_then(|entity| entity.locomotor.as_ref())
+            .and_then(|locomotor| locomotor.tunnel_runtime())
+            .map(TunnelRuntime::state)
+    };
+    order(
+        &mut sim,
+        Command::Move {
+            entity_id: digger,
+            target_rx: 28,
+            target_ry: 10,
+        },
+    );
+    assert!(run(&mut sim, &rules, &grid, 200, |sim| tunnel(sim)
+        == Some(TunnelState::DiggingIn)));
+    let start = location(&sim, digger);
+    assert!(
+        fire(&mut sim, &rules, &grid, gun, digger, digger),
+        "digger is hit"
+    );
+    assert!(offline(&sim, digger));
+    let mut dug_out = false;
+    assert!(run(&mut sim, &rules, &grid, 200, |sim| {
+        dug_out |= tunnel(sim) == Some(TunnelState::DugOut);
+        assert!(sim.entities().get(digger).unwrap().lifecycle.cell_marked());
+        assert_eq!(location(sim, digger).z, start.z, "never sinks");
+        emp(sim, digger) == 0
+    }));
+    assert!(dug_out, "Stop_Moving turned the dig-in into DugOut");
+    assert_eq!(tunnel(&sim), Some(TunnelState::Idle));
+    let end = location(&sim, digger);
+    assert_eq!((end.x / 256, end.y / 256), (start.x / 256, start.y / 256));
+    assert!(!offline(&sim, digger));
+    let (current, queued) = missions(&sim, digger);
+    assert!(
+        current == Some(MissionType::Hunt) || queued == Some(MissionType::Hunt),
+        "{current:?} {queued:?}"
+    );
 }
 
 /// A V3 rocket tilting on its launcher takes the Aircraft branch of

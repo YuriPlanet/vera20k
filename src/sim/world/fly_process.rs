@@ -17,12 +17,12 @@
 //! tools/spatial_oracle/fly_map_edge.py runs the map-edge admission, which
 //! [`fly_map_edge`] replays; aircraft_crash.py the dead fall.
 //!
-//! RESIDUAL: the spin (`0x004CE5A0`). Power_Off (`0x004CFD20`) starts it on
-//! a moving Fly, with two Scenario draws, and then the unpowered fall
-//! (`Simulation::fly_crash_fall`) drops it. Both are unreachable natively:
-//! only an EMP powers off an aircraft, and EMPulseClass's constructor
+//! The spin step (`0x004CE5A0`, [`Simulation::fly_spin_step`]) turns a Fly
+//! that Power_Off (`0x004CFD20`, [`Simulation::fly_power_off`]) set spinning.
+//! Stock play powers off no aircraft: EMPulseClass's constructor
 //! (`0x004C52B0`) has no caller or pointer in the executable (rulesmd's
-//! `[EMPuls]` says it is disabled in code).
+//! `[EMPuls]` says it is disabled in code). Ares EMP's Deactivate powers
+//! off one at height 0.
 //!
 //! Horizontal_Step ends by deselecting another house's object over the
 //! player's shroud ([`Simulation::deselect_over_player_shroud`]).
@@ -147,6 +147,7 @@ impl Simulation {
     ///   `FlyRuntime::restore_flight_level`);
     /// - the queued mission commenced when ready, unless it lands or takes
     ///   off (`0x004CCB84..0x004CCBAD`: vt+0x200, vt+0x1EC);
+    /// - the spin step (`0x004CCBB8`, [`Self::fly_spin_step`]);
     /// - UpdateFlightMotion ([`Self::fly_update_flight_motion`]), whose dead
     ///   fall may end in the impact the object turn commits;
     /// - nothing more unpowered or no longer alive (`0x004CCBC4..0x004CCBE6`);
@@ -200,6 +201,7 @@ impl Simulation {
                 .substrate
                 .mission_commence_exact(id, self.session.binary_frame());
         }
+        self.fly_spin_step(id);
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;
             return stats;
@@ -236,6 +238,37 @@ impl Simulation {
         }
         self.fly_playfield_latch(id, rules, frame_effects);
         stats
+    }
+
+    /// The spin step (`0x004CE5A0`): a spinning Fly whose owner's Health is
+    /// above 0 turns, while unpowered (Is_Powered `0x004CFD90`, the base
+    /// flag), the owner's PrimaryFacing by SpinRate (FacingClass Current
+    /// `0x004C93D0`, Set_Current `0x004C9300`), or stops spinning once power
+    /// is back ([`FlyRuntime::spin_step`]). The ActivateVeins that ends the
+    /// spin (`0x00486920` on the owner's cell) acts only on the veins overlay
+    /// (index 0x7E) that retail maps never place: dormant, not run.
+    ///
+    /// [`FlyRuntime::spin_step`]: crate::sim::movement::fly_height::FlyRuntime::spin_step
+    fn fly_spin_step(&mut self, id: u64) {
+        let frame = self.session.binary_frame();
+        let Some(entity) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .filter(|entity| entity.health.current() > 0)
+        else {
+            return;
+        };
+        let Some(turn) = entity.locomotor.as_mut().and_then(|locomotor| {
+            let powered = locomotor.is_powered();
+            locomotor
+                .fly_runtime_mut()
+                .and_then(|state| state.spin_step(powered))
+        }) else {
+            return;
+        };
+        let current = entity.body_facing.current(frame);
+        entity.body_facing.snap(current.wrapping_add(turn), frame);
     }
 
     /// `0x004CD600`, the flight itself:

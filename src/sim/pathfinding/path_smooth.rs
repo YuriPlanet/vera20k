@@ -15,6 +15,9 @@ pub(crate) trait PathFinishingContext {
 
     fn get_cell(&self, coord: (i16, i16)) -> Self::Cell;
     fn ground_level(&self, cell: Self::Cell) -> i32;
+    fn fixed_deck_level(&self, _cell: Self::Cell) -> Option<i32> {
+        None
+    }
     fn flags(&self, cell: Self::Cell) -> u32;
     /// Foot virtual+1AC(candidate, direction, height, NULL, 1). The entry
     /// owner supplies its class-specific result; finishing accepts only zero.
@@ -74,9 +77,17 @@ fn follow_direction<C: PathFinishingContext>(
 }
 
 fn next_finishing_height<C: PathFinishingContext>(previous: i32, cell: C::Cell, ctx: &C) -> i32 {
+    use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
+
     let ground = ctx.ground_level(cell);
-    if previous.wrapping_sub(ground) == 4 && ctx.flags(cell) & 0x100 != 0 {
-        ground.wrapping_add(4)
+    // The 42B420 and 42BE20 bridge-height checks keep the incoming height
+    // only when it matches this cell's deck. Keep the native read order for
+    // synthetic cells and for the mutable map Dummy.
+    if let Some(deck) = ctx.fixed_deck_level(cell) {
+        return if previous == deck { deck } else { ground };
+    }
+    if previous.wrapping_sub(ground) == BRIDGE_DECK_HEIGHT_LEVELS && ctx.flags(cell) & 0x100 != 0 {
+        ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS)
     } else {
         ground
     }

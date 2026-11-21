@@ -78,12 +78,22 @@ pub(crate) fn ready_state_for(
         LocomotorKind::Teleport => Some(teleport(entity)),
         LocomotorKind::Jumpjet => Some(jumpjet(locomotor)),
         LocomotorKind::Walk => Some(walk(entity, locomotor)),
+        // Mech::Is_Moving_Now 5B19E0: turning, or moving with a paid head and
+        // a positive signed result from the owner's GetCurrentSpeed.
+        LocomotorKind::Mech => Some(LocomotorReadyState::Mech {
+            turning: entity.body_facing.is_rotating(binary_frame),
+            advancing: locomotor.walk_is_moving() == Some(true)
+                && locomotor.step_head().is_some()
+                && rules.owner_current_speed(entity) > 0,
+        }),
         LocomotorKind::Hover => Some(hover(locomotor)),
-        LocomotorKind::Tunnel => locomotor
-            .tunnel_runtime()
-            .map(|runtime| LocomotorReadyState::Tunnel {
-                state: runtime.state().raw(),
-            }),
+        LocomotorKind::Tunnel => {
+            locomotor
+                .tunnel_runtime()
+                .map(|runtime| LocomotorReadyState::Tunnel {
+                    state: runtime.state().raw(),
+                })
+        }
         // Fly and Rocket have no readiness inputs: the Unit and Infantry
         // readiness branches in `sim::mission::readiness` never see them, and
         // aircraft readiness decides from its mission plus two flags. Their

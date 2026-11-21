@@ -41,7 +41,6 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
-use crate::ui::shell::controller::ShellKey;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;
@@ -76,6 +75,8 @@ mod initialize;
 pub(crate) mod input;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
+#[cfg(target_os = "macos")]
+mod mac_title_bar;
 pub(crate) mod map_library;
 pub mod map_picture;
 pub(crate) mod match_audio;
@@ -124,10 +125,12 @@ mod shell_saved_games;
 mod shell_saved_seeds;
 mod shell_skirmish;
 mod shell_skirmish_setups;
+mod shell_skirmish_team_menus;
 mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_frame_cost;
 pub(crate) mod spawn_probe;
 mod state;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

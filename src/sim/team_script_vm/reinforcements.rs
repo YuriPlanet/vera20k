@@ -27,6 +27,14 @@ use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 use crate::util::native_x87::NativeF64Bits;
 
+/// VERA's bound on the members one TaskForce entry gives a reinforcement.
+/// CreateMembers (`0x0065DD30`) constructs the entry's count (`N,TYPE`,
+/// `sscanf("%d")` with no upper bound, from AIMD.INI or the map), so a count
+/// near `i32::MAX` constructs until the tick hangs. The bound applies only to
+/// this loop; recruitment and full strength still compare the raw count.
+/// Retail TaskForces ask for far fewer.
+const REINFORCEMENT_ENTRY_LIMIT: i32 = 1024;
+
 impl Simulation {
     /// GetHouse6F2070: fixed Country attachment, otherwise the native
     /// Scenario1180 start-slot mapping used by Player@A..H510ED0 (VERA
@@ -818,7 +826,7 @@ impl Simulation {
             } else {
                 0
             };
-            for _ in 0..entry.count {
+            for _ in 0..entry.count.min(REINFORCEMENT_ENTRY_LIMIT) {
                 // CreateMembers65DE36 calls the retained TaskForce Type's
                 // CreateObject virtual, shared with the existing typed ctor.
                 let member = self.with_object_placement_scope(|sim| {

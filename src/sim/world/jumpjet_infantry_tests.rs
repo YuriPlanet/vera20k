@@ -822,7 +822,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             .iter()
             .filter(|event| {
                 matches!(event, super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == rocketeer && sound_id == "RocketeerDie")
+                    if *anim_id == rocketeer && sound_id.name_in(&scenario.runtime.resources.rules) == "RocketeerDie")
             })
             .count();
         let entity = sim
@@ -1007,6 +1007,8 @@ fn rocketeer_crash_fixture(
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
+    // Infantry's walk-or-fly choice (0x005221D0) asks the movement zones.
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.session.set_binary_frame_for_test(1000);
     // Both Houses human: the native harness steps objects alone, so no
     // computer House update draws from the Scenario stream.
@@ -1136,6 +1138,39 @@ fn rocketeer_crash_fixture(
     reveal(&mut sim, shooter, 40, 40);
     sim.resolve_type_handles(&rules);
     (sim, rules, shooter)
+}
+
+#[test]
+fn a_shot_down_rocketeer_finishes_on_the_fixed_bridge_deck() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::sim::movement::infantry_action::DO_AIR_DEATH_FINISH;
+
+    let input = serde_json::json!({
+        "doing": 23,
+        "height": 1080,
+        "owner": {"phase": 2, "moving": true},
+    });
+    let (mut sim, rules, shooter) = rocketeer_crash_fixture(&input);
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    terrain.cell_mut_for_test(52, 52).unwrap().level = 2;
+    let anchor = terrain.native_cell_identity((52, 52));
+    terrain.set_authored_high_bridge_deck(anchor, 10);
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((52, 52), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    shoot_the_rocketeer(&mut sim, &rules, shooter);
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    for frame in 1001..=1030 {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+        let rocketeer = sim.substrate.entities.get(1).unwrap();
+        if rocketeer.mission_leaf.as_infantry().unwrap().doing() == DO_AIR_DEATH_FINISH {
+            assert_eq!(rocketeer.position.exact_z_leptons(), Some(1040));
+            return;
+        }
+    }
+    panic!("the shot-down Rocketeer did not reach AirDeathFinish");
 }
 
 /// Update's facing tail (`0x0054D60D..0x0054D692`): hovering in state 2 with a

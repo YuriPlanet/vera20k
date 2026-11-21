@@ -86,7 +86,7 @@ fn normal_test_service_keeps_the_simplified_ui_and_only_vera20k_online() {
     lobby.set_lobbies(channels.clone());
     assert_eq!(lobby.lobbies.len(), 1);
     assert_eq!(lobby.lobbies[0].name, "Lob_41_2");
-    assert_eq!(lobby.ui.page_spec().stacked.len(), 4);
+    assert_eq!(lobby.ui.page_spec().stacked.len(), 6);
     let names = lobby_base_names(visit.modern_ui(), str::to_owned);
     assert_eq!(WolLobbyRow::joined_name(2, &names), "VERA20K Online");
     visit.set_legacy_ui(true);
@@ -158,6 +158,36 @@ fn listed_runner(kind: u32) -> Box<WolLobby> {
 
 fn names(lobby: &WolLobby) -> Vec<&str> {
     lobby.members.iter().map(|m| m.name.as_str()).collect()
+}
+
+#[test]
+fn only_the_public_watch_list_reports_its_outage_and_recovery() {
+    use WatchListRefresh::*;
+    let new = |runner| new_runner(runner, false, false, Instant::now(), true);
+    let mut lobby = new(Runner::Lobby);
+    // The dialog is hidden while a room covers it.
+    assert!(!lobby.shown);
+    assert_eq!(
+        lobby.watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Failed), None);
+    assert_eq!(
+        lobby.watch_refresh_notice(Listed),
+        Some("VERA:WatchListUpdated")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Listed), None);
+    assert_eq!(
+        lobby.watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
+    assert_eq!(lobby.watch_refresh_notice(Unsupported), None);
+    assert_eq!(lobby.watch_refresh_notice(Listed), None);
+    assert_eq!(new(Runner::QuickMatch).watch_refresh_notice(Failed), None);
+    assert_eq!(
+        new(Runner::Lobby).watch_refresh_notice(Failed),
+        Some("VERA:WatchListStale")
+    );
 }
 
 /// VERA lists the games again five seconds on, so a new game shows up

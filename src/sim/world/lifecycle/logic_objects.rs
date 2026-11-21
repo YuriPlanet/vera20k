@@ -274,10 +274,11 @@ impl Simulation {
         // `ObjectClass::Unlimbo @ 0x005F4EC0` leaves an object with id -2 out
         // of Logic in LAN and online games: the local list runs it instead
         // (`FrameStep::LocalAnims`).
-        if crate::sim::anim_class::is_local_anim_id(stable_id) {
-            return false;
-        }
-        self.register_logic_object(stable_id)
+        let registered = !crate::sim::anim_class::is_local_anim_id(stable_id)
+            && self.register_logic_object(stable_id);
+        // The glow block (`0x005F5045`) follows either way.
+        self.unlimbo_alpha_shape(stable_id, ObjectKind::Anim, rules);
+        registered
     }
 
     pub(crate) fn conceal_anim(&mut self, stable_id: u64) -> bool {
@@ -380,6 +381,7 @@ impl Simulation {
         if joins_logic {
             self.register_logic_object(stable_id);
         }
+        self.unlimbo_alpha_shape(stable_id, ObjectKind::Terrain, rules);
         true
     }
 

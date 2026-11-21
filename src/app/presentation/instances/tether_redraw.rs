@@ -2,7 +2,7 @@
 //! slot, and a Unit tethered to it draws only there.
 
 use crate::app::presentation::frame::PresentationFrame;
-use crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance;
+use crate::app::presentation::render::draw_plan_lowering::PlannedObjects;
 use crate::map::entities::EntityCategory;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
@@ -30,10 +30,7 @@ use crate::sim::mission::MissionType;
 /// the tactical admission did not plan is not drawn again, where native's
 /// DrawIt would still run. Its health bar and pips stay in its own slot,
 /// because `0x006D9789` draws Extras for every Display parent.
-pub(crate) fn assign_tether_redraws(
-    frame: &PresentationFrame,
-    planned: &mut [PlannedObjectInstance],
-) {
+pub(crate) fn assign_tether_redraws(frame: &PresentationFrame, planned: &mut PlannedObjects) {
     for object in planned.iter_mut() {
         let Some(record) = frame.object(object.parent.id) else {
             continue;

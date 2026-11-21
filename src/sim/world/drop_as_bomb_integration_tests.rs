@@ -199,7 +199,7 @@ fn a_bridge_drop_plays_voice_falling_once_through_foot_ai() {
                 .frame_committed
         );
         assert_eq!(sim.sound_events.iter().filter(|event| matches!(
-            event, super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "FallingVoice"
+            event, super::SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "FallingVoice"
         )).count(), expected);
         assert!(sim.substrate.entities.get(tank).unwrap().is_falling_down());
     }

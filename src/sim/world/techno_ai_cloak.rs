@@ -48,7 +48,7 @@ fn has_stealth_ability(
         entity.category(),
         object,
         ares,
-    )) || entity.effect_cloakable()
+    )) || entity.phobos_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
@@ -131,7 +131,10 @@ fn stock_cloak_tick_facts(
     // Original active-YR producer reachability remains unproven: the
     // dormant TS EMPulse body alone does not establish an original scenario
     // caller. Ares's Bullet hook is a separate, established producer.
-    let emp_active = entity.is_under_emp();
+    // Firestorm 2.0 `Cloaking_AI` 0x0062EFA0 (`0x0062EFC7`) and vt+0x240
+    // `0x0062F4A0` (`0x0062F523`) ask Is_Immobilized here, which also holds
+    // a webbed infantryman (`0x004D5B10`).
+    let emp_active = entity.is_immobilized(sim.session.binary_frame() as i32);
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.
@@ -861,7 +864,7 @@ pub(crate) fn emit_configured_cloak_sound(
         return;
     };
     sound_events.emit(crate::sim::world::SimSoundEvent::cloak_sound(
-        sound_name.to_owned(),
+        rules.sound_name(sound_name),
         &position,
     ));
 }
@@ -937,7 +940,7 @@ pub(crate) fn cloak_producer_ticks(
         .cloak
         .as_ref()
         .is_some_and(|cloak| cloak.state() != 0)
-        || entity.effect_cloakable()
+        || entity.phobos_cloakable()
 }
 
 /// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`

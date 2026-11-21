@@ -78,19 +78,13 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
 | `4D98C0` | `10049080` | FootClass_Destroyed | ported |
 | `44D760` | `10013F10` | BuildingClass_Destroyed_UnitLost | ported |
 | `44266B` | `10014520` | BuildingClass_ReceiveDamage_Destroyed | ported |
-| `51E748` | `10049710` | InfantryClass_GetActionOnObject_NoSelfGuardArea | residual, below |
+| `51E748` | `10049710` | InfantryClass_GetActionOnObject_NoSelfGuardArea | ported: `Simulation::infantry_healer_guards_itself` |
 | `687C16` | `100677B0` | CanMakeStuffUp's Rules randomisation | ported: draws and saved values; consumers residual, below |
 | `55AFB3` | `100680F0` | LogicClass_Update_1000 | ported |
 | `6FFEC0` | `10056D30` | TechnoClass_GetActionOnObject_IvanBombsA | ported: `Simulation::bomb_detonate_action`, asked ahead of the berserk and warp exits ([ares-ivan-bomb-abductor.md](ares-ivan-bomb-abductor.md)) |
 
 ## Residuals
 
-- `NoSelfGuardArea`: the stock arm it skips, a player's healer infantryman
-  over itself answering GuardArea (0x1A, the self test between hooks
-  `0x51E710` and `0x51E748` of `InfantryClass::What_Action_OnObject @
-  0x0051E3B0`), is in
-  the input ladder with or without Ares: a lone medic clicked on itself answers
-  NoMove. Porting the arm changes stock input too, so both wait for it.
 - `CanMakeStuffUp`'s Rules readers: `AresMadeUpRules` answers each value
   the DLL wrote (VeteranRatio, BuildSpeed, BuildupTime, RefundPercent,
   GrowthRate, Stray, FlightLevel, both fall rates, the three crews,
@@ -101,5 +95,6 @@ DontScore=yes              ; ... as does any DontScore/Insignificant type
   authored Rules. Trigger: `CanMakeStuffUp=yes`, set by no retail INI.
   Effect: the authored values stay in force; the draws, their order and the
   infantry pass match the DLL.
-- EMP: a Tunnel mover stays unsupported; every other Foot and every
-  EMP-prone building is covered ([ares-emp.md](ares-emp.md)).
+- EMP: a LaserFencePost's fence recalc ([ares-emp.md](ares-emp.md)); every
+  Foot mover, Tunnel and a landed Aircraft's Fly spin included, and every
+  EMP-prone building is covered.

@@ -66,10 +66,24 @@ impl Simulation {
             .first()
             .map_or(-1, |direction| i32::from(*direction));
         let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[(direction & 7) as usize];
-        let candidate = DriveCoord {
-            x: physical.x.wrapping_add(dx * 256),
-            y: physical.y.wrapping_add(dy * 256),
-            z: physical.z,
+        // Mech 5B088E..5B091D takes the neighbour cell's centre. Walk
+        // advances the physical XY by a whole cell, retaining the subcell.
+        let candidate = if actor
+            .locomotor
+            .as_ref()
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech)
+        {
+            DriveCoord::cell(
+                (physical.x / 256 + dx) as u16,
+                (physical.y / 256 + dy) as u16,
+                0,
+            )
+        } else {
+            DriveCoord {
+                x: physical.x.wrapping_add(dx * 256),
+                y: physical.y.wrapping_add(dy * 256),
+                z: physical.z,
+            }
         };
         let packed = coord_cell(candidate);
         //75B642 tests structural100 before5F5F00's two physical-cell
@@ -130,9 +144,29 @@ impl Simulation {
     ) -> Result<Option<FootPathRequest>, String> {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
-        if code == 0 {
+        let mech = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|a| a.locomotor.as_ref())
+            .is_some_and(|l| l.active_kind() == LocomotorKind::Mech);
+        // Mech 5B0981..5B09AF admits a type with Crusher=yes against
+        // overlay index zero even for codes 4 and 5.
+        let crushes_wall = mech
+            && matches!(code, 4 | 5)
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|a| self.interner.object_type(a.type_ref(), rules))
+                .is_some_and(|ty| ty.crusher)
+            && self.cell_overlay(self.walk_lookup_cell(packed)?).overlay_id == Some(0);
+        if code == 0 || crushes_wall {
             let selected =
                 self.walk_find_sub_cell_dest(id, Some(candidate), rules, registry, frame_effects)?;
+            if selected && mech {
+                self.mech_crush_ahead(id, rules);
+            }
             let actor = self
                 .substrate
                 .entities

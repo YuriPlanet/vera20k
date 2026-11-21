@@ -18,7 +18,10 @@ use super::PhobosOreGathering;
 use super::{AbilityFlags, BarrelVoxelOffsets, BuildCategory, BuildingHiddenOccupancyProfile};
 use super::{DEBRIS_LIMIT, DEFAULT_LEPTON_MIND_CONTROL_OFFSET, DEFAULT_TECH_LEVEL, HouseMasks};
 use super::{InfantryPips, ObjectCategory, ObjectType};
-use super::{PipScale, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan, WEAPON_SLOT_COUNT};
+use super::{
+    PipScale, SLAVES_NUMBER_LIMIT, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan,
+    WEAPON_SLOT_COUNT,
+};
 
 /// The pi/180 double multiplied by `TechnoTypeClass::ReadINI @ 0x00712170`
 /// when storing RollAngle at `+0x3A0` (`FMUL [0x007F4FB8] @ 0x007123BC`).
@@ -719,7 +722,7 @@ impl ObjectType {
             // Slave Miner / economy fields
             // Constructor null; only the ordered Process owner reads it.
             enslaves: None,
-            slaves_number: section.read_int("SlavesNumber", 0),
+            slaves_number: section.read_int("SlavesNumber", 0).min(SLAVES_NUMBER_LIMIT),
             slave_regen_rate: section.read_int("SlaveRegenRate", 0),
             slave_reload_rate: section.read_int("SlaveReloadRate", 0),
             slaved: section.read_bool("Slaved", false),
@@ -802,6 +805,10 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
+            is_limpet_mine: category == ObjectCategory::Building
+                && section.read_bool("IsLimpetMine", false),
+            is_limpet_drone: category == ObjectCategory::Vehicle
+                && section.read_bool("IsLimpetDrone", false),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
@@ -950,6 +957,8 @@ impl ObjectType {
             crate_beneath_is_money: category == ObjectCategory::Building
                 && section.read_bool("CrateBeneathIsMoney", false),
             can_occupy_fire: section.read_bool("CanOccupyFire", false),
+            // Decided by the RuleSet at load.
+            ra2_occupy_fire: false,
             show_occupant_pips: section.read_bool("ShowOccupantPips", true),
             bridge_repair_hut: section.read_bool("BridgeRepairHut", false),
             laser_fence: section.read_bool("LaserFence", false),
@@ -1155,6 +1164,12 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            // Firestorm 2.0 InfantryTypeClass::Read_INI 0x004DAB31..0x004DAB45
+            // reads it with the current value as its default, from the
+            // constructor's false (0x004DA229); the layered read keeps the
+            // current value across rules passes the same way.
+            is_web_immune: category == ObjectCategory::Infantry
+                && section.read_bool("IsWebImmune", false),
             damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),

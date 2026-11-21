@@ -883,7 +883,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
             .filter(|event| matches!(
                 event,
                 crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-                    if sound_id == "BioReactorEnter"
+                    if sound_id.name_in(&rules) == "BioReactorEnter"
             ))
             .count(),
         1,
@@ -910,7 +910,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
                 sub_y,
                 world_z_leptons,
                 ..
-            } if sound_id == "BioReactorEnter"
+            } if sound_id.name_in(&rules) == "BioReactorEnter"
                 && (*rx, *ry) == (foot_rx, foot_ry)
                 && *sub_x == foot_sub_x
                 && *sub_y == foot_sub_y
@@ -986,7 +986,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     assert!(!sim.sound_events.iter().any(|event| matches!(
         event,
         crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "BioReactorExit"
+            if sound_id.name_in(&rules) == "BioReactorExit"
     )));
 
     // The scan starts behind the facing; a foundation cell refuses the Foot
@@ -1067,7 +1067,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
             .filter(|event| matches!(
                 event,
                 crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-                    if sound_id == "BioReactorExit"
+                    if sound_id.name_in(&rules) == "BioReactorExit"
             ))
             .count(),
         1
@@ -1083,7 +1083,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
                 sub_y,
                 world_z_leptons,
                 ..
-            } if sound_id == "BioReactorExit"
+            } if sound_id.name_in(&rules) == "BioReactorExit"
                 && (*rx, *ry) == (building_rx, building_ry)
                 && *sub_x == building_sub_x
                 && *sub_y == building_sub_y

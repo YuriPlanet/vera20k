@@ -191,13 +191,17 @@ pub(crate) fn facing_update(
     let has_turret = entity.barrel_facing.is_some();
 
     // --- A. AIM ---------------------------------------------------------
-    let target_facing: Option<u16> = entity
-        .attack_target
-        .target()
-        .and_then(|attack| facing_toward_target(entity, &attack, world));
-    if let Some(tgt) = target_facing
-        && !entity.turret_rotation_latch.is_set()
-    {
+    // The latch is tested before DirectionToTarget, a pure read, so a held
+    // arc asks none (VERA-only order, results unchanged).
+    let target_facing: Option<u16> = if entity.turret_rotation_latch.is_set() {
+        None
+    } else {
+        entity
+            .attack_target
+            .target()
+            .and_then(|attack| facing_toward_target(entity, &attack, world))
+    };
+    if let Some(tgt) = target_facing {
         if has_turret {
             if !current_weapon_is_omni_fire(entity, entities, rules, interner) {
                 out.turret_destination = Some(tgt);

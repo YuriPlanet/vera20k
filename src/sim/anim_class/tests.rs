@@ -1417,7 +1417,7 @@ fn combat_explosion_uses_the_verified_constructor_row_and_plays_report() {
         sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                if *anim_id == id && sound_id == "EXPLOSION06"
+                if *anim_id == id && sound_id.name_in(&rules) == "EXPLOSION06"
         )),
         "explosion must emit its art `Report=`, got {:?}",
         sim.sound_events
@@ -1558,6 +1558,38 @@ fn runtime_anim_retains_native_identity_and_spends_it_before_asset_failure() {
     assert_eq!(sim.anim(id).unwrap().native_unique_id, 1002);
     assert_ne!(id as i32, 1002, "stable handles have an independent owner");
     assert_eq!(sim.scenario_rng.logical_state(), rng);
+}
+
+/// A local anim skips its constructor stream exactly when the constructor
+/// would neither draw nor return a draw.
+#[test]
+fn only_random_rate_bouncer_and_meteor_constructors_draw() {
+    let rules = runtime_rules(
+        "[FLASH]\nEnd=2\n[RATED]\nRandomRate=50,150\nEnd=2\n\
+         [BOUNCY]\nBouncer=yes\nEnd=2\n[ROCK]\nIsMeteor=yes\nEnd=2\n",
+        &[("FLASH", 2), ("RATED", 2), ("BOUNCY", 2), ("ROCK", 2)],
+    );
+    let coord = AnimWorldCoord {
+        x: 128,
+        y: 128,
+        z: 20,
+    };
+    for (name, draws) in [
+        ("FLASH", false),
+        ("RATED", true),
+        ("BOUNCY", true),
+        ("ROCK", true),
+    ] {
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        assert_eq!(super::spawn::constructor_draws(config), draws, "{name}");
+        let mut rng = crate::sim::rng::SimRng::new(7);
+        let before = rng.logical_state();
+        let taken = anim_constructor_draws(config, coord, &mut rng).unwrap();
+        // Equal RandomRate bounds return a rate without a draw, so only the
+        // skipped side must leave the stream as it was.
+        assert!(draws || rng.logical_state() == before, "{name}");
+        assert_eq!(taken != AnimConstructorDraws::default(), draws, "{name}");
+    }
 }
 
 #[test]
@@ -1762,7 +1794,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         true,
         AnimOccupationOperation::Mark,
     );
@@ -1773,7 +1805,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );
@@ -1784,7 +1816,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Mark,
     );
@@ -1794,7 +1826,7 @@ fn gsi_04_12_anim_make_infantry_mark_and_clear_keep_native_bridge_asymmetry() {
         RawCellKey::Real(7, 8),
         0x10,
         416,
-        0,
+        416,
         false,
         AnimOccupationOperation::Clear,
     );
@@ -3426,7 +3458,7 @@ fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start
     assert_eq!(anim.z_adjust, -300);
     assert!(anim.no_effects());
     assert!(anim.runtime.first_ai_guard);
-    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
+    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id.name_in(&rules)=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
     assert!(sim.fog.is_cell_revealed(player, 10, 10));
     assert!(!sim.fog.is_cell_revealed(player, 20, 20));
     let other = sim.interner.get("Other").unwrap();
@@ -3508,7 +3540,7 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
                 "424358 ends the flare before consuming19C"
             );
             assert!(sim.substrate.pending_delete.contains_object(&id));
-            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id=="EXPLOSIONSHARD")));
+            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id.name_in(&rules)=="EXPLOSIONSHARD")));
             sim.process_pending_delete();
             assert!(sim.anim(id).is_none());
         } else {

@@ -1,6 +1,8 @@
 //! Retail PARACH atlas closure, canopy instance building, and offscreen draw.
 
-use super::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture, lower_object_instances};
+use super::draw_plan_lowering::{
+    NativeDisplayOrder, ObjectTexture, PlannedObjects, lower_object_instances,
+};
 use super::merge_passes::draw_native_object_pass;
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
@@ -250,8 +252,9 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         observe_particles: false,
     };
     let order = NativeDisplayOrder::from_world(&sim, None);
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(&input, &mut parents, &order, Default::default());
+    let parents = parents.into_owned();
 
     let mut canopy_instances = Vec::with_capacity(2);
     for ((&id, (key, entry)), parent) in anim_ids.iter().zip(&keys_and_entries).zip(&parents) {
@@ -278,7 +281,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         canopy_instances.push(piece.instance);
     }
 
-    let layers = lower_object_instances(parents);
+    let layers = lower_object_instances(parents.into());
     let ground = &layers[2];
     assert_eq!(ground.instances.len(), 2);
     assert_eq!(ground.owners, anim_ids);

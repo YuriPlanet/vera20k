@@ -479,6 +479,161 @@ fn authored_fill_defers_all_executable_projection() {
 }
 
 #[test]
+fn eager_authored_fill_recovers_the_deck_from_both_bridgeheads() {
+    let mut theater = synthetic_theater_from_ini(
+        b"[TileSet0000]\nTilesInSet=8\nFileName=bridge\nSetName=Bridge\n",
+    );
+    theater.high_bridge_rim_tiles = crate::map::bridge_rim_tiles::HighBridgeRimTiles::from_ini(
+        0,
+        b"[General]\nBridgeTopRight1=5\nBridgeBottomLeft1=7\n",
+    );
+    let mut map = make_map(
+        [
+            (9, 10, 4, 8),
+            (10, 0, 4, 12),
+            (11, 7, 0, 0),
+            (12, 0, 0, 0),
+            (13, 9, 6, 2),
+        ]
+        .map(|(ry, z, tile_index, sub_tile)| MapCell {
+            rx: 10,
+            ry,
+            z,
+            tile_index,
+            sub_tile,
+            legacy_ice_byte: 0,
+        })
+        .to_vec(),
+        (10..=12)
+            .map(|ry| OverlayEntry {
+                rx: 10,
+                ry,
+                overlay_id: 0x19,
+                frame: 0,
+            })
+            .collect(),
+        Vec::new(),
+    );
+    map.header.width = 10;
+    map.header.height = 10;
+    let load = |map: &MapFile| {
+        let mut cache = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+        let mut rng = SimRng::new(0x401);
+        let mut draw = || rng.next_u32();
+        let mut selector = cache.begin_load(&mut draw);
+        ResolvedTerrainGrid::build_with_variant_selector(
+            map,
+            Some(&theater),
+            None,
+            None,
+            None,
+            None,
+            false,
+            0,
+            &mut |low, _| low,
+            &mut selector,
+        )
+    };
+    let grid = load(&map);
+    assert_eq!(grid.corrected_high_bridge_deck_level((10, 10)), Some(9));
+    assert_eq!(grid.corrected_high_bridge_deck_level((10, 11)), Some(9));
+    assert_eq!(grid.corrected_high_bridge_deck_level((10, 12)), Some(9));
+
+    // A missing far rim must not let its depressed anchor override the start road.
+    map.cells.retain(|cell| (cell.rx, cell.ry) != (10, 13));
+    let grid = load(&map);
+    assert_eq!(grid.corrected_high_bridge_deck_level((10, 11)), Some(10));
+}
+
+#[test]
+fn newurban_wooden_high_bridge_uses_both_tmp_approaches() {
+    let Some((_directory, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "NEWURBAN").unwrap();
+    let wood = theater.lookup.bounds()[usize::from(theater.wood_bridge_set.unwrap())].start;
+    let mut cells = Vec::new();
+    let mut overlays = Vec::new();
+    // The pristine NewUrban head TMPs Ovrpsb01/02 (+X) and 03/06 (+Y).
+    // Different road levels make each lower end decisive in one direction.
+    for (horizontal, start, end, id) in [
+        (true, (0, 8, 10, 7), (1, 4, 9), 0xed),
+        (false, (2, 12, 9, 7), (5, 2, 10), 0xee),
+    ] {
+        let coord = |along: u16| {
+            if horizontal {
+                (along + 15, 10)
+            } else {
+                (10, along + 15)
+            }
+        };
+        let (start_tile, anchor_sub, start_level, road_sub) = start;
+        let (end_tile, end_sub, end_level) = end;
+        for (along, relative, sub_tile, z) in [
+            (0, start_tile, road_sub, start_level),
+            (1, start_tile, anchor_sub, 0),
+            (4, end_tile, end_sub, end_level),
+        ] {
+            let (rx, ry) = coord(along);
+            cells.push(MapCell {
+                rx,
+                ry,
+                tile_index: i32::from(wood + relative),
+                sub_tile,
+                z,
+                legacy_ice_byte: 0,
+            });
+        }
+        for along in 1..=3 {
+            let (rx, ry) = coord(along);
+            overlays.push(OverlayEntry {
+                rx,
+                ry,
+                overlay_id: id,
+                frame: 0,
+            });
+        }
+    }
+    let mut map = make_map(cells, overlays, Vec::new());
+    map.header.theater = "NEWURBAN".into();
+    map.header.width = 16;
+    map.header.height = 12;
+    let mut cache = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+    let mut rng = SimRng::new(0x401);
+    let mut draw = || rng.next_u32();
+    let mut selector = cache.begin_load(&mut draw);
+    let mut build = |registry| {
+        ResolvedTerrainGrid::build_with_variant_selector(
+            &map,
+            Some(&theater),
+            Some(&assets),
+            None,
+            registry,
+            None,
+            false,
+            0,
+            &mut |low, _| low,
+            &mut selector,
+        )
+    };
+    let blocked = OverlayTypeRegistry::empty();
+    let unresolved = build(Some(&blocked));
+    let grid = build(None);
+    for coord in [(16, 10), (18, 10), (10, 16), (10, 18)] {
+        assert_eq!(
+            grid.corrected_high_bridge_deck_level(coord),
+            Some(9),
+            "{coord:?}"
+        );
+        assert_eq!(
+            unresolved.corrected_high_bridge_deck_level(coord),
+            None,
+            "unbound {coord:?}"
+        );
+    }
+}
+
+#[test]
 fn gsi_04_01_production_overlaypack_stamps_two_anchors_in_row_major_order() {
     let mut map = make_map(
         Vec::new(),

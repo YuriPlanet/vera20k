@@ -112,7 +112,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
             id,
             coords(&case["particle"]["coords"]),
             IVec3::ZERO,
-            rules.particle_type(id),
+            &rules,
             &mut sim,
         );
         assert_particle(&p, &case["particle"]);
@@ -161,7 +161,7 @@ fn original_smoke_move_uses_old_live_bridge_and_retains_move_death_coords() {
             &mut p,
             rules.particle_type(ty),
             rules.general.wind_direction(),
-            &sim,
+            sim.resolved_terrain.as_ref(),
         )
         .unwrap();
         assert_particle(&p, &case["after"]);
@@ -184,7 +184,13 @@ fn a_wind_direction_outside_the_table_moves_smoke_with_no_wind() {
         let mut p = declared_particle(&mut sim, &rules, &case["before"]);
         let before = p.coords;
         let ty = p.type_id;
-        move_smoke(&mut p, rules.particle_type(ty), wind, &sim).unwrap();
+        move_smoke(
+            &mut p,
+            rules.particle_type(ty),
+            wind,
+            sim.resolved_terrain.as_ref(),
+        )
+        .unwrap();
         assert_eq!(
             (p.coords.x - before.x, p.coords.y - before.y),
             (p.drift_x, p.drift_y)

@@ -290,7 +290,7 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
                 .iter()
                 .filter(|event| {
                     matches!(event, SimSoundEvent::VocAt { sound_id, audible_to: None, rx: 40, ry: 40, world_z_leptons: 0, .. }
-                        if sound_id == "ForceShieldFading")
+                        if sound_id.name_in(&rules) == "ForceShieldFading")
                 })
                 .count()
         };
@@ -544,7 +544,7 @@ mod sound_reference_history {
                             crate::util::lepton::CELL_CENTER_LEPTON
                         )
                     );
-                    assert_eq!(sound_id, expected_fade);
+                    assert_eq!(sound_id.name_in(&rules), expected_fade);
                     fade_visits.push(visit);
                 }
             }

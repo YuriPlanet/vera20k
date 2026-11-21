@@ -41,8 +41,12 @@ impl<T> CommandBarArt<T> {
 pub(super) fn load(
     route: SidebarSideRoute<'_>,
     palette: &Palette,
+    theme: SidebarTheme,
 ) -> CommandBarArt<RenderedChromeEntry> {
     let render = |name: &str, frame| route.render(name, palette, frame);
+    // The bar's pictures, as the built-in `veraui_default.ini` names them
+    // (`[Bar] Rail=`, `LeftCap=`, `RightCap=`, `Slot=`).
+    let piece = |key, frame| render(built_in_name("Bar", key, theme)?, frame);
     // InitSideMixFiles534FA0 loads UIMD.INI before674650 installs ButtonList.
     let ini = route
         .asset_manager
@@ -55,10 +59,10 @@ pub(super) fn load(
             .unwrap_or_default()
     });
     CommandBarArt {
-        spacer: render("LSPACER.SHP", 0),
-        left_cap: std::array::from_fn(|i| render("LENDCAP.SHP", i)),
-        right_cap: render("RENDCAP.SHP", 0),
-        background: render("BTTNBKGD.SHP", 0),
+        spacer: piece("Rail", 0),
+        left_cap: std::array::from_fn(|i| piece("LeftCap", i)),
+        right_cap: piece("RightCap", 0),
+        background: piece("Slot", 0),
         // TabClass::LoadSHPs @ 0x006D02B0 loads Button00..Button24.SHP
         // (FreeSHPs @ 0x006D0270 frees them), indexed by command; only the
         // 11 command names (6CFCC0) can take a slot, so 11..24 never draw.

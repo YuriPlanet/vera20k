@@ -686,7 +686,7 @@ def _checkout_running(store: Path, namespace: str) -> bool:
     return False
 
 
-def _superseded(store: Path, roots, profiles, inventory, links, executables) -> set[Path]:
+def _superseded(store: Path, roots, profiles, inventory, links, executables) -> tuple[set[Path], set[str]]:
     """Cache executables an equally named newer one in its deps directory replaced.
 
     Cargo keeps every test and bin executable whose hash changed with features,
@@ -696,6 +696,11 @@ def _superseded(store: Path, roots, profiles, inventory, links, executables) -> 
     newest of each name stays, as does any executable of a checkout whose run
     holds its lock: that run may execute its own recorded tests after Cargo.
     Windows executables and their PDBs stay unless a later change pairs them.
+
+    The second value names the checkouts whose held lock alone kept an otherwise
+    reclaimable executable alive. Releasing such a lock makes that executable
+    reclaimable, so a pass that found nothing removable because of it names them,
+    and a later pass does not trust its receipt once they are free.
     """
     names = {}
     deps = {profile / 'deps' for profile in profiles}
@@ -705,15 +710,19 @@ def _superseded(store: Path, roots, profiles, inventory, links, executables) -> 
             names.setdefault((path.parent, match[1]), []).append(path)
     running = {}
     superseded = set()
+    locked = set()
     for paths in names.values():
         paths.sort(key=lambda path: (inventory[path].st_mtime_ns, path.name))
         for path in paths[:-1]:
             namespace = next(cache.name for cache in roots if path.is_relative_to(cache))
             if namespace not in running:
                 running[namespace] = _checkout_running(store, namespace)
-            if inventory[path].st_nlink == 1 and links.eligible(path) and not running[namespace]:
-                superseded.add(path)
-    return superseded
+            if inventory[path].st_nlink == 1 and links.eligible(path):
+                if running[namespace]:
+                    locked.add(namespace)
+                else:
+                    superseded.add(path)
+    return superseded, locked
 
 
 def _profile_uses(roots, profiles, uses: dict) -> dict:
@@ -845,8 +854,14 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if magic in MACH | {b'\x7fELF'} or magic[:2] == b'MZ':
                     binaries.add(path)
             links = _CacheLinks(inventory, increments)
-            superseded = _superseded(store, roots, profiles, inventory, links, binaries - published)
+            superseded, lock_protected = _superseded(
+                store, roots, profiles, inventory, links, binaries - published)
             receipt['superseded_executables'] = sorted(map(str, superseded))
+            # The checkouts whose held lock alone kept an otherwise reclaimable
+            # executable alive. Releasing one makes that executable reclaimable,
+            # so a later pass must not read this receipt as evidence that no
+            # file was removable.
+            receipt['lock_protected_namespaces'] = sorted(lock_protected)
             protected = binaries - superseded
             needed = {}  # Objects only superseded executables name, and those executables.
             # Immutable validation inputs first: an already broken label can
@@ -1196,6 +1211,10 @@ def _futile_pass(root: Path, store: Path, policy: CachePolicy, volumes) -> Path 
     changed since. The interval bounds trust in the digest, as for the budgets. A
     short reserve takes working sets the budgets leave, so while it is short only a
     pass that found it short counts.
+
+    A receipt written before the locks were recorded proves nothing about them,
+    and a checkout whose lock has since been released holds executables a new
+    pass can reclaim: neither is evidence that nothing is removable now.
     """
     if (last := _last_applied_pass(store)) is None:
         return None
@@ -1207,6 +1226,14 @@ def _futile_pass(root: Path, store: Path, policy: CachePolicy, volumes) -> Path 
     if (receipt.get('state') != 'trimmed' or receipt.get('errors') != []
             or receipt.get('removable_groups') != 0 or (short and receipt.get('reserve_short') is not True)
             or not 0 <= time.time() - finished < AUTOMATIC_INTERVAL_SECONDS):
+        return None
+    protected = receipt.get('lock_protected_namespaces')
+    if not isinstance(protected, list):
+        return None
+    try:
+        if any(not _checkout_running(store, namespace) for namespace in protected):
+            return None
+    except (OSError, ValueError):
         return None
     try:
         return path if receipt.get('cache_state') == _cache_state(root, store) else None

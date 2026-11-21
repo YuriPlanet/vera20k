@@ -55,7 +55,9 @@ impl WolCapture {
                 welcome_click(
                     state,
                     crate::ui::skirmish_shell::checkbox_icon_rect(
-                        layout.control,
+                        layout
+                            .rect_of(crate::ui::wol_persona::DO_NOT_ASK)
+                            .context("0x112 Don't Ask")?,
                         layout.page.scale,
                     ),
                 );
@@ -73,7 +75,9 @@ impl WolCapture {
                 else {
                     bail!("0xFE is not open");
                 };
-                let geometry = crate::app::shell_wol::persona::list_geometry(&layout, page);
+                let (geometry, _) =
+                    crate::app::shell_wol::persona::list_view(&state.frontend.shell_controller)
+                        .context("0xFE list")?;
                 let locale = page.rows.get(2).context("0xFE rows")?.locale;
                 welcome_click(state, geometry.row(2));
                 welcome_click(state, layout.page.button_rect(ACCEPT).context("0xFE OK")?);
@@ -117,7 +121,7 @@ impl WolCapture {
                 ansi: true,
             },
         );
-        let hint = App::csf_label(state, "TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
+        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
         let after = rows(state);
         ensure!(
             after.len() == before + 2
@@ -141,10 +145,14 @@ impl WolCapture {
             },
             false,
         );
-        let opened = page::page_dialog(state).is_some_and(|page| {
-            page.name.narrow_text(usize::MAX) == "Tanya"
-                && page.focus == Some(crate::ui::wol_page::TEXT)
-        });
+        let opened = page::page_dialog(state.frontend.wol.as_ref()).is_some()
+            && crate::app::shell_wol::leaf::text(
+                &state.frontend.shell_controller,
+                crate::ui::wol_page::PAGE_DIALOG,
+                crate::ui::wol_page::NAME,
+            ) == "Tanya"
+            && crate::app::shell_wol::leaf::focused(&state.frontend.shell_controller)
+                == Some(crate::ui::wol_page::TEXT);
         ensure!(
             state.match_state.match_presentation.in_game_menu == InGameMenuState::Page && opened,
             "PageUser did not open 0xCF with the pager prefilled"
@@ -188,13 +196,13 @@ impl WolCapture {
     fn ingame_page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::page;
         use crate::ui::pause_menu::InGameMenuState;
-        let texts: Vec<String> = page::page_dialog(state)
+        let texts: Vec<String> = page::page_dialog(state.frontend.wol.as_ref())
             .context("the in-match 0xCF closed")?
             .lines
             .iter()
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
-        let sent = App::csf_label(state, "TXT_PAGESENT", "TXT_PAGESENT");
+        let sent = state.csf_label("TXT_PAGESENT", "TXT_PAGESENT");
         ensure!(
             texts.contains(&format!("[{NICKNAME}] on my way"))
                 && texts.contains(&sent)
@@ -209,7 +217,7 @@ impl WolCapture {
             .iter()
             .map(|row| row.text.clone())
             .collect();
-        let hint = App::csf_label(state, "TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
+        let hint = state.csf_label("TXT_HOW_TO_REPLY", "TXT_HOW_TO_REPLY");
         ensure!(
             rows.last()
                 .is_some_and(|row| row.contains("(Tanya) Got your page."))
@@ -218,7 +226,9 @@ impl WolCapture {
         );
         self.event(frame, json!({"in-match 0xCF lines": texts, "rows": rows}));
         if self.target == WolTarget::IngamePageCancel {
-            let cancel = page::page_layout(state).cancel;
+            let cancel = page::page_layout(&state.renderer, &state.frontend.screen)
+                .rect_of(crate::ui::shell::modal::control::CANCEL)
+                .unwrap_or_default();
             state.match_state.input.cursor_x = (cancel.x + cancel.w / 2) as f32;
             state.match_state.input.cursor_y = (cancel.y + cancel.h / 2) as f32;
             for pressed in [
@@ -233,7 +243,7 @@ impl WolCapture {
             }
             ensure!(
                 state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
-                    && page::page_dialog(state).is_none(),
+                    && page::page_dialog(state.frontend.wol.as_ref()).is_none(),
                 "Cancel did not end state 7"
             );
             self.event(frame, "Cancel ended state 7");
@@ -249,9 +259,12 @@ impl WolCapture {
         setup: bool,
     ) -> Result<()> {
         use crate::app::shell_wol::page;
-        ensure!(page::page_dialog(state).is_some(), "Page did not open 0xCF");
+        ensure!(
+            page::page_dialog(state.frontend.wol.as_ref()).is_some(),
+            "Page did not open 0xCF"
+        );
         self.event(frame, "0xCF opened");
-        let layout = page::page_layout(state);
+        let layout = page::page_layout(&state.renderer, &state.frontend.screen);
         let click = |state: &mut AppState, rect: RectPx| {
             if setup {
                 setup_click(state, rect);
@@ -273,15 +286,19 @@ impl WolCapture {
             WolTarget::PageUserGone => ("Nobody", Some("hello")),
             _ => ("Tanya", Some("hello")),
         };
-        click(state, layout.name);
+        click(state, layout.rect_of(0x5C1).unwrap_or_default());
         key(state, None, Some(name));
         match text {
             Some(text) => {
                 // Leaving the name for the text locates it.
-                click(state, layout.text);
+                click(state, layout.rect_of(0x540).unwrap_or_default());
                 key(state, None, Some(text));
                 ensure!(
-                    page::page_dialog(state).is_some_and(|page| page.send_enabled),
+                    crate::app::shell_wol::leaf::enabled(
+                        &state.frontend.shell_controller,
+                        crate::ui::wol_page::PAGE_DIALOG,
+                        crate::ui::wol_page::SEND
+                    ),
                     "0xCF Page stayed disabled"
                 );
                 key(state, Some(winit::keyboard::KeyCode::Enter), None);
@@ -298,7 +315,8 @@ impl WolCapture {
 
     /// The test service has answered `0xCF`'s locate and page.
     pub(super) fn page_answers(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let Some(page) = crate::app::shell_wol::page::page_dialog(state) else {
+        let Some(page) = crate::app::shell_wol::page::page_dialog(state.frontend.wol.as_ref())
+        else {
             bail!("0xCF closed");
         };
         let texts: Vec<String> = page
@@ -306,7 +324,7 @@ impl WolCapture {
             .iter()
             .map(|line| String::from_utf16_lossy(&line.text))
             .collect();
-        let csf = |key: &str| App::csf_label(state, key, key);
+        let csf = |key: &str| state.csf_label(key, key);
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
@@ -437,10 +455,13 @@ impl WolCapture {
             "unexpected lobby titles: {titles:?}"
         );
         let index = usize::from(watch);
-        let geometry = ui
-            .game_list
-            .geometry(layout.games, rows.len(), layout.page.scale);
-        let rect = geometry.row(index - ui.game_list.top_index);
+        let geometry = ui.shown_geometry(
+            lobby_ui::GAMES,
+            layout.control_rect(lobby_ui::GAMES).unwrap_or_default(),
+            rows.len(),
+            layout.page.scale,
+        );
+        let rect = geometry.row(index - ui.list_top(lobby_ui::GAMES));
         // Hit the far edge of the row as well as its name. The source id
         // remains the click target even where a long visible title is clipped.
         for x in [rect.x + rect.w - 2, rect.x + 3] {
@@ -448,11 +469,16 @@ impl WolCapture {
             App::handle_wol_mouse_move(state);
             let ui = &Self::lobby(state)?.ui;
             ensure!(
-                ui.buttons.hovered == Some(lobby_ui::GAMES) && ui.game_list.hot_row == Some(index),
+                ui.hovered() == Some(lobby_ui::GAMES)
+                    && ui.row_at(lobby_ui::GAMES, x, rect.y + 1) == Some(index),
                 "the pointer missed the game row at {x}"
             );
         }
-        let help = crate::app::shell_wol::lobby::room_details(state).context("room details")?;
+        let help = crate::app::shell_wol::lobby::status_help(
+            &state.frontend,
+            &state.match_state.input,
+            &state.process_assets,
+        );
         let (size, seats, limit, capacity_key) = if watch {
             (2, 1, 8, "VERA:LobbyWatchCapacity")
         } else {
@@ -471,16 +497,12 @@ impl WolCapture {
             crate::i18n::tr_fill(capacity_key, &[("count", &seats), ("max", &limit)]),
         ]);
         ensure!(
-            help.room_name == if watch { watch_room } else { "Friday Night" }
-                && help.title == titles[index]
-                && help.counts == details.join(" - "),
-            "incomplete details for row {index}: {} / {}",
-            help.title,
-            help.counts
+            help == details.join(" - "),
+            "incomplete status help for row {index}: {help}"
         );
         self.event(
             frame,
-            json!({"room and watch titles": titles, "hovered row": index, "status help": format!("{}\n{}", help.title, help.counts)}),
+            json!({"room and watch titles": titles, "hovered row": index, "status help": help}),
         );
         self.settle();
         Ok(())
@@ -537,15 +559,13 @@ impl WolCapture {
         match target {
             WolTarget::ModernForgotPassword => {
                 account_type(state, &["Player"]);
-                let form = login_mut(state)?
-                    .account
-                    .as_mut()
-                    .context("Forgot Password")?;
+                let (login, ui) = login_mut(state)?;
+                let form = login.account.as_mut().context("Forgot Password")?;
                 ensure!(
                     matches!(
-                        form.activate(FORM_OK),
+                        form.activate(ui, FORM_OK),
                         Some(AccountFormAction::Send(AccountRequest::Forgot { .. }))
-                    ) && form.answered(Ok(AccountSuccess::Accepted)).is_none()
+                    ) && form.answered(ui, Ok(AccountSuccess::Accepted)).is_none()
                         && form.kind == FormKind::Reset,
                     "Forgot Password did not move on to its code"
                 );
@@ -560,13 +580,11 @@ impl WolCapture {
                 account_type(state, &["Player", "player@example.com", PASSWORD, PASSWORD]);
                 self.event(frame, "Create Account filled in");
                 if target == WolTarget::ModernAccountCode {
-                    let form = login_mut(state)?
-                        .account
-                        .as_mut()
-                        .context("Create Account")?;
+                    let (login, ui) = login_mut(state)?;
+                    let form = login.account.as_mut().context("Create Account")?;
                     ensure!(
-                        matches!(form.activate(FORM_OK), Some(AccountFormAction::Send(_)))
-                            && form.answered(Ok(AccountSuccess::Accepted)).is_none()
+                        matches!(form.activate(ui, FORM_OK), Some(AccountFormAction::Send(_)))
+                            && form.answered(ui, Ok(AccountSuccess::Accepted)).is_none()
                             && form.kind == FormKind::Verify,
                         "Create Account did not move on to its code"
                     );
@@ -575,12 +593,10 @@ impl WolCapture {
                 }
             }
         }
-        let form = login_mut(state)?
-            .account
-            .as_ref()
-            .context("account popup")?;
+        let (login, ui) = login_mut(state)?;
+        let form = login.account.as_ref().context("account popup")?;
         ensure!(
-            form.ok_enabled(),
+            form.ok_enabled(ui),
             "the filled account popup kept OK disabled"
         );
         Ok(())

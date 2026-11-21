@@ -22,6 +22,7 @@ use super::profile::{
 pub(crate) const CAPTURE_SCHEMA: &str = "vera20k.tactical-capture.v3";
 const NATIVE_COMPARATOR_NONE: &str = "NONE";
 const PARITY_CERTIFICATION_NONE: &str = "NONE";
+/// A process-unique serial for staging folder names.
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]

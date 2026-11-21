@@ -338,7 +338,7 @@ enum Sound {
 }
 
 impl Calls {
-    fn of(sim: &Simulation, anims_before: usize) -> Self {
+    fn of(sim: &Simulation, rules: &RuleSet, anims_before: usize) -> Self {
         let sounds = sim
             .sound_events
             .iter()
@@ -358,7 +358,7 @@ impl Calls {
                     world_z_leptons,
                     ..
                 } => Some(Sound::At(
-                    sound_id.clone(),
+                    sound_id.name_in(rules).to_string(),
                     [
                         i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
                         i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
@@ -506,7 +506,7 @@ fn storm_start_matches_native_rows() {
             house_ref(&houses, &row["owner"]),
         );
         assert_globals(&sim, &houses, &row["storm"], row);
-        assert_eq!(Calls::of(&sim, 0), Calls::expected(row), "{row}");
+        assert_eq!(Calls::of(&sim, &rules, 0), Calls::expected(row), "{row}");
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -551,7 +551,7 @@ fn storm_cloud_matches_native_rows() {
         let anims: Vec<AnimId> = sim.anims().map(|(&id, _)| id).collect();
         assert_eq!(lists(&sim, &anims), expected_lists(&row["storm"]), "{row}");
         assert_eq!(
-            Calls::of(&sim, existing.len()),
+            Calls::of(&sim, &rules, existing.len()),
             Calls::expected(row),
             "{row}"
         );
@@ -685,7 +685,7 @@ fn storm_strike_matches_native_rows() {
         );
 
         let mut expected = Calls::expected(row);
-        let mut seen = Calls::of(&sim, 0);
+        let mut seen = Calls::of(&sim, &rules, 0);
         if row["explosion"].is_null() {
             // RESIDUAL (module doc): VERA constructs nothing for a null type.
             expected.anims.retain(|(name, ..)| !name.is_empty());
@@ -851,7 +851,11 @@ fn storm_process_matches_native_rows() {
             })
             .collect();
         assert_eq!(table, expected_table, "{row}");
-        assert_eq!(Calls::of(&sim, anims_before), Calls::expected(row), "{row}");
+        assert_eq!(
+            Calls::of(&sim, &rules, anims_before),
+            Calls::expected(row),
+            "{row}"
+        );
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -1538,7 +1542,7 @@ fn retail_storm_strikes_through_production_frames() {
             .sound_events
             .iter()
             .filter(|event| {
-                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "WeatherStrike")
+                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "WeatherStrike")
             })
             .count();
         assert!(frames < 2000, "the storm ends");
@@ -1746,7 +1750,7 @@ fn ares_storm_starts_with_its_type_keys() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocCentered { sound_id } if sound_id == "WeatherIntro"
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "WeatherIntro"
     )));
     assert!(!events.iter().any(began), "no stock line");
 

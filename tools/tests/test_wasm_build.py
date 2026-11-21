@@ -48,6 +48,22 @@ class WasmBuildTests(unittest.TestCase):
             self.assertIn('<span id="build">Build v1 · fast · single player</span>', page)
             self.assertNotIn('Unpackaged page', page)
 
+    def test_host_serves_the_skirmish_map_as_a_separate_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package_host(root, root / 'output', False)
+            name = 'Arctic_Circle_16_Ice_Passages.map'
+            self.assertEqual((root / 'output' / 'Maps' / name).read_bytes(),
+                             (ROOT / 'maps' / name).read_bytes())
+
+    def test_engine_package_ships_the_ice_terrain_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            package_host(stage, stage / 'out', False)
+            for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+                self.assertEqual((stage / 'out/pkg/Terrain' / name).read_bytes(),
+                                 (ROOT / 'Terrain' / name).read_bytes())
+
     def test_package_carries_the_files_the_engine_fetches_before_starting(self):
         # src/render/text_engine/web_fonts.rs PRELOADS: the engine embeds neither.
         with tempfile.TemporaryDirectory() as directory:

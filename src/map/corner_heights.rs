@@ -8,9 +8,13 @@
 //! of its build (`0x006B2A70`), level (`0x006B4100`), mask (`0x006B4240`),
 //! adjust (`0x006B3E60`, propagating through `0x006B3A80`) and finalize
 //! (`0x006B3850`) helpers, which read and write `CellClass` data. The random
-//! map generator runs them over its whole diamond (`rmg::phases::hills`);
-//! terrain deformation runs them over a window of a live map.
-//! [`CornerCells`] is the cell data each reads.
+//! map generator runs them over its whole diamond (`rmg::phases::hills`).
+//! Tiberian Sun: Firestorm lowers live ground with the same engine in levels
+//! of 12 instead of 15 (Firestorm 2.0 0x5F9AB0: build 0x5F8500, propagate
+//! 0x5F9860, finalize 0x5F8D30, the same slope table and corner order), and
+//! terrain deformation runs it over a window of a live map
+//! ([`CornerGrid::apply_or_discard`]). [`CornerCells`] is the cell data each
+//! reads.
 //!
 //! Consumes no RNG. Geometry: corner `(gx, gy)` is the NW corner of map cell
 //! `origin + (gx, gy)`.
@@ -52,6 +56,8 @@ pub trait CornerCells {
     /// `0x006B2520`: the cell may be reshaped. It is in the diamond, holds no
     /// overlay (`+0x44 == -1`) and no object (`+0xE4` FirstObject null), is
     /// not protected, and its tile is unassigned or of a `Morphable=` set.
+    /// Terrain deformation answers with Firestorm's test (Firestorm 2.0
+    /// 0x5F83D0).
     fn editable(&self, x: i32, y: i32) -> bool;
 }
 
@@ -81,6 +87,7 @@ struct Corner {
     visited: bool,
 }
 
+#[derive(Clone)]
 pub struct CornerGrid {
     /// The map cell whose NW corner is grid corner `(0, 0)`.
     origin: (i32, i32),
@@ -91,8 +98,9 @@ pub struct CornerGrid {
     corners: Vec<Corner>,
 }
 
-/// Undo entry: a corner index and its pre-morph height.
-type Undo = Vec<(usize, i32)>;
+/// Undo entry: a corner index and the corner before the adjustment moved or
+/// marked it.
+type Undo = Vec<(usize, Corner)>;
 
 impl CornerGrid {
     fn in_grid(&self, gx: i32, gy: i32) -> bool {
@@ -175,11 +183,10 @@ impl CornerGrid {
         }
     }
 
-    /// The highest of the cell's four corner heights. Terrain deformation
-    /// reads it to tell how far a crater cell has already sunk.
-    pub fn top_height(&self, mx: i32, my: i32) -> i32 {
-        let [nw, ne, se, sw] = self.cell_corners(mx, my).map(|c| self.corners[c].height);
-        nw.max(ne).max(se).max(sw)
+    /// The cell's four corner heights, `[NW, NE, SE, SW]`. Terrain
+    /// deformation reads them to tell how far a crater cell has sunk.
+    pub fn cell_heights(&self, mx: i32, my: i32) -> [i32; 4] {
+        self.cell_corners(mx, my).map(|c| self.corners[c].height)
     }
 
     /// `0x006B4240`: the corner mask (bits `NW=0, NE=1, SE=2, SW=3`): all-equal picks every
@@ -213,8 +220,20 @@ impl CornerGrid {
     /// `0x006B3E60`: apply one level of adjustment to the masked corners of a
     /// cell, with recursive propagation and all-or-nothing rollback. A corner
     /// the move would take outside the grid's height range stays put. Returns
-    /// whether it committed.
+    /// whether it committed. A rolled-back adjustment leaves its corners
+    /// marked, so finalize still rewrites their cells.
     pub fn apply(&mut self, direction: i32, mx: i32, my: i32, mask: u32) -> bool {
+        self.adjust(direction, mx, my, mask, false)
+    }
+
+    /// Firestorm 2.0 0x5F9AB0's adjustment with force 0: [`Self::apply`]'s
+    /// moves, but one that fails leaves no mark either, as Firestorm discards
+    /// the grid it built for the call and finalizes nothing.
+    pub fn apply_or_discard(&mut self, direction: i32, mx: i32, my: i32, mask: u32) -> bool {
+        self.adjust(direction, mx, my, mask, true)
+    }
+
+    fn adjust(&mut self, direction: i32, mx: i32, my: i32, mask: u32, discard: bool) -> bool {
         // Remap the picker mask (NW,NE,SE,SW) to the 2x2 row-major iteration
         // order (NW,NE,SW,SE) by swapping the SE/SW bits.
         let m = (mask >> 1 & 4) | ((mask & 4) << 1) | (mask & 3);
@@ -228,19 +247,17 @@ impl CornerGrid {
             }
             let index = self.idx(cgx, cgy);
             if self.corners[index].locked {
-                self.rollback(&undo);
+                self.rollback(&undo, discard);
                 return false;
             }
+            undo.push((index, self.corners[index]));
             let new = self.corners[index].height + direction * LEVEL;
-            self.corners[index].height = new;
-            if !(self.heights.0..=self.heights.1).contains(&new) {
-                self.corners[index].height = new - direction * LEVEL;
-            } else {
-                undo.push((index, new - direction * LEVEL));
+            if (self.heights.0..=self.heights.1).contains(&new) {
+                self.corners[index].height = new;
             }
             self.corners[index].visited = true;
             if !self.propagate(direction, cgx, cgy, &mut undo) {
-                self.rollback(&undo);
+                self.rollback(&undo, discard);
                 return false;
             }
         }
@@ -273,11 +290,11 @@ impl CornerGrid {
                     continue;
                 }
                 if direction == 1 && self.corners[nindex].height < center {
-                    undo.push((nindex, self.corners[nindex].height));
+                    undo.push((nindex, self.corners[nindex]));
                     self.corners[nindex].height = center - LEVEL;
                     self.corners[nindex].visited = true;
                 } else if direction != 1 && self.corners[nindex].height > center {
-                    undo.push((nindex, self.corners[nindex].height));
+                    undo.push((nindex, self.corners[nindex]));
                     self.corners[nindex].height = center + LEVEL;
                     self.corners[nindex].visited = true;
                 }
@@ -289,10 +306,15 @@ impl CornerGrid {
         true
     }
 
-    /// Restore heights LIFO (visited marks stay set; finalize tolerates that).
-    fn rollback(&mut self, undo: &Undo) {
+    /// Restore heights LIFO. gamemd's marks stay set (finalize tolerates
+    /// that); `discard` restores them too.
+    fn rollback(&mut self, undo: &Undo, discard: bool) {
         for &(index, old) in undo.iter().rev() {
-            self.corners[index].height = old;
+            if discard {
+                self.corners[index] = old;
+            } else {
+                self.corners[index].height = old.height;
+            }
         }
     }
 
@@ -377,10 +399,12 @@ mod tests {
         assert_eq!(RAMP.len(), 19);
     }
 
-    /// Flat editable ground at `level`, `size` cells square.
+    /// Flat editable ground at `level`, `size` cells square, but for one
+    /// `locked` cell.
     struct Field {
         size: i32,
         level: i32,
+        locked: Option<(i32, i32)>,
     }
 
     impl CornerCells for Field {
@@ -393,13 +417,17 @@ mod tests {
         }
 
         fn editable(&self, x: i32, y: i32) -> bool {
-            self.in_diamond(x, y)
+            self.in_diamond(x, y) && self.locked != Some((x, y))
         }
     }
 
     #[test]
     fn lowering_level_zero_ground_needs_a_height_range_below_zero() {
-        let field = Field { size: 9, level: 0 };
+        let field = Field {
+            size: 9,
+            level: 0,
+            locked: None,
+        };
         let lower = |heights: (i32, i32)| {
             let mut cg = CornerGrid::build(&field, (0, 0), 10, heights);
             let mask = cg.pick_mask(4, 4, -1);
@@ -433,5 +461,30 @@ mod tests {
             at(5, 3).map(|f| (f.level, f.slope_tile)),
             Some((-1, Some((12, TILES.ramp_base + 11))))
         );
+    }
+
+    #[test]
+    fn a_failed_firestorm_adjustment_leaves_no_cell_to_rewrite() {
+        // The cell north-east of (4, 4) locks its NE corner; the NW corner,
+        // moved first, rolls back.
+        let field = Field {
+            size: 9,
+            level: 2,
+            locked: Some((5, 3)),
+        };
+        let rewritten = |discard: bool| {
+            let mut cg = CornerGrid::build(&field, (0, 0), 10, (0, 12 * LEVEL));
+            let moved = if discard {
+                cg.apply_or_discard(-1, 4, 4, 0xF)
+            } else {
+                cg.apply(-1, 4, 4, 0xF)
+            };
+            assert!(!moved);
+            let domain = (0..9).flat_map(|y| (0..9).map(move |x| (x, y)));
+            cg.finalize(&field, domain, TILES).len()
+        };
+        // gamemd's adjustment keeps the NW corner's mark.
+        assert_eq!(rewritten(false), 4);
+        assert_eq!(rewritten(true), 0);
     }
 }

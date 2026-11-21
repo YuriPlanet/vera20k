@@ -288,10 +288,12 @@ impl ZoneLevelGraph {
         self.records.len()
     }
 
-    pub(crate) fn clear_edges(&mut self, zone: ZoneId) {
-        if let Some(edges) = self.edges.get_mut(zone as usize) {
-            edges.clear();
-        }
+    /// Remove `zone`'s edge list, leaving it empty, and hand it back.
+    pub(crate) fn take_edges(&mut self, zone: ZoneId) -> Vec<ZoneEdgeRecord> {
+        self.edges
+            .get_mut(zone as usize)
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Remove the last reciprocal occurrence while preserving every surviving

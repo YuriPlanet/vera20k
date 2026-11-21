@@ -518,12 +518,12 @@ pub(super) fn ares_launch(
         });
     }
     let sound = match &sw.presentation.activation_sound {
-        Some(sound) => sound.clone(),
-        None => rules.general.dig_sound.clone(),
+        Some(sound) => sound.as_deref(),
+        None => rules.general.dig_sound.as_deref(),
     };
     if let Some(sound_id) = sound {
         sim.sound_events.emit(SimSoundEvent::VocAtCoord {
-            sound_id,
+            sound_id: rules.sound_name(sound_id),
             coordinate: target,
             flags: 0,
         });

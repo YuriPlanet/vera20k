@@ -713,7 +713,7 @@ fn spawner_cell_spread(
 }
 
 fn adjacent_cells_in_range(range: i32) -> Vec<(i16, i16)> {
-    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize)
+    crate::sim::cell_rect::cell_spread_offsets(range as u32 as usize).collect()
 }
 
 /// Result of one `Reduce_Tiberium` call.
@@ -1218,7 +1218,7 @@ mod tests {
                 event,
                 crate::sim::world::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
                     if *anim_id == child_id
-                        && sound_id == "BUILDINGFIREBIG"
+                        && sound_id.name_in(&cold) == "BUILDINGFIREBIG"
                         && *world == child.world_coord()
             )),
             "retail FIRE01 Start must emit its sound before classification"

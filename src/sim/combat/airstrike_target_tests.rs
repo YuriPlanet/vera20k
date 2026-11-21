@@ -61,6 +61,7 @@ fn chosen_weapon(rules: &RuleSet, sim: &Simulation, scorer: u64, target: u64) ->
         rules.object("TARGET").unwrap(),
         sim.resolved_terrain.as_ref(),
         false,
+        0,
         rules,
         &sim.interner,
     );

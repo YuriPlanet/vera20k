@@ -705,7 +705,7 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
                     panic!("unexpected RecordLastBuilt output {event:?}");
                 };
                 assert!(audible_to.is_none());
-                sound_id.as_str()
+                sound_id.name_in(&rules)
             })
             .collect::<Vec<_>>();
         assert_eq!(actual, expected.into_iter().collect::<Vec<_>>(), "{name}");
@@ -1282,7 +1282,7 @@ fn restore_accepts_a_queued_tail_left_by_a_refused_start_next() {
         rules,
         "Russians",
         super::ProductionCancellation::Type {
-            type_id: "E2",
+            type_id: "E2".into(),
             naval: false
         },
         false,
@@ -1587,7 +1587,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
                 sub_y,
                 world_z_leptons,
             } = event
-                && sound_id == "BorisCreated"
+                && sound_id.name_in(&runtime.resources.rules) == "BorisCreated"
             {
                 assert!(audible_to.is_none(), "native has no local-House gate");
                 cues.push((rx, ry, sub_x, sub_y, world_z_leptons));
@@ -1646,7 +1646,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
             .unwrap();
         assert!(
             !output.sound_events.iter().any(|event| {
-                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BorisCreated")
+                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BorisCreated")
             }),
             "later publication/frames do not replay creation"
         );
@@ -1907,8 +1907,16 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
     }
 }
 
+// The save traces the snapshot layout once per process; unoptimized, that
+// trace and this body's four simulations need more than libtest's 2 MiB.
 #[test]
 fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay() {
+    crate::test_fixture::on_game_stack(
+        prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_body,
+    );
+}
+
+fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_body() {
     use crate::sim::command::{CommandEnvelope, ProductionEvent};
     use crate::sim::replay::{ReplayHeader, ReplayLog, ReplayRunner};
     use crate::sim::runtime::{SimResources, SimRuntime};
@@ -2295,7 +2303,7 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: name,
+                type_id: name.into(),
                 naval: false
             },
             false,
@@ -2432,7 +2440,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2448,7 +2456,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2507,7 +2515,7 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: parent_type,
+                type_id: parent_type.into(),
                 naval: false
             },
             false,
@@ -2936,7 +2944,7 @@ fn cancel_one_queued_structure_keeps_the_building_under_construction() {
         &rules,
         "Americans",
         ProductionCancellation::Type {
-            type_id: "GAPOWR",
+            type_id: "GAPOWR".into(),
             naval: false,
         },
         false,
@@ -3346,7 +3354,7 @@ fn missing_barracks_retains_completed_infantry_and_queued_successor() {
     assert!(
         !sim.sound_events.iter().any(|event| {
             matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
         }),
         "missing producer retains the paid head without creation output"
     );
@@ -3381,7 +3389,7 @@ fn active_cancel_without_house_does_not_create_refund_account() {
             &rules,
             "Americans",
             crate::sim::production::ProductionCancellation::Type {
-                type_id: "SMIN",
+                type_id: "SMIN".into(),
                 naval: false,
             },
             all,
@@ -3607,7 +3615,7 @@ fn a_cancel_refunds_the_cost_of_at_cancel_time() {
         &rules,
         "Russians",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "HTNK",
+            type_id: "HTNK".into(),
             naval: false
         },
         false,
@@ -3662,7 +3670,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
             .iter()
             .filter(|event| {
                 matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
             })
             .count(),
         1,
@@ -3805,7 +3813,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     assert!(
         !sim.sound_events[event_start..].iter().any(|event| {
             matches!(event, crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-            if sound_id == "FixtureCreated")
+            if sound_id.name_in(&rules) == "FixtureCreated")
         }),
         "refunded/disposed head and newly promoted limbo head play no creation cue"
     );

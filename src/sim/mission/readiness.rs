@@ -760,7 +760,10 @@ mod tests {
             0, 1, 2, 3, 4, 6, 8, 9, 10, 16, 17, 18, 19, 22, 23, 24, 25, 26, 28, 29, 30, 33, 37, 38,
             39, 40, 41,
         ];
-        const BLOCKED: [i32; 15] = [5, 7, 11, 12, 13, 14, 15, 20, 21, 27, 31, 32, 34, 35, 36];
+        // 42 is Firestorm's Struggle (docs/ts-webs.md), which does not
+        // interrupt: Firestorm 2.0's InfantryClass Ready_To_Commence
+        // (0x004D9490) refuses it at 0x004D9522.
+        const BLOCKED: [i32; 16] = [5, 7, 11, 12, 13, 14, 15, 20, 21, 27, 31, 32, 34, 35, 36, 42];
         let mission = mission_fixture(MISSION_GUARD.raw(), MissionId::NONE.raw(), 0);
 
         for doing in ALLOWED {
@@ -799,7 +802,7 @@ mod tests {
             Ok(true)
         );
 
-        for doing in [-2, 42, i32::MAX] {
+        for doing in [-2, 43, i32::MAX] {
             let leaf_state = MissionLeafState::infantry_raw_for_test(0, doing);
             assert_eq!(
                 infantry_ready_to_commence(infantry_view(

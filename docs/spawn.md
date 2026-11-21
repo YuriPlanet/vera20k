@@ -50,9 +50,12 @@ lacks the field and would start the game for `--generate-map`, so check it first
 120, as offline Skirmish does: `AIPlayers` up to 119, AI rows `Multi2` to `Multi120`, starts
 (`[SpawnLocations]`) and `[HouseTeams]` numbers 0 to 119. Every other launch seats at most 30
 houses, with starts and teams 0 to 29. A build that lacks the field seats 30 in every launch.
+`"shared_starts": true` says the build reads [shared starts](#shared-starts); a build without it
+lacks the field and refuses a shared start.
 The game folder comes from `config.toml` unless `--ra2-dir` names one, the mod from `config.toml`
-unless `--mod` or `--no-mod` chooses, and the Ares setting from VERA.INI unless `--ares` names the
-one `spawn.ini`'s `[Settings] Ares=` will. In the browser, `probe(map_name)` returns the same JSON
+unless `--mod` or `--no-mod` chooses, the Ares setting from VERA.INI unless `--ares` names the
+one `spawn.ini`'s `[Settings] Ares=` will, and [RA2 Mode](ra2-mode.md) from VERA.INI or `-ra2`, as
+the game takes it; `--generate-map` takes RA2 Mode the same way. In the browser, `probe(map_name)` returns the same JSON
 text.
 
 The mode catalog is the selected mod's `[Files] Modes`, or `MPModesMD.ini` by default. The
@@ -84,22 +87,36 @@ agree.
   without the Options switches, which `settings` names), `langrule` (only when read), `art`, `ai`,
   `mode` (the mode's INI; none for a mode without one), `theater:<ini name>` for each theater's INI,
   `tiles` (the theater tiles the game folder changes), and with a mod `mod_files` (its folder) and
-  `map_additions` (when it has any). `name` is the file name, never a path; `digest` the first 16
+  `map_additions` (when it has any). Without a mod the theater parts are the copies a retail
+  install ships (`source` `retail`, unchanged) and `tiles` is `absent`: the original game leaves
+  its folder's terrain files to each match ([Networking](Networking.md)), so they are in no part. `name` is the file name, never a path; `digest` the first 16
   hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
   (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
   `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
   most 20, and counts the rest in `sections_more`.
-- `settings`: the Options switches the game plays, the Ares setting (`auto`, `on`, `off`), whether
-  `ares.mix` is mounted, whether the Rules, Art and AI roots, the theater suffix and the mode and
-  map catalogs are YR's, and the mod (`title` and `version`, from its `mod.ini`, else its folder's
-  name; `version` is empty without one). When a mod requires Ares or the game reads any INI root
-  or archive name other than YR's, `resources` names them as the digest compares them, lowercased:
-  `requires_ares`, `roots` (Rules, Art, AI, sound, EVA, theme, campaign, mission, map selection,
-  mode and map catalog) and `archives` (expansion and map prefixes, multiplayer and theme
-  archives, movie prefix); otherwise it is left out.
+  The `ai` part and `rules_digest` name the game folder's AI INI. A network match that seats no
+  computer reads the retail copy instead ([Networking](Networking.md)), so two games that differ
+  only in `ai` would play such a match together, though their digests differ: a launcher that
+  compares `rules_digest` keeps them apart as before.
+- `settings`: the Options switches the game plays (`terrain_deformation`, `superweapon_limit`, and
+  `building_production_queue`, which is left out while off and is only ever on in a single-player
+  game: a network launch plays it off, as the probe reports it), the Ares setting as the digest
+  counts it (`on` or `off` where the setting decides which game opens; `auto` for Auto and for a
+  setting that opens the game Auto opens, such as Off without a mod), whether
+  `ares.mix` is mounted, `kratos: true` when the startup rules enable Kratos (omitted while off), whether the INI roots listed under `resources` and the theater suffix are
+  all YR's (`ini_roots_stock`), `ra2: true` when [RA2 Mode](ra2-mode.md) is on (left out while
+  off), and the mod (`title` and `version`, from its `mod.ini`, else its folder's
+  name; `version` is empty without one). When a mod requires Ares or the game reads one of these INI roots
+  or archives under another name than YR's, `resources` names them as the digest compares them, lowercased:
+  `requires_ares`, `roots` (Rules, Art, AI, mode and map catalog) and `archives` (expansion and
+  map prefixes, multiplayer and theme archives, movie prefix); otherwise it is left out. The
+  sound, EVA, theme, campaign, mission and map-selection roots are in no part: the digest does
+  not compare their names.
 - `mod_check`: with a mod that carries a `mod-files.txt`, where its files part from that list
-  (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null.
+  (`changed`, `missing`, `extra`, at most 20 paths each); otherwise null. It can name a file the
+  `mod_files` part leaves out: one that only shows, plays or tells something, such as a `.csf`
+  ([Networking](Networking.md)).
 
 The object is at most 8192 bytes: longer lists are cut first, then free text (file names,
 sources, the mod's title and version, the `resources` names) to 64 characters, and last the files from the end; `digest`
@@ -111,6 +128,20 @@ A `-SPAWN` launch whose `ExpectedRulesDigest` differs fails as before, with the 
 logs its `Rules parts:` when it starts. When a launcher's match is refused at the start, the
 game's box says what this game changes from the original game and that the launcher shows the
 details.
+
+## Shared starts
+
+In a mode whose players may share a start (Battle, Free for All, ManBattle, Siege, Unholy; not
+Cooperative), two or more playing humans may write the same explicit `[SpawnLocations] MultiN`
+start. They then control one House together, as players who pick the same start in VERA's own
+rooms do ([Networking](Networking.md)). The human with the lowest `SourceIndex` on that start
+leads it: the House plays the leader's `Side`, `Color` and team, and the other players' are
+ignored. The House counts once wherever houses are counted: the map's starts, the distinct
+colours of up to eight houses, the two playing participants a multiplayer launch needs, and the
+teams the mode admits. Each player keeps their own `SourceIndex`, relay grant and `ResumePings`
+entry, so `PlayerCount` and the 30-participant limit still count every human. An AI never
+shares a start, with a human or another AI; a spectator still has none; in Cooperative a
+duplicate start is refused as before. Check the probe's `shared_starts` first.
 
 ## Random maps
 

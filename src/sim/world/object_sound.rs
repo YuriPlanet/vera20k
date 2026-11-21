@@ -56,7 +56,7 @@
 //!   (dormant: no retail one sets it).
 
 use super::{FrameEffects, SimSoundEvent, Simulation, TriggerSoundTarget};
-use crate::rules::ruleset::RuleSet;
+use crate::rules::ruleset::{RuleSet, SoundName};
 use crate::rules::sound_ini::SoundReference;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
@@ -105,16 +105,16 @@ impl Simulation {
         };
         self.sound_events.emit(match target {
             TriggerSoundTarget::Centered => SimSoundEvent::VocCentered {
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
             },
             TriggerSoundTarget::Coordinate { coordinate, flags } => SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
                 coordinate,
                 flags,
             },
             TriggerSoundTarget::Object { owner, world } => SimSoundEvent::AnimationStarted {
                 anim_id: owner,
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
                 world,
             },
             TriggerSoundTarget::Eva => SimSoundEvent::TriggerAudio {
@@ -143,7 +143,7 @@ impl Simulation {
         if let Some(sound_id) = ambient {
             self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: ambient_sound_owner(id),
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
                 world,
             });
             effects.flush_sound(self, rules);

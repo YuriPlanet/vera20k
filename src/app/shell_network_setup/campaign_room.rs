@@ -726,6 +726,7 @@ fn choice(value: i32, text: String) -> crate::ui::multiplayer_setup::SetupChoice
         value,
         text,
         swatch: None,
+        greyed: false,
     }
 }
 
@@ -878,7 +879,9 @@ pub(super) fn select(state: &mut AppState, control: u16, row: u8, value: i32) ->
     if control == CAMPAIGN_SERIES && value == 0 {
         return committed_room(state, None);
     }
-    if super::dialog(state).wol() && !crate::app::shell_wol::lobby_campaign_rooms(state) {
+    if super::dialog(state).wol()
+        && !crate::app::shell_wol::lobby_campaign_rooms(state.frontend.wol.as_ref())
+    {
         super::chat_notice(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
         return Ok(());
     }

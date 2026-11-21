@@ -21,15 +21,14 @@ fn rank_only(parent: u64, index: u32, insignia: Option<&str>) -> ObjectExtrasRun
     }
 }
 
-/// One rank draw binds one texture: a custom insignia rank (Mental Omega's
-/// hero skull) never joins an adjacent stock PIPS rank's batch, which would
+/// One rank draw binds one texture: a custom insignia rank never joins an adjacent stock PIPS rank's batch, which would
 /// stretch the PIPS strip over its quad.
 #[test]
 fn rank_batches_split_where_the_rank_shape_changes() {
     let runs = [
         rank_only(1, 0, None),
-        rank_only(2, 1, Some("herostcr.shp")),
-        rank_only(3, 2, Some("herostcr.shp")),
+        rank_only(2, 1, Some("herorank.shp")),
+        rank_only(3, 2, Some("herorank.shp")),
         rank_only(4, 3, Some("spyins.shp")),
     ];
     assert_eq!(rank_run_end(&runs, 0), 1);

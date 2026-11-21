@@ -239,6 +239,12 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
         let sender = sim.interner.resolve(envelope.owner).to_owned();
         sim.apply_command(&sender, &envelope.payload, Some(&rules))
     };
+    // The second occupant cannot receive orders. It stays behind when only
+    // the head fits, and blocks a transfer that would include both.
+    sim.entity_mut_for_test(gis[1]).unwrap().seldom.slave =
+        crate::sim::slave_manager::SlaveLink::for_test(Some(raided), Vec::new());
+    assert!(!sim.ares_can_traverse_to(raided, south, &rules));
+    assert!(!redirect(&mut sim, south));
     // One free slot east: only the head moves.
     assert!(redirect(&mut sim, east));
     let occupants = |sim: &Simulation, id| {
@@ -264,6 +270,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
     );
     assert!(!redirect(&mut sim, east), "full");
     assert_eq!(owner(&sim, raided), "Americans");
+    sim.entity_mut_for_test(gis[1]).unwrap().seldom.slave = Default::default();
     // The last occupant leaves south; the empty trench is returned.
     assert!(redirect(&mut sim, south));
     assert_eq!(occupants(&sim, south), [gis[1]]);

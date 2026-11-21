@@ -824,8 +824,7 @@ fn destination_edit(
 #[cfg(all(test, tests_app_presentation_render))]
 mod tests {
     use super::super::draw_plan_lowering::{
-        NativeDisplayOrder, ObjectPieceInstance, PlannedObjectInstance,
-        lower_ground_object_instances,
+        NativeDisplayOrder, ObjectPieceInstance, OwnedPlannedObject, lower_ground_object_instances,
     };
     use super::*;
     use crate::render::batch::SpriteInstance;
@@ -947,15 +946,15 @@ mod tests {
             },
         };
         let pass = lower_ground_object_instances(vec![
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(1, SpriteEncoding::Terrain).unwrap(),
                 vec![piece(TerrainPiece::Body, 0), piece(TerrainPiece::Shadow, 0)],
             ),
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(2, SpriteEncoding::Plain).unwrap(),
                 vec![piece(TerrainPiece::Body, 4), piece(TerrainPiece::Shadow, 0)],
             ),
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(3, SpriteEncoding::Plain).unwrap(),
                 vec![piece(TerrainPiece::Body, 0)],
             ),
@@ -979,11 +978,11 @@ mod tests {
             },
         };
         let pass = lower_ground_object_instances(vec![
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(3, SpriteEncoding::Plain).unwrap(),
                 vec![piece(0, RenderZPolicy::ReadOnly)],
             ),
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(9, SpriteEncoding::Plain).unwrap(),
                 vec![
                     piece(1, RenderZPolicy::ReadOnly),

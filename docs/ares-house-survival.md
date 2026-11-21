@@ -50,5 +50,5 @@ gate uses the existing Blowup_All then MPlayer_Defeated chain.
 executed Ares3.0 reader, tracking, survival and retained-field stream boundaries.
 The Rust checks consume those outputs and separately exercise ordinary
 construction, capture, limbo, deletion, rules restoration and snapshot hashing.
-These are bounded component and integration checks, not complete Ares/MO,
+These are bounded component and integration checks, not complete Ares,
 native SAV-format or downstream death/scheduler parity.

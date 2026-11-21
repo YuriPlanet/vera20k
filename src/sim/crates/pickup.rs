@@ -204,6 +204,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
 /// plays it for everyone.
 fn play_crate_sound(
     sound_events: &mut FrameChannel<SimSoundEvent>,
+    rules: &RuleSet,
     sound: Option<&str>,
     heard_by: Option<InternedId>,
     cell: (i16, i16),
@@ -224,7 +225,7 @@ fn play_crate_sound(
         SimFixed::from_num(128),
     );
     sound_events.emit(SimSoundEvent::voc_at_for(
-        sound.to_owned(),
+        rules.sound_name(sound),
         heard_by.map(|owner| [owner, owner]),
         &position,
     ));
@@ -524,6 +525,7 @@ pub(crate) fn pickup_crate(
                 UnitCrateOutcome::Placed => {
                     play_crate_sound(
                         &mut sim.sound_events,
+                        rules,
                         general.crate_unit_sound.as_deref(),
                         Some(owner),
                         cell,
@@ -571,6 +573,7 @@ pub(crate) fn pickup_crate(
                 let center = crate_center(sim, cell, receiver);
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_money_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -580,6 +583,7 @@ pub(crate) fn pickup_crate(
             POWERUP_HEAL_BASE => {
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     rules.crate_rules.heal_crate_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -598,6 +602,7 @@ pub(crate) fn pickup_crate(
                 sim.reveal_map_for_owner(owner, rules);
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_reveal_sound.as_deref(),
                     None,
                     cell,
@@ -626,6 +631,7 @@ pub(crate) fn pickup_crate(
                 announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitArmorUpgraded");
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_armour_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -654,6 +660,7 @@ pub(crate) fn pickup_crate(
                 }
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_speed_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -673,6 +680,7 @@ pub(crate) fn pickup_crate(
                 announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitFirePowerUpgraded");
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_fire_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -690,6 +698,7 @@ pub(crate) fn pickup_crate(
                 );
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_promote_sound.as_deref(),
                     Some(owner),
                     cell,

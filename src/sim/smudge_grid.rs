@@ -660,7 +660,7 @@ pub(crate) fn pick_smudge_candidate(
             if force_big {
                 w >= 2 && h >= 2
             } else {
-                (w == 1 && h == 1) || (0x3C < width && 0x32 < height)
+                (w == 1 && h == 1) || crate::rules::art_data::smudge_frame_is_large(width, height)
             }
         })
         .map(|&(id, _, _)| id)

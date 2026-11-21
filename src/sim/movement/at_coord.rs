@@ -1,6 +1,6 @@
 //! Original locomotor Is_At_Coord projection, shared by live and snapshot callers.
 //!
-//! Drive4B4920 / Ship6A3F50 / Walk75CA80 / Hover517210. The caller supplies the
+//! Drive4B4920 / Ship6A3F50 / Walk75CA80 / Mech5B1AA0 / Hover517210. The caller supplies the
 //! active instance's retained state in raw world leptons; this query never
 //! reconstructs a committed head from a path or newly changed terrain.
 //! Native comparisons: tools/spatial_oracle/locomotor_at_coord.{py,json}.
@@ -74,7 +74,12 @@ impl AtCoordQuery {
         track: AtCoordTrack,
     ) -> Option<Self> {
         let track_family = matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship);
-        if !track_family && !matches!(kind, LocomotorKind::Walk | LocomotorKind::Hover) {
+        if !track_family
+            && !matches!(
+                kind,
+                LocomotorKind::Walk | LocomotorKind::Mech | LocomotorKind::Hover
+            )
+        {
             // Active Fly/Jumpjet/Rocket/Teleport share the false leaf4B6630.
             // Dormant TS classes are deliberately not implemented here.
             return None;

@@ -791,3 +791,52 @@ fn squad_alliances_ally_each_clan_list_and_fix_the_alliances() {
     sim.apply_squad_alliances(&rules, None);
     assert!(!sim.session.fixed_alliance());
 }
+
+/// A 120-player match allies more than 64 houses (Computer_Paranoid). The
+/// matrix still covers them, beyond a single `u64` mask, and answers as the
+/// graph does by name; before, it was never built for them, so every
+/// question went to the graph by name.
+#[test]
+fn the_ally_matrix_covers_more_than_64_houses() {
+    let rules = rules();
+    let (mut sim, _) = sim_with(&rules, &[("Player", "Americans", true)]);
+    let names: Vec<String> = (0..70).map(|index| format!("Computer{index:02}")).collect();
+    let ring = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            let next = &names[(index + 1) % names.len()];
+            (name.to_ascii_uppercase(), set(&[next.as_str()]))
+        })
+        .collect();
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(ring),
+        &rules,
+    );
+    let ids: Vec<InternedId> = names.iter().map(|name| sim.interner.intern(name)).collect();
+    assert!(
+        sim.house_alliances.matrix(&sim.interner).is_some(),
+        "70 houses get a matrix"
+    );
+    let alliances = &sim.house_alliances;
+    assert!(alliances.is_allied(&sim.interner, ids[63], ids[64]));
+    assert!(!alliances.is_allied(&sim.interner, ids[64], ids[63]));
+    assert!(alliances.is_allied(&sim.interner, ids[68], ids[69]));
+    assert!(alliances.is_allied(&sim.interner, ids[69], ids[0]));
+    assert!(!alliances.is_allied(&sim.interner, ids[0], ids[69]));
+}
+
+#[test]
+fn a_large_sparse_graph_uses_by_name_alliances() {
+    let targets = (0..4096).map(|n| format!("ALLY{n}")).collect();
+    let alliances = super::HouseAlliances::new([("OWNER".to_owned(), targets)].into());
+    let mut names = crate::sim::intern::StringInterner::default();
+    let owner = names.intern("Owner");
+    let ally = names.intern("Ally4095");
+    assert!(alliances.is_allied(&names, owner, ally));
+    assert!(!alliances.is_allied(&names, ally, owner));
+    assert!(
+        alliances.matrix(&names).is_none(),
+        "a sparse graph needs no large bitmap"
+    );
+}

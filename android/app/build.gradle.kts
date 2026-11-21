@@ -81,6 +81,7 @@ android {
     // cargo-ndk writes libvera20k_android.so here; the directory is generated
     // and git-ignored.
     sourceSets.getByName("main").jniLibs.srcDir("src/main/jniLibs")
+    sourceSets.getByName("main").assets.srcDirs(rootProject.file("../maps"), rootProject.file("../Terrain"))
 
     packaging {
         // Keep the .so uncompressed and mapped from the APK

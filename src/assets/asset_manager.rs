@@ -10,7 +10,7 @@
 //! Audio selection and lifetime: [process audio owner](../../tools/audio_catalog_owner.md).
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -148,6 +148,52 @@ enum NamedArchiveLocation {
         parent_index: usize,
         entry_id: i32,
     },
+}
+
+/// VERA: names read from fixed archives alone ([`AssetManager::pin_names`]).
+#[derive(Clone)]
+pub struct PinnedNames {
+    /// Every pinned name, by its lookup id.
+    names: HashSet<i32>,
+    /// The archives that hold one, in search order.
+    archives: Vec<NamedArchive>,
+    /// The first of `archives` whose index lists each name.
+    found: HashMap<i32, usize>,
+}
+
+impl PinnedNames {
+    /// Pins `names` to `archives`, each with the name its files report as
+    /// their source, searched in order as registered archives are. Only an
+    /// archive that holds a name is kept.
+    pub fn new<'a>(
+        names: impl IntoIterator<Item = &'a str>,
+        archives: impl IntoIterator<Item = (String, Cow<'a, MixArchive>)>,
+    ) -> Self {
+        let names: HashSet<i32> = names.into_iter().map(mix_hash).collect();
+        let mut kept = Vec::new();
+        let mut found = HashMap::new();
+        for (name, archive) in archives {
+            let position = kept.len();
+            let mut first = false;
+            for &id in &names {
+                if !found.contains_key(&id) && archive.contains_id(id) {
+                    found.insert(id, position);
+                    first = true;
+                }
+            }
+            if first {
+                kept.push(NamedArchive {
+                    name,
+                    archive: archive.into_owned(),
+                });
+            }
+        }
+        Self {
+            names,
+            archives: kept,
+            found,
+        }
+    }
 }
 
 /// One archive [`AssetManager::theater_archives_unmounted`] finds.
@@ -330,11 +376,23 @@ pub struct MixFileLoad {
 pub struct AssetManager {
     /// Loaded MIX archives in search priority order.
     archives: Vec<NamedArchive>,
+    /// `-ra2`: MD archives deferred until after the base stack is mounted, so
+    /// original RA2 resources win first-match while the MD members stay
+    /// available as fallback for shell art the YR install only ships there.
+    deferred_md_archives: Vec<String>,
     /// Parsed, named nested MIX archives that retail has not registered yet.
     archive_catalog: Vec<NamedArchive>,
     /// Precomputed first-match lookup across all archives.
     lookup_index: HashMap<i32, AssetLocation>,
     /// `LoadFileFromMIX`'s process-lifetime, normalized-CRC first-winner cache.
+    ///
+    /// Filled through `&self` because its readers (the Rules effect and alpha
+    /// image catalogs, the shell, sidebar, cursor and loading-screen chrome)
+    /// are handed the manager by `&` beside their other reads of it. A lock,
+    /// not a `RefCell`, because the manager must stay `Sync`: the test
+    /// fixture (`rules::retail_ini_fixture::retail_assets`) keeps one opened
+    /// install for every test thread and copies it from there. In the game
+    /// one thread at a time asks, so the lock is never contended.
     mix_file_cache: Mutex<HashMap<i32, MixFileLoad>>,
     /// Case-insensitive, non-recursive view of the retail executable directory.
     /// Payloads are owned snapshots at first lookup (including failed reads).
@@ -361,6 +419,13 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: the player's Kratos setting this game opened with
+    /// (`util::kratos_launch::KratosSetting`). It decides `RuleSet::kratos`
+    /// in every game whose rules this manager selects.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// VERA: names every lookup reads from fixed archives alone
+    /// ([`Self::pin_names`]); `None` reads all names as found.
+    pinned_names: Option<PinnedNames>,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -373,6 +438,7 @@ impl Clone for AssetManager {
     fn clone(&self) -> Self {
         Self {
             archives: self.archives.clone(),
+            deferred_md_archives: self.deferred_md_archives.clone(),
             archive_catalog: self.archive_catalog.clone(),
             lookup_index: self.lookup_index.clone(),
             mix_file_cache: Mutex::new(
@@ -392,6 +458,8 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            kratos_setting: self.kratos_setting,
+            pinned_names: self.pinned_names.clone(),
         }
     }
 }
@@ -399,6 +467,7 @@ impl Clone for AssetManager {
 /// Reversible current-resolution authority for a fallible VERA save candidate.
 /// Archive bytes remain shared through MixArchive's retained backing storage.
 struct SavedLoadLookupAuthority {
+    pinned_names: Option<PinnedNames>,
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
@@ -474,6 +543,27 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 /// Active Yuri's Revenge requires both masters, in this order.
 pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
 
+/// Original Red Alert 2 mode (`-ra2`) mounts only the base, non-md member of
+/// each retail archive pair. Active YR registers both members with the md one
+/// first, so its data wins; RA2 never shipped the md members and reads the base
+/// names instead. This predicate decides which of the two a startup mount is
+/// allowed to register. It does not touch on-demand lookups: an explicitly
+/// requested name is still resolvable, this only shapes the startup stack.
+///
+/// A name is "md" when its stem ends in `md` before an optional numeric suffix
+/// (e.g. `ra2md`, `expandmd01`, `sidec02md`, `isogenmd`). Base counterparts are
+/// `ra2`, `expand01`, `sidec02`, `isogen`. `langmd` maps to `language`, handled
+/// separately below because it is not a simple suffix trim.
+pub(crate) fn is_md_startup_archive(name: &str) -> bool {
+    let stem = name
+        .rsplit_once('.')
+        .map_or(name, |(stem, _)| stem)
+        .to_ascii_lowercase();
+    // Strip a trailing numeric slot so expandmd01/sidec02md are recognised.
+    let core = stem.trim_end_matches(|c: char| c.is_ascii_digit());
+    core.ends_with("md") && core.len() > 2
+}
+
 /// One startup archive that an install inspection could not mount.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveIssue {
@@ -499,8 +589,8 @@ pub fn holds_master_archives(dir: &Path) -> bool {
 }
 
 /// Use the selected folder's authored loader settings when it has them.
-/// A conventional launcher folder can describe itself with its existing
-/// client catalog and a complete numbered archive family.
+/// Otherwise recognize a classic RA2 folder by its files, or a launcher
+/// folder by its client catalog. Other file names are declared, never guessed.
 pub fn mod_resources(
     dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
@@ -512,14 +602,23 @@ pub fn mod_resources(
         return Ok(resources);
     }
     let Some(client) = ClientInstall::read(dir)? else {
+        if base.profile != IniProfile::Custom
+            && super::numbered_mod_resources::uses_classic_ra2(dir)?
+        {
+            // This mod uses the original game's file family. Missing members
+            // come from the same RA2 family in the normal installation VFS.
+            let ini = &mut resources.ini;
+            ini.profile = IniProfile::Custom;
+            ini.rules = Some("rules.ini".into());
+            ini.art = Some("art.ini".into());
+            ini.ai = Some("ai.ini".into());
+            ini.modes.get_or_insert_with(|| "mpmodes.ini".into());
+            ini.map_catalog.get_or_insert_with(|| "missions.pkt".into());
+            resources.archives.expansion_prefix = "expand".into();
+            resources.archives.multiplayer = "multi.mix".into();
+        }
         return Ok(resources);
     };
-    if let Some((ini, archives)) = super::numbered_mod_resources::discover(dir)? {
-        if base.profile != IniProfile::Custom {
-            resources.ini = ini;
-        }
-        resources.archives = archives;
-    }
     let has_file = |name| {
         crate::util::case_insensitive_path::find(dir, name)
             .is_some_and(crate::util::file_system::is_file)
@@ -593,7 +692,7 @@ impl AssetManager {
     /// selected mod's folder rather than the installation's.
     pub fn from_mod_folder(&self, file: &str) -> bool {
         self.mod_dir.as_deref().is_some_and(|dir| {
-            self.loose_asset(file)
+            self.installed_loose_asset(file)
                 .is_some_and(|asset| asset.path.starts_with(dir))
         })
     }
@@ -631,6 +730,26 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// The player's Kratos setting this game opened with.
+    pub fn kratos_setting(&self) -> crate::util::kratos_launch::KratosSetting {
+        self.kratos_setting
+    }
+
+    /// Read the launch's Kratos setting before the game's rules are selected.
+    /// A launch does this once, from the Options profile, as it sets the Ares
+    /// setting when it opens its archives.
+    pub fn set_kratos_setting(&mut self, setting: crate::util::kratos_launch::KratosSetting) {
+        self.kratos_setting = setting;
+    }
+
+    /// Whether the Ares setting Auto mounts `ares.mix` for this game: a mod
+    /// is selected and has one in reach, its own or the installation's. With
+    /// it On opens the game Auto opens, and Off another
+    /// (`AresSetting::where_it_decides`).
+    pub fn auto_mounts_ares(&self) -> bool {
+        self.mod_selected() && self.loose_path("ares.mix").is_some()
+    }
+
     /// Make this the game the launch plays: its [`Self::ships_ares`] answer
     /// becomes the launch's (`util::ares_launch`), which a thread outside
     /// every reading scope loads its INIs by, as Ares.dll patches a whole
@@ -662,6 +781,7 @@ impl AssetManager {
         }
         Ok(Self {
             archives: Vec::new(),
+            deferred_md_archives: Vec::new(),
             archive_catalog: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
@@ -677,6 +797,8 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         })
     }
 
@@ -784,6 +906,26 @@ impl AssetManager {
         archive_names: &ArchiveNames,
         mut policy: StartupArchivePolicy<'_>,
     ) -> Result<Self, AssetError> {
+        // `-ra2` selects the original RA2 archive family for every data slot:
+        // maps, multiplayer, theme and movies all switch to the non-md names.
+        // Mod-provided archive names are intentionally overridden in this mode
+        // — a ra2 launch plays the base game, not a mod's md expansion stack.
+        let ra2_names = ArchiveNames::ra2();
+        let ra2_mode = crate::util::ra2_launch::enabled();
+        let archive_names = if ra2_mode {
+            &ra2_names
+        } else {
+            archive_names
+        };
+        // RA2 shipped movies/maps as a numbered family from the discs
+        // (MOVIES01.., MAPS01..), not YR's single index-3 slot. The wildcard
+        // mode mounts the whole family, so use it for a ra2 launch unless the
+        // player explicitly asked for CD mode already (both are wildcards).
+        let media_mode = if ra2_mode {
+            MediaArchiveMode::CdWildcard
+        } else {
+            media_mode
+        };
         archive_names
             .validate()
             .map_err(|detail| AssetError::ParseError {
@@ -807,9 +949,7 @@ impl AssetManager {
         // VERA: the player's Ares setting On mounts the installation's copy
         // with no mod selected too, and Off mounts none.
         let ares = match ares_setting {
-            crate::util::ares_launch::AresSetting::Auto => {
-                manager.mod_selected() && manager.loose_path("ares.mix").is_some()
-            }
+            crate::util::ares_launch::AresSetting::Auto => manager.auto_mounts_ares(),
             crate::util::ares_launch::AresSetting::On => true,
             crate::util::ares_launch::AresSetting::Off => false,
         };
@@ -860,6 +1000,12 @@ impl AssetManager {
         // work unless the user explicitly asks to change the music catalog.
         manager.mount_startup_archive("theme.mix", false, &mut policy)?;
         manager.mount_startup_movie_media(media_mode, archive_names, &mut policy)?;
+
+        // `-ra2`: mount the deferred MD members only after the whole RA2 base
+        // stack owns the first-match slots. Shell art absent from the base
+        // archives is then filled from these, while the non-md INI roots keep
+        // all game data on the original RA2 side.
+        manager.mount_deferred_md_archives();
 
         // Loose YRO archives are deliberately absent here. Retail registers
         // each one during SessionClass scenario enumeration, immediately
@@ -1219,7 +1365,28 @@ impl AssetManager {
     ///
     /// Retail constructs the MD archive first and returns immediately when
     /// either archive is unavailable.
+    ///
+    /// Register the loading-screen archive pair at the scenario-load boundary.
+    ///
+    /// Native mounts `LOADMD.MIX` then `LOAD.MIX`, so MD duplicates win the
+    /// first-match scan. `-ra2` keeps that pair: the RA2 INI roots make the
+    /// *data* come from ra2.mix, while the MD archives remain the fallback for
+    /// shell artwork (pointers, buttons, PALs, rank insignia) that the retail
+    /// YR install keeps only inside its MD masters. Dropping them left those
+    /// resources unresolvable.
     pub fn register_loading_archives(&mut self) -> Result<bool, AssetError> {
+        // Native order is MD first, but in `-ra2` the first-match scan would
+        // then resolve campaign background/title/bar SHPs (LS800BkgdName from
+        // MISSION.INI, TTLBR*/SPLDBR*) to the YR copies in `loadmd.mix`. Mount
+        // the base archive first so original RA2 loading art wins the lookup,
+        // then add `loadmd.mix` as a fallback for art only shipped in YR.
+        if crate::util::ra2_launch::enabled() {
+            if !self.mount_named_archive("load.mix", false)? {
+                return Ok(false);
+            }
+            self.mount_named_archive("loadmd.mix", false)?;
+            return Ok(true);
+        }
         if !self.mount_named_archive("loadmd.mix", false)? {
             return Ok(false);
         }
@@ -1236,6 +1403,18 @@ impl AssetManager {
     /// `NEUTRAL.MIX`. Their registration order makes MD duplicates win retail's
     /// first-match archive scan.
     pub fn register_neutral_archives(&mut self) -> Result<bool, AssetError> {
+        // Native order is MD first, so MD duplicates would win the first-match
+        // scan. Mount the base archive first in `-ra2` so original RA2 shell
+        // art wins, then add the MD member purely as a fallback for artwork
+        // only shipped inside the YR master. Both paths still require the
+        // base `neutral.mix` (it holds the required SDBTNANM.SHP button art).
+        if crate::util::ra2_launch::enabled() {
+            if !self.mount_named_archive("neutral.mix", false)? {
+                return Ok(false);
+            }
+            self.mount_named_archive("ntrlmd.mix", false)?;
+            return Ok(true);
+        }
         if !self.mount_named_archive("ntrlmd.mix", false)? {
             return Ok(false);
         }
@@ -1358,6 +1537,7 @@ impl AssetManager {
         prepare: impl FnOnce(&mut Self) -> Result<T, E>,
     ) -> Result<T, E> {
         let previous = SavedLoadLookupAuthority {
+            pinned_names: self.pinned_names.clone(),
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
@@ -1393,6 +1573,7 @@ impl AssetManager {
             }
             self.archive_catalog
                 .retain(|cached| !previous.archives.iter().any(|old| old.name == cached.name));
+            self.pinned_names = previous.pinned_names;
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
@@ -1473,7 +1654,7 @@ impl AssetManager {
     /// payloads. Catalog presence does not guarantee a subsequent disk read.
     /// Retail provenance: MIX-then-raw availability — `CCFileClass__IsAvailable_MixThenRaw` @ `0x00473C50`.
     pub fn contains(&self, name: &str) -> bool {
-        self.lookup_location_for_name(name).is_some() || self.loose_asset(name).is_some()
+        self.lookup_asset_entry(name).is_some() || self.loose_asset(name).is_some()
     }
 
     /// Look up a loaded archive by its display/debug name.
@@ -1580,19 +1761,27 @@ impl AssetManager {
         found
     }
 
-    /// VERA: what [`Self::resolve_ref`] would read for `name` with `unmounted`
-    /// (from [`Self::theater_archives_unmounted`]) mounted after the registered
-    /// archives: a loose file, else the first archive whose index lists the
-    /// name, even one that cannot read it, as `lookup_index` decides.
+    /// The installed file (mod folders included), independent of the active
+    /// map's terrain pins. Lobby agreement compares this same installation
+    /// before and after a map preview or match.
+    pub fn installed_file(&self, name: &str) -> Option<(&str, &[u8])> {
+        self.resolve_ref_with_unmounted(name, &[])
+    }
+
+    /// VERA: compare installed files with this theater's archives searched
+    /// after the registered archives. A loose file wins, else the first MIX
+    /// whose index lists the name, even one that cannot read it.
     pub fn resolve_ref_with_unmounted<'a>(
         &'a self,
         name: &str,
         unmounted: &'a [UnmountedArchive<'a>],
     ) -> Option<(&'a str, &'a [u8])> {
-        if let Some((loose, bytes)) = self.loose_bytes(name) {
+        if let Some(loose) = self.installed_loose_asset(name)
+            && let Some(bytes) = loose.bytes()
+        {
             return Some((loose.source_name.as_str(), bytes));
         }
-        if let Some((named, entry_id)) = self.lookup_asset_entry(name) {
+        if let Some((named, entry_id)) = self.lookup_registered_entry(name) {
             return named
                 .archive
                 .get_by_id(entry_id)
@@ -1642,7 +1831,37 @@ impl AssetManager {
             .chain(std::iter::once(self.ra2_dir.as_path()))
     }
 
+    /// VERA: read `pinned`'s names from its archives alone, until the next
+    /// call: a loose file or another registered archive of such a name is
+    /// passed over, and a name none of its archives hold is absent. `None`
+    /// ends it. Every lookup by name follows it, which keeps one answer for
+    /// a file across the loaders that read it; `load_file_from_mix` still
+    /// returns what it cached, so pin only names it never loads. Returns the
+    /// names pinned until now, for a caller that puts them back.
+    pub fn pin_names(&mut self, pinned: Option<PinnedNames>) -> Option<PinnedNames> {
+        std::mem::replace(&mut self.pinned_names, pinned)
+    }
+
+    /// Whether [`Self::pin_names`] is in effect.
+    pub fn names_pinned(&self) -> bool {
+        self.pinned_names.is_some()
+    }
+
+    /// The pinned names when `name` is one of them.
+    fn pinned(&self, name: &str) -> Option<(&PinnedNames, i32)> {
+        let pinned = self.pinned_names.as_ref()?;
+        let id = mix_hash(name);
+        pinned.names.contains(&id).then_some((pinned, id))
+    }
+
     fn lookup_asset_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
+        if let Some((pinned, id)) = self.pinned(name) {
+            return Some((&pinned.archives[*pinned.found.get(&id)?], id));
+        }
+        self.lookup_registered_entry(name)
+    }
+
+    fn lookup_registered_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
         let location = self.lookup_location_for_name(name)?;
         let archive = self.archives.get(location.archive_index)?;
         Some((archive, location.entry_id))
@@ -1820,6 +2039,13 @@ impl AssetManager {
             if !mix_wildcard_family_matches(file_name, family_prefix) {
                 continue;
             }
+            // `-ra2` reads only the base archive family. A broad prefix such
+            // as `maps` also matches YR members (`mapsmd03`, `mapsmo03`); skip
+            // those so they cannot enter the search path ahead of RA2 data.
+            if crate::util::ra2_launch::enabled() && is_md_startup_archive(file_name) {
+                log::debug!("-ra2: skipping md wildcard archive {file_name}");
+                continue;
+            }
 
             let first_match = !result.matched;
             result.matched = true;
@@ -1924,12 +2150,47 @@ impl AssetManager {
         Ok(())
     }
 
+    /// `-ra2` mounts the base member of each retail archive pair first so its
+    /// resources win first-match, then mounts the MD members as a fallback
+    /// layer. This is startup-only: direct/on-demand lookups of an md name
+    /// still resolve, so explicit diagnostics are unaffected.
+    fn skip_md_for_ra2(name: &str) -> bool {
+        crate::util::ra2_launch::enabled() && is_md_startup_archive(name)
+    }
+
+    /// Append the deferred MD archives after the whole base stack is mounted.
+    /// `lookup_index` uses `or_insert`, so a base entry already seen keeps its
+    /// slot and an MD archive only fills names the RA2 side could not supply —
+    /// shell art (pointers, buttons, PALs, rank insignia) the YR install keeps
+    /// exclusively in its MD masters. Data still comes from the non-md INI
+    /// roots (rules.ini/ra2.csf/BATTLE.INI), independent of this order.
+    fn mount_deferred_md_archives(&mut self) {
+        if self.deferred_md_archives.is_empty() {
+            return;
+        }
+        let deferred = std::mem::take(&mut self.deferred_md_archives);
+        for name in deferred {
+            match self.mount_named_archive(&name, false) {
+                Ok(mounted) => log::debug!("-ra2: mounted md fallback archive {name}: {mounted}"),
+                Err(error) => log::debug!("-ra2: could not mount md fallback {name}: {error}"),
+            }
+        }
+    }
+
     fn mount_startup_archive(
         &mut self,
         name: &str,
         required: bool,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<bool, AssetError> {
+        if Self::skip_md_for_ra2(name) {
+            // Keep the MD member for the deferred fallback pass instead of
+            // dropping it. De-duplicate: the same name can be probed twice.
+            if !self.deferred_md_archives.iter().any(|n| n == name) {
+                self.deferred_md_archives.push(name.to_string());
+            }
+            return Ok(false);
+        }
         match self.mount_named_archive(name, required) {
             Ok(mounted) => Ok(mounted),
             Err(error) => {
@@ -2144,6 +2405,13 @@ impl AssetManager {
     }
 
     fn loose_asset(&self, name: &str) -> Option<&LooseAsset> {
+        if self.pinned(name).is_some() {
+            return None;
+        }
+        self.installed_loose_asset(name)
+    }
+
+    fn installed_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
     }
@@ -2750,6 +3018,90 @@ mod tests {
         assert_eq!(original.get_ref("new.vxl"), None);
     }
 
+    /// A client folder loads with stock names even beside a complete renamed
+    /// family: other names are declared in `mod.ini`, never guessed.
+    #[test]
+    fn a_client_folder_keeps_stock_names_beside_a_renamed_family() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        use crate::util::mod_package::ModFolder;
+        let files = TestDirectory::new("client-stock-names");
+        std::fs::create_dir_all(files.path().join("Resources")).unwrap();
+        std::fs::write(
+            files.path().join("Resources/ClientDefinitions.ini"),
+            "[Settings]\nMPMapsPath=maps.ini\n",
+        )
+        .unwrap();
+        std::fs::write(files.path().join("maps.ini"), "[GameModes]\n").unwrap();
+        std::fs::write(
+            files.path().join("expandalt99.mix"),
+            make_new_format_mix_bytes(&[
+                ("rulesalt.ini", b"[General]\n"),
+                ("artalt.ini", b"[Unit]\n"),
+                ("aialt.ini", b"[AI]\n"),
+            ]),
+        )
+        .unwrap();
+        let select = |definition: &str| {
+            mod_resources(
+                &ModFolder::loose(files.path().to_owned()),
+                &ModDefinition::parse(definition).unwrap(),
+                &IniRootConfig::default(),
+            )
+            .unwrap()
+        };
+        let stock = select("");
+        assert!(stock.client_install.is_some());
+        assert_eq!(stock.archives, ArchiveNames::default());
+        let declared = select("[Archives]\nExpansionPrefix=expandalt\n");
+        assert_eq!(declared.archives.expansion_prefix, "expandalt");
+    }
+
+    #[test]
+    fn selected_classic_mod_uses_its_rules_and_modes_and_the_base_ai() {
+        use crate::util::{ares_launch::AresSetting, mod_package::ModFolder};
+        let install = audio_test_install("classic-base");
+        install.write_mix("local.mix", "ai.ini", b"[AITriggerTypes]\n");
+        let files = TestDirectory::new("classic-mod");
+        for (name, data) in [
+            ("RuLeS.INI", "[General]\n"),
+            ("ART.ini", "[Vehicle]\n"),
+            (
+                "MPModes.ini",
+                "[Battle]\n1=GUI:Battle,STT:ModeBattle,Alt.ini,standard,true\n",
+            ),
+        ] {
+            std::fs::write(files.path().join(name), data).unwrap();
+        }
+        files.write_mix("Expand50.mix", "Alt.ini", b"[General]\nCrateMinimum=7\n");
+        let folder = ModFolder::loose(files.path().to_owned());
+        let request = mod_resources(
+            &folder,
+            &ModDefinition::default(),
+            &IniRootConfig::default(),
+        )
+        .unwrap();
+        let assets = AssetManager::with_mod_and_ares(
+            install.path(),
+            Some(&folder),
+            MediaArchiveMode::STOCK_DIGITAL,
+            AresSetting::Auto,
+            &request.archives,
+        )
+        .unwrap()
+        .with_resource_config(&request)
+        .unwrap();
+        let roots = assets.ini_roots();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(assets.get_ref(roots.ai()), Some(&b"[AITriggerTypes]\n"[..]));
+        assert!(
+            String::from_utf8_lossy(assets.get_ref(roots.modes()).unwrap()).contains("Alt.ini")
+        );
+        assert_eq!(
+            assets.get_ref("Alt.ini"),
+            Some(&b"[General]\nCrateMinimum=7\n"[..])
+        );
+    }
+
     /// VERA's Ares setting: Auto ignores the installation's `ares.mix` with
     /// no mod selected, On mounts it and makes an Ares game, and Off mounts
     /// no copy, not even a selected mod's own.
@@ -2783,6 +3135,16 @@ mod tests {
         let off = open(Some(mod_dir.path()), AresSetting::Off);
         assert!(!off.ships_ares() && !off.ares_mix_mounted());
         assert_eq!(off.get_ref("ares.txt"), None);
+        // Auto mounts `ares.mix` only for a selected mod with one in reach,
+        // whatever the setting is: there On opens the game Auto opens, and
+        // without one Off does.
+        assert!(!auto.auto_mounts_ares() && !on.auto_mounts_ares());
+        assert!(off.auto_mounts_ares());
+        let auto_with_mod = open(Some(mod_dir.path()), AresSetting::Auto);
+        let on_with_mod = open(Some(mod_dir.path()), AresSetting::On);
+        assert!(auto_with_mod.ships_ares() && on_with_mod.ships_ares());
+        assert_eq!(auto_with_mod.get_ref("ares.txt"), Some(&b"mod Ares"[..]));
+        assert_eq!(on_with_mod.get_ref("ares.txt"), Some(&b"mod Ares"[..]));
     }
 
     #[test]
@@ -2932,6 +3294,7 @@ mod tests {
                     archive: make_new_format_mix("loading.bin", b"md-loading"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -2945,6 +3308,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3019,6 +3384,7 @@ mod tests {
                     archive: make_new_format_mix("weather.bin", b"temperate"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3032,6 +3398,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
         manager
@@ -3096,6 +3464,7 @@ mod tests {
                 archive: make_new_format_mix("audio.idx", b"test"),
             }],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3109,6 +3478,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3141,6 +3512,7 @@ mod tests {
                 },
             ],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3154,6 +3526,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -3184,6 +3558,7 @@ mod tests {
                     archive: make_new_format_mix("duplicate.shp", b"base"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3197,6 +3572,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3228,6 +3605,7 @@ mod tests {
                 name: "ra2.mix -> neutral.mix".to_string(),
                 archive: make_new_format_mix("base-only.shp", b"base"),
             }],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3241,6 +3619,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3260,6 +3640,7 @@ mod tests {
                 archive: make_new_format_mix("ra2md.csf", b"archived"),
             }],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::from([(
@@ -3281,6 +3662,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3328,6 +3711,7 @@ mod tests {
                     archive: make_new_format_mix("temperate.bin", b"temperate"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3341,6 +3725,8 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3405,5 +3791,65 @@ mod tests {
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
         );
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod ra2_archive_name_tests {
+    use super::is_md_startup_archive;
+
+    #[test]
+    fn md_startup_archives_are_recognised_with_and_without_numeric_slots() {
+        for name in [
+            "ra2md.mix",
+            "langmd.mix",
+            "audiomd.mix",
+            "conqmd.mix",
+            "genermd.mix",
+            "isogenmd.mix",
+            "cameomd.mix",
+            "cachemd.mix",
+            "localmd.mix",
+            "loadmd.mix",
+            "sidec01md.mix",
+            "sidec02md.mix",
+            "expandmd01.mix",
+            "expandmd96.mix",
+            "mapsmd03.mix",
+            "multimd.mix",
+            "thememd.mix",
+            "movmd03.mix",
+            "isourbmd.mix",
+            "isotemmd.mix",
+        ] {
+            assert!(is_md_startup_archive(name), "expected md: {name}");
+        }
+    }
+
+    #[test]
+    fn base_archives_are_never_treated_as_md() {
+        for name in [
+            "ra2.mix",
+            "language.mix",
+            "audio.mix",
+            "conquer.mix",
+            "generic.mix",
+            "isogen.mix",
+            "cameo.mix",
+            "cache.mix",
+            "local.mix",
+            "load.mix",
+            "sidec01.mix",
+            "sidec02.mix",
+            "expand01.mix",
+            "maps01.mix",
+            "multi.mix",
+            "theme.mix",
+            "movies01.mix",
+            "isourb.mix",
+            "isotemp.mix",
+        ] {
+            assert!(!is_md_startup_archive(name), "unexpected md: {name}");
+        }
     }
 }

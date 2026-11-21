@@ -1084,7 +1084,7 @@ fn retail_boarding_plays_the_transports_enter_transport_sound() {
                 sound_id,
                 coordinate,
                 flags,
-            } if sound_id == "IFVTransform" => Some((*coordinate, *flags)),
+            } if sound_id.name_in(&rules) == "IFVTransform" => Some((*coordinate, *flags)),
             _ => None,
         })
         .collect();

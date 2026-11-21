@@ -10,6 +10,9 @@
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
+/// The texts named so far, with `VERA20K_TEXT_AUDIT` set. Process-wide, like
+/// the log it writes to: every text engine reports here, and none owns the
+/// audit; a `static` must be `Sync`, hence the lock.
 static SEEN: LazyLock<Option<Mutex<HashSet<(Kind, String)>>>> =
     LazyLock::new(|| std::env::var_os("VERA20K_TEXT_AUDIT").map(|_| Mutex::default()));
 

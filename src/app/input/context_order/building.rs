@@ -114,8 +114,9 @@ pub(super) enum BuildingClick {
 /// own or an allied object the cursor owner's What_Action decides the
 /// release too ([`object_action_answers_friendly`]): Select or 0 selects an
 /// object the player may select and has not, and nothing else happens.
-/// Shift over an object never reaches here: the caller hands it to the
-/// selection consumer first.
+/// Shift over an object reaches here only for the cursor owner's trench
+/// Enter ([`super::queue::head_release`]); the caller hands any other to
+/// the selection consumer first.
 pub(super) fn building_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

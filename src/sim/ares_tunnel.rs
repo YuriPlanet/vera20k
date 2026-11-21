@@ -245,7 +245,8 @@ impl Simulation {
             let sound = self
                 .object_type(entity.type_ref(), rules)?
                 .enter_transport_sound
-                .clone()?;
+                .as_deref()
+                .map(|name| rules.sound_name(name))?;
             let coords = crate::sim::movement::ground_pose::object_get_coords(
                 entity,
                 self.resolved_terrain.as_ref(),

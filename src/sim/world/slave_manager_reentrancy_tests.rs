@@ -298,7 +298,7 @@ impl Scene {
         }
         assert_eq!(self.sim.sound_events.iter().filter(|event| matches!(event,
             SimSoundEvent::VocAt { sound_id, .. }
-                if Some(sound_id.as_str()) == self.rules.general.slaves_free_sound.as_deref()
+                if Some(sound_id.name_in(&self.rules)) == self.rules.general.slaves_free_sound.as_deref()
         )).count(), 1, "the first freed slave owns the liberation sound");
     }
 }

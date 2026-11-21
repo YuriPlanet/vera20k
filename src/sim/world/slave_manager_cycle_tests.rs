@@ -283,8 +283,24 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         .spawn_object("MTNK", "Russians", 10, 20, 0, &s.scene.rules)
         .expect("killer");
     s.scene.sim.sound_events.clear_for_test();
+    let ordered = s.slaves[&1];
+    let move_order = Command::Move {
+        entity_id: ordered,
+        target_rx: 18,
+        target_ry: 17,
+    };
+    assert!(
+        !s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
     let master = s.master;
     kill(&mut s, master, Some(killer));
+    assert!(
+        s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
 
     let sim = &s.scene.sim;
     assert!(
@@ -316,7 +332,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::VocAt { sound_id, rx, ry, .. }
-            if sound_id == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
+            if sound_id.name_in(&s.scene.rules) == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
     )));
 
     // The Cheer cannot be interrupted: a Move order given during it walks the
@@ -324,17 +340,10 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     // (Ready_To_Commence). The Cheer's end, `InfantryClass::DoType_Sequencer`'s
     // default arm, forces Ready on a standing slave or Walk on a moving one;
     // the queued Move then commences.
-    let ordered = s.slaves[&1];
     let tick = s.scene.sim.session.tick();
-    s.scene.sim.queue_command(CommandEnvelope::new(
-        russians,
-        tick + 1,
-        Command::Move {
-            entity_id: ordered,
-            target_rx: 18,
-            target_ry: 17,
-        },
-    ));
+    s.scene
+        .sim
+        .queue_command(CommandEnvelope::new(russians, tick + 1, move_order));
     let doing = |s: &SlaveScene, id: u64| {
         s.scene
             .sim

@@ -303,7 +303,7 @@ fn play_gate_sound(
         return;
     };
     let event = crate::sim::world::SimSoundEvent::voc_at_location(
-        sound.to_owned(),
+        rules.sound_name(sound),
         entity,
         sim.resolved_terrain.as_ref(),
     );
@@ -914,7 +914,7 @@ mod tests {
                 .take_for_test()
                 .into_iter()
                 .filter_map(|event| match event {
-                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id),
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules).to_string()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()

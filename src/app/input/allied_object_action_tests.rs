@@ -305,7 +305,8 @@ fn allied_object_ivan_click_consumes_the_canonical_grant() {
         return;
     };
     assert_eq!(
-        friendly_bomb_ivans(&sim, &battle.rules, &[actor], 1, target, None).contains(&actor),
+        friendly_ivans(&sim, &battle.rules, &[actor], 1, target, false, None)
+            .contains(&(actor, FriendlyIvanAction::Bomb)),
         native_ivan_bomb_feedback("attack_friendlies_only_ivan")
             == crate::app::types::CursorFeedbackKind::IvanBomb,
     );

@@ -313,7 +313,7 @@ fn a_damaged_factory_draws_its_damaged_bib_and_its_shadow() {
 /// factory in another mission does neither.
 #[test]
 fn an_unloading_factory_takes_over_its_products_draw() {
-    use crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance;
+    use crate::app::presentation::render::draw_plan_lowering::PlannedObjects;
     use crate::render::tactical_draw_plan::{
         BlitPolicy, ObjectDraw, SpriteEncoding, TacticalLayer,
     };
@@ -337,12 +337,12 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             display_order: 0,
             policy: BlitPolicy::z_read(SpriteEncoding::Voxel),
         };
-        let mut planned = vec![
-            PlannedObjectInstance::building(parent(factory), Vec::new()),
-            PlannedObjectInstance::object(parent(product), Vec::new()),
-        ];
+        let mut planned = PlannedObjects::default();
+        planned.building(parent(factory), []);
+        planned.object(parent(product), []);
         let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, rules);
         crate::app::presentation::instances::assign_tether_redraws(&frame, &mut planned);
+        let planned = planned.into_owned();
         let expected: Vec<u64> = if unload { vec![product] } else { Vec::new() };
         assert_eq!(planned[0].tether_redraws, expected, "unload {unload}");
         assert_eq!(planned[1].drawn_by_tether, unload, "unload {unload}");
