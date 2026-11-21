@@ -1716,4 +1716,123 @@ mod tests {
             [1, 22, 24, 21, 23, 3]
         );
     }
+
+    /// A whole frame's mix, handed over out of Display order: a static tree,
+    /// a unit with turret pieces and a laser, an unloading factory and the
+    /// unit it redraws, an anim, a bullet, a plain building, and an Air
+    /// bullet and aircraft. Every sprite reaches its run list and place in
+    /// it, piece by piece.
+    #[test]
+    fn a_mixed_frame_lowers_every_piece_in_display_order() {
+        use crate::sim::world::display_layers::DisplayLayer;
+        let laser = SurfaceDraw::OpaqueRect {
+            rect: [0, 0, 1, 1],
+            word: 2,
+        };
+        let order = NativeDisplayOrder::from_ordered(
+            (1..=9)
+                .map(|id| (DisplayLayer::GROUND, id))
+                .chain([(DisplayLayer::AIR, 20), (DisplayLayer::AIR, 21)])
+                .collect(),
+        );
+        let object = |id, markers: &[u32]| {
+            PlannedObjectInstance::object(
+                plain_parent(&order, id),
+                markers
+                    .iter()
+                    .map(|&marker| marked_piece(ObjectTexture::ShpPage(0), marker))
+                    .collect(),
+            )
+        };
+        let building = |id, pieces: &[(BuildingPieceKind, u32)]| {
+            PlannedObjectInstance::building(
+                plain_parent(&order, id),
+                pieces
+                    .iter()
+                    .map(|&(kind, marker)| PlannedBuildingPieceInstance {
+                        kind,
+                        z_bias: 0,
+                        policy: BlitPolicy::opaque(SpriteEncoding::Plain),
+                        target: ObjectTexture::ShpPage(1),
+                        instance: marked_piece(ObjectTexture::ShpPage(1), marker).instance,
+                    })
+                    .collect(),
+            )
+        };
+        let mut tree = object(1, &[10, 11]);
+        tree.static_tree = true;
+        let mut unit = object(2, &[20, 21, 22]);
+        unit.tail_draws = vec![laser];
+        let mut factory = building(
+            4,
+            &[
+                (BuildingPieceKind::PoweredOrActiveOverlay, 43),
+                (BuildingPieceKind::Bib, 42),
+                (BuildingPieceKind::Body, 40),
+                (BuildingPieceKind::Shadow, 41),
+            ],
+        );
+        factory.tether_redraws = vec![5];
+        let mut tethered = object(5, &[50, 51]);
+        tethered.drawn_by_tether = true;
+        let mut second_tree = object(7, &[70]);
+        second_tree.static_tree = true;
+        let layers = lower_object_instances(vec![
+            object(21, &[211, 210]),
+            object(8, &[80]),
+            building(9, &[(BuildingPieceKind::Body, 90)]),
+            tethered,
+            object(20, &[200]),
+            second_tree,
+            unit,
+            object(6, &[61, 60]),
+            factory,
+            object(3, &[30]),
+            tree,
+        ]);
+        let markers = |pass: &ObjectLayerPass, runs: &[ObjectDrawRun]| -> Vec<(DrawId, u32)> {
+            runs.iter()
+                .flat_map(|run| run.start..run.start + run.count)
+                .map(|index| {
+                    let index = index as usize;
+                    (
+                        pass.owners[index],
+                        pass.instances[index].draw_state.fx_flags,
+                    )
+                })
+                .collect()
+        };
+        let ground = &layers[2];
+        assert_eq!(
+            markers(ground, &ground.runs),
+            [
+                (2, 20),
+                (2, 21),
+                (2, 22),
+                (3, 30),
+                (5, 50),
+                (5, 51),
+                (4, 43),
+                (6, 61),
+                (6, 60),
+                (8, 80)
+            ]
+        );
+        assert_eq!(
+            markers(ground, &ground.building_base_runs),
+            [(4, 40), (4, 41), (4, 42), (9, 90)]
+        );
+        assert_eq!(
+            markers(ground, &ground.static_tree_runs),
+            [(7, 70), (1, 10), (1, 11)]
+        );
+        assert_eq!(ground.surface_draws, [vec![laser]]);
+        let air = &layers[3];
+        assert_eq!(markers(air, &air.runs), [(20, 200), (21, 211), (21, 210)]);
+        assert!(
+            [0, 1, 4]
+                .into_iter()
+                .all(|layer| layers[layer].instances.is_empty())
+        );
+    }
 }
