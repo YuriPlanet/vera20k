@@ -437,6 +437,16 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
+            // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3).
+            if effect_launched {
+                sim.raise_module_super_weapon_launched(
+                    rules,
+                    frame_effects,
+                    owner,
+                    sw_type_id,
+                    cell,
+                );
+            }
             // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
             // type here too. Its money step never settles: Fire_SW refuses a
             // charge-drain type with Money.Amount before this click.
@@ -492,6 +502,11 @@ fn click_fire(
         overlay_registry,
         frame_effects,
     );
+    // Wasm module `SuperWeaponLaunched` (RFC 0001 appendix 4.3), after
+    // SuperClass::Launch (`0x006CC390`).
+    if effect_launched {
+        sim.raise_module_super_weapon_launched(rules, frame_effects, owner, sw_type_id, cell);
+    }
     // Installed Ares SWTypeExt::Launch10032ED0 calls Activate first and only
     // reaches money10032FDF after success. In particular a HunterSeeker with
     // no usable launch building still spends its charge, but never its fee.

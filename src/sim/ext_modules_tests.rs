@@ -749,7 +749,7 @@ fn placed_unit(scene: &HeadlessScenario) -> (u64, usize) {
 
 /// Two hostile GIs two cells apart on open ground far from the map's own
 /// objects: (scenario, attacker, target).
-fn gi_duel() -> Option<(HeadlessScenario, u64, u64)> {
+pub(super) fn gi_duel() -> Option<(HeadlessScenario, u64, u64)> {
     use crate::sim::house_state::HouseState;
     let mut scene = scenario()?;
     let crate::sim::runtime::SimRuntime {
@@ -801,7 +801,7 @@ fn gi_duel() -> Option<(HeadlessScenario, u64, u64)> {
 
 /// Orders `attacker` to attack `target`, as its player would, then ticks
 /// until `target` first loses health; returns the loss.
-fn first_hit(
+pub(super) fn first_hit(
     scene: &mut HeadlessScenario,
     attacker: u64,
     target: u64,

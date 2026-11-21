@@ -4,17 +4,51 @@
 //!
 //! Provisional numbering (open question 5): the new delivered events of
 //! appendix 4.3 are numbered from 1000 in table order, as the atomic actions
-//! of 5.3 are. Stock events keep 0..61 and Ares 62..88.
+//! of 5.3 are, and the polling events of 4.4 follow them (1026..1030).
+//! Stock events keep 0..61 and Ares 62..88.
 
 use crate::{ActionParams, Invalid, Op, le_i32, le_i64, property_name};
 
-/// New delivered events (appendix 4.3), from 1000 in table order. The engine
-/// raises these four so far; `trigger_create` answers `Unsupported` for the
-/// others.
+/// New delivered events (appendix 4.3), from 1000 in table order. Which of
+/// them the engine raises is its `has_kind(0, kind)`; `trigger_create`
+/// answers `Unsupported` for the others.
 pub const EVENT_TAKE_DAMAGE: i32 = 1000;
+pub const EVENT_HIT_BY_WARHEAD: i32 = 1001;
+pub const EVENT_ATTACKED_BY: i32 = 1002;
+pub const EVENT_FATAL_DAMAGE: i32 = 1003;
 pub const EVENT_KILLED: i32 = 1004;
 pub const EVENT_FIRE: i32 = 1005;
+pub const EVENT_SPAWN_FIRE: i32 = 1006;
+pub const EVENT_HIT_TARGET: i32 = 1007;
+pub const EVENT_TARGET_CHANGED: i32 = 1008;
+pub const EVENT_PROJECTILE_INCOMING: i32 = 1009;
+pub const EVENT_DETONATED: i32 = 1010;
+pub const EVENT_BIRTH: i32 = 1011;
+pub const EVENT_TRANSPORT_ENTERED: i32 = 1012;
+pub const EVENT_TRANSPORT_EXITED: i32 = 1013;
+pub const EVENT_PASSENGER_ADDED: i32 = 1014;
+pub const EVENT_PASSENGER_REMOVED: i32 = 1015;
+pub const EVENT_COMMANDED: i32 = 1016;
+pub const EVENT_CRUSHED: i32 = 1017;
+pub const EVENT_HOUSE_TRANSFER: i32 = 1018;
+pub const EVENT_HOUSE_TRANSFERRED: i32 = 1019;
+pub const EVENT_MODIFIER_START: i32 = 1020;
+pub const EVENT_MODIFIER_EXPIRE: i32 = 1021;
+pub const EVENT_MODIFIER_STACKS: i32 = 1022;
 pub const EVENT_TIMER: i32 = 1023;
+pub const EVENT_SUPER_WEAPON_LAUNCHED: i32 = 1024;
+pub const EVENT_PRODUCTION_CANCELLED: i32 = 1025;
+
+/// New polling events (appendix 4.4), numbered on after 4.3 in table order
+/// (provisional, open question 5).
+pub const EVENT_PROPERTY_POLL: i32 = 1026;
+pub const EVENT_HOUSE_POWER_POLL: i32 = 1027;
+pub const EVENT_MODIFIER_COUNT_POLL: i32 = 1028;
+pub const EVENT_DISTANCE_POLL: i32 = 1029;
+pub const EVENT_VARIABLE_POLL: i32 = 1030;
+
+/// The stock event kinds (appendix 4.1).
+pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;
 
 /// Atomic actions (appendix 5.3) from 1000 in table order: `SetVar` is entry
 /// 24 and `Module` entry 36 (`AddMoney`, entry 15, is the engine's
@@ -143,6 +177,12 @@ pub struct EventDef {
 
 impl EventDef {
     pub const SIZE: usize = 32;
+
+    /// Whether a polling event's `reading op value` holds (appendix 4.4).
+    pub fn compares(&self, reading: i64) -> bool {
+        // `TriggerDef::parse` admitted only known operators.
+        Op::parse(self.op).is_ok_and(|op| op.holds(reading, self.value))
+    }
 }
 
 /// One action of a trigger (`ActionDef` and its `ActionParams`).

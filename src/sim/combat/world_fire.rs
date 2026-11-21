@@ -2492,6 +2492,15 @@ pub(super) fn emit_admitted_fire(
             TargetKind::Entity(id) => id,
             _ => 0,
         };
+        let weapon = rules
+            .weapon_index(selected.weapon_id)
+            .map_or(-1, |index| index as i32);
+        // A weapon or warhead binding reaches every shooter using it.
+        let warhead = rules
+            .weapon(selected.weapon_id)
+            .and_then(|weapon| weapon.warhead.as_deref())
+            .and_then(|warhead| rules.warhead_index(warhead))
+            .map_or(-1, |index| index as i32);
         world.raise_module_event(
             rules,
             crate::sim::ext_modules::ModuleEvent {
@@ -2499,9 +2508,9 @@ pub(super) fn emit_admitted_fire(
                 projectile: bullet_id,
                 cell: Some((target_rx, target_ry)),
                 value: i64::from(selected.index),
-                id: rules
-                    .weapon_index(selected.weapon_id)
-                    .map_or(-1, |index| index as i32),
+                id: weapon,
+                weapon,
+                warhead,
                 ..crate::sim::ext_modules::ModuleEvent::new(
                     vera20k_wasm_ext::triggers::EVENT_FIRE,
                     snap.stable_id,

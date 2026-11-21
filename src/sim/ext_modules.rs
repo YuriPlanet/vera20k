@@ -69,7 +69,9 @@ use vera20k_wasm_ext::{
 
 mod actions;
 mod cells;
+mod chains;
 mod decide;
+mod events;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
@@ -184,10 +186,10 @@ pub struct ExtModules {
     pending: Vec<SavedSlot>,
     /// Log lines from modules, drained by the caller.
     log: Vec<String>,
-    /// Set while a module trigger runs its immediate actions, so the events
-    /// they raise reach no module trigger (no chain triggers yet). False
-    /// between frames; not saved.
-    firing: bool,
+    /// How deep the module trigger chain on the stack is and how many
+    /// chained firings this frame ran ([`chains`]). Zero between frames;
+    /// not saved.
+    chain: chains::ChainState,
     /// The merged rules text `rules_get` reads during the match; `None`
     /// without modules.
     rules_ini: Option<IniFile>,
@@ -500,8 +502,7 @@ struct Host<'a, 'f> {
 fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
-            triggers::RAISED_EVENTS.contains(&id)
-                || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
+            events::raises(id) || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
         }
         TABLE_ACTION => actions::has_action(id, rules),
         TABLE_PROPERTY => property_name(id)
@@ -1285,7 +1286,20 @@ impl Simulation {
             let Some(holder) = self.module_var_holder(scope, var)? else {
                 return Ok(Status::Gone);
             };
+            let changed = self.ext_modules.vars.get(var, holder) != value;
             self.ext_modules.vars.set(var, holder, value);
+            // A change resets the `VariablePoll` timers waiting on it, as a
+            // stock variable's change resets Tag timers (appendix 4.4).
+            if changed
+                && self
+                    .trigger_runtime
+                    .module_listens(vera20k_wasm_ext::triggers::EVENT_VARIABLE_POLL)
+            {
+                let frame = self.session.binary_frame();
+                self.trigger_runtime
+                    .module_triggers_mut()
+                    .reset_variable_polls(var, frame);
+            }
             return Ok(Status::Ok);
         }
         let (global, index) = stock_variable(scope, var)?;
@@ -1475,6 +1489,8 @@ impl Simulation {
                 .modifiers
                 .expire(&mut self.substrate.entities, frame);
         }
+        self.fire_deferred_module_triggers(rules, frame_effects);
+        self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
@@ -1608,3 +1624,7 @@ mod ini_trigger_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_decide_tests.rs"]
 mod decide_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_event_tests.rs"]
+mod event_tests;

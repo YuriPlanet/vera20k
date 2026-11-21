@@ -815,6 +815,8 @@ pub(in crate::sim) fn release_delivered_mobile(
             owner,
             object,
         );
+        // Wasm module `Birth` (RFC 0001 appendix 4.3).
+        sim.raise_module_birth(rules, effects, product, None);
     }
 }
 

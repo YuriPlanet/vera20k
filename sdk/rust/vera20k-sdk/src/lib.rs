@@ -128,6 +128,17 @@ impl TypeRef {
         lookup(NameKind::TechnoType, name).map(|id| Self::new(NameKind::TechnoType, id))
     }
 
+    /// Weapon `name`'s type reference: a trigger bound to it raises `Fire`
+    /// for every shooter using the weapon.
+    pub fn weapon(name: &str) -> Result<Self> {
+        lookup(NameKind::Weapon, name).map(|id| Self::new(NameKind::Weapon, id))
+    }
+
+    /// Warhead `name`'s type reference, bound as [`TypeRef::weapon`] is.
+    pub fn warhead(name: &str) -> Result<Self> {
+        lookup(NameKind::Warhead, name).map(|id| Self::new(NameKind::Warhead, id))
+    }
+
     /// SuperWeaponType `name`'s type reference, for
     /// [`Order::launch_super_weapon`].
     pub fn super_weapon(name: &str) -> Result<Self> {

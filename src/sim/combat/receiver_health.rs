@@ -224,8 +224,18 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
                 } else {
                     super::KillSource::Techno((attacker != RAD_NO_ATTACKER).then_some(attacker))
                 };
-                self.world
-                    .record_the_kill(id, source, super::KillCallback::Terminal, context);
+                // The lethal warhead for a Wasm module `Killed` record.
+                let warhead = self
+                    .rules
+                    .warhead_index(self.world.interner.resolve(self.event.warhead_ref))
+                    .map_or(-1, |index| index as i32);
+                self.world.record_the_kill_by_warhead(
+                    id,
+                    source,
+                    super::KillCallback::Terminal,
+                    warhead,
+                    context,
+                );
             }
             HealthCallback::Destroy => {
                 if self.execute_world_callbacks {

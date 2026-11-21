@@ -1027,6 +1027,9 @@ impl Simulation {
             self.houses.request_house_tech_tree_recheck(old_owner);
             self.houses.request_house_tech_tree_recheck(new_owner);
         }
+        // Wasm module `HouseTransferred` (RFC 0001 appendix 4.3), after the
+        // transfer completed.
+        self.raise_module_house_transferred(rules, effects, stable_id, old_owner);
     }
 
     /// `BuildingClass::ChangeOwner @ 0x00448260`'s docked objects
