@@ -3442,6 +3442,7 @@ fn load_map_first_step(
                                 .map_err(|e| anyhow::anyhow!("the mod's rules.wasm: {e}"))?;
                             staged_simulation
                                 .install_scenario_ext_modules(
+                                    &rules,
                                     mod_rules_module.as_deref(),
                                     &map_data.ini,
                                 )

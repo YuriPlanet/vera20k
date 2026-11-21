@@ -333,7 +333,7 @@ impl Simulation {
                 // The Wasm module phase (RFC 0001 section 5; its place in the
                 // frame is open question 8). Without modules it does nothing.
                 if !self.ext_modules.is_empty() {
-                    self.run_ext_module_phase();
+                    self.run_ext_module_phase(rules);
                 }
             }
             FrameStep::Shroud => {

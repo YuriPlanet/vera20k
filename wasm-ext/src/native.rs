@@ -17,8 +17,9 @@ use wasmtime::{
 };
 
 use crate::{
-    ActionParams, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError, ModuleState,
-    PAGE_BYTES, SIM_IMPORT_MODULE, SimHost, Status,
+    ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError,
+    ModuleState, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST, SIM_IMPORT_MODULE,
+    SimHost, Status, property_id, property_name,
 };
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
@@ -369,7 +370,18 @@ fn typed_export(
 /// Charges one host call and hands back the host. A host call that runs past
 /// the budget stops the module as a budget fault.
 fn enter<'a>(caller: &'a mut Caller<'_, Ctx>, extra: u64) -> wasmtime::Result<&'a mut dyn SimHost> {
-    let cost = HOST_CALL_COST + extra;
+    charge(caller, HOST_CALL_COST.saturating_add(extra))?;
+    let host = caller.data().host;
+    match host {
+        // SAFETY: see `Ctx::host`.
+        Some(mut host) => Ok(unsafe { host.as_mut() }),
+        None => Err(wasmtime::Error::msg("host call outside a module call")),
+    }
+}
+
+/// Takes `cost` operations from the call's budget; running out is a budget
+/// fault.
+fn charge(caller: &mut Caller<'_, Ctx>, cost: u64) -> wasmtime::Result<()> {
     let fuel = caller.get_fuel()?;
     if fuel < cost {
         caller.data_mut().fault = Some(Fault::Budget);
@@ -378,12 +390,31 @@ fn enter<'a>(caller: &'a mut Caller<'_, Ctx>, extra: u64) -> wasmtime::Result<&'
         ));
     }
     caller.set_fuel(fuel - cost)?;
-    let host = caller.data().host;
-    match host {
-        // SAFETY: see `Ctx::host`.
-        Some(mut host) => Ok(unsafe { host.as_mut() }),
-        None => Err(wasmtime::Error::msg("host call outside a module call")),
+    Ok(())
+}
+
+/// Checks that `count` entries of `size` bytes at `ptr` lie in module memory.
+fn check_buffer(
+    caller: &mut Caller<'_, Ctx>,
+    ptr: i32,
+    count: usize,
+    size: usize,
+) -> Result<(), Invalid> {
+    let memory = memory_of(caller)?;
+    let end = usize::try_from(ptr)
+        .ok()
+        .and_then(|p| p.checked_add(count.checked_mul(size)?));
+    match end {
+        Some(end) if end <= memory.data_size(&*caller) => Ok(()),
+        _ => Err(Invalid(format!(
+            "buffer {ptr} of {count} x {size} bytes is outside module memory"
+        ))),
     }
+}
+
+/// A count or capacity argument, which may not be negative.
+fn count_arg(value: i32, what: &str) -> Result<usize, Invalid> {
+    usize::try_from(value).map_err(|_| Invalid(format!("negative {what} {value}")))
 }
 
 fn fail(caller: &mut Caller<'_, Ctx>, why: Invalid) -> wasmtime::Error {
@@ -465,6 +496,153 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
     ));
     wire(linker.func_wrap(
         m,
+        "has_kind",
+        |mut caller: Caller<'_, Ctx>, table: i32, id: i32| -> wasmtime::Result<i32> {
+            Ok(i32::from(enter(&mut caller, 0)?.has_kind(table, id)))
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "lookup",
+        |mut caller: Caller<'_, Ctx>,
+         kind: i32,
+         ptr: i32,
+         len: i32,
+         out: i32|
+         -> wasmtime::Result<i32> {
+            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
+            if !(0..NAME_KINDS).contains(&kind) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("unknown name kind {kind}")),
+                ));
+            }
+            let host = enter(&mut caller, bytes.len() as u64)?;
+            // A name that is not UTF-8 names nothing.
+            let result = match std::str::from_utf8(&bytes) {
+                Err(_) => Ok((-1, Status::NotFound)),
+                Ok(name) if kind == NAME_PROPERTY => {
+                    Ok(property_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
+                }
+                Ok(name) => host.lookup(kind, name),
+            };
+            let (id, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let id = if status == Status::Ok { id } else { -1 };
+            write_bytes(&mut caller, out, &id.to_le_bytes()).map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "name_of",
+        |mut caller: Caller<'_, Ctx>,
+         kind: i32,
+         id: i32,
+         out: i32,
+         cap: i32,
+         len_out: i32|
+         -> wasmtime::Result<i32> {
+            let cap = count_arg(cap, "capacity").map_err(|e| fail(&mut caller, e))?;
+            if !(0..NAME_KINDS).contains(&kind) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("unknown name kind {kind}")),
+                ));
+            }
+            let host = enter(&mut caller, 0)?;
+            let result = if id == -1 {
+                Ok((String::new(), Status::NotFound))
+            } else if kind == NAME_PROPERTY {
+                property_name(id)
+                    .map(|name| (name.to_owned(), Status::Ok))
+                    .ok_or_else(|| Invalid(format!("unknown property {id}")))
+            } else {
+                host.name_of(kind, id)
+            };
+            let (name, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let name = if status == Status::Ok {
+                name
+            } else {
+                String::new()
+            };
+            charge(&mut caller, name.len() as u64)?;
+            // A name longer than `cap` reports its length and writes nothing.
+            if name.len() <= cap {
+                write_bytes(&mut caller, out, name.as_bytes()).map_err(|e| fail(&mut caller, e))?;
+            }
+            let len = name.len() as i32;
+            write_bytes(&mut caller, len_out, &len.to_le_bytes())
+                .map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "get",
+        |mut caller: Caller<'_, Ctx>,
+         reference: i64,
+         prop: i32,
+         out: i32|
+         -> wasmtime::Result<i32> {
+            if property_name(prop).is_none() {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("unknown property {prop}")),
+                ));
+            }
+            let result = enter(&mut caller, 0)?.get(reference, prop);
+            let (value, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let value = if status == Status::Ok { value } else { 0 };
+            write_bytes(&mut caller, out, &value.to_le_bytes())
+                .map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "get_many",
+        |mut caller: Caller<'_, Ctx>,
+         refs: i32,
+         n: i32,
+         props: i32,
+         m: i32,
+         out: i32,
+         count_out: i32|
+         -> wasmtime::Result<i32> {
+            get_many(&mut caller, refs, n, props, m, out, count_out)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "set",
+        |mut caller: Caller<'_, Ctx>,
+         reference: i64,
+         prop: i32,
+         value: i64|
+         -> wasmtime::Result<i32> {
+            if property_name(prop).is_none() {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("unknown property {prop}")),
+                ));
+            }
+            let result = enter(&mut caller, 0)?.set(reference, prop, value);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "find",
+        |mut caller: Caller<'_, Ctx>,
+         query: i32,
+         len: i32,
+         out: i32,
+         cap: i32,
+         res: i32|
+         -> wasmtime::Result<i32> { find(&mut caller, query, len, out, cap, res) },
+    ));
+    wire(linker.func_wrap(
+        m,
         "var_get",
         |mut caller: Caller<'_, Ctx>, scope: i64, var: i32, out: i32| -> wasmtime::Result<i32> {
             let result = enter(&mut caller, 0)?.var_get(scope, var);
@@ -502,6 +680,132 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         },
     ));
     linker
+}
+
+/// `get_many` (appendix "Other layouts"): `n x m` scalar reads, row-major,
+/// each with its own empty value; returns the first non-`Ok` status.
+fn get_many(
+    caller: &mut Caller<'_, Ctx>,
+    refs: i32,
+    n: i32,
+    props: i32,
+    m: i32,
+    out: i32,
+    count_out: i32,
+) -> wasmtime::Result<i32> {
+    let checked = (|| {
+        let n = count_arg(n, "reference count")?;
+        let m = count_arg(m, "property count")?;
+        let total = n
+            .checked_mul(m)
+            .ok_or_else(|| Invalid(format!("{n} x {m} values")))?;
+        check_buffer(caller, out, total, 8)?;
+        check_buffer(caller, refs, n, 8)?;
+        check_buffer(caller, props, m, 4)?;
+        // Both buffers lie in a 32-bit memory, so their lengths fit an i32.
+        let refs = read_bytes(caller, refs, (n * 8) as i32)?;
+        let props = read_bytes(caller, props, (m * 4) as i32)?;
+        let refs: Vec<i64> = refs
+            .chunks_exact(8)
+            .map(|c| i64::from_le_bytes(c.try_into().unwrap_or_default()))
+            .collect();
+        let props: Vec<i32> = props
+            .chunks_exact(4)
+            .map(|c| i32::from_le_bytes(c.try_into().unwrap_or_default()))
+            .collect();
+        if let Some(bad) = props.iter().find(|p| property_name(**p).is_none()) {
+            return Err(Invalid(format!("unknown property {bad}")));
+        }
+        Ok((refs, props, total))
+    })();
+    let (refs, props, total) = checked.map_err(|e| fail(caller, e))?;
+    let host = enter(caller, (total as u64).saturating_mul(ENTRY_COST))?;
+    let mut first = Status::Ok;
+    let mut values = Vec::with_capacity(total * 8);
+    let mut result = Ok(());
+    'rows: for reference in &refs {
+        for prop in &props {
+            match host.get(*reference, *prop) {
+                Ok((value, status)) => {
+                    if first == Status::Ok {
+                        first = status;
+                    }
+                    let value = if status == Status::Ok { value } else { 0 };
+                    values.extend_from_slice(&value.to_le_bytes());
+                }
+                Err(e) => {
+                    result = Err(e);
+                    break 'rows;
+                }
+            }
+        }
+    }
+    result.map_err(|e| fail(caller, e))?;
+    write_bytes(caller, out, &values).map_err(|e| fail(caller, e))?;
+    write_bytes(caller, count_out, &(total as i32).to_le_bytes()).map_err(|e| fail(caller, e))?;
+    Ok(first as i32)
+}
+
+/// `find`: runs a `Query`, writes references to `out` and a `FindResult`
+/// (count, reserved, next) to `res` ("Strings and buffers").
+fn find(
+    caller: &mut Caller<'_, Ctx>,
+    query: i32,
+    len: i32,
+    out: i32,
+    cap: i32,
+    res: i32,
+) -> wasmtime::Result<i32> {
+    let checked = (|| {
+        let cap = count_arg(cap, "capacity")?;
+        let query = Query::parse(&read_bytes(caller, query, len)?)?;
+        check_buffer(caller, out, cap, 8)?;
+        check_buffer(caller, res, 1, 16)?;
+        Ok((query, cap))
+    })();
+    let (query, cap) = checked.map_err(|e| fail(caller, e))?;
+    let write_result = |caller: &mut Caller<'_, Ctx>, count: usize, next: i64| {
+        let mut bytes = [0u8; 16];
+        bytes[..4].copy_from_slice(&(count as i32).to_le_bytes());
+        bytes[8..].copy_from_slice(&next.to_le_bytes());
+        write_bytes(caller, res, &bytes).map_err(|e| fail(caller, e))
+    };
+    let host = enter(caller, 0)?;
+    // A valid zero-capacity query scans nothing.
+    if cap == 0 {
+        write_result(caller, 0, 0)?;
+        return Ok(Status::Ok as i32);
+    }
+    let result = host.find(&query, cap);
+    let (page, status) = result.map_err(|e| fail(caller, e))?;
+    if page.found.len() > cap {
+        return Err(fail(
+            caller,
+            Invalid("host returned more than a page".into()),
+        ));
+    }
+    let cost = page
+        .scanned
+        .saturating_mul(SCAN_COST)
+        .saturating_add((page.found.len() as u64).saturating_mul(ENTRY_COST));
+    charge(caller, cost)?;
+    if status != Status::Ok {
+        write_result(caller, 0, 0)?;
+        return Ok(status as i32);
+    }
+    let refs: Vec<u8> = page
+        .found
+        .iter()
+        .flat_map(|(_, r)| r.to_le_bytes())
+        .collect();
+    write_bytes(caller, out, &refs).map_err(|e| fail(caller, e))?;
+    // A full page continues after its last key; the next page may be empty.
+    let next = match page.found.last() {
+        Some((key, _)) if page.found.len() == cap => key.saturating_add(1),
+        _ => 0,
+    };
+    write_result(caller, page.found.len(), next)?;
+    Ok(Status::Ok as i32)
 }
 
 fn global_export_name(index: u32) -> String {

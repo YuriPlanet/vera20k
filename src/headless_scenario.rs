@@ -658,7 +658,7 @@ fn load_with_assets(
         Some(&themes),
     );
     // A map's embedded Wasm module (RFC 0001); headless scenarios load no mod.
-    sim.install_scenario_ext_modules(None, &map.ini)?;
+    sim.install_scenario_ext_modules(&rules, None, &map.ini)?;
     let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
     let mut scenario_fill_ranged =
         |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);

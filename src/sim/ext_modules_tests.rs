@@ -72,7 +72,7 @@ fn a_module_pays_a_house_and_sets_a_variable_identically_on_every_run() {
     for run in &mut runs {
         run.runtime
             .simulation
-            .install_ext_module(ModuleSource::Map, &module)
+            .install_ext_module(&run.runtime.resources.rules, ModuleSource::Map, &module)
             .expect("module installs");
     }
     let mut paid = 0;
@@ -117,7 +117,7 @@ fn a_runaway_module_is_disabled_and_the_match_goes_on() {
     scene
         .runtime
         .simulation
-        .install_ext_module(ModuleSource::Mod, &runaway)
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Mod, &runaway)
         .expect("module installs");
     let start = scene.sim().session.binary_frame();
     // The players are told once, through the frame's output.
@@ -163,7 +163,7 @@ fn a_module_that_breaks_the_load_rules_never_installs() {
     let error = scene
         .runtime
         .simulation
-        .install_ext_module(ModuleSource::Map, &wasi)
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &wasi)
         .unwrap_err();
     assert!(error.contains("wasi_snapshot_preview1"), "{error}");
     assert!(scene.sim().ext_modules().is_empty());
@@ -189,7 +189,7 @@ fn host_call_cost() {
     scene
         .runtime
         .simulation
-        .install_ext_module(ModuleSource::Mod, &module)
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Mod, &module)
         .expect("module installs");
     let elapsed = started.elapsed();
     eprintln!(
@@ -210,7 +210,7 @@ fn a_rust_built_module_runs() {
     scene
         .runtime
         .simulation
-        .install_ext_module(ModuleSource::Mod, &bytes)
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Mod, &bytes)
         .expect("module installs");
     for _ in 0..60 {
         scene.tick();
@@ -234,7 +234,11 @@ fn a_saved_match_resumes_its_modules_exactly() {
     let house = neutral_index(&live);
     live.runtime
         .simulation
-        .install_ext_module(ModuleSource::Map, &paying_module(house_ref(house)))
+        .install_ext_module(
+            &live.runtime.resources.rules,
+            ModuleSource::Map,
+            &paying_module(house_ref(house)),
+        )
         .expect("module installs");
     for _ in 0..20 {
         live.tick();
@@ -280,4 +284,75 @@ fn a_saved_match_resumes_its_modules_exactly() {
         resumed.sim().ext_modules().status(),
         live.sim().ext_modules().status()
     );
+}
+
+/// `find` pages through a house's objects; `get` reads the first one's
+/// owner and health, which the module checks and records in local
+/// variable 6.
+#[test]
+fn a_module_finds_a_houses_objects_and_reads_them() {
+    let Some(mut scene) = scenario() else { return };
+    let sim = scene.sim();
+    // The house with the most objects, and its first object.
+    let (house, owned) = sim
+        .houses
+        .order()
+        .iter()
+        .enumerate()
+        .map(|(index, id)| {
+            let owned: Vec<u64> = sim
+                .entities()
+                .iter_sorted()
+                .filter(|(_, e)| e.owner() == *id)
+                .map(|(stable_id, _)| stable_id)
+                .collect();
+            (index, owned)
+        })
+        .max_by_key(|(_, owned)| owned.len())
+        .expect("the map has houses");
+    assert!(owned.len() > 16, "more than one page");
+    let first = owned[0];
+    let prop = |name| vera20k_wasm_ext::property_id(name).expect("known property");
+    let (owner, health) = (prop("Owner"), prop("Health"));
+    let reference = house_ref(house);
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "find" (func $find (param i32 i32 i32 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "get" (func $get (param i64 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "var_set" (func $var_set (param i64 i32 i64) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    ;; Query at 0: Objects, whole map, owner at 32, after at 48.
+    (i64.store (i32.const 32) (i64.const {reference}))
+    (loop $page
+      (drop (call $find (i32.const 0) (i32.const 64) (i32.const 1024) (i32.const 16) (i32.const 512)))
+      (if (i64.eqz (i64.load (i32.const 904)))
+        (then (i64.store (i32.const 904) (i64.load (i32.const 1024)))))
+      (i32.store (i32.const 900) (i32.add (i32.load (i32.const 900)) (i32.load (i32.const 512))))
+      (i64.store (i32.const 48) (i64.load (i32.const 520)))
+      (br_if $page (i64.ne (i64.load (i32.const 520)) (i64.const 0))))
+    (drop (call $get (i64.load (i32.const 904)) (i32.const {owner}) (i32.const 920)))
+    (drop (call $get (i64.load (i32.const 904)) (i32.const {health}) (i32.const 928)))
+    (drop (call $var_set (i64.const 0) (i32.const 6)
+      (i64.extend_i32_u (i32.and
+        (i64.eq (i64.load (i32.const 920)) (i64.const {reference}))
+        (i64.gt_s (i64.load (i32.const 928)) (i64.const 0))))))))"#
+    ))
+    .expect("test module parses");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &module)
+        .expect("module installs");
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let memory = scene.sim().ext_modules.slots[0].module.memory();
+    let i64_at = |at: usize| i64::from_le_bytes(memory[at..at + 8].try_into().expect("8 bytes"));
+    let count = i32::from_le_bytes(memory[900..904].try_into().expect("4 bytes"));
+    assert_eq!(count as usize, owned.len());
+    assert_eq!(i64_at(904), first as i64);
+    assert_eq!(i64_at(920), reference);
+    let entity = scene.sim().entities().get(first).expect("first object");
+    assert_eq!(i64_at(928), i64::from(entity.health.current()));
+    assert!(scene.sim().trigger_runtime.local_variable_is_set(6));
 }
