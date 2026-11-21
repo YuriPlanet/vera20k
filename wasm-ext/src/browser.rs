@@ -2,8 +2,10 @@
 
 use crate::{Export, Fault, Limits, LoadError, SimHost};
 
-/// Uninhabited: no module ever loads in the browser build.
-pub enum SimModule {}
+/// Never constructed in the browser build: [`SimModule::load`] always fails.
+pub struct SimModule {
+    _private: (),
+}
 
 impl SimModule {
     pub fn load(_bytes: &[u8], _limits: Limits) -> Result<Self, LoadError> {
@@ -13,7 +15,7 @@ impl SimModule {
     }
 
     pub fn has_export(&self, _export: Export) -> bool {
-        match *self {}
+        false
     }
 
     pub fn call(
@@ -22,10 +24,10 @@ impl SimModule {
         _budget: u64,
         _host: &mut dyn SimHost,
     ) -> Result<u64, Fault> {
-        match *self {}
+        Ok(0)
     }
 
     pub fn memory(&self) -> &[u8] {
-        match *self {}
+        &[]
     }
 }

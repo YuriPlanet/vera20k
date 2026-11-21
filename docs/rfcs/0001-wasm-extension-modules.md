@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.14 |
+| RFC version | 0.0.15 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -274,7 +274,7 @@ Clients use the same operation-based meter, which also works on a browser's main
 | `Refused` | Engine rules reject an action or write, e.g. construction on an occupied cell or writing a property that is currently unwritable. An atomic action's target can also be inapplicable when its trigger executes (section 6b). |
 | `Unsupported` | The feature is disabled in this match (e.g. an Ares action without Ares), the engine does not recognize the table entry, or the host call is unavailable in this context. |
 
-- Calls return their results immediately. Writes return a status. Fallible reads return the value and status together. Reading money returns (0, Ok) for a zero balance or (0, Refused) for an unauthorized read. Reading a vanished object gives an empty value and Gone, and the module continues. Batch reads still take one call. See the appendix for signatures.
+- Calls return their results immediately. Writes return a status. Fallible reads return a status and write the value through a pointer into module memory, in the same call. Reading money returns (0, Ok) for a zero balance or (0, Refused) for an unauthorized read. Reading a vanished object gives an empty value and Gone, and the module continues. Batch reads still take one call. See the appendix for signatures.
 - An atomic action executed by a trigger has no module code to receive its status. Log `Refused`, `Gone` or `NotFound` in the game, skip the action and do nothing else.
 - Disable a faulty module for invalid arguments (including invalid action arguments or filter clauses detected by `trigger_create`, section 6b), a write in `on_decide` (section 6f), a trap or exceeding the operation or call-depth limit.
 
@@ -517,7 +517,7 @@ Validation:
 - Text, numbers or buttons above an object are client nodes (section 10).
 - Enabling the module feature (section 14) enables the modifier owner independently of Phobos. Only the Phobos switch enables reading its AttachEffect INI keys (`AttachEffect.*` on types, weapons and warheads, and `[AttachEffectTypes]`), preserving stock behavior. These keys create modifiers with the same owner. Shared Phobos and module modifier code ships in every build. Runtime switches enable the respective inputs (section 14).
 
-**Search.** `find(query, len, out, cap)` searches objects, houses, cells, types, teams, triggers, tags, modifiers or superweapons. It writes to a caller-supplied buffer and returns the count written, continuation position and status.
+**Search.** `find(query, len, out, cap)` searches objects, houses, cells, types, teams, triggers, tags, modifiers or superweapons. It writes to a caller-supplied buffer, writes the count written and continuation position to a small result struct and returns the status.
 
 - Search the whole map, a cell plus radius, or a rectangle. Filter by type or house and optional clauses in trigger layout, with the candidate as `Subject`.
 - Results follow creation serial independently of engine storage order. Cells use cell index, houses use house array order, modifiers use insertion order and types use type ID.
@@ -768,7 +768,7 @@ onMessage((sender: House, data: Uint8Array): void => {
 ### 12. Versions and ABI
 
 - A WIT-syntax interface definition and machine-readable tables (event kinds, action kinds, properties, name kinds, node kinds and other enums) are the sole API source. Project generators produce Rust and TypeScript SDK wrappers, reference docs and compatibility checks. Other bindings use the same tables. WIT describes the interface. Modules do not use the Component Model canonical ABI.
-- The binary interface is a core module ABI: core Wasm imports and exports, `i64` references and values, `i32` IDs, pointer plus length for strings, bytes and buffers, and batch results written by the host into module buffers. Appendix signatures specify values, statuses and pagination positions.
+- The binary interface is a core module ABI: core Wasm imports and exports, `i64` references and values, `i32` IDs, pointer plus length for strings, bytes and buffers, and batch results written by the host into module buffers. Host imports return at most one value: a call that yields a value returns its status and the host writes the value through out pointers into module memory, because stable Rust and AssemblyScript cannot import multi-value functions. Modules may still use multiple return values internally (section 3). Appendix signatures specify values, statuses and pagination positions.
 - Freeze imports and exports for both interfaces ([appendix 1](0001-wasm-extension-modules-api.md#1-simulation-abi) and [appendix 2](0001-wasm-extension-modules-api.md#2-client-abi)). Event kinds, action kinds, properties, name kinds, search scopes, node kinds, client event and action kinds, and all other enums are append-only tables extended in minor versions. `has_kind` permits fallback on older engines missing an entry.
 - A future major version may layer a Component Model adapter over the core ABI. Existing modules continue using the core ABI unchanged.
 - Versioned packages are `vera:sim@1` and `vera:client@1`. Version numbers have major and minor components. New majors are incompatible, and each released major remains available permanently through an adapter. Minor releases are additive. Imports declare the required major and minimum minor through the module name `vera:sim@<major>.<minor>` or `vera:client@<major>.<minor>`. The map or mod declares the same version in `[VeraWasm] Api=`. Both interfaces share a version and release together, so one `Api=` covers both. The lobby checks every player's game against it. Load-time validation checks imports against it (section 3).
@@ -896,6 +896,7 @@ Outside version 1. Each item gets a follow-up RFC or a new minor version.
 
 ## Revision history
 
+- **0.0.15** (2026-11-21): Host imports return a status and write values through out pointers, because stable Rust and AssemblyScript cannot import multi-value functions; frame returns its value directly.
 - **0.0.14** (2026-11-19): Added `order` (section 6g), which lets simulation modules command computer houses through the shared command table, and the `Scatter`, `TogglePrimaryFactory` and `Enter` commands. Added open question 18 on house control.
 - **0.0.13** (2026-11-18): Aligned triggers, query return values, default event fields and client visibility. Corrected binding examples and load-time validation order.
 - **0.0.12** (2026-11-18): Streamlined appendix table columns and consolidated shared rules and exceptions.

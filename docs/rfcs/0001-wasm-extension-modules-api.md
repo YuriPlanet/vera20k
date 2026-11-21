@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.14. Update both documents in the same commit. The main RFC defines the rules and takes precedence in a conflict. Open question 12 covers the version 1 inventory.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.15. Update both documents in the same commit. The main RFC defines the rules and takes precedence in a conflict. Open question 12 covers the version 1 inventory.
 
 ## Contents
 
@@ -69,10 +69,10 @@ Property values, variables and integer record payloads use `i64`. Interpret them
 ### Strings and buffers
 
 - Pass strings and byte buffers as a pointer into module memory and a length. Strings use UTF-8. Each interface specifies its byte layout. Names use ASCII case-insensitive comparison ([RFC 4](0001-wasm-extension-modules.md#4-determinism)).
-- Count-returning functions write into a module buffer (`out`, `cap`) and return the number written.
-- `len` always counts bytes. For strings and bytes, `cap` counts bytes. For reference buffers (`out` in `find` and `client_find`), it counts `i64` entries. The return count uses the same unit. The output of `get_many` and `client_get_many` must hold at least `n × m` entries of type `i64`.
-- `name_of`, `rules_get` and `client_storage_read` return the full length and write nothing if it exceeds `cap`.
-- Pagination returns `(count, next, status)`. Start with `after=0`. Reuse the query on subsequent pages, taking only entries with sort key ≥ `after`. [8.2](#82-search-scopes-find) specifies creation serial, house or cell index, type ID, or stable modifier insertion serial. On a full page, `next=last key+1` and the following page may be empty. Otherwise `next=0`. A valid zero-capacity query returns `(0, 0, Ok)` without scanning.
+- Count-returning functions write into a module buffer (`out`, `cap`) and write the number written through their trailing out pointer.
+- `len` always counts bytes. For strings and bytes, `cap` counts bytes. For reference buffers (`out` in `find` and `client_find`), it counts `i64` entries. The written count uses the same unit. The output of `get_many` and `client_get_many` must hold at least `n × m` entries of type `i64`.
+- `name_of`, `rules_get` and `client_storage_read` write the full length to `len_out` and write nothing to `out` if it exceeds `cap`.
+- A paged call returns its status and writes `count` and `next` to a `FindResult` (fixed layouts). Start with `after=0`. Reuse the query on subsequent pages, taking only entries with sort key ≥ `after`. [8.2](#82-search-scopes-find) specifies creation serial, house or cell index, type ID, or stable modifier insertion serial. On a full page, `next=last key+1` and the following page may be empty. Otherwise `next=0`. A valid zero-capacity query writes `count=0`, `next=0` and returns `Ok` without scanning.
 
 ### Status
 
@@ -86,7 +86,8 @@ enum Status {
 }
 ```
 
-- The ABI returns `(value, status: i32)` when reading a value or creating a handle. Pure writes return status. Paged calls also return the continuation position. Success is `Ok`. Each interface defines its empty value on failure.
+- Host imports return at most one value, because stable Rust and AssemblyScript cannot import functions with multiple results (Rust lowers a returned pair to a hidden result pointer). An import that reads a value or creates a handle returns `status: i32` and writes the value through a trailing out pointer into module memory, in little endian: an `i32` or `i64` as its signature states, or a `FindResult` for paged calls. Pure writes return status. `frame` and `client_frame` cannot fail and return the frame number directly. Success is `Ok`. Each interface defines its empty value on failure, and the host writes that empty value through the out pointer on any non-`Ok` status. An out pointer whose target lies outside module memory is an invalid argument. In this appendix, `(value, Status)` names the value written through the out pointer and the returned status.
+- Multiple return values remain allowed inside modules ([RFC 3](0001-wasm-extension-modules.md#3-loading-and-validation)). Only host imports avoid them.
 - The SDK can return the value alone or both value and status. Actions without a handle return status directly. Hot paths use scalars or caller-provided buffers.
 - Out-of-range IDs or indices, negative counts or capacities, invalid enums (probes return 0 for unknown entries), wrong variable scope, invalid action parameters or filter clauses, and writes during `on_decide` disable the module.
 
@@ -255,6 +256,11 @@ struct PropValue {        // 16 bytes: initial property for client_node_create
     reserved: i32,        // 4  0
     value: i64,           // 8
 }
+struct FindResult {       // 16 bytes: written by find and client_find
+    count: i32,           // 0  Entries written to out
+    reserved: i32,        // 4  0
+    next: i64,            // 8  Continuation position, 0 on the last page
+}
 struct Order {            // 24 bytes followed by count unit handles (i64): input to order and client_send_order
     kind: i32,            // 0   Command (8.3)
     count: i32,           // 4   Number of units following
@@ -288,7 +294,7 @@ struct ProjectileStep {   // 56 bytes: ProjectileFrame result area
 }
 ```
 
-The `out` buffer in `get_many` and `client_get_many` holds `n × m` row-major `i64` entries. Property `j` of reference `i` is at `out[i * m + j]`. A null or gone reference writes 0 across the row with status `Gone`. Each entry uses the empty value and status of the corresponding scalar read. Return the number of slots written (including empty values) and the first non-`Ok` status in row-major order, or `Ok` if all succeeded. A valid empty batch returns `(0, Ok)`.
+The `out` buffer in `get_many` and `client_get_many` holds `n × m` row-major `i64` entries. Property `j` of reference `i` is at `out[i * m + j]`. A null or gone reference writes 0 across the row with status `Gone`. Each entry uses the empty value and status of the corresponding scalar read. Write the number of slots written (including empty values) to `count_out` and return the first non-`Ok` status in row-major order, or `Ok` if all succeeded. A valid empty batch returns `(0, Ok)`.
 
 ### Custom sections
 
@@ -354,27 +360,27 @@ In the availability column, `init` means `vera_init`, `rules` means `on_rules`, 
 
 | # | Function | Signature | Semantics | Available in |
 | --- | --- | --- | --- | --- |
-| 1 | `frame` | `() -> (i32, i32)` | Current frame number | all, decide |
-| 2 | `random` | `(lo: i32, hi: i32) -> (i32, i32)` | Integer in `[lo, hi]` drawn from the module stream. In `on_decide`, use a substream derived from (frame, subject creation serial, event kind) without advancing the main stream. `lo > hi` is invalid. | all, decide |
+| 1 | `frame` | `() -> i32` | Current frame number. Cannot fail, so it returns the value without a status. | all, decide |
+| 2 | `random` | `(lo: i32, hi: i32, out: ptr) -> i32` | Write an `i32` integer in `[lo, hi]` drawn from the module stream. In `on_decide`, use a substream derived from (frame, subject creation serial, event kind) without advancing the main stream. `lo > hi` is invalid. | all, decide |
 | 3 | `log` | `(ptr, len)` | Write one line to the in-game log | init, rules, all, decide |
 | 4 | `has_kind` | `(table: i32, id: i32) -> i32` | 1 if `id` in `table` (`Table`) is available, 0 if unknown or disabled in this match | init, rules, all, decide |
-| 5 | `lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | Resolve a name to its ID (8.1), or −1 and `NotFound` | init, rules, all, decide |
-| 6 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | Write the ID's name to `out` and return its length | init, rules, all, decide |
-| 7 | `get` | `(ref: i64, prop: i32) -> (i64, i32)` | Effective property value, including modifiers | all, decide, rules (type and global rules references only) |
-| 8 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | Read `m` properties of `n` references and return the number of values written | all, decide, rules (type and global rules references only) |
+| 5 | `lookup` | `(kind: i32, ptr, len, out: ptr) -> i32` | Resolve a name and write its `i32` ID (8.1) to `out`, or −1 and `NotFound` | init, rules, all, decide |
+| 6 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32, len_out: ptr) -> i32` | Write the ID's name to `out` and its length (`i32`) to `len_out` | init, rules, all, decide |
+| 7 | `get` | `(ref: i64, prop: i32, out: ptr) -> i32` | Write the effective property value (`i64`), including modifiers | all, decide, rules (type and global rules references only) |
+| 8 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> i32` | Read `m` properties of `n` references and write the number of values written (`i32`) to `count_out` | all, decide, rules (type and global rules references only) |
 | 9 | `set` | `(ref: i64, prop: i32, value: i64) -> i32` | Write one property through its owner and return status | all, rules (type and global rules references only) |
-| 10 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32) -> (i64, i32)` | Add a modifier (`ModifierOp`) and return its handle. Negative `frames` means unlimited duration. A `group` of 0 means ungrouped. | all |
+| 10 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32, out: ptr) -> i32` | Add a modifier (`ModifierOp`) and write its handle (`i64`). Negative `frames` means unlimited duration. A `group` of 0 means ungrouped. | all |
 | 11 | `unmodify` | `(modifier: i64) -> i32` | Remove a modifier. Returns `Gone` if expired. | all |
-| 12 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | Raw string for a key. Return length, or −1 and `NotFound` for a missing key. | all, decide, rules |
+| 12 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | Raw string for a key. Write its length (`i32`) to `len_out`, or −1 and `NotFound` for a missing key. | all, decide, rules |
 | 13 | `rules_set` | `(sec: ptr, sec_len, key: ptr, key_len, val: ptr, val_len) -> i32` | Write any key during `on_rules`, or an allowlisted key during a match ([RFC 8](0001-wasm-extension-modules.md#8-changing-rules)). Otherwise return `Refused`. | all, rules |
-| 14 | `var_get` | `(scope: i64, var: i32) -> (i64, i32)` | Read a variable. `scope` is 0 for global or a reference to a house or object. | all, decide |
+| 14 | `var_get` | `(scope: i64, var: i32, out: ptr) -> i32` | Read a variable (`i64`). `scope` is 0 for global or a reference to a house or object. | all, decide |
 | 15 | `var_set` | `(scope: i64, var: i32, value: i64) -> i32` | Write a variable and reset timers of triggers waiting on it | all |
-| 16 | `find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | Run a `Query`, write references to `out` and return (count, next, status). See “Strings and buffers”. | all, decide |
-| 17 | `trigger_create` | `(def: ptr, len) -> (i64, i32)` | Create a trigger (`TriggerDef`) and return its handle. A missing waypoint returns 0 and `NotFound`. A disabled Ares event (4.2) returns (0, Unsupported). | all |
+| 16 | `find` | `(query: ptr, len, out: ptr, cap: i32, res: ptr) -> i32` | Run a `Query`, write references to `out` and a `FindResult` (count, next) to `res`, and return the status. See “Strings and buffers”. | all, decide |
+| 17 | `trigger_create` | `(def: ptr, len, out: ptr) -> i32` | Create a trigger (`TriggerDef`) and write its handle (`i64`). A missing waypoint returns 0 and `NotFound`. A disabled Ares event (4.2) returns (0, Unsupported). | all |
 | 18 | `trigger_remove` | `(t: i64) -> i32` | Remove the trigger and all its instances (deferred) | all |
 | 19 | `trigger_bind` | `(t: i64, ref: i64) -> i32` | Bind to an object, type, weapon, warhead or projectile type, or to a cell (only events marked “cell binding” in 4.1) | all |
 | 20 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | Remove one binding | all |
-| 21 | `action` | `(kind: i32, target: i64, params: ptr, len) -> (i64, i32)` | Execute an action (section 5, `ActionParams`). Return the created object, otherwise 0. | all |
+| 21 | `action` | `(kind: i32, target: i64, params: ptr, len, out: ptr) -> i32` | Execute an action (section 5, `ActionParams`). Write the created object (`i64`), otherwise 0. | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | Notify players of house `to`, or observers when `to` is 0. Exceeding the size or per-frame count limit returns `Refused`. | all |
 | 23 | `order` | `(house: i64, ptr, len) -> i32` | Queue a standard player command (`Order`) for computer house `house`. It executes next frame, validated like that house's player input ([RFC 6g](0001-wasm-extension-modules.md#6g-house-orders)). | all |
 
@@ -407,25 +413,25 @@ Reads expose only what the current player's UI can show (Client column in sectio
 
 | # | Function | Signature | Semantics |
 | --- | --- | --- | --- |
-| 1 | `client_frame` | `() -> (i32, i32)` | Most recently completed simulation frame |
-| 2 | `client_random` | `(lo: i32, hi: i32) -> (i32, i32)` | Local random number for presentation only |
+| 1 | `client_frame` | `() -> i32` | Most recently completed simulation frame. Cannot fail, so it returns the value without a status. |
+| 2 | `client_random` | `(lo: i32, hi: i32, out: ptr) -> i32` | Write a local random `i32` for presentation only |
 | 3 | `client_log` | `(ptr, len)` | Write to the in-game console |
 | 4 | `client_has_kind` | `(table: i32, id: i32) -> i32` | As `has_kind` |
-| 5 | `client_lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | As `lookup`. Variable and notification names come from simulation module declarations for this match. |
-| 6 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | As `name_of` |
-| 7 | `client_get` | `(ref: i64, prop: i32) -> (i64, i32)` | Read a property. An invisible object yields `Gone`. An invisible property yields its empty value and `Refused`. |
-| 8 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | Layout and batch status as for `get_many`, with `client_get` visibility checks for each entry |
-| 9 | `client_find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | As `find`, restricted to entries visible to the current player |
-| 10 | `client_var_get` | `(scope: i64, var: i32) -> (i64, i32)` | Read a variable, subject to visibility ([RFC 6e](0001-wasm-extension-modules.md#6e-variables)) |
+| 5 | `client_lookup` | `(kind: i32, ptr, len, out: ptr) -> i32` | As `lookup`. Variable and notification names come from simulation module declarations for this match. |
+| 6 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32, len_out: ptr) -> i32` | As `name_of` |
+| 7 | `client_get` | `(ref: i64, prop: i32, out: ptr) -> i32` | Read a property (`i64`). An invisible object yields `Gone`. An invisible property yields its empty value and `Refused`. |
+| 8 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> i32` | Layout and batch status as for `get_many`, with `client_get` visibility checks for each entry |
+| 9 | `client_find` | `(query: ptr, len, out: ptr, cap: i32, res: ptr) -> i32` | As `find`, restricted to entries visible to the current player |
+| 10 | `client_var_get` | `(scope: i64, var: i32, out: ptr) -> i32` | Read a variable (`i64`), subject to visibility ([RFC 6e](0001-wasm-extension-modules.md#6e-variables)) |
 | 11 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | Write a property of a client-owned reference (node, camera, cursor, local settings). Writing a node without permission returns `Refused` ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)). |
 | 12 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | Write a string or byte property (`Label`, `Art`, `Items`, `ItemProgress`, etc.). Writing a node without permission returns `Refused`. |
-| 13 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len) -> (i64, i32)` | Create a node (`NodeKind`) with initial properties from a `PropValue` array. A `parent` of 0 means top level. |
+| 13 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len, out: ptr) -> i32` | Create a node (`NodeKind`) and write its handle (`i64`), with initial properties from a `PropValue` array. A `parent` of 0 means top level. |
 | 14 | `client_node_remove` | `(node: i64) -> i32` | Remove a node and its descendants. Removing a node without permission returns `Refused`. |
-| 15 | `client_node_find` | `(ptr, len) -> (i64, i32)` | Find a node by `Name` (7.10, part name in the active layout for INI nodes). If names match, return the first created. No match returns (0, NotFound). |
+| 15 | `client_node_find` | `(ptr, len, out: ptr) -> i32` | Find a node by `Name` and write its handle (`i64`) (7.10, part name in the active layout for INI nodes). If names match, return the first created. No match returns (0, NotFound). |
 | 16 | `client_action` | `(kind: i32, target: i64, params: ptr, len) -> i32` | Execute a local action (5.4, `ActionParams`) |
 | 17 | `client_send_order` | `(ptr, len) -> i32` | Issue a standard player command (`Order`), validated like player input |
 | 18 | `client_send_message` | `(ptr, len) -> i32` | Place a message in the command stream for the same-origin simulation module's `on_message`. Observers receive `Refused`. Size and rate limits apply ([RFC 11](0001-wasm-extension-modules.md#11-multiplayer)). |
-| 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | Read storage for this module's origin. Return length or −1 and `NotFound` for no entry ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)). |
+| 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | Read storage for this module's origin. Write the length (`i32`) to `len_out`, or −1 and `NotFound` for no entry ([RFC 10](0001-wasm-extension-modules.md#10-client-modules)). |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | Write storage. `data_len` of 0 deletes the key. ASCII keys of 1..64 bytes, values ≤ 16 KiB, ≤ 256 keys and ≤ 256 KiB total keys plus values per origin. Exceeding a limit returns `Refused` and preserves storage. |
 
 Only `client_lookup`, `client_name_of`, `client_has_kind` and `client_log` are available in `client_init`.

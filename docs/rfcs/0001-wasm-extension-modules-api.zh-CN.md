@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.14，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.15，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单是待定问题 12。
 
 ## 目录
 
@@ -69,10 +69,10 @@ TypeScript 引用为 `i64` 别名，Rust 为 newtype；`NO_HANDLE = 0`。
 ### 字符串与缓冲区
 
 - 字符串和字节缓冲区均传模块内存指针和长度。字符串按 UTF-8 编码，字节缓冲区按接口布局解释；名字比较按 ASCII 不区分大小写（[RFC 4](0001-wasm-extension-modules.zh-CN.md#4-确定性)）。
-- 返回数量的函数写入模块的缓冲区（`out`、`cap`），返回写入数量。
-- `len` 一律是字节数；`cap` 对字符串和字节是字节数，对引用缓冲区（`find`、`client_find` 的 `out`）是 `i64` 条目数；返回值的单位同 `cap`。`get_many`、`client_get_many` 的 `out` 至少容纳 `n × m` 个 `i64`。
-- `name_of`、`rules_get`、`client_storage_read` 返回完整长度；大于 `cap` 时什么也不写。
-- 分页返回 `(count, next, status)`。首页 `after=0`；续页沿用查询，只取排序键 ≥ `after` 的项。按 [8.2](#82-搜索范围find) 使用创建序号、所属方或格子下标、类型 ID 或稳定的修饰器加入序号。页满时 `next=页末键+1`，下一页可能为空；未满时 `next=0`。有效查询容量为零时返回 `(0, 0, Ok)`，不扫描。
+- 返回数量的函数写入模块的缓冲区（`out`、`cap`），写入数量经末尾的输出指针写回。
+- `len` 一律是字节数；`cap` 对字符串和字节是字节数，对引用缓冲区（`find`、`client_find` 的 `out`）是 `i64` 条目数；写回的数量单位同 `cap`。`get_many`、`client_get_many` 的 `out` 至少容纳 `n × m` 个 `i64`。
+- `name_of`、`rules_get`、`client_storage_read` 把完整长度写入 `len_out`；大于 `cap` 时 `out` 中什么也不写。
+- 分页调用返回状态，`count` 和 `next` 写入 `FindResult`（固定布局）。首页 `after=0`；续页沿用查询，只取排序键 ≥ `after` 的项。按 [8.2](#82-搜索范围find) 使用创建序号、所属方或格子下标、类型 ID 或稳定的修饰器加入序号。页满时 `next=页末键+1`，下一页可能为空；未满时 `next=0`。有效查询容量为零时写入 `count=0`、`next=0` 并返回 `Ok`，不扫描。
 
 ### 状态
 
@@ -86,7 +86,8 @@ enum Status {
 }
 ```
 
-- ABI：取值或创建句柄时同时返回 `(value, status: i32)`；纯写操作返回状态，分页另返回续页位置。成功为 `Ok`，失败值依各接口的空值约定。
+- ABI：宿主导入最多返回一个值，因为稳定版 Rust 和 AssemblyScript 都无法导入多返回值的函数（Rust 把返回的值对降为隐藏的结果指针参数）。取值或创建句柄的导入返回 `status: i32`，值经末尾的输出指针以小端序写入模块内存：按签名为 `i32` 或 `i64`，分页调用为 `FindResult`。纯写操作返回状态。`frame` 和 `client_frame` 不会失败，直接返回帧号。成功为 `Ok`，失败值依各接口的空值约定；状态不为 `Ok` 时宿主仍把该空值写入输出指针。输出指针超出模块内存为非法参数。本附录中的 `(value, Status)` 指经输出指针写入的值和返回的状态。
+- 模块内部仍可使用多返回值（[RFC 3](0001-wasm-extension-modules.zh-CN.md#3-加载与校验)），只有宿主导入不用。
 - SDK：可只取值，也可一次取值和状态。无句柄动作直接给出状态；热路径使用标量或调用方的缓冲区。
 - 停用模块：ID 或下标越界、负数量或容量、表外枚举（探测函数对未知表项返回 0）、变量作用域错误、非法动作参数或筛选子句、在 `on_decide` 中写入。
 
@@ -255,6 +256,11 @@ struct PropValue {        // 16 字节：client_node_create 的初始属性
     reserved: i32,        // 4  0
     value: i64,           // 8
 }
+struct FindResult {       // 16 字节：find 和 client_find 写入
+    count: i32,           // 0  写入 out 的条目数
+    reserved: i32,        // 4  0
+    next: i64,            // 8  续页位置，末页为 0
+}
 struct Order {            // 24 字节，后接 count 个单位句柄（i64）：order 和 client_send_order 的输入
     kind: i32,            // 0   Command（8.3）
     count: i32,           // 4   后面的单位数
@@ -288,7 +294,7 @@ struct ProjectileStep {   // 56 字节：ProjectileFrame 的结果区
 }
 ```
 
-`get_many` 和 `client_get_many` 的 `out` 是按行排列的 `n × m` 个 `i64`：第 `i` 个引用的第 `j` 个属性在 `out[i * m + j]`；空引用或已消失的引用整行写 0，状态为 `Gone`。各项沿用单项读取的空值和状态；返回写入的槽数（含空值）和行优先顺序的首个非 `Ok` 状态，全部成功时为 `Ok`。有效空批次返回 `(0, Ok)`。
+`get_many` 和 `client_get_many` 的 `out` 是按行排列的 `n × m` 个 `i64`：第 `i` 个引用的第 `j` 个属性在 `out[i * m + j]`；空引用或已消失的引用整行写 0，状态为 `Gone`。各项沿用单项读取的空值和状态；写入的槽数（含空值）写入 `count_out`，返回行优先顺序的首个非 `Ok` 状态，全部成功时为 `Ok`。有效空批次返回 `(0, Ok)`。
 
 ### 自定义段
 
@@ -354,27 +360,27 @@ bytes: u32,               // 投递区的字节数
 
 | # | 函数 | 签名 | 语义 | 可用于 |
 | --- | --- | --- | --- | --- |
-| 1 | `frame` | `() -> (i32, i32)` | 当前帧号 | all、decide |
-| 2 | `random` | `(lo: i32, hi: i32) -> (i32, i32)` | `[lo, hi]` 的整数，取自模块随机流；在 `on_decide` 中取自按（帧、主体的创建序号、事件种类）派生的子流，不改变主随机流；`lo > hi` 为非法参数 | all、decide |
+| 1 | `frame` | `() -> i32` | 当前帧号；不会失败，直接返回值，没有状态 | all、decide |
+| 2 | `random` | `(lo: i32, hi: i32, out: ptr) -> i32` | 写入 `[lo, hi]` 的 `i32` 整数，取自模块随机流；在 `on_decide` 中取自按（帧、主体的创建序号、事件种类）派生的子流，不改变主随机流；`lo > hi` 为非法参数 | all、decide |
 | 3 | `log` | `(ptr, len)` | 写一行游戏内日志 | init、rules、all、decide |
 | 4 | `has_kind` | `(table: i32, id: i32) -> i32` | 表 `table`（`Table`）中的 `id` 可用为 1，未知或本局关闭为 0 | init、rules、all、decide |
-| 5 | `lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | 名字解析为 ID（8.1）；没有时为 −1 和 `NotFound` | init、rules、all、decide |
-| 6 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | 把 ID 的名字写进 `out`，返回长度 | init、rules、all、decide |
-| 7 | `get` | `(ref: i64, prop: i32) -> (i64, i32)` | 属性的有效值（含修饰器） | all、decide、rules（仅类型和全局规则引用） |
-| 8 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | `n` 个引用的 `m` 个属性，返回写入的值数 | all、decide、rules（仅类型和全局规则引用） |
+| 5 | `lookup` | `(kind: i32, ptr, len, out: ptr) -> i32` | 名字解析为 `i32` ID（8.1）写入 `out`；没有时为 −1 和 `NotFound` | init、rules、all、decide |
+| 6 | `name_of` | `(kind: i32, id: i32, out: ptr, cap: i32, len_out: ptr) -> i32` | 把 ID 的名字写进 `out`，长度（`i32`）写进 `len_out` | init、rules、all、decide |
+| 7 | `get` | `(ref: i64, prop: i32, out: ptr) -> i32` | 写入属性的有效值（`i64`，含修饰器） | all、decide、rules（仅类型和全局规则引用） |
+| 8 | `get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> i32` | `n` 个引用的 `m` 个属性，写入的值数（`i32`）写进 `count_out` | all、decide、rules（仅类型和全局规则引用） |
 | 9 | `set` | `(ref: i64, prop: i32, value: i64) -> i32` | 经 owner 写一个属性；返回状态 | all、rules（仅类型和全局规则引用） |
-| 10 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32) -> (i64, i32)` | 加修饰器（`ModifierOp`），返回其句柄；`frames` 为负表示无限，`group` 为 0 表示不分组 | all |
+| 10 | `modify` | `(ref: i64, prop: i32, op: i32, value: i64, frames: i32, source: i64, group: i32, out: ptr) -> i32` | 加修饰器（`ModifierOp`），写入其句柄（`i64`）；`frames` 为负表示无限，`group` 为 0 表示不分组 | all |
 | 11 | `unmodify` | `(modifier: i64) -> i32` | 移除修饰器；已到期为 `Gone` | all |
-| 12 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | 键的原始字符串，返回长度；不存在为 −1 和 `NotFound` | all、decide、rules |
+| 12 | `rules_get` | `(sec: ptr, sec_len, key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | 键的原始字符串，长度（`i32`）写进 `len_out`；不存在为 −1 和 `NotFound` | all、decide、rules |
 | 13 | `rules_set` | `(sec: ptr, sec_len, key: ptr, key_len, val: ptr, val_len) -> i32` | 写一个键：`on_rules` 中任意键，对局中仅白名单（[RFC 8](0001-wasm-extension-modules.zh-CN.md#8-修改规则)），否则 `Refused` | all、rules |
-| 14 | `var_get` | `(scope: i64, var: i32) -> (i64, i32)` | 读变量；`scope` 0 为全局，否则为所属方或对象引用 | all、decide |
+| 14 | `var_get` | `(scope: i64, var: i32, out: ptr) -> i32` | 读变量（`i64`）；`scope` 0 为全局，否则为所属方或对象引用 | all、decide |
 | 15 | `var_set` | `(scope: i64, var: i32, value: i64) -> i32` | 写变量，重置等待它的触发器的计时器 | all |
-| 16 | `find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | 搜索（`Query`），引用写入 `out`，返回 (count, next, status)，见“字符串与缓冲区” | all、decide |
-| 17 | `trigger_create` | `(def: ptr, len) -> (i64, i32)` | 创建触发器（`TriggerDef`），返回句柄；路径点不存在为 0 和 `NotFound`；使用未启用的 Ares 事件（4.2）时为 (0, Unsupported) | all |
+| 16 | `find` | `(query: ptr, len, out: ptr, cap: i32, res: ptr) -> i32` | 搜索（`Query`），引用写入 `out`，`FindResult`（count、next）写入 `res`，返回状态，见“字符串与缓冲区” | all、decide |
+| 17 | `trigger_create` | `(def: ptr, len, out: ptr) -> i32` | 创建触发器（`TriggerDef`），写入句柄（`i64`）；路径点不存在为 0 和 `NotFound`；使用未启用的 Ares 事件（4.2）时为 (0, Unsupported) | all |
 | 18 | `trigger_remove` | `(t: i64) -> i32` | 删除触发器及其所有实例（延迟） | all |
 | 19 | `trigger_bind` | `(t: i64, ref: i64) -> i32` | 绑定到对象、类型、武器、弹头或抛射体类型，或格子（仅限 4.1 注明“绑定格子”的事件） | all |
 | 20 | `trigger_unbind` | `(t: i64, ref: i64) -> i32` | 解除一个绑定 | all |
-| 21 | `action` | `(kind: i32, target: i64, params: ptr, len) -> (i64, i32)` | 执行动作（第 5 节，`ActionParams`）；返回创建的对象，否则为 0 | all |
+| 21 | `action` | `(kind: i32, target: i64, params: ptr, len, out: ptr) -> i32` | 执行动作（第 5 节，`ActionParams`）；写入创建的对象（`i64`），否则为 0 | all |
 | 22 | `send_notify` | `(to: i64, id: i32, ptr, len) -> i32` | 通知所属方 `to` 的玩家；`to` 为 0 时发给观战者；超出大小或每帧条数为 `Refused` | all |
 | 23 | `order` | `(house: i64, ptr, len) -> i32` | 为电脑所属方 `house` 排入一条标准玩家指令（`Order`），下一帧执行，像该所属方的玩家输入一样校验（[RFC 6g](0001-wasm-extension-modules.zh-CN.md#6g-所属方指令)） | all |
 
@@ -407,25 +413,25 @@ bytes: u32,               // 投递区的字节数
 
 | # | 函数 | 签名 | 语义 |
 | --- | --- | --- | --- |
-| 1 | `client_frame` | `() -> (i32, i32)` | 最近算完的模拟帧号 |
-| 2 | `client_random` | `(lo: i32, hi: i32) -> (i32, i32)` | 本机随机数，只用于显示 |
+| 1 | `client_frame` | `() -> i32` | 最近算完的模拟帧号；不会失败，直接返回值，没有状态 |
+| 2 | `client_random` | `(lo: i32, hi: i32, out: ptr) -> i32` | 写入本机随机 `i32`，只用于显示 |
 | 3 | `client_log` | `(ptr, len)` | 写游戏内控制台 |
 | 4 | `client_has_kind` | `(table: i32, id: i32) -> i32` | 同 `has_kind` |
-| 5 | `client_lookup` | `(kind: i32, ptr, len) -> (i32, i32)` | 同 `lookup`；变量名和通知名查本局模拟模块声明过的 |
-| 6 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32) -> (i32, i32)` | 同 `name_of` |
-| 7 | `client_get` | `(ref: i64, prop: i32) -> (i64, i32)` | 读属性；看不到的对象为 `Gone`，不可见的属性为空值和 `Refused` |
-| 8 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr) -> (i32, i32)` | 布局和批次状态同 `get_many`；逐项沿用 `client_get` 的可见度检查 |
-| 9 | `client_find` | `(query: ptr, len, out: ptr, cap: i32) -> (i32, i64, i32)` | 同 `find`，只返回本玩家能看到的 |
-| 10 | `client_var_get` | `(scope: i64, var: i32) -> (i64, i32)` | 读变量，受可见度限制（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
+| 5 | `client_lookup` | `(kind: i32, ptr, len, out: ptr) -> i32` | 同 `lookup`；变量名和通知名查本局模拟模块声明过的 |
+| 6 | `client_name_of` | `(kind: i32, id: i32, out: ptr, cap: i32, len_out: ptr) -> i32` | 同 `name_of` |
+| 7 | `client_get` | `(ref: i64, prop: i32, out: ptr) -> i32` | 读属性（`i64`）；看不到的对象为 `Gone`，不可见的属性为空值和 `Refused` |
+| 8 | `client_get_many` | `(refs: ptr, n: i32, props: ptr, m: i32, out: ptr, count_out: ptr) -> i32` | 布局和批次状态同 `get_many`；逐项沿用 `client_get` 的可见度检查 |
+| 9 | `client_find` | `(query: ptr, len, out: ptr, cap: i32, res: ptr) -> i32` | 同 `find`，只返回本玩家能看到的 |
+| 10 | `client_var_get` | `(scope: i64, var: i32, out: ptr) -> i32` | 读变量（`i64`），受可见度限制（[RFC 6e](0001-wasm-extension-modules.zh-CN.md#6e-变量)） |
 | 11 | `client_set` | `(ref: i64, prop: i32, value: i64) -> i32` | 写客户端拥有的引用的属性：节点、镜头、光标、本地设置；无权写的节点为 `Refused`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
 | 12 | `client_set_bytes` | `(ref: i64, prop: i32, ptr, len) -> i32` | 写字符串或字节属性（`Label`、`Art`、`Items`、`ItemProgress`……）；无权写的节点为 `Refused` |
-| 13 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len) -> (i64, i32)` | 新建节点（`NodeKind`），初始属性为 `PropValue` 数组；`parent` 0 为顶层 |
+| 13 | `client_node_create` | `(kind: i32, parent: i64, props: ptr, len, out: ptr) -> i32` | 新建节点（`NodeKind`）并写入其句柄（`i64`），初始属性为 `PropValue` 数组；`parent` 0 为顶层 |
 | 14 | `client_node_remove` | `(node: i64) -> i32` | 删除节点及子节点；无权删除的节点为 `Refused` |
-| 15 | `client_node_find` | `(ptr, len) -> (i64, i32)` | 按 `Name` 找节点（7.10：INI 节点为当前布局中的部件名）；同名时为先创建的；没有为 (0, NotFound) |
+| 15 | `client_node_find` | `(ptr, len, out: ptr) -> i32` | 按 `Name` 找节点并写入其句柄（`i64`）（7.10：INI 节点为当前布局中的部件名）；同名时为先创建的；没有为 (0, NotFound) |
 | 16 | `client_action` | `(kind: i32, target: i64, params: ptr, len) -> i32` | 执行本地动作（5.4，`ActionParams`） |
 | 17 | `client_send_order` | `(ptr, len) -> i32` | 发出标准玩家指令（`Order`），像玩家输入一样校验 |
 | 18 | `client_send_message` | `(ptr, len) -> i32` | 消息进入命令流，到达同一来源模拟模块的 `on_message`；观战者为 `Refused`；限大小和频率（[RFC 11](0001-wasm-extension-modules.zh-CN.md#11-联机)） |
-| 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32) -> (i32, i32)` | 读模块来源的存储，返回长度；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
+| 19 | `client_storage_read` | `(key: ptr, key_len, out: ptr, cap: i32, len_out: ptr) -> i32` | 读模块来源的存储，长度（`i32`）写进 `len_out`；没有为 −1 和 `NotFound`（[RFC 10](0001-wasm-extension-modules.zh-CN.md#10-客户端模块)） |
 | 20 | `client_storage_write` | `(key: ptr, key_len, data: ptr, data_len) -> i32` | 写存储；`data_len` 为 0 时删除该键；键 1..64 字节 ASCII，值 ≤ 16 KiB，每个来源 ≤ 256 个键、键和值合计 ≤ 256 KiB；超出为 `Refused`，存储不变 |
 
 `client_init` 中只可用 `client_lookup`、`client_name_of`、`client_has_kind`、`client_log`。
