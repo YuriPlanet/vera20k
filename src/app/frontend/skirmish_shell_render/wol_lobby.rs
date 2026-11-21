@@ -41,6 +41,10 @@ const GREYED_RGB: [f32; 3] = [128.0 / 255.0; 3];
 /// VERA: the modern game list's gap between a room's name and its tag.
 const GAME_TAG_GAP: i32 = 8;
 
+/// VERA: a match's Watch tag, light blue to set it apart from the rooms'
+/// yellow.
+const WATCH_TAG_RGB: [f32; 3] = [0.45, 0.80, 1.0];
+
 /// Sprites on the skirmish atlas, sprites on the lobby art and texts.
 #[derive(Default)]
 pub(crate) struct WolLobbyPaint {
@@ -242,13 +246,69 @@ pub(crate) fn paint_wol_lobby_children(
             state
                 .platform
                 .ime
-                .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
+                .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit),
             layout.chat,
             ui.popup.is_none() && ui.caret_visible(now),
             SHELL_LABEL_TEXT_RGB,
             SHELL_CONTROL_TEXT_DEPTH,
             scale,
         );
+    }
+    // VERA's filter row under the games: the room search, which names
+    // itself while empty, as the map search does, and the two checkboxes.
+    if shown(layout.search) {
+        let composition = state
+            .platform
+            .ime
+            .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit);
+        if ui.search.units.is_empty() && composition.is_none() {
+            let hint = scale.derive_rect(layout.search, |rect| {
+                RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
+            });
+            paint.texts.push(text(
+                &crate::i18n::tr("VERA:LobbySearchHint"),
+                hint,
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+        }
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.search,
+            composition,
+            layout.search,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
+    let filter = state.frontend.wol_lobby_globals.room_filter;
+    for (control, rect, key) in [
+        (HIDE_FULL, layout.hide_full, "VERA:HideFull"),
+        (HIDE_LOCKED, layout.hide_locked, "VERA:HideLocked"),
+    ]
+    .into_iter()
+    .filter(|(_, rect, _)| shown(*rect))
+    {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect,
+                checked: filter.checked(control),
+            },
+            scale,
+        );
+        paint.texts.push(text(
+            &crate::i18n::tr(key),
+            crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+        ));
     }
 
     let lobbies = ui
@@ -349,8 +409,8 @@ pub(crate) fn paint_wol_lobby_children(
         };
         // The modern list keeps one retail icon, a password game's lock, in
         // the first icon column; that row's name starts at the next one. A
-        // tag ends the name cell against the Ping column, and the name stops
-        // a gap before it.
+        // room's tag ends the name cell against the Ping column, and the name
+        // stops a gap before it.
         let ping = if row.ping == -1 {
             "???".to_owned()
         } else {
@@ -361,19 +421,25 @@ pub(crate) fn paint_wol_lobby_children(
         } else {
             GAME_TYPE_X
         };
-        // Watch rows can use the entire list. Other modern rooms stop a
-        // gap before the ping centred under its column heading.
+        // A match to watch has no ping: its tag takes the ping's place, in
+        // its own colour.
+        let tag = row.tag.as_deref().filter(|_| modern);
+        let (column, tag) = if row.watch {
+            (tag.unwrap_or_default(), None)
+        } else {
+            (ping.as_str(), tag)
+        };
+        // Modern rows stop a gap before the column's text centred under its
+        // heading.
         let row_base = scale.base_rect(rect);
-        let name_end = if row.watch {
-            row_base.w - 2
-        } else if let Some(header) = ping_header.filter(|_| modern) {
+        let name_end = if let Some(header) = ping_header.filter(|_| modern) {
             let header = scale.base_rect(header);
-            let ping_width = font.text_width(&ping) as i32;
-            (header.x + (header.w - ping_width) / 2 - row_base.x - GAME_TAG_GAP).min(row_base.w - 2)
+            let column_width = font.text_width(column) as i32;
+            (header.x + (header.w - column_width) / 2 - row_base.x - GAME_TAG_GAP)
+                .min(row_base.w - 2)
         } else {
             GAME_PING_X - 2
         };
-        let tag = row.tag.as_deref().filter(|_| modern);
         let tag_w = tag.map_or(0, |tag| {
             (font.text_width(tag) as i32).min(name_end - name_x)
         });
@@ -414,9 +480,9 @@ pub(crate) fn paint_wol_lobby_children(
             ));
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
-        // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption. A match to
-        // watch has no ping.
+        // modern list centres it, or a match's tag, under its Ping header
+        // instead of starting it at the retail column, left of the header's
+        // caption.
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
                 RectPx::new(header.x, rect.y, header.w, rect.h),
@@ -424,9 +490,14 @@ pub(crate) fn paint_wol_lobby_children(
             ),
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
-        if !row.watch {
-            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
-        }
+        let column_rgb = if row.watch && !row.greyed {
+            WATCH_TAG_RGB
+        } else {
+            rgb
+        };
+        paint
+            .texts
+            .push(text(column, ping_rect, ping_align, column_rgb));
         if modern {
             if row.keyed
                 && let Some(art) = art

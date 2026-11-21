@@ -64,7 +64,7 @@ pub(super) use events::{
 };
 pub(super) use help::locale_name;
 pub(crate) use help::{badge_help, player_badge, status_help};
-pub(crate) use input::{create_layout, ime_chat_rect, key_press, popup_scale};
+pub(crate) use input::{create_layout, ime_edit_rect, key_press, popup_scale};
 pub(super) use input::{cursor_moved, mouse};
 #[cfg(test)]
 use join::JoinErrorReply;
@@ -141,6 +141,9 @@ pub(crate) struct WolLobbyGlobals {
     /// VERA: the VERA20K Online season the tables were filled in, `None`
     /// before its first `ladder` event ([`Self::ladder_season`]).
     pub(crate) ladder_season: Option<Option<u32>>,
+    /// VERA: what the online page's games hide, as the player last ticked it
+    /// (Hide Full, Hide Locked).
+    pub(crate) room_filter: RoomFilter,
 }
 
 impl WolLobbyGlobals {
@@ -1544,6 +1547,10 @@ fn refill_games(state: &mut AppState) {
     }
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
+        // VERA: the online page's filter row hides the rest.
+        let filter = state.frontend.wol_lobby_globals.room_filter;
+        let search = lobby.ui.search_text();
+        rows.retain(|row| filter.shows(row, &search));
     }
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
@@ -2105,6 +2112,33 @@ fn begin_join(state: &mut AppState, row: usize, show: bool) {
     continue_join(state, channel);
 }
 
+/// VERA: Join Any Game joins the first room the list shows that admits this
+/// player without a password, as Join on its row does. With none, Create Game
+/// opens instead.
+fn join_any(state: &mut AppState) {
+    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let Some(lobby) = lobby(state) else {
+        return;
+    };
+    let open: Vec<usize> = (lobby.ui.game_rows.iter().enumerate())
+        .filter(|(_, row)| !row.watch && !row.keyed)
+        .map(|(row, _)| row)
+        .collect();
+    let Some(row) = open
+        .into_iter()
+        .find(|&row| admit_row(state, row, observer, false))
+    else {
+        begin_create(state);
+        return;
+    };
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    lobby.ui.game_list.selected = Some(row);
+    lobby.ui.admitted_name = lobby.ui.game_rows.get(row).map(|row| row.name.clone());
+    begin_join(state, row, false);
+}
+
 /// VERA: the match of the selected watch row.
 fn selected_match(lobby: &WolLobby) -> Option<String> {
     lobby
@@ -2587,6 +2621,17 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::View => {
             input::update_geometry(state);
             cursor_moved(state);
+        }
+        WolLobbyAction::JoinAny => join_any(state),
+        // VERA: a shorter list keeps its top row within the rows it shows.
+        WolLobbyAction::FilterToggled(control) => {
+            state.frontend.wol_lobby_globals.room_filter.toggle(control);
+            refill_games(state);
+            input::update_geometry(state);
+        }
+        WolLobbyAction::SearchChanged => {
+            refill_games(state);
+            input::update_geometry(state);
         }
         // VERA: the online page's Quick Match ends the runner as Buddy List
         // does, with return mode 4, and the Quick Match runner follows.
