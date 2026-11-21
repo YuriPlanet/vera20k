@@ -197,6 +197,9 @@ pub(super) fn fire_death_weapon_payload<'r>(
     current_weapon: Option<&'r WeaponType>,
     interner: &mut StringInterner,
 ) -> Option<DeathWeaponPayload<'r>> {
+    // By name: neither `DeathWeapon=` is among a type's resolved weapon
+    // records, and this runs once per death. The exact-name probe allocates
+    // nothing.
     let chosen = obj
         .death_weapon
         .as_deref()

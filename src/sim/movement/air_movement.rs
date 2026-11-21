@@ -329,6 +329,10 @@ fn missile_flight_override(
 ) -> Option<bool> {
     if entity.category() == EntityCategory::Aircraft
         && rules_context.is_some_and(|(rules, interner)| {
+            // By name: the rules hold `V3RocketType=` and `DMislType=` as
+            // names, and `interner.get` would cost a hash probe each. A
+            // case-insensitive compare tests the lengths first, so for most
+            // aircraft this is two length compares.
             let name = interner.resolve(entity.type_ref());
             name.eq_ignore_ascii_case(&rules.missile_spawn.v3.type_name)
                 || name.eq_ignore_ascii_case(&rules.missile_spawn.dmisl.type_name)

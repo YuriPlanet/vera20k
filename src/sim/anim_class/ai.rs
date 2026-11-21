@@ -171,6 +171,11 @@ impl Simulation {
             let Some(world_coord) = self.anim_absolute_coord(id) else {
                 return Ok(false);
             };
+            // Interned here, at the emission, not when the config is read:
+            // this can be the name's first use, and interned ids are saved
+            // and hashed in the order of their first use. The config holds
+            // `TrailerAnim=` as a name, so the gate above probes the art by
+            // it, uppercased on the stack.
             let trailer_type = self.interner.intern(trailer_name);
             let descriptor = AnimClassSpawnDescriptor {
                 type_name: trailer_type,
@@ -1213,6 +1218,9 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
+        // `Next=` is held as a name and interned only once its config is
+        // found: a switch can be the name's first use, and interned ids are
+        // saved and hashed in the order of their first use.
         let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);
             return Ok(());
