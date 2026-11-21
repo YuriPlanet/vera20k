@@ -257,6 +257,10 @@ pub(crate) fn tactical_entity_admission(
             && !ignore_visibility
             && local_owner_id
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
+        // BuildingClass::DrawIt (gamemd 0x0043D308..0x0043D316, RA2 game.exe
+        // 0x0043A658..0x0043A666) skips the body even for the lamp's owner.
+        || (purpose == TacticalEntityPurpose::Drawing
+            && entity.place.structure.is_some_and(|art| art.invisible_in_game))
         // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
         // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
         || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
@@ -1074,6 +1078,48 @@ mod tests {
             [1, 2],
             "resubmission follows retained equal-key members"
         );
+    }
+
+    #[test]
+    fn owned_invisible_lamp_keeps_its_light_without_drawing_its_body() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 43);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.resolve_type_handles(&rules);
+        for (x, name, draws_body) in [(10, "GALITE", true), (12, "INYELWLAMP", false)] {
+            let id = sim
+                .spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap();
+            let building = ObjectRecord::of_test_sim(&sim, &rules, id);
+            assert!(
+                sim.entities()
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+                    .owned_by_current_house()
+            );
+            let body = tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
+                &building,
+                Some(owner),
+                sim.fog(),
+                false,
+                sim.session().binary_frame(),
+                0,
+                building.seen.observer,
+            );
+            assert_eq!(body.is_some(), draws_body, "{name} building sprite");
+            assert!(
+                sim.lighting_sources().buildings()[&id].active,
+                "{name} light"
+            );
+        }
     }
 
     #[test]
