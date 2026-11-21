@@ -1019,7 +1019,7 @@ fn sequence_sound_plays_on_its_stage_frame_after_a_step() {
     else {
         panic!("PlayAt is a located Voc request: {played:?}");
     };
-    assert_eq!(sound_id, "SlaveAttack");
+    assert_eq!(sound_id.name_in(&rules), "SlaveAttack");
     assert_eq!(*audible_to, None);
     assert_eq!(
         (*rx, *ry, *sub_x, *sub_y),
@@ -1155,7 +1155,7 @@ fn layered_slave_sequence_keeps_runtime_frames_and_sound_in_one_bank() {
     assert_eq!(actor.infantry_sprite_pose(), Some((3, 8)));
     assert_eq!(resolve_shp_frame(walk, 224, 8), 102);
     assert!(
-        matches!(sim.sound_events.as_slice(), [crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }] if sound_id == "SlaveAttack")
+        matches!(sim.sound_events.as_slice(), [crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }] if sound_id.name_in(&rules) == "SlaveAttack")
     );
 }
 

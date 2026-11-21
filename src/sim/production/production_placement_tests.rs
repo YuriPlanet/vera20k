@@ -2301,7 +2301,7 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
                 owner: event_owner, ..
             } if *event_owner == owner => Some("BuildingSlam"),
             crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-                if sound_id == "FixtureWallCreated" =>
+                if sound_id.name_in(&rules) == "FixtureWallCreated" =>
             {
                 Some("CreateSound")
             }
@@ -2329,7 +2329,7 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
             else {
                 return None;
             };
-            (sound_id == "FixtureWallCreated").then_some((
+            (sound_id.name_in(&rules) == "FixtureWallCreated").then_some((
                 *audible_to,
                 *rx,
                 *ry,

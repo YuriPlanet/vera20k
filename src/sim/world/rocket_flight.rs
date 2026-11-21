@@ -185,11 +185,11 @@ impl RocketHost for RocketProcessHost<'_> {
             .sim
             .interner
             .object_type(owner.type_ref(), self.rules)
-            .and_then(|object| object.aux_sound1.clone())
+            .and_then(|object| object.aux_sound1.as_deref())
         else {
             return;
         };
-        let event = super::SimSoundEvent::voc_at(sound, &owner.position);
+        let event = super::SimSoundEvent::voc_at(self.rules.sound_name(sound), &owner.position);
         self.sim.sound_events.emit(event);
     }
     fn structural_bridge_floor(&self) -> Option<i32> {

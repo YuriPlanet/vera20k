@@ -127,12 +127,12 @@ fn set_missions(entity: &mut GameEntity, current: MissionId, queued: MissionId) 
     });
 }
 
-fn take_centered_cues(sim: &mut Simulation) -> Vec<String> {
+fn take_centered_cues(rules: &RuleSet, sim: &mut Simulation) -> Vec<String> {
     sim.sound_events
         .take_for_test()
         .into_iter()
         .filter_map(|event| match event {
-            SimSoundEvent::VocCentered { sound_id } => Some(sound_id),
+            SimSoundEvent::VocCentered { sound_id } => Some(sound_id.name_in(rules).to_string()),
             // Canonical UnInit also retires this object's retained loop owner.
             SimSoundEvent::GattlingLoopRelease { .. } => None,
             other => panic!("unexpected uplink output {other:?}"),
@@ -155,12 +155,12 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     ));
     rules.bind_type_sound_references(&references, &sounds);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active() && sim.houses[&owner].map_is_clear());
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-    assert_eq!(take_centered_cues(&mut sim), ["Online"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Online"]);
 
     sim.reconcile_active_vision_structures(&rules);
     insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
@@ -168,7 +168,7 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     sim.uninit(1);
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "one surviving provider retains the aggregate"
     );
 
@@ -176,16 +176,16 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.houses[&owner].spy_sat_active() && !sim.houses[&owner].map_is_clear());
     assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
-    assert_eq!(take_centered_cues(&mut sim), ["Offline"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Offline"]);
     insert_structure(&mut sim, 3, owner, "GASPYSAT", 10);
     sim.reconcile_active_vision_structures(&rules);
-    assert_eq!(take_centered_cues(&mut sim), ["Online"]);
+    assert_eq!(take_centered_cues(&rules, &mut sim), ["Online"]);
 
     // Shared crate/infiltration map callbacks are not SpySat aggregate edges.
     sim.reset_shroud_for_owner(owner, &rules);
     sim.reveal_map_for_owner(owner, &rules);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
 }
 
 #[test]
@@ -206,13 +206,13 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active());
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "human remote House is not PlayerPtr"
     );
     sim.session.set_current_house_for_test(Some(owner));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        take_centered_cues(&mut sim).is_empty(),
+        take_centered_cues(&rules, &mut sim).is_empty(),
         "retained active state does not replay the gain"
     );
 
@@ -224,7 +224,7 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active());
-    assert!(take_centered_cues(&mut sim).is_empty());
+    assert!(take_centered_cues(&rules, &mut sim).is_empty());
 }
 
 #[test]

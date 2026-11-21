@@ -50,7 +50,7 @@ impl Simulation {
         //when the registry is empty or every infantry refuses the action.
         if let Some(sound_id) = rules.general.cheer_sound() {
             self.sound_events.emit(SimSoundEvent::VocCentered {
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
             });
             effects.flush_sound(self, rules);
         }

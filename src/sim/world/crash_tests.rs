@@ -1173,7 +1173,9 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                     .sound_events
                     .iter()
                     .filter_map(|event| match event {
-                        super::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+                        super::SimSoundEvent::VocAt { sound_id, .. } => {
+                            Some(sound_id.name_in(&rules))
+                        }
                         _ => None,
                     })
                     .collect();
@@ -1701,7 +1703,7 @@ fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
             .iter()
             .filter(|event| {
                 matches!(event, super::SimSoundEvent::VocAt { sound_id, .. }
-                    if sound_id == "TypeLand" || sound_id == "RulesLand")
+                    if sound_id.name_in(&rules) == "TypeLand" || sound_id.name_in(&rules) == "RulesLand")
             })
             .count();
         match sim.substrate.entities.get(1) {
@@ -2267,12 +2269,22 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         for event in &output.sound_events {
             match event {
                 super::SimSoundEvent::VocAt { sound_id, .. } => {
-                    sounds.push((frame, sound_id.clone()));
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
                 }
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
                 } if *anim_id == harrier => {
-                    sounds.push((frame, sound_id.clone()));
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
                 }
                 _ => {}
             }
@@ -2595,12 +2607,22 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         for event in &output.sound_events {
             match event {
                 super::SimSoundEvent::VocAt { sound_id, .. } => {
-                    sounds.push((frame, sound_id.clone()));
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
                 }
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
                 } if *anim_id == nighthawk || *anim_id == kirov => {
-                    sounds.push((frame, sound_id.clone()));
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
                 }
                 _ => {}
             }
@@ -2775,6 +2797,6 @@ fn campaign_player_controlled_house_hears_voice_crashing() {
     );
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id == "OrcaFalls"
+        super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id.name_in(&rules) == "OrcaFalls"
     )));
 }

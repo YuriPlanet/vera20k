@@ -1360,7 +1360,7 @@ mod stop_command_tests {
         let enemy = sim
             .spawn_object("HTNK", "Russians", 12, 10, 0, rules)
             .unwrap();
-        let cue = |sounds: &[GameSoundEvent]| matches!(sounds, [GameSoundEvent::UiSound { sound_id }] if Some(sound_id) == stop_sound.as_ref());
+        let cue = |sounds: &[GameSoundEvent]| matches!(sounds, [GameSoundEvent::UiSound { sound_id }] if Some(sound_id.name_in(rules)) == stop_sound.as_deref());
 
         assert!(cue(&super::queue_stop_orders(&mut sim, rules, vec![own])));
         let stops: Vec<_> = sim

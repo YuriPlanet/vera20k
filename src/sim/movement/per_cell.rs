@@ -648,7 +648,7 @@ impl Simulation {
         if let Some(sound) = flags.crush_sound.as_ref() {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::wall_crushed(
-                    sound.clone(),
+                    rules.sound_name(sound),
                     &actor.position,
                 ));
             //7509E0 completes before480CB0. The existing process owner may
@@ -1129,7 +1129,7 @@ impl Simulation {
                 if let Some(event) = self.substrate.entities.get(id).and_then(|actor| {
                     let object = self.object_type(actor.type_ref(), rules)?;
                     Some(SimSoundEvent::voc_at_location(
-                        object.voice_comment.get(1)?.clone(),
+                        rules.sound_name(object.voice_comment.get(1)?),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ))

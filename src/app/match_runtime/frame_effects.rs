@@ -155,10 +155,16 @@ impl<'a> FrameClientBoundary<'a> {
         self
     }
 
-    fn consume_queued_audio(&mut self, sim: &Simulation) {
+    fn consume_queued_audio(&mut self, sim: &Simulation, rules: &RuleSet) {
         let events = self.output.drain();
         if let Some((sfx, inputs)) = self.playback.as_mut() {
-            inputs.consume(sfx, &events, Some(sim), self.local_owner);
+            inputs.consume(
+                sfx,
+                &events,
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 
@@ -487,7 +493,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
             self.output,
             self.eva_text.as_deref_mut(),
         );
-        self.consume_queued_audio(sim);
+        self.consume_queued_audio(sim, rules);
         self.delivered = delivered + pending.len();
     }
 
@@ -513,7 +519,7 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
         // Earlier death sounds and637A10's queued EndPlanningModeSound
         // must reach the existing SFX owner before the availability cue.
         self.consume(sim, rules, sim.sound_events());
-        self.consume_queued_audio(sim);
+        self.consume_queued_audio(sim, rules);
         let Some(setter) = self.tactical_radar.as_deref_mut() else {
             return;
         };
@@ -522,7 +528,13 @@ impl TacticalRadarBoundary for FrameClientBoundary<'_> {
             return;
         };
         if let Some((sfx, inputs)) = self.playback.as_mut() {
-            inputs.consume(sfx, &[sound], Some(sim), self.local_owner);
+            inputs.consume(
+                sfx,
+                &[sound],
+                Some(sim),
+                Some(rules.sound_names()),
+                self.local_owner,
+            );
         }
     }
 }
@@ -587,7 +599,7 @@ mod tactical_radar_tests {
         let expected = rules.general.end_planning_mode_sound.as_ref().unwrap();
         assert!(matches!(
             boundary.output.iter().collect::<Vec<_>>().as_slice(),
-            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id == expected
+            [crate::audio::events::GameSoundEvent::UiSound { sound_id }] if sound_id.name_in(&rules) == expected
         ));
         boundary.set_available(&sim, &rules, true);
         assert!(boundary.output.is_empty());

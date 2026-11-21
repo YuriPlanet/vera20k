@@ -476,7 +476,7 @@ impl crate::sim::world::Simulation {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::GattlingLoop {
                     owner,
-                    sound_id: sound.to_owned(),
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             frame_effects.flush_sound(self, rules);

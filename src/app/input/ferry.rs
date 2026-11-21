@@ -917,10 +917,11 @@ pub(crate) fn via_key_edge(state: &mut AppState, physical: winit::keyboard::KeyC
     }
     let sound = state.rules().and_then(|rules| {
         if down {
-            rules.general.start_planning_mode_sound.clone()
+            rules.general.start_planning_mode_sound.as_deref()
         } else {
-            rules.general.end_planning_mode_sound.clone()
+            rules.general.end_planning_mode_sound.as_deref()
         }
+        .map(|name| rules.sound_name(name))
     });
     if let Some(sound_id) = sound {
         state

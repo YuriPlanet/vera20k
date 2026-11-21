@@ -822,7 +822,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
             .iter()
             .filter(|event| {
                 matches!(event, super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == rocketeer && sound_id == "RocketeerDie")
+                    if *anim_id == rocketeer && sound_id.name_in(&scenario.runtime.resources.rules) == "RocketeerDie")
             })
             .count();
         let entity = sim

@@ -102,7 +102,7 @@ pub(crate) fn advance_sidebar_credits(state: &mut AppState, visits: u64) {
     // once per picture and clears the latch, so a pass plays at most one.
     let Some(sound_id) = state.rules().and_then(|rules| {
         crate::app::sidebar_projection::credit_tick_sound(&rules.general.credit_ticks, tick)
-            .map(str::to_string)
+            .map(|name| rules.sound_name(name))
     }) else {
         return;
     };

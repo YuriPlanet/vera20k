@@ -543,12 +543,12 @@ fn emit_entity_order_voice(
     let event = if voice_field == "VoiceAttack" {
         crate::audio::events::GameSoundEvent::UnitAttackOrder {
             speaker_id,
-            sound_id: id.to_owned(),
+            sound_id: runtime.resources.rules.sound_name(id),
         }
     } else {
         crate::audio::events::GameSoundEvent::UnitMoveOrder {
             speaker_id,
-            sound_id: id.to_owned(),
+            sound_id: runtime.resources.rules.sound_name(id),
         }
     };
     state.match_state.match_audio.sound_events.push(event);

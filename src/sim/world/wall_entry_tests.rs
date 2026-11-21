@@ -596,7 +596,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         fn consume(
             &mut self,
             sim: &Simulation,
-            _: &RuleSet,
+            rules: &RuleSet,
             events: &[crate::sim::world::SimSoundEvent],
         ) {
             for event in &events[self.delivered.get()..] {
@@ -605,7 +605,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
                 } = event
                 {
                     assert_eq!((*rx, *ry), (43, 82));
-                    assert_eq!(sound_id, "WallCrushBlack");
+                    assert_eq!(sound_id.name_in(rules), "WallCrushBlack");
                     assert!(
                         sim.overlay_grid
                             .as_ref()
@@ -1312,7 +1312,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
             .filter(|event| {
                 matches!(event,
                     crate::sim::world::SimSoundEvent::WallCrushed { sound_id, .. }
-                        if sound_id == "WallCrushBlack"
+                        if sound_id.name_in(&scene.runtime.resources.rules) == "WallCrushBlack"
                 )
             })
             .count();

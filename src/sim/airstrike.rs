@@ -417,7 +417,7 @@ impl Simulation {
     ) {
         if let (Some(sound), Some(entity)) = (sound, self.substrate.entities.get(source)) {
             self.sound_events.emit(SimSoundEvent::voc_at_for(
-                sound.to_owned(),
+                rules.sound_name(sound),
                 audible_to,
                 &entity.position,
             ));

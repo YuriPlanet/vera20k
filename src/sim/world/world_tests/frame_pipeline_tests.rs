@@ -755,7 +755,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.sound_events.emit(SimSoundEvent::AnimationStarted {
         anim_id: 9,
-        sound_id: "WaterfallLoop".to_owned(),
+        sound_id: crate::rules::ruleset::SoundName::Unlisted("WaterfallLoop".into()),
         world: crate::sim::anim_class::AnimWorldCoord {
             x: 128,
             y: 128,

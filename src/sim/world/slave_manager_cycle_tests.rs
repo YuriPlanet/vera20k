@@ -316,7 +316,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::VocAt { sound_id, rx, ry, .. }
-            if sound_id == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
+            if sound_id.name_in(&s.scene.rules) == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
     )));
 
     // The Cheer cannot be interrupted: a Move order given during it walks the

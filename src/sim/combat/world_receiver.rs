@@ -6,6 +6,7 @@
 
 use super::world_fire::{object_get_coords, retaliation_reaches};
 use super::*;
+use crate::rules::ruleset::SoundName;
 use crate::sim::movement::{DamageRetaliation, ScatterFlags};
 use crate::sim::world::techno_ai_cloak::emit_configured_cloak_sound;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -1823,7 +1824,7 @@ fn commit_entity(
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&target.position);
                     world.sound_events.emit(SimSoundEvent::VocAtCoord {
-                        sound_id: sound_id.to_owned(),
+                        sound_id: rules.sound_name(sound_id),
                         coordinate,
                         //702734/70277D PUSH0 before each750E20;
                         //executed coordinate_attempts retain args[0].
@@ -1858,7 +1859,7 @@ fn commit_entity(
             position.put_location(coord);
             if sound_enabled {
                 world.sound_events.emit(SimSoundEvent::voc_at(
-                    object.voice_feedback[index].clone(),
+                    rules.sound_name(&object.voice_feedback[index]),
                     &position,
                 ));
             }
@@ -2135,7 +2136,7 @@ fn commit_entity(
                 let coordinate =
                     crate::sim::movement::ground_pose::position_world_coord(&target.position);
                 world.sound_events.emit(SimSoundEvent::VocAtCoord {
-                    sound_id: sound_id.to_owned(),
+                    sound_id: rules.sound_name(sound_id),
                     coordinate,
                     //4426E1 PUSH0 before750E20 at442706 (same executed owner).
                     flags: 0,
@@ -2427,7 +2428,7 @@ pub(crate) fn handle_death(
     );
     // These lists become the returned `DeathEffects`' fields by move; an
     // empty one allocates nothing.
-    let mut death_sounds: Vec<(String, crate::sim::anim_class::AnimWorldCoord)> = Vec::new();
+    let mut death_sounds: Vec<(SoundName, crate::sim::anim_class::AnimWorldCoord)> = Vec::new();
     let mut explosion_effects: Vec<ExplosionEffect> = Vec::new();
     let mut voxel_debris: Vec<crate::sim::voxel_anim::VoxelDebrisSpawn> = Vec::new();
     let mut under_attack_events: Vec<UnderAttackEvent> = Vec::new();
@@ -2529,11 +2530,12 @@ pub(crate) fn handle_death(
                     if let Some(sound) =
                         select_death_sound(choices, &mut world.main_rng).and_then(|sound| {
                             match sound_override {
-                                Some(cue) => cue.map(str::to_owned),
+                                Some(cue) => cue,
                                 None => Some(sound),
                             }
                         })
                     {
+                        let sound = rules.sound_name(sound);
                         if callbacks_enabled(world) {
                             if sound_enabled(world) {
                                 world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
@@ -2559,7 +2561,7 @@ pub(crate) fn handle_death(
                         .as_deref()
                         .filter(|name| !name.is_empty())
                 {
-                    death_sounds.push((sound.to_owned(), location.into()));
+                    death_sounds.push((rules.sound_name(sound), location.into()));
                 }
                 // Ares 3.0 1004AEC0 (hook 0x702200), between the death sounds
                 // and the Stun: TiberiumSpill.

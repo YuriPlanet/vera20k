@@ -626,7 +626,7 @@ impl Simulation {
         // player who owns the planter (+0x21C).
         if let Some(sound_id) = attach_sound {
             self.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(&sound_id),
                 audible_to: Some([planter_house, planter_house]),
                 rx: position.rx(),
                 ry: position.ry(),

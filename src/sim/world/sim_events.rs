@@ -3,6 +3,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::ruleset::SoundName;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::components::DriveCoord;
@@ -81,6 +82,12 @@ pub enum TriggerSoundTarget {
 
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
+///
+/// A sound named by rules travels as a [`SoundName`] of the rules' own
+/// sound-name table ([`crate::rules::ruleset::SoundNames`]), never as an id
+/// of the gameplay interner: interned ids are saved and hashed, and a
+/// Main-selected cue interned on first use would move them. Neither these
+/// events nor their channel are saved or hashed.
 #[derive(Debug, Clone)]
 pub enum SimSoundEvent {
     TriggerAudio {
@@ -98,8 +105,7 @@ pub enum SimSoundEvent {
     UnitVoiceVisit { owner: u64 },
     /// An admitted QueueVoice708D90 request, before any later positional
     /// cue. The sole audio owner latches it; only a reached Techno head drains.
-    /// Keep the canonical name outside the gameplay identity interner.
-    UnitVoiceRequested { owner: u64, sound_id: String },
+    UnitVoiceRequested { owner: u64, sound_id: SoundName },
     /// Techno destructor6F4607 destroys its voice handle before its owned
     /// Anims. The app discards both pending and playing voice identities.
     UnitVoiceDestroyed { owner: u64 },
@@ -114,12 +120,10 @@ pub enum SimSoundEvent {
         sound_id: InternedId,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
-    /// Start/report sound on an object or animation handle. Keep the canonical
-    /// sound name outside the gameplay interner: a Main-selected cue must not
-    /// allocate an ID that changes later gameplay hashes or saved identities.
+    /// Start/report sound on an object or animation handle.
     AnimationStarted {
         anim_id: crate::sim::anim_class::AnimId,
-        sound_id: String,
+        sound_id: SoundName,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// Hard-stop the owner's handle, then optionally play StopSound. Anim
@@ -135,7 +139,7 @@ pub enum SimSoundEvent {
     /// gattling_sound_owner(techno)`.
     GattlingLoop {
         owner: u64,
-        sound_id: String,
+        sound_id: SoundName,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A stage-up's hard stop of that loop (`VocHandle::StopAndClear @
@@ -161,7 +165,7 @@ pub enum SimSoundEvent {
     /// Location (`0x0070213F..0x0070218B`, `0x007021A9..0x007021FB` copy
     /// `[obj+0x9C..0xA4]` for `VocClass::PlayAt 0x007509E0`).
     EntityDied {
-        die_sound_id: String,
+        die_sound_id: SoundName,
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// An entity was crushed by a vehicle — play its CrushSound= (the squish).
@@ -255,7 +259,7 @@ pub enum SimSoundEvent {
     /// state-1/2 transition and called positional `VocClass::PlayAt @
     /// 0x007509E0` with `[AudioVisual] CloakSound` at the Techno world coord.
     CloakSound {
-        sound_id: String,
+        sound_id: SoundName,
         rx: u16,
         ry: u16,
         sub_x: SimFixed,
@@ -266,7 +270,7 @@ pub enum SimSoundEvent {
     /// overlay under it and played the overlay type's `CrushSound=`
     /// (`OverlayTypeClass+0x1F0`) positionally at its own coordinates.
     WallCrushed {
-        sound_id: String,
+        sound_id: SoundName,
         rx: u16,
         ry: u16,
         sub_x: SimFixed,
@@ -277,7 +281,7 @@ pub enum SimSoundEvent {
     /// (`0x2000`), full volume (`1.0f`), without an owner handle. Walk's
     /// exhausted-retry branch 0x0075B085..0x0075B0B0 requests ScoldSound this
     /// way. Evidence: `tools/spatial_oracle/foot_scold_latch.{py,json,md}`.
-    VocCentered { sound_id: String },
+    VocCentered { sound_id: SoundName },
     /// The same centred `0x00750920` call with a raw SOUNDMD ordinal: team
     /// script action 25 (`0x006E9901`). The process catalog resolves it;
     /// -1 or an unknown ordinal plays nothing (`0x0075093B`).
@@ -288,7 +292,7 @@ pub enum SimSoundEvent {
     /// @ 0x0050B6F0` gate admits (the local player must own one of them; the
     /// app resolves it); `None` plays for everyone.
     VocAt {
-        sound_id: String,
+        sound_id: SoundName,
         audible_to: Option<[InternedId; 2]>,
         rx: u16,
         ry: u16,
@@ -299,7 +303,7 @@ pub enum SimSoundEvent {
     /// VocClass::PlayAtCoord750E20 retains the full signed native coordinate
     /// and owns its playback handle independently of the source object.
     VocAtCoord {
-        sound_id: String,
+        sound_id: SoundName,
         coordinate: DriveCoord,
         flags: u32,
     },
@@ -686,7 +690,7 @@ pub enum SimSoundEvent {
 }
 
 impl SimSoundEvent {
-    pub(crate) fn cloak_sound(sound_id: String, position: &Position) -> Self {
+    pub(crate) fn cloak_sound(sound_id: SoundName, position: &Position) -> Self {
         Self::CloakSound {
             sound_id,
             rx: position.rx(),
@@ -697,7 +701,7 @@ impl SimSoundEvent {
         }
     }
 
-    pub(crate) fn wall_crushed(sound_id: String, position: &Position) -> Self {
+    pub(crate) fn wall_crushed(sound_id: SoundName, position: &Position) -> Self {
         Self::WallCrushed {
             sound_id,
             rx: position.rx(),
@@ -708,14 +712,14 @@ impl SimSoundEvent {
         }
     }
 
-    pub(crate) fn voc_at(sound_id: String, position: &Position) -> Self {
+    pub(crate) fn voc_at(sound_id: SoundName, position: &Position) -> Self {
         Self::voc_at_for(sound_id, None, position)
     }
 
     /// `VocClass::PlayAt @ 0x007509E0` at an object's Location (`+0x9C`),
     /// context 0.
     pub(crate) fn voc_at_location(
-        sound_id: String,
+        sound_id: SoundName,
         entity: &crate::sim::game_entity::GameEntity,
         terrain: Option<&ResolvedTerrainGrid>,
     ) -> Self {
@@ -733,7 +737,7 @@ impl SimSoundEvent {
     /// `VocClass::PlayAt @ 0x007509E0` for a source whose authoritative
     /// location is a retained world coordinate rather than raw Position.
     pub(crate) fn voc_at_world_coord(
-        sound_id: String,
+        sound_id: SoundName,
         coordinate: crate::sim::anim_class::AnimWorldCoord,
     ) -> Self {
         let (rx, ry, sub_x, sub_y, _) = coordinate.to_cell_sub_z();
@@ -749,7 +753,7 @@ impl SimSoundEvent {
     }
 
     pub(crate) fn voc_at_for(
-        sound_id: String,
+        sound_id: SoundName,
         audible_to: Option<[InternedId; 2]>,
         position: &Position,
     ) -> Self {

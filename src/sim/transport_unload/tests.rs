@@ -669,7 +669,7 @@ fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_while_turning() {
             // PlayAtCoord750E20 at the transport's Location, flags 0
             // (`0x0073DC35..0x0073DC67`): a retained request.
             matches!(e, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
-                if sound_id == "ExitTransport"
+                if sound_id.name_in(&fx.rules) == "ExitTransport"
                     && coordinate.x >> 8 == 20 && coordinate.y >> 8 == 20)
         })
         .count();

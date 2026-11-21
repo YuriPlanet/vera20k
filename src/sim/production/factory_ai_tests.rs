@@ -182,7 +182,7 @@ fn ai_wall_consumption_keeps_its_accounting_and_one_creation_cue() {
             else {
                 return None;
             };
-            (sound_id == "FixtureWallCreated").then_some((
+            (sound_id.name_in(&f.rules) == "FixtureWallCreated").then_some((
                 *audible_to,
                 *rx,
                 *ry,

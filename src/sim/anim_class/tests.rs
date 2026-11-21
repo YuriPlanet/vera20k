@@ -1417,7 +1417,7 @@ fn combat_explosion_uses_the_verified_constructor_row_and_plays_report() {
         sim.sound_events.iter().any(|event| matches!(
             event,
             SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                if *anim_id == id && sound_id == "EXPLOSION06"
+                if *anim_id == id && sound_id.name_in(&rules) == "EXPLOSION06"
         )),
         "explosion must emit its art `Report=`, got {:?}",
         sim.sound_events
@@ -3426,7 +3426,7 @@ fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start
     assert_eq!(anim.z_adjust, -300);
     assert!(anim.no_effects());
     assert!(anim.runtime.first_ai_guard);
-    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
+    assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id.name_in(&rules)=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
     assert!(sim.fog.is_cell_revealed(player, 10, 10));
     assert!(!sim.fog.is_cell_revealed(player, 20, 20));
     let other = sim.interner.get("Other").unwrap();
@@ -3508,7 +3508,7 @@ fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not(
                 "424358 ends the flare before consuming19C"
             );
             assert!(sim.substrate.pending_delete.contains_object(&id));
-            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id=="EXPLOSIONSHARD")));
+            assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id.name_in(&rules)=="EXPLOSIONSHARD")));
             sim.process_pending_delete();
             assert!(sim.anim(id).is_none());
         } else {

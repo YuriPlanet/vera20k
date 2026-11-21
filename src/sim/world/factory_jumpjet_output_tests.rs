@@ -162,7 +162,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
             match event {
                 super::SimSoundEvent::AnimationStarted {
                     anim_id, sound_id, ..
-                } if sound_id == "RocketeerMoveLoop" => {
+                } if sound_id.name_in(&rules) == "RocketeerMoveLoop" => {
                     if let Some(p) = products.iter_mut().find(|p| p.id == *anim_id) {
                         p.sound_starts += 1;
                     }

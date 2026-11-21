@@ -337,7 +337,7 @@ impl Simulation {
                 // the app's audio gate and playback own audible output.
                 self.sound_events
                     .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                        sound_id.clone(),
+                        rules.sound_name(sound_id),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ));
@@ -727,7 +727,7 @@ impl Simulation {
         for sound in sounds.filter(|sound| sound.frame == frame) {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    sound.sound_id.clone(),
+                    rules.sound_name(&sound.sound_id),
                     actor,
                     self.resolved_terrain.as_ref(),
                 ));

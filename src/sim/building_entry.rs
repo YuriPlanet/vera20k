@@ -285,8 +285,10 @@ impl Simulation {
                     &mut self.main_rng,
                 )
             {
-                self.sound_events
-                    .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
+                self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                    rules.sound_name(sound_id),
+                    entry_world,
+                ));
                 context.effects().flush_sound(self, rules);
             }
         }
@@ -335,12 +337,12 @@ impl Simulation {
                     rules.general.condition_yellow,
                 )
             });
-            if let Some(sound_id) = rules.general.enter_grinder_sound.clone()
+            if let Some(sound_id) = rules.general.enter_grinder_sound.as_deref()
                 && let Some(foot) = self.substrate.entities.get(id)
             {
                 let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
                 self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                    sound_id,
+                    rules.sound_name(sound_id),
                     crate::sim::anim_class::AnimWorldCoord {
                         x: coordinate.x,
                         y: coordinate.y,

@@ -201,14 +201,20 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
                         sub_x,
                         sub_y,
                         world_z_leptons,
-                    } if e1.voice_feedback.iter().any(|name| name == sound_id) => Some((
-                        sound_id,
-                        [
-                            i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
-                            i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
-                            *world_z_leptons,
-                        ],
-                    )),
+                    } if e1
+                        .voice_feedback
+                        .iter()
+                        .any(|name| name == sound_id.name_in(&rules)) =>
+                    {
+                        Some((
+                            sound_id,
+                            [
+                                i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
+                                i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
+                                *world_z_leptons,
+                            ],
+                        ))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -376,7 +382,7 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
                     sub_y,
                     world_z_leptons,
                 } => Some((
-                    sound_id.as_str(),
+                    sound_id.name_in(&rules),
                     [
                         i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
                         i32::from(*ry) * 256 + sub_y.to_num::<i32>(),

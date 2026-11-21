@@ -481,9 +481,11 @@ impl Simulation {
             return;
         };
         if actor.navigation.path_runtime().scold_latch_raw() != 0
-            && let Some(sound_id) = rules.general.scold_sound.clone()
+            && let Some(sound_id) = rules.general.scold_sound.as_deref()
         {
-            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered { sound_id });
+            sound_events.emit(crate::sim::world::SimSoundEvent::VocCentered {
+                sound_id: rules.sound_name(sound_id),
+            });
         }
     }
 

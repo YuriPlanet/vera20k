@@ -78,7 +78,7 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
             sub_x,
             sub_y,
             world_z_leptons: 0,
-        }] if sound_id == "NavalUnitEmerge"
+        }] if sound_id.name_in(&rules) == "NavalUnitEmerge"
             && *rx == entity.position.rx()
             && *ry == entity.position.ry()
             && *sub_x == entity.position.sub_x()
@@ -213,7 +213,7 @@ fn chrono_warp_surfaces_a_fully_cloaked_sub() {
     assert!(matches!(
         sim.sound_events.as_slice(),
         [crate::sim::world::SimSoundEvent::CloakSound { sound_id, .. }]
-            if sound_id == "NavalUnitEmerge"
+            if sound_id.name_in(&rules) == "NavalUnitEmerge"
     ));
 }
 
@@ -401,7 +401,7 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
     assert!(matches!(
         sim.sound_events.as_slice(),
         [crate::sim::world::SimSoundEvent::CloakSound { sound_id, .. }]
-            if sound_id == "NavalUnitEmerge"
+            if sound_id.name_in(&rules) == "NavalUnitEmerge"
     ));
 }
 

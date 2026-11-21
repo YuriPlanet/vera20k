@@ -256,7 +256,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         }
         assert_eq!(
             sim.sound_events.iter().any(|event| matches!(event,
-                SimSoundEvent::VocCentered { sound_id } if sound_id == "Abandon"
+                SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
             )),
             called("abandoned_sound"),
             "{name}"
@@ -410,7 +410,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
     assert_eq!(sim.interner.resolve(building.owner()), "Town");
     assert_ne!(building.building_art.anim_slots()[3], Some(old_anim));
     assert!(sim.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::VocCentered { sound_id } if sound_id == "Abandon"
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
     )));
     assert!(sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::StructureAbandoned { owner, .. }

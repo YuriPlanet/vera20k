@@ -224,7 +224,7 @@ fn ares_whole_map_launch_from_the_cameo_explores_the_playable_diamond() {
     let (rules, mut sim, owner) = ares_scene("-1");
     assert!(rules.super_weapon(REVEAL).unwrap().action.is_none());
     click(&mut sim, &rules, owner, REVEAL, (0, 0));
-    assert!(sim.sound_events.iter().any(|event| matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "RevealCue")));
+    assert!(sim.sound_events.iter().any(|event| matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id.name_in(&rules) == "RevealCue")));
     assert!(sim.fog.is_cell_revealed(owner, 40, 25));
     assert!(sim.fog.is_cell_revealed(owner, 12, 18));
     assert!(!sim.fog.is_cell_revealed(owner, 3, 3));

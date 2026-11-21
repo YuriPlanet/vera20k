@@ -121,7 +121,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
             sub_x,
             sub_y,
             world_z_leptons: 0,
-        }] if sound_id == "NavalUnitEmerge"
+        }] if sound_id.name_in(&rules) == "NavalUnitEmerge"
             && *sub_x == crate::util::lepton::CELL_CENTER_LEPTON
             && *sub_y == crate::util::lepton::CELL_CENTER_LEPTON
     ));

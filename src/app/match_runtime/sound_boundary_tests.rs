@@ -178,7 +178,9 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
         let axis = |index: usize| input["coordinate"][index].as_i64().unwrap() as i32;
         dispatch_sim_sound_events(
             [SimSoundEvent::VocAtCoord {
-                sound_id: "NativeProjectionControl".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted(
+                    "NativeProjectionControl".into(),
+                ),
                 coordinate: crate::sim::components::DriveCoord {
                     x: axis(0),
                     y: axis(1),
@@ -229,7 +231,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
     dispatch_sim_sound_events(
         [
             SimSoundEvent::VocAtCoord {
-                sound_id: "First".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("First".into()),
                 coordinate,
                 flags: 3,
             },
@@ -238,7 +240,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
                 flags: 1,
             },
             SimSoundEvent::VocAtCoord {
-                sound_id: "Later".into(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("Later".into()),
                 coordinate,
                 flags: 0,
             },
@@ -255,7 +257,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: first, coordinate: a, flags: 3, .. },
         crate::audio::events::GameSoundEvent::VocStopAtCoord { coordinate: b, flags: 1 },
         crate::audio::events::GameSoundEvent::VocAtCoord { sound_id: later, coordinate: c, flags: 0, .. },
-    ] if first == "First" && later == "Later" && *a == [-257, 1537, 104] && a == b && b == c));
+    ] if first.resolve(None) == Some("First") && later.resolve(None) == Some("Later") && *a == [-257, 1537, 104] && a == b && b == c));
 }
 
 #[test]
@@ -358,7 +360,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                     SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
                     _ => continue,
                 };
-                if matches!(sound_id.as_str(), "PillboxAttack" | "ConscriptDie") {
+                if matches!(sound_id.name_in(rules), "PillboxAttack" | "ConscriptDie") {
                     // A picture-only flash such as MGUN runs as a presentation
                     // anim, outside `anims()`.
                     let muzzle_exists = sim
@@ -368,7 +370,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                         .any(|anim| sim.interner().resolve(anim.type_id()).starts_with("MGUN"));
                     self.heard
                         .borrow_mut()
-                        .push((sound_id.clone(), muzzle_exists));
+                        .push((sound_id.name_in(rules).to_string(), muzzle_exists));
                 }
             }
             self.client.consume(sim, rules, events);
@@ -642,7 +644,7 @@ fn network_trigger_audio_resolves_only_in_the_local_playback_consumer() {
             matches!(events.as_slice(), [GameSoundEvent::TriggerAudio { .. }]),
             "the dispatcher keeps the authored operand"
         );
-        inputs.consume(player, &events, Some(&sim), None);
+        inputs.consume(player, &events, Some(&sim), Some(rules.sound_names()), None);
     };
 
     let eva = catalog.eva().entry_by_index(0).unwrap().name.clone();

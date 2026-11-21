@@ -628,7 +628,7 @@ impl Simulation {
                 .filter(|name| !name.is_empty())
         {
             self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
                 coordinate: location,
                 flags: 0,
             });

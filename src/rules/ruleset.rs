@@ -57,6 +57,7 @@ mod general;
 mod loading;
 mod lookup;
 mod sections;
+mod sound_names;
 
 pub use general::GeneralRules;
 pub(crate) use general::{
@@ -70,6 +71,7 @@ pub use sections::{
     BridgeRules, DetailRules, DifficultyRules, ElevationModel, GarrisonRules, GeneralBuildingTypes,
     ParadropList, PrismSupportRules, ProductionRules, RadiationRules,
 };
+pub use sound_names::{SoundName, SoundNameId, SoundNames};
 
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
@@ -771,6 +773,9 @@ pub struct RuleSet {
     /// Distinct for every `RuleSet` the process builds, so a cache of this
     /// set's handles can tell it from another set ([`Self::serial`]).
     serial: u64,
+    /// Every sound name the set's fields hold, as the Copy ids sound events
+    /// carry. Kept out of the simulation's interner ([`SoundNames`]).
+    sound_names: SoundNames,
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.

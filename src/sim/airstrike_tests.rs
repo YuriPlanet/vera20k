@@ -446,7 +446,7 @@ fn a_campaign_player_control_designators_abort_voice_plays() {
         .airstrike_pointer_expired(f.boris, f.boris, &f.rules, &mut FrameEffects::default());
     assert!(f.sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
-            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
     )));
 }
 
@@ -467,7 +467,7 @@ fn owner_expiry_unlinks_surviving_planes_and_clears_the_designation() {
     let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
     assert!(f.sim.sound_events.iter().any(|event| matches!(event,
         SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
-            if sound_id == "MIGMissionAborted" && *houses == [house, house]
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
     )));
     let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
     assert!(m.aircraft.is_empty());

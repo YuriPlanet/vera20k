@@ -339,7 +339,7 @@ fn retail_camov02_alias_binds_damaged_art_and_engineer_repair_restores_normal() 
     for _ in 0..600 {
         let sounds = advance_retail_frame(runtime);
         repaired_sound += sounds.iter().filter(|event| {
-            matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BuildingRepaired")
+            matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BuildingRepaired")
         }).count();
         if let Some(entity) = runtime.simulation.entities().get(engineer) {
             walked |= crate::sim::movement::ground_pose::position_world_xy(&entity.position)
@@ -494,7 +494,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
             )
             .unwrap();
         for event in output.sound_events {
-            if matches!(event, SimSoundEvent::VocAt { ref sound_id, .. } if sound_id == "BuildingRepaired")
+            if matches!(event, SimSoundEvent::VocAt { ref sound_id, .. } if sound_id.name_in(&runtime.resources.rules) == "BuildingRepaired")
             {
                 repaired_sound += 1;
             }

@@ -245,13 +245,14 @@ impl MapLocalInputObservation {
                 .sound_events
                 .iter()
                 .filter_map(|event| match event {
-                    crate::audio::events::GameSoundEvent::UnitSelected {
-                        speaker_id,
-                        sound_id,
-                    } => Some(MapSelectionVoiceRequest {
-                        speaker_id: *speaker_id,
-                        sound_id: sound_id.clone(),
-                    }),
+                    crate::audio::events::GameSoundEvent::UnitSelected { speaker_id, .. } => {
+                        Some(MapSelectionVoiceRequest {
+                            speaker_id: *speaker_id,
+                            sound_id: event
+                                .sound_id(state.rules().map(|rules| rules.sound_names()))
+                                .to_string(),
+                        })
+                    }
                     _ => None,
                 })
                 .collect(),

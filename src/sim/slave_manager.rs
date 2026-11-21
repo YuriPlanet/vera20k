@@ -1773,11 +1773,14 @@ impl Simulation {
             self.infantry_cheer(slave, true, rules, frame_effects);
             first_freed.get_or_insert(slave);
         }
-        if let (Some(slave), Some(sound)) = (first_freed, rules.general.slaves_free_sound.clone())
+        if let (Some(slave), Some(sound)) =
+            (first_freed, rules.general.slaves_free_sound.as_deref())
             && let Some(entity) = self.substrate.entities.get(slave)
         {
-            self.sound_events
-                .emit(SimSoundEvent::voc_at(sound, &entity.position));
+            self.sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
         }
         // 6B0C67 clears the manager's owner only after callbacks and sound.
         self.substrate

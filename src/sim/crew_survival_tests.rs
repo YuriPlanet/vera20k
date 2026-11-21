@@ -1918,7 +1918,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
             matches!(
                 event,
                 crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, sound_id }
-                    if *owner == passenger && sound_id == "CrewReady"
+                    if *owner == passenger && sound_id.name_in(&rules) == "CrewReady"
             )
         })
     };
@@ -2409,7 +2409,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
             assert!(sim.sound_events.iter().any(|event| matches!(
                 event,
                 crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, sound_id }
-                    if *owner == crewman && gi_select.contains(sound_id)
+                    if *owner == crewman && gi_select.iter().any(|name| name == sound_id.name_in(&rules))
             )));
         }
     }

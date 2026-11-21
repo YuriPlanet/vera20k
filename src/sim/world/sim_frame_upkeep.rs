@@ -99,7 +99,7 @@ impl Simulation {
                     };
                     if let Some(sound_id) = sound {
                         self.sound_events.emit(SimSoundEvent::VocCentered {
-                            sound_id: sound_id.clone(),
+                            sound_id: rules.sound_name(sound_id),
                         });
                     }
                 }

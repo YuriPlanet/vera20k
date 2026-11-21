@@ -1103,7 +1103,9 @@ fn firing_effects_play_the_child_weapon_anim_and_report() {
     );
     assert!(
         scene.world.sound_events().iter().any(|event| match event {
-            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => sound_id == "GUNRPT",
+            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+                sound_id.name_in(&scene.rules) == "GUNRPT"
+            }
             _ => false,
         }),
         "weapon Report is played"
@@ -1133,7 +1135,9 @@ fn firing_effects_play_the_child_weapon_anim_and_report() {
     detonate(&mut scene);
     assert_eq!(scene.world.anims().count(), 0);
     assert!(!scene.world.sound_events().iter().any(|event| match event {
-        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => sound_id == "GUNRPT",
+        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+            sound_id.name_in(&scene.rules) == "GUNRPT"
+        }
         _ => false,
     }));
 }

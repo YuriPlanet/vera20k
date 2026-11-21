@@ -825,8 +825,9 @@ impl Simulation {
         let ares = rules.ares_form();
         let sound_name = self.anim(id).and_then(|anim| {
             (!anim.no_effects())
-                .then(|| config.start_sound.clone())
+                .then(|| config.start_sound.as_deref())
                 .flatten()
+                .map(|name| rules.sound_name(name))
         });
         if let Some(sound_name) = sound_name
             && let Some(world) = self.anim_absolute_coord(id)

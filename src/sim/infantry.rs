@@ -720,7 +720,7 @@ impl crate::sim::world::Simulation {
             return;
         }
         let event = crate::sim::world::SimSoundEvent::voc_at_location(
-            comment.clone(),
+            rules.sound_name(comment),
             actor,
             self.resolved_terrain.as_ref(),
         );
@@ -1494,7 +1494,7 @@ mod tests {
                 .iter()
                 .filter_map(|event| match event {
                     crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
-                        Some(sound_id.clone())
+                        Some(sound_id.name_in(&rules).to_string())
                     }
                     _ => None,
                 })

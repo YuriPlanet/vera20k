@@ -344,7 +344,8 @@ fn eject_head_passenger(
                     transport.body_facing_current(now),
                     transport.position.z(),
                     height,
-                    obj.and_then(|o| o.leave_transport_sound.clone()),
+                    obj.and_then(|o| o.leave_transport_sound.as_deref())
+                        .map(|sound| rules.sound_name(sound)),
                 )
             };
             let Some(passenger_snapshot) = sim.substrate.entities.get(pax_id) else {
@@ -755,7 +756,7 @@ pub(crate) fn building_mission_unload_absorber(
                 });
                 if let Some(coordinate) = coordinate {
                     sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound.clone(),
+                        rules.sound_name(sound),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
                             y: coordinate.y,
@@ -862,7 +863,10 @@ fn ares_tunnel_unload_one(
                 building.body_facing_current(now),
                 object_cell_height(sim, building),
                 building.position.z(),
-                object.leave_transport_sound.clone(),
+                object
+                    .leave_transport_sound
+                    .as_deref()
+                    .map(|sound| rules.sound_name(sound)),
                 crate::sim::movement::ground_pose::object_get_coords(
                     building,
                     sim.resolved_terrain.as_ref(),

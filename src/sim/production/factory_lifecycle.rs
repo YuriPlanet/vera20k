@@ -875,7 +875,7 @@ pub(super) fn record_last_built(
             ObjectCategory::Aircraft => rules.general.create_aircraft_sound(),
             ObjectCategory::Building => None,
         })
-        .map(str::to_owned);
+        .map(|sound| rules.sound_name(sound));
     let type_index = interner
         .type_array_index(type_id, category, rules)
         .expect("a produced object belongs to its class Type registry");

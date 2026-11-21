@@ -1932,12 +1932,12 @@ pub(crate) fn tick_house_superweapon_instances(
             }
         }
         if let Some([x, y, z]) = fade
-            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.clone())
+            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.as_deref())
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
             sim.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 audible_to: None,
                 rx,
                 ry,

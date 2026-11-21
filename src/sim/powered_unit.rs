@@ -585,12 +585,15 @@ impl Simulation {
             && !quiet
             && let Some(object) = interner.object_type(entity.type_ref(), rules)
             && let Some(sound) = if deactivated {
-                object.deactivate_sound.clone()
+                object.deactivate_sound.as_deref()
             } else {
-                object.activate_sound.clone()
+                object.activate_sound.as_deref()
             }
         {
-            sound_events.emit(SimSoundEvent::voc_at(sound, &entity.position));
+            sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
         }
         substrate
             .entities
