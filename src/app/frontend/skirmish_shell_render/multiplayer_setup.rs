@@ -936,7 +936,7 @@ pub(crate) fn render_multiplayer_setup(
                     path_a_reveal: None,
                 },
                 button_label(
-                    crate::i18n::tr("VERA:Download"),
+                    crate::i18n::tr(offer.button_key),
                     boxed.ok,
                     pressed(MAP_OFFER_DOWNLOAD),
                     if offer.downloading {

@@ -525,6 +525,12 @@ network wait saves the post-Logic continuation; resuming it does not repeat Logi
 or input admission. Presentation and local input state do not select the shared
 simulation update order.
 
+An online room allows five minutes without progress on a map upload or download.
+Each accepted chunk renews the timer. A guest whose download fails can choose Retry
+in the room to check the current map again and fetch it from the beginning if needed.
+Map verification and readiness still gate the start. This uses the same requests as
+the first download. Earlier guests can rejoin to try again.
+
 The service retains admitted setup traffic in the global receive queue during
 the asynchronous lobby-to-setup transition. Loading retains the frozen setup,
 so that transition guard does not block loading progress. Row bindings and
