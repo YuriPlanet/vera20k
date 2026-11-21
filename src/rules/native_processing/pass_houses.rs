@@ -337,15 +337,18 @@ impl RulesPassProcessor {
             if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
-                // `Type=` of every pass so far, as Ares reads it. An owned
-                // copy: the reads below allocate types into the families
-                // the body is read from.
+                // `Type=` of every pass so far, as Ares reads it: an Ares
+                // read, so the key stays among the Ares inputs saved with the
+                // rules. An owned copy: the reads below allocate types into
+                // the families the body is read from.
                 let kind = ares_way
                     .then(|| {
-                        self.families[&RulesTypeFamily::SuperWeapon][index]
-                            .body
-                            .read_name("Type", 0x28)
-                            .map(str::to_owned)
+                        crate::rules::ares_switch::ares_read(|| {
+                            self.families[&RulesTypeFamily::SuperWeapon][index]
+                                .body
+                                .read_name("Type", 0x28)
+                                .map(str::to_owned)
+                        })
                     })
                     .flatten();
                 if let Some(weapon) =
