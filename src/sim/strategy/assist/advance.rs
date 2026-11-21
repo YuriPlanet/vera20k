@@ -57,6 +57,12 @@ use super::squared_distance;
 /// frame on orders that never leave.
 const ADVANCE_ORDERS_PER_FRAME: usize = 8;
 
+/// How far behind the leading fighter a unit may fall before the push takes it
+/// again, in cells. A unit that has nothing to walk to keeps whatever it was
+/// told last, which is right for the tip and wrong for the tail: without this
+/// the tail stands where it stopped for the rest of the match.
+const STAGGER_BEHIND: i32 = 10;
+
 /// How close an enemy has to come to the yard before the army stays home,
 /// in cells. A raid inside this ring is what the army was bought for.
 ///
@@ -545,6 +551,51 @@ pub(super) fn advance(
     if turn > 0 {
         fighters.rotate_left((tick as usize) % turn);
     }
+    if std::env::var("AUTOPLAY_TRACE_PUSH").is_ok() {
+        let distances: Vec<i32> = fighters
+            .iter()
+            .map(|unit| {
+                let dx = i32::from(unit.cell.0) - i32::from(target_cell.0);
+                let dy = i32::from(unit.cell.1) - i32::from(target_cell.1);
+                dx * dx + dy * dy
+            })
+            .collect();
+        let spread = distances.iter().max().copied().unwrap_or(0)
+            - distances.iter().min().copied().unwrap_or(0);
+        let moving = fighters
+            .iter()
+            .filter(|unit| {
+                obs.destination(unit.entity_id).is_some()
+                    || obs.attack_target(unit.entity_id).is_some()
+            })
+            .count();
+        let near = distances
+            .iter()
+            .filter(|squared| **squared <= 12 * 12)
+            .count();
+        log::info!(
+            "push trace: tick={} fighters={} moving={} near={} spread={} target={:?} at {:?}",
+            tick,
+            fighters.len(),
+            moving,
+            near,
+            spread,
+            target_id,
+            target_cell,
+        );
+    }
+    // The fighter nearest the target is the tip of the fist. A unit more than
+    // STAGGER_BEHIND cells behind it never got a second order: it walked, it
+    // arrived, its mission id stayed Move, and the skip below read that as
+    // "already walking" for the rest of the match. Measured on Death.mmx seed
+    // 24301 at tick 31876: 65 fighters, 7 with a destination, 19 inside twelve
+    // cells of the target, spread 131 cells -- the tail was standing still.
+    let tip = fighters
+        .iter()
+        .map(|unit| unit.cell)
+        .min_by_key(|at| cell_distance(*at, target_cell))
+        .unwrap_or(target_cell);
+    let left_behind = |unit: &Unit| cell_distance(unit.cell, tip) > STAGGER_BEHIND;
     let mut issued = 0;
     for unit in &fighters {
         if issued >= ADVANCE_ORDERS_PER_FRAME {
@@ -556,7 +607,9 @@ pub(super) fn advance(
         // and stood in the yard for the rest of the match.
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
             && obs.attack_target(unit.entity_id).is_some();
-        if attacking || unit.mission == MissionId::from_known(MissionType::Move) {
+        let walking = unit.mission == MissionId::from_known(MissionType::Move)
+            && (obs.destination(unit.entity_id).is_some() || !left_behind(unit));
+        if attacking || walking {
             continue;
         }
         // A dug-in unit cannot walk, and the push is a walk: the micro layer
