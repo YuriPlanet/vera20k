@@ -648,7 +648,18 @@ impl WolAccountForm {
     pub(crate) fn focused_edit_mut(&mut self) -> Option<&mut SavedSeedDescriptionEdit> {
         Some(&mut self.fields.get_mut(self.focused)?.edit)
     }
-
+    /// The focused field's edit, for seeding Android's input method.
+    pub(crate) fn focused_edit(&self) -> Option<&SavedSeedDescriptionEdit> {
+        Some(&self.fields.get(self.focused)?.edit)
+    }
+    /// Whether the focused field hides what it holds: Android's input method is
+    /// told so, or it may learn and suggest the password
+    /// (`ES_PASSWORD`, `0x00614FDC`).
+    pub(crate) fn focused_is_password(&self) -> bool {
+        self.fields
+            .get(self.focused)
+            .is_some_and(|field| matches!(field.kind, FieldKind::Password | FieldKind::Confirm))
+    }
     /// The remembered sign-in's placeholder gives way to a typed password,
     /// to another username or to an unticked Remember password.
     fn drop_placeholder(&mut self) {
@@ -820,6 +831,20 @@ impl WolAccountForm {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+    #[test]
+    fn only_the_password_field_tells_the_input_method_to_hide_its_text() {
+        let mut form = WolAccountForm::sign_in("commander", None);
+        form.focus(0);
+        assert!(
+            !form.focused_is_password(),
+            "the username keeps its suggestions"
+        );
+        form.focus(1);
+        assert!(
+            form.focused_is_password(),
+            "the password must not be learnt"
+        );
+    }
 
     fn type_into(form: &mut WolAccountForm, values: &[&str]) {
         for (index, value) in values.iter().enumerate() {

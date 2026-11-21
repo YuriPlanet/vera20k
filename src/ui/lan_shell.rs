@@ -471,6 +471,13 @@ pub(crate) struct LanLobbyState {
     pub(crate) player_list: LanListState,
     pub(crate) buttons: ShellButtonInteraction<u16>,
     pub(crate) focused_control: u16,
+    /// Android: the player tapped an edit in this visit, so the soft keyboard
+    /// should show. Entering the lobby focuses the chat box as native does,
+    /// which must not summon a keyboard by itself.
+    pub(crate) ime_armed: bool,
+    /// Android: a tap on the focused chat box asked to send, because a soft
+    /// keyboard's Enter is an editor action the platform never hands the game.
+    pub(crate) touch_send: bool,
     pub(crate) observer: bool,
     pub(crate) enabled: bool,
     /// Projected native membership gate<=0; no membership authority lives here.
@@ -504,6 +511,8 @@ impl LanLobbyState {
             player_list: LanListState::default(),
             buttons: ShellButtonInteraction::default(),
             focused_control: CHAT,
+            ime_armed: false,
+            touch_send: false,
             observer,
             enabled: true,
             selection_enabled: true,
@@ -699,7 +708,14 @@ impl LanLobbyState {
         }
         match self.focused_control {
             NAME => {
-                for character in crate::util::native_string::acp_round_trip(text).chars() {
+                // The name combo's NewEdit is byte-only (`0x4D1(1)`): units at
+                // or above `0x100` are dropped rather than folded to `?`, and
+                // the roster row keeps single bytes.
+                for unit in text.encode_utf16() {
+                    if unit >= 0x100 {
+                        continue;
+                    }
+                    let character = char::from_u32(u32::from(unit)).unwrap_or('?');
                     if self.insert_name_char(character)
                         && let Some(action) = self.name_changed()
                     {

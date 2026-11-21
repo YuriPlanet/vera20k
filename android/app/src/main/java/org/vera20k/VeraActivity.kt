@@ -2,7 +2,6 @@ package org.vera20k
 
 import android.app.Activity
 import android.app.ActivityManager.TaskDescription
-import android.app.NativeActivity
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,24 +11,113 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.text.InputType
+import android.view.RoundedCorner
+import android.view.WindowInsets
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import com.google.androidgamesdk.GameActivity
 import java.io.File
 import java.io.IOException
 
 /**
- * The app's activity: [NativeActivity] plus the one Android feature the NDK
+ * The app's activity: [GameActivity] plus the one Android feature the NDK
  * cannot reach on its own — the system folder picker.
  *
- * The engine runs on [NativeActivity]'s surface and thread; this class adds no
- * UI. It starts `ACTION_OPEN_DOCUMENT_TREE` for the asset-import dialog and
+ * The engine runs on [GameActivity]'s surface and thread; this class adds no
+ * UI beyond the platform's. GameActivity is the backend that carries text
+ * input, so the engine's chat edits can take IME events here. It starts
+ * `ACTION_OPEN_DOCUMENT_TREE` for the asset-import dialog and
  * hands the chosen tree back to Rust through [nativeOnFolderPicked], because a
  * Storage Access Framework tree has no filesystem path: only Java's
  * `ContentResolver` can read it.
  */
-class VeraActivity : NativeActivity() {
+class VeraActivity : GameActivity() {
+    /** How far the screen's top-left corner hides the game, in screen pixels. */
+    private var displayInsetLeft = 0
+    private var displayInsetTop = 0
+
+    /** The cutout and corner radius at the window's top-left (`display_insets`). */
+    fun displayInsetLeft(): Int = displayInsetLeft
+
+    fun displayInsetTop(): Int = displayInsetTop
+
+    /**
+     * Mark the focused edit as a password box (or not), so the keyboard's
+     * dictionary and suggestions never learn it. Called from Rust through
+     * [org.vera20k]'s `ime_secret` hook as the login page's focus moves.
+     *
+     * A keyboard that is already up keeps the editor info it attached with, so
+     * the input method has to be restarted to read the new one; without that the
+     * password field would keep the previous field's mode and the other way
+     * round.
+     */
+    fun setImeKind(secret: Boolean) {
+        val inputType = if (secret) {
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        } else {
+            InputType.TYPE_CLASS_TEXT
+        }
+        val imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or
+            if (secret) EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING else 0
+        setImeEditorInfoFields(inputType, EditorInfo.IME_ACTION_DONE, imeOptions)
+        val view = mSurfaceView ?: return
+        getSystemService(InputMethodManager::class.java)?.restartInput(view)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // GameActivity defaults to TYPE_NULL (0), which puts its InputConnection
+        // into raw-key mode (fullEditor = false, mForwardKeyEvents = true). Its
+        // sendKeyEvent then dispatches KEYCODE_DEL to the view's OnKeyListener
+        // and also calls processKeyEvent itself, deleting two characters per
+        // backspace and leaving Chinese IMEs without a text editor.
+        setImeEditorInfoFields(
+            InputType.TYPE_CLASS_TEXT,
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_FLAG_NO_FULLSCREEN,
+        )
+        super.onCreate(savedInstanceState)
+        window.decorView.setOnApplyWindowInsetsListener { _, insets ->
+            updateDisplayInsets(insets)
+            insets
+        }
+        window.decorView.requestApplyInsets()
+    }
+
+    private fun updateDisplayInsets(insets: WindowInsets) {
+        if (Build.VERSION.SDK_INT < 28) {
+            return
+        }
+        val cutout = insets.displayCutout
+        var left = cutout?.safeInsetLeft ?: 0
+        // Vertical only the cutout: the rounded corner stays inside `x < radius`
+        // and the horizontal offset already clears it, so the top stays flush
+        // like the desktop.
+        val top = cutout?.safeInsetTop ?: 0
+        if (Build.VERSION.SDK_INT >= 31) {
+            val corner = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)
+            if (corner != null) {
+                left = maxOf(left, corner.radius)
+            }
+        }
+        displayInsetLeft = left
+        displayInsetTop = top
+    }
+
     private companion object {
+        init {
+            // GameActivity calls initializeNativeCode from onCreate, so the
+            // game's library has to be loaded first. NativeActivity loaded it
+            // from the manifest's `android.app.lib_name`; GameActivity has no
+            // such metadata.
+            System.loadLibrary("vera20k_android")
+        }
+
         /** Unique within this activity; "VR" in ASCII. */
         const val REQUEST_PICK_FOLDER = 0x5652
 

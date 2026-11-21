@@ -248,6 +248,9 @@ pub struct ChooseMapModalState {
     /// random-map run returns. It then shows again (`0x005E6B51`) unless its
     /// Use Map closes it; it stays hidden while that Use Map's eject box asks.
     hidden: bool,
+    /// Android: a tap on the search line armed the soft keyboard. The chooser
+    /// opens without it, so the keyboard never covers the list unasked.
+    pub ime_armed: bool,
     /// The list window and time/point of the last press on list rows, for
     /// Windows' double-click test.
     last_list: Option<ChooseMapList>,
@@ -365,6 +368,7 @@ impl ChooseMapModalState {
             statics: DialogStatics::default(),
             message_box: None,
             hidden: false,
+            ime_armed: false,
             last_list: None,
             last_press: None,
         };
