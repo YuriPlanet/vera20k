@@ -176,6 +176,78 @@ pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> Stri
         AresSetting::Off => "VERA:AresSettingOff",
     })
 }
+
+/// `[VERA] GraphicsAPI=` selects the renderer at startup. With `auto`, the
+/// Windows startup record can switch between Vulkan and DirectX 12 after a
+/// failed start (`app::persistence::startup_backend`). `opengl` requests the
+/// desktop OpenGL compatibility renderer. wgpu's `WGPU_BACKEND` environment
+/// variable takes precedence. The Options window's Display page lists it
+/// where it chooses anything ([`HAS_GRAPHICS_API`]); a pick applies at the
+/// next start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum GraphicsApi {
+    #[default]
+    Auto,
+    Vulkan,
+    DirectX12,
+    OpenGl,
+}
+
+impl GraphicsApi {
+    /// The list's rows, top to bottom; the first is the default. DirectX 12
+    /// stands before Vulkan as the one a Windows player reaches for.
+    const ALL: [Self; 4] = [Self::Auto, Self::DirectX12, Self::Vulkan, Self::OpenGl];
+
+    pub(crate) fn from_ini_value(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "vulkan" | "vk" => Self::Vulkan,
+            "dx12" | "directx12" | "directx 12" | "d3d12" => Self::DirectX12,
+            "opengl" => Self::OpenGl,
+            _ => Self::Auto,
+        }
+    }
+
+    pub(crate) fn ini_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vulkan => "vulkan",
+            Self::DirectX12 => "dx12",
+            Self::OpenGl => "opengl",
+        }
+    }
+
+    /// The API asked for alone, when the key names one.
+    pub(crate) fn backend(self) -> Option<wgpu::Backend> {
+        match self {
+            Self::Auto => None,
+            Self::Vulkan => Some(wgpu::Backend::Vulkan),
+            Self::DirectX12 => Some(wgpu::Backend::Dx12),
+            Self::OpenGl => Some(wgpu::Backend::Gl),
+        }
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Auto => "VERA:GraphicsApiAuto",
+            Self::DirectX12 => "VERA:GraphicsApiDirectX12",
+            Self::Vulkan => "VERA:GraphicsApiVulkan",
+            Self::OpenGl => "VERA:GraphicsApiOpenGl",
+        })
+    }
+}
+
+/// The Graphics API list is on the Display page where the key chooses
+/// anything: Windows, with Vulkan and DirectX 12 to choose between and an
+/// OpenGL compatibility mode. Metal and the browser have one renderer each.
+pub(crate) const HAS_GRAPHICS_API: bool = cfg!(target_os = "windows");
+pub(crate) const GRAPHICS_API_LABEL: &str = "VERA:GraphicsApi";
+pub(crate) const GRAPHICS_API_HELP: &str = "VERA:GraphicsApiHelp";
 /// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
 /// string table has nothing for it.
 pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
@@ -690,6 +762,9 @@ pub(crate) enum LauncherComboId {
     /// The `[VERA] Ares=` list: the Ares extension setting, from the next
     /// start (`util::ares_launch::AresSetting`).
     Ares,
+    /// The `[VERA] GraphicsAPI=` list: the renderer, from the next start;
+    /// on the page where it chooses anything ([`HAS_GRAPHICS_API`]).
+    GraphicsApi,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -975,6 +1050,8 @@ pub(crate) enum LauncherOptionsEvent {
     HealthBarModeSelected(HealthBarMode),
     /// The `[VERA] Ares=` list's pick, played from the next start.
     AresSelected(crate::util::ares_launch::AresSetting),
+    /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
+    GraphicsApiSelected(GraphicsApi),
     /// The Colour Vision list's pick, applied to the very next frame.
     ColorVisionModeSelected(ColorVisionMode),
     /// The Display list's pick, applied to the window at once.
@@ -1105,6 +1182,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) health_bars: HealthBarMode,
     /// The Ares list's choice; it applies from the next start, as a mod does.
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// The Graphics API list's choice; it applies from the next start too.
+    pub(crate) graphics_api: GraphicsApi,
     /// The Colour Vision list's choice; reads every frame, so it applies at
     /// once without rebuilding anything.
     pub(crate) color_vision: ColorVisionMode,
@@ -1157,6 +1236,7 @@ impl Default for LauncherOptionsValues {
             sidebar_columns: SidebarColumns::Two,
             health_bars: HealthBarMode::Vanilla,
             ares: crate::util::ares_launch::AresSetting::Auto,
+            graphics_api: GraphicsApi::Auto,
             color_vision: ColorVisionMode::Off,
             house_color_position: 0,
             score_position: 4,
@@ -1808,6 +1888,15 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::AresSelected(setting));
     }
 
+    /// The Graphics API list publishes its pick for the profile; the game
+    /// reads it at its next start.
+    pub(crate) fn select_graphics_api(&mut self, api: GraphicsApi) {
+        self.values.graphics_api = api;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::GraphicsApiSelected(api));
+    }
+
     /// The Health Bars list publishes its pick at once too.
     pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
         self.values.health_bars = mode;
@@ -1957,6 +2046,19 @@ impl Category {
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
+            Self::Display if !HAS_GRAPHICS_API => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::List(List::ColorVision),
+                Setting::Slider(Slider::Detail),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::VSync),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::PerformanceStats),
+            ],
+            // Windows adds the Graphics API list under VSync, below the
+            // sliders, so they keep their places on every desktop build.
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
@@ -1965,6 +2067,7 @@ impl Category {
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
+                Setting::List(List::GraphicsApi),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
@@ -2378,6 +2481,35 @@ mod tests {
         );
     }
 
+    /// The Graphics API list publishes its pick for the profile, as the Ares
+    /// list does: the game reads it at its next start. Its rows are the
+    /// key's four values, Auto first, each naming its own value.
+    #[test]
+    fn graphics_api_list_publishes_its_pick_for_the_next_start() {
+        use LauncherComboId::GraphicsApi as GraphicsApiList;
+        let mut state = state(true);
+        state.combo_mouse_down(GraphicsApiList, frame(4, 5, 180, 24));
+        assert_eq!(state.open_combo, Some(GraphicsApiList));
+        let _ = state.drain_output();
+        state.select_graphics_api(GraphicsApi::DirectX12);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(state.values.graphics_api, GraphicsApi::DirectX12);
+        assert_eq!(
+            state.drain_output().events,
+            [LauncherOptionsEvent::GraphicsApiSelected(
+                GraphicsApi::DirectX12
+            )]
+        );
+        let values: Vec<&str> = GraphicsApi::choices()
+            .iter()
+            .map(|api| api.ini_value())
+            .collect();
+        assert_eq!(values, ["auto", "dx12", "vulkan", "opengl"]);
+        for api in GraphicsApi::choices() {
+            assert_eq!(GraphicsApi::from_ini_value(api.ini_value()), api);
+        }
+    }
+
     #[test]
     fn sidebar_sizes_need_a_640x480_frame_at_that_size() {
         use SidebarSize::{ExtraLarge, Large, Normal};
@@ -2672,6 +2804,7 @@ mod tests {
         ]
         .map(Setting::List)
         .into_iter()
+        .chain(HAS_GRAPHICS_API.then_some(Setting::List(List::GraphicsApi)))
         .chain(
             [
                 Slider::Detail,

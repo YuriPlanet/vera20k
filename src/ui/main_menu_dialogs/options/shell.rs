@@ -17,21 +17,22 @@ use super::{
     CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
     DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
     EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
-    GROUPED_SUPER_TIMERS_HELP, GROUPED_SUPER_TIMERS_LABEL, HAS_CHECK_FOR_UPDATES, HAS_MODS,
-    HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
-    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
-    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP,
-    LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
-    OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL,
-    SIDEBAR_COLUMNS_HELP, SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
-    SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
-    SMOOTH_SIDEBAR_LABEL, Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    GRAPHICS_API_HELP, GRAPHICS_API_LABEL, GROUPED_SUPER_TIMERS_HELP, GROUPED_SUPER_TIMERS_LABEL,
+    GraphicsApi, HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
+    HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
+    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
+    IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP, LANGUAGE_HELP, LANGUAGE_LABEL,
+    LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId,
+    LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL,
+    NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
+    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_COLUMNS_HELP,
+    SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -1000,6 +1001,11 @@ impl OptionsDialogState {
         self.values.color_vision
     }
 
+    /// The Graphics API face's text: the retained choice.
+    pub(crate) fn shell_selected_graphics_api(&self) -> GraphicsApi {
+        self.values.graphics_api
+    }
+
     /// The Display list's rows, top to bottom: Auto, then every screen the
     /// window layer reported. Auto is first so a profile whose saved screen is
     /// gone still shows a picked row.
@@ -1108,6 +1114,13 @@ impl OptionsDialogState {
                 let selected = choices
                     .iter()
                     .position(|setting| *setting == self.values.ares);
+                (choices.len(), selected)
+            }
+            LauncherComboId::GraphicsApi => {
+                let choices = GraphicsApi::choices();
+                let selected = choices
+                    .iter()
+                    .position(|api| *api == self.values.graphics_api);
                 (choices.len(), selected)
             }
             LauncherComboId::Language => {
@@ -1322,6 +1335,7 @@ impl OptionsDialogState {
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::ColorVision => COLOR_VISION_HELP,
                     LauncherComboId::Ares => ARES_HELP,
+                    LauncherComboId::GraphicsApi => GRAPHICS_API_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
                 })
             })
@@ -1373,6 +1387,12 @@ impl OptionsDialogState {
                 LauncherComboId::Ares => {
                     match row.and_then(|row| super::ares_choices().get(row).copied()) {
                         Some(setting) => self.select_ares(setting),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::GraphicsApi => {
+                    match row.and_then(|row| GraphicsApi::choices().get(row).copied()) {
+                        Some(api) => self.select_graphics_api(api),
                         None => self.open_combo = None,
                     }
                 }
@@ -1490,6 +1510,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::ColorVision => COLOR_VISION_LABEL,
         LauncherComboId::Ares => ARES_LABEL,
+        LauncherComboId::GraphicsApi => GRAPHICS_API_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
     })
 }
