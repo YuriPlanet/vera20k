@@ -126,6 +126,18 @@ impl TechnoAmmo {
         self.current = X::ftol_i32_low_masked(X::sub(X::load_i32(self.current), reduction)).max(0);
     }
 
+    /// A Wasm module's `Ammo` write and `AddAmmo` action (RFC 0001 appendix
+    /// 5.3, 7.1; VERA's own, no native body): the count, clamped to
+    /// `0..=maximum` (the type's `Ammo=`). False, writing nothing, for a type
+    /// without a positive `Ammo=`.
+    pub(crate) fn set_clamped(&mut self, count: i64, maximum: i32) -> bool {
+        if maximum <= 0 {
+            return false;
+        }
+        self.current = count.clamp(0, i64::from(maximum)) as i32;
+        true
+    }
+
     /// RELOAD, radio `0x1F` (`0x006F4C9C`): one round more. The receiver has
     /// already refused a full aircraft.
     pub(crate) fn reload_round(&mut self) {

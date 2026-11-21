@@ -360,10 +360,26 @@ impl Simulation {
         house: Option<InternedId>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        self.trigger_play_anim_at_cell(rules, anim_type_index, cell, house, frame_effects)
+    }
+
+    /// [`Self::trigger_play_anim_at_waypoint`] after the waypoint's cell is
+    /// resolved; a Wasm module's `SpawnAnim` passes its cell.
+    pub(crate) fn trigger_play_anim_at_cell(
+        &mut self,
+        rules: &RuleSet,
+        anim_type_index: i32,
+        cell: (i16, i16),
+        house: Option<InternedId>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
         let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
             return false;
         };
-        let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+        let Some([x, y, z]) = self.trigger_cell_coord(cell) else {
             return false;
         };
         let world_coord = AnimWorldCoord { x, y, z };

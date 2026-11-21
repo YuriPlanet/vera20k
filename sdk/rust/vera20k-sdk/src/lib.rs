@@ -28,10 +28,10 @@ pub use triggers::{
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, ActionDef, Category, Cell, Command, Event, EventRecord, FIXED_ONE, Find, FireEvent,
-        Global, House, KilledEvent, Modifier, ModifierOp, NameKind, Op, Order, Outcome, Prop, Ref,
-        Rules, Status, TakeDamageEvent, Target, Techno, TimerEvent, Trigger, TriggerRef, TypeRef,
-        Var, Waypoint, fixed, frame, log, lookup, random,
+        Action, ActionDef, Blocked, Category, Cell, Command, Event, EventRecord, FIXED_ONE, Find,
+        FireEvent, Global, House, KilledEvent, Mission, Modifier, ModifierOp, NameKind, Op, Order,
+        Outcome, Prop, Ref, Rules, Status, TakeDamageEvent, Target, Techno, TimerEvent, Trigger,
+        TriggerRef, TypeRef, Var, Waypoint, fixed, frame, log, lookup, random,
     };
 }
 
@@ -544,6 +544,95 @@ pub enum Outcome {
     Lose = 1,
 }
 
+/// Missions (appendix 8.3, enum 8); the numbers are the map format's.
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mission {
+    Sleep = 0,
+    Attack = 1,
+    Move = 2,
+    QMove = 3,
+    Retreat = 4,
+    Guard = 5,
+    Sticky = 6,
+    Enter = 7,
+    Capture = 8,
+    Eaten = 9,
+    Harvest = 10,
+    AreaGuard = 11,
+    Return = 12,
+    Stop = 13,
+    Ambush = 14,
+    Hunt = 15,
+    Unload = 16,
+    Sabotage = 17,
+    Construction = 18,
+    Selling = 19,
+    Repair = 20,
+    Rescue = 21,
+    Missile = 22,
+    Harmless = 23,
+    Open = 24,
+    Patrol = 25,
+    ParadropApproach = 26,
+    ParadropOverfly = 27,
+    Deliberate = 28,
+    AttackMove = 29,
+    SpyplaneApproach = 30,
+    SpyplaneOverfly = 31,
+}
+
+/// What `Teleport` does with a cell it cannot enter (appendix 8.3, enum 18).
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Blocked {
+    /// Land on a nearby cell.
+    Nearby = 0,
+    /// Refuse the teleport.
+    Fail = 1,
+}
+
+/// Property setters and getters of a unit or building (appendix 3): one
+/// `get` or `set` each.
+impl Techno {
+    pub fn health(self) -> Result<i64> {
+        get(self, Prop::Health)
+    }
+
+    /// Sets health without kill credit; 0 or less is `Err(Refused)`.
+    pub fn set_health(self, health: i64) -> Result<()> {
+        set(self, Prop::Health, health)
+    }
+
+    pub fn set_owner(self, house: House) -> Result<()> {
+        set(self, Prop::Owner, house.0)
+    }
+
+    /// The current mission's number ([`Mission`]), 255 for none.
+    pub fn mission(self) -> Result<i64> {
+        get(self, Prop::Mission)
+    }
+
+    /// Queues `mission` untargeted, as a player's order does.
+    pub fn set_mission(self, mission: Mission) -> Result<()> {
+        set(self, Prop::Mission, mission as i64)
+    }
+
+    pub fn ammo(self) -> Result<i64> {
+        get(self, Prop::Ammo)
+    }
+
+    /// Sets the ammo, clamped to the type's `Ammo=`.
+    pub fn set_ammo(self, ammo: i64) -> Result<()> {
+        set(self, Prop::Ammo, ammo)
+    }
+
+    /// Turns a building off or on, as stock actions 61 and 62 do.
+    pub fn set_online(self, online: bool) -> Result<()> {
+        set(self, Prop::Online, i64::from(online))
+    }
+}
+
 /// One function per action kind the engine runs (appendix section 5).
 /// Atomic actions are numbered from 1000 in table order, provisionally
 /// (RFC open question 5); stock actions keep their stock numbers. A stock
@@ -574,16 +663,31 @@ macro_rules! stock {
 
 impl Action {
     pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
+    pub const SPAWN_ANIM: i32 = 1002;
     pub const REMOVE: i32 = 1004;
     pub const KILL: i32 = 1005;
     pub const DAMAGE: i32 = 1006;
+    pub const HEAL: i32 = 1007;
     pub const CREATE_OBJECT: i32 = 1008;
+    pub const SET_MISSION: i32 = 1009;
+    pub const TELEPORT: i32 = 1010;
     pub const CLEAR_TARGET: i32 = 1011;
+    pub const CLEAR_DISGUISE: i32 = 1012;
+    pub const CLEAR_MIND_CONTROL: i32 = 1013;
+    pub const ADD_EXPERIENCE: i32 = 1014;
     pub const ADD_MONEY: i32 = 1015;
     pub const SET_OWNER: i32 = 1017;
+    pub const ADD_AMMO: i32 = 1018;
+    pub const SET_PROPERTY: i32 = 1021;
+    pub const MODIFY: i32 = 1022;
+    pub const REMOVE_MODIFIERS: i32 = 1023;
+    pub const DETONATE_WEAPON: i32 = 1025;
     pub const DETONATE_WARHEAD: i32 = 1026;
     pub const END_FOR: i32 = 1030;
+    pub const SET_SCORE: i32 = 1031;
+    pub const ADD_SCORE: i32 = 1032;
     pub const LOG: i32 = 1033;
+    pub const CONVERT: i32 = 1034;
     /// Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]).
     pub const SET_VAR: i32 = 1024;
     pub const MODULE: i32 = 1036;
@@ -682,6 +786,114 @@ impl Action {
     /// Writes `line` to the in-game log, as an action.
     pub fn log(line: &str) -> Result<()> {
         Self::run_text(Self::LOG, 0, line).map(drop)
+    }
+
+    /// Plays animation `anim` (its rules array position, as stock 41 takes)
+    /// at `at` (a cell, waypoint or object).
+    pub fn spawn_anim(at: impl Ref, anim: i32) -> Result<()> {
+        Self::run(Self::SPAWN_ANIM, at.raw(), &params!(id: anim)).map(drop)
+    }
+
+    /// Restores `amount` health to `target`, up to its Strength, without
+    /// kill credit.
+    pub fn heal(target: Techno, amount: i32) -> Result<()> {
+        Self::run(Self::HEAL, target.0, &params!(value: i64::from(amount))).map(drop)
+    }
+
+    /// Queues `mission` on `target` as a player's order does, aimed at `at`
+    /// (a cell or waypoint; `Cell(NO_HANDLE)` for none). `Move` with a cell
+    /// moves there.
+    pub fn set_mission(target: Techno, mission: Mission, at: impl Ref) -> Result<()> {
+        let params = params!(arg: mission as i32, cell: at.raw());
+        Self::run(Self::SET_MISSION, target.0, &params).map(drop)
+    }
+
+    /// As [`Action::set_mission`], aimed at the object `on`.
+    pub fn set_mission_on(target: Techno, mission: Mission, on: Techno) -> Result<()> {
+        let params = params!(arg: mission as i32, other: on.0);
+        Self::run(Self::SET_MISSION, target.0, &params).map(drop)
+    }
+
+    /// Chronoshifts `target` (a vehicle or infantryman) to `to`.
+    pub fn teleport(target: Techno, to: impl Ref, blocked: Blocked) -> Result<()> {
+        let params = params!(arg: blocked as i32, cell: to.raw());
+        Self::run(Self::TELEPORT, target.0, &params).map(drop)
+    }
+
+    /// Removes `target`'s disguise.
+    pub fn clear_disguise(target: Techno) -> Result<()> {
+        Self::run(Self::CLEAR_DISGUISE, target.0, &params!()).map(drop)
+    }
+
+    /// Releases `target` from its mind controller, back to its old owner.
+    pub fn clear_mind_control(target: Techno) -> Result<()> {
+        Self::run(Self::CLEAR_MIND_CONTROL, target.0, &params!()).map(drop)
+    }
+
+    /// Adds the experience a kill worth `points` credits gives `target`.
+    pub fn add_experience(target: Techno, points: i32) -> Result<()> {
+        let params = params!(value: i64::from(points));
+        Self::run(Self::ADD_EXPERIENCE, target.0, &params).map(drop)
+    }
+
+    /// Adds `amount` ammo (negative takes it), within the type's `Ammo=`.
+    pub fn add_ammo(target: Techno, amount: i32) -> Result<()> {
+        let params = params!(value: i64::from(amount));
+        Self::run(Self::ADD_AMMO, target.0, &params).map(drop)
+    }
+
+    /// Writes `prop`, as [`set`] does (the trigger form of a write).
+    pub fn set_property(target: impl Ref, prop: Prop, value: i64) -> Result<()> {
+        let params = params!(id: prop.0, value: value);
+        Self::run(Self::SET_PROPERTY, target.raw(), &params).map(drop)
+    }
+
+    /// Adds a modifier, as [`Modifier::new`] does, and returns it.
+    pub fn modify(
+        target: impl Ref,
+        prop: Prop,
+        op: ModifierOp,
+        value: i64,
+        frames: i32,
+        group: i32,
+    ) -> Result<Modifier> {
+        let params = params!(
+            id: prop.0,
+            arg: op as i32,
+            arg2: group,
+            value: value,
+            value2: i64::from(frames),
+        );
+        Self::run(Self::MODIFY, target.raw(), &params).map(Modifier)
+    }
+
+    /// Removes this module's modifiers on `target` in `group`, only those
+    /// of `prop` when given.
+    pub fn remove_modifiers(target: impl Ref, group: i32, prop: Option<Prop>) -> Result<()> {
+        let params = params!(id: prop.map_or(-1, |p| p.0), arg2: group);
+        Self::run(Self::REMOVE_MODIFIERS, target.raw(), &params).map(drop)
+    }
+
+    /// Detonates `weapon` (a `Weapon` type reference) at `at` without a
+    /// projectile, crediting `source` (`Techno(NO_HANDLE)` for none).
+    pub fn detonate_weapon(at: impl Ref, weapon: TypeRef, source: Techno) -> Result<()> {
+        let params = params!(id: weapon.id(), other: source.0);
+        Self::run(Self::DETONATE_WEAPON, at.raw(), &params).map(drop)
+    }
+
+    /// Sets `house`'s score.
+    pub fn set_score(house: House, score: i32) -> Result<()> {
+        Self::run(Self::SET_SCORE, house.0, &params!(value: i64::from(score))).map(drop)
+    }
+
+    /// Adds to `house`'s score.
+    pub fn add_score(house: House, score: i32) -> Result<()> {
+        Self::run(Self::ADD_SCORE, house.0, &params!(value: i64::from(score))).map(drop)
+    }
+
+    /// Converts `target` to `kind` for good.
+    pub fn convert(target: Techno, kind: TypeRef) -> Result<()> {
+        Self::run(Self::CONVERT, target.0, &params!(id: kind.id())).map(drop)
     }
 
     // Stock actions (5.2) taking a string.

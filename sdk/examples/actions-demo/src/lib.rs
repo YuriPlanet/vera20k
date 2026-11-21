@@ -1,8 +1,9 @@
 //! A `rules.wasm` that runs actions through the Rust SDK (RFC 0001 preview).
 //!
 //! At scenario start it kills the first infantryman on the map, damages the
-//! first vehicle with `C4Warhead`'s warhead and sets Red Alert 2 global 3
-//! through stock action `SetGlobal`, logging each result. The engine test
+//! first vehicle with the `Super` warhead, heals it and orders it to guard,
+//! and sets Red Alert 2 global 3 through stock action `SetGlobal`, logging
+//! each result. The engine test
 //! `sim::ext_modules::tests::a_rust_built_actions_module_runs` runs it.
 #![no_std]
 
@@ -39,6 +40,9 @@ fn start() {
             Action::damage(first(Category::Vehicle), 10, warhead),
         );
     }
+    let vehicle = first(Category::Vehicle);
+    report("actions-demo: heal", Action::heal(vehicle, 5));
+    report("actions-demo: guard", vehicle.set_mission(Mission::Guard));
     report("actions-demo: set global", Action::set_global(3));
 }
 

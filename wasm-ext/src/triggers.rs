@@ -146,15 +146,21 @@ impl EventDef {
 }
 
 /// One action of a trigger (`ActionDef` and its `ActionParams`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ActionDef {
     pub kind: i32,
     pub target: ActionTarget,
     pub params: ActionParams,
+    /// `params.text` copied out of module memory by `trigger_create`
+    /// (appendix "Fixed layouts"); [`TriggerDef::parse`] leaves it empty and
+    /// the sandbox fills it.
+    pub text: String,
 }
 
 impl ActionDef {
     pub const SIZE: usize = 8 + ActionParams::SIZE;
+    /// Most bytes of text one trigger action keeps (open question 7).
+    pub const MAX_TEXT: usize = 1024;
 }
 
 /// `TriggerFlags` bits of `TriggerDef.flags`.
@@ -264,6 +270,7 @@ impl TriggerDef {
                 kind: le_i32(action, 0),
                 target,
                 params: ActionParams::parse(&action[8..])?,
+                text: String::new(),
             });
         }
         if cursor.at != bytes.len() {

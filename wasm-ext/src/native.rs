@@ -17,7 +17,7 @@ use wasmtime::{
 };
 
 use crate::sections::{Delivery, Sections};
-use crate::triggers::{NAME_MODULE_ACTION, TriggerDef};
+use crate::triggers::{ActionDef, NAME_MODULE_ACTION, TriggerDef};
 use crate::{
     ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits,
     LoadError, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, PAGE_BYTES, Query,
@@ -574,6 +574,30 @@ fn read_bytes(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> Result<Vec<u8
     Ok(out)
 }
 
+/// `trigger_create` copies each action's `text` out of module memory into
+/// the definition (appendix "Fixed layouts"); returns the bytes copied. Text
+/// that is not UTF-8 or longer than [`ActionDef::MAX_TEXT`] is invalid.
+fn read_action_texts(caller: &mut Caller<'_, Ctx>, def: &mut TriggerDef) -> Result<usize, Invalid> {
+    let mut copied = 0;
+    for action in &mut def.actions {
+        let len = action.params.text_len;
+        if len == 0 {
+            continue;
+        }
+        if usize::try_from(len).is_ok_and(|len| len > ActionDef::MAX_TEXT) {
+            return Err(Invalid(format!(
+                "trigger action text of {len} bytes, at most {}",
+                ActionDef::MAX_TEXT
+            )));
+        }
+        let bytes = read_bytes(caller, action.params.text, len)?;
+        copied += bytes.len();
+        action.text = String::from_utf8(bytes)
+            .map_err(|_| Invalid("trigger action text is not UTF-8".into()))?;
+    }
+    Ok(copied)
+}
+
 fn write_bytes(caller: &mut Caller<'_, Ctx>, ptr: i32, bytes: &[u8]) -> Result<(), Invalid> {
     let memory = memory_of(caller)?;
     let Ok(offset) = usize::try_from(ptr) else {
@@ -888,8 +912,10 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
             let (handle, status) = if in_init(&caller) {
                 (0, Status::Unsupported)
             } else {
-                let def = TriggerDef::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
-                let result = enter(&mut caller, bytes.len() as u64)?.trigger_create(&def);
+                let mut def = TriggerDef::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
+                let texts =
+                    read_action_texts(&mut caller, &mut def).map_err(|e| fail(&mut caller, e))?;
+                let result = enter(&mut caller, (bytes.len() + texts) as u64)?.trigger_create(&def);
                 result.map_err(|e| fail(&mut caller, e))?
             };
             let handle = if status == Status::Ok { handle } else { 0 };

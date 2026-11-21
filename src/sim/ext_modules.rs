@@ -17,7 +17,8 @@
 //!   `find` over objects and houses;
 //! - modifiers on objects ([`modifiers`]) and the variables modules declare
 //!   in `vera.vars` ([`vars`]);
-//! - writes of `Health`, `Owner` and `Rank` through their owners;
+//! - writes of `Health`, `Owner`, `Rank`, `Mission`, `Ammo` and `Online`
+//!   through their owners ([`writes`]);
 //! - runtime triggers and `on_events` delivery ([`triggers`]);
 //! - names of weapons, warheads, TeamTypes and action kinds;
 //! - the `action` import ([`actions`]): atomic actions and stock trigger
@@ -48,9 +49,9 @@
 //!   name; a type whose ID two categories share reads as the first.
 //! - `set` writes `Health` (1 up to the type's Strength; a write of 0 or
 //!   less, which would kill without credit, answers `Refused`), `Owner`
-//!   (through ChangeOwner, as the stock change-house action does) and
-//!   `Rank`. `Mission` and `Ammo` writes answer `Unsupported`: neither has an
-//!   owner operation for a module yet. Other readable properties refuse.
+//!   (through ChangeOwner, as the stock change-house action does), `Rank`,
+//!   `Mission` (ordered as a player's order), `Ammo` and a building's
+//!   `Online` ([`writes`]). Other readable properties refuse.
 //! - Only `FirepowerMultiplier`, `ArmorMultiplier` and `SpeedMultiplier`
 //!   take modifiers; other modifiable properties answer `Unsupported`, and
 //!   houses take none.
@@ -71,6 +72,7 @@ pub(crate) mod modifiers;
 mod orders;
 mod rules;
 pub(crate) mod vars;
+mod writes;
 
 pub use actions::{ActionContext, run_action};
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
@@ -308,18 +310,63 @@ impl ExtModules {
     }
 
     /// One 32-bit FNV-1a digest per module over its memory and globals, for
-    /// the multiplayer frame checksum. Byte-wise, so 32- and 64-bit
-    /// platforms agree. Residual: it reads all memory each frame instead of
-    /// the RFC's 1/15 page rotation.
+    /// the multiplayer frame checksum, then one over the modifiers and the
+    /// declared variables' values when any are held. Byte-wise, in handle and
+    /// key order, so 32- and 64-bit platforms agree. Residual: it reads all
+    /// memory each frame instead of the RFC's 1/15 page rotation.
     pub(crate) fn checksum_digests(&self) -> impl Iterator<Item = u32> + '_ {
-        self.slots.iter().map(|slot| {
-            let mut digest = 0x811C_9DC5u32;
+        let modules = self.slots.iter().map(|slot| {
             let globals = slot.module.globals().iter().flat_map(|g| g.to_le_bytes());
-            for byte in globals.chain(slot.module.memory().iter().copied()) {
-                digest = (digest ^ u32::from(byte)).wrapping_mul(0x0100_0193);
-            }
-            digest
-        })
+            fnv1a(globals.chain(slot.module.memory().iter().copied()))
+        });
+        let values = &self.vars.values;
+        let held = !self.modifiers.is_empty()
+            || !values.global.is_empty()
+            || !values.house.is_empty()
+            || !values.object.is_empty();
+        modules.chain(held.then(|| fnv1a(self.held_state_bytes())))
+    }
+
+    /// The modifiers and declared-variable values as checksum bytes.
+    fn held_state_bytes(&self) -> impl Iterator<Item = u8> + '_ {
+        let modifiers = self.modifiers.iter().flat_map(|(handle, m)| {
+            let expires = m.expires.map_or(-1, i64::from);
+            [handle, m.target]
+                .into_iter()
+                .flat_map(u64::to_le_bytes)
+                .chain([m.stat as u8, m.op as u8, m.origin as u8])
+                .chain(
+                    [m.value, expires, m.source]
+                        .into_iter()
+                        .flat_map(i64::to_le_bytes),
+                )
+                .chain(m.group.to_le_bytes())
+        });
+        let values = &self.vars.values;
+        let global = values
+            .global
+            .iter()
+            .flat_map(|(var, value)| var.to_le_bytes().into_iter().chain(value.to_le_bytes()));
+        let house = values.house.iter().flat_map(|((var, house), value)| {
+            var.to_le_bytes()
+                .into_iter()
+                .chain(house.to_le_bytes())
+                .chain(value.to_le_bytes())
+        });
+        let object = values.object.iter().flat_map(|((id, var), value)| {
+            id.to_le_bytes()
+                .into_iter()
+                .chain(var.to_le_bytes())
+                .chain(value.to_le_bytes())
+        });
+        // Section tags keep an entry from reading as one of another kind.
+        modifiers
+            .chain([1])
+            .chain(global)
+            .chain([2])
+            .chain(house)
+            .chain([3])
+            .chain(object)
     }
 
     pub fn hash_state(&self, hasher: &mut impl Hasher) {
@@ -336,6 +383,13 @@ impl ExtModules {
         self.modifiers.hash(hasher);
         self.vars.values.hash(hasher);
     }
+}
+
+/// 32-bit FNV-1a over `bytes`.
+fn fnv1a(bytes: impl Iterator<Item = u8>) -> u32 {
+    bytes.fold(0x811C_9DC5u32, |digest, byte| {
+        (digest ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    })
 }
 
 /// Reference kinds (appendix "References"): bits 48..52 of a reference.
@@ -608,6 +662,9 @@ impl SimHost for Host<'_, '_> {
                 "Health" => return Ok(self.write_health(id, value)),
                 "Owner" => return self.write_owner(id, value),
                 "Rank" => return self.write_rank(id, value),
+                "Mission" => return self.order_mission(id, value, None),
+                "Ammo" => return Ok(self.write_ammo(id, value)),
+                "Online" => return Ok(self.write_online(id, value)),
                 _ => {}
             }
         }
@@ -728,6 +785,7 @@ impl SimHost for Host<'_, '_> {
             frame_effects: &mut *self.frame_effects,
             text,
             trigger_house: None,
+            source: self.source,
         };
         run_action(self.sim, kind, target, params, context)
     }
@@ -789,6 +847,9 @@ const READABLE: &[&str] = &[
     "IsDefeated",
     "IsHuman",
     "Rank",
+    "Mission",
+    "Ammo",
+    "Online",
     "Cost",
     "LandType",
     "Height",
@@ -908,6 +969,19 @@ impl Host<'_, '_> {
                 crate::sim::combat::veterancy::VeterancyRank::Veteran => 1,
                 crate::sim::combat::veterancy::VeterancyRank::Elite => 2,
             },
+            // `None` (255) for no mission (appendix 8.3).
+            "Mission" => match entity.mission.current().raw() {
+                -1 => 255,
+                raw => i64::from(raw),
+            },
+            "Ammo" => match entity.ammo() {
+                Some(ammo) => i64::from(ammo.current()),
+                None => return (0, Status::Unsupported),
+            },
+            "Online" if entity.category() == EntityCategory::Structure => {
+                i64::from(entity.building_online())
+            }
+            "Online" => return (0, Status::Unsupported),
             _ => match Stat::from_property(name) {
                 Some(stat) => entity.effective_stat(stat),
                 None => return (0, Status::Unsupported),
@@ -1510,3 +1584,7 @@ mod tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_trigger_tests.rs"]
 mod trigger_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_action_tests.rs"]
+mod action_tests;

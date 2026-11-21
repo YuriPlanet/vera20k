@@ -237,6 +237,36 @@ impl ModifierStore {
         self.modifiers.range(after..).map(|(handle, _)| *handle)
     }
 
+    /// Every modifier with its handle, in insertion order.
+    pub(super) fn iter(&self) -> impl Iterator<Item = (u64, &Modifier)> + '_ {
+        self.modifiers.iter().map(|(handle, m)| (*handle, m))
+    }
+
+    /// `RemoveModifiers` (appendix 5.3): drops the modifiers `origin` put on
+    /// `target` in `group`, only those of `stat` when given. Returns how many
+    /// went.
+    pub(super) fn remove_group(
+        &mut self,
+        entities: &mut EntityStore,
+        target: u64,
+        origin: ModuleSource,
+        group: i32,
+        stat: Option<Stat>,
+    ) -> usize {
+        let before = self.modifiers.len();
+        self.modifiers.retain(|_, m| {
+            !(m.target == target
+                && m.origin == origin
+                && m.group == group
+                && stat.is_none_or(|stat| m.stat == stat))
+        });
+        let removed = before - self.modifiers.len();
+        if removed != 0 {
+            self.refresh(entities, target);
+        }
+        removed
+    }
+
     /// Adds `modifier` as `handle`, first removing the member of its group
     /// that the same origin put on the same object. `false` when the origin
     /// holds its quota.

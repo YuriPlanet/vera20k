@@ -108,6 +108,44 @@ impl ActionDef {
             sys::ActionParams { id: key, ..PARAMS },
         )
     }
+
+    /// Writes `line` to the in-game log; `trigger_create` copies the text.
+    pub fn log(line: &'static str) -> Self {
+        Self::new(
+            Action::LOG,
+            Target::Subject,
+            sys::ActionParams {
+                text: line.as_ptr() as i32,
+                text_len: line.len() as i32,
+                ..PARAMS
+            },
+        )
+    }
+
+    /// Restores `amount` health to `target`.
+    pub const fn heal(target: Target, amount: i32) -> Self {
+        Self::new(
+            Action::HEAL,
+            target,
+            sys::ActionParams {
+                value: amount as i64,
+                ..PARAMS
+            },
+        )
+    }
+
+    /// Writes `prop` of `target`, as `set` does.
+    pub const fn set_property(target: Target, prop: Prop, value: i64) -> Self {
+        Self::new(
+            Action::SET_PROPERTY,
+            target,
+            sys::ActionParams {
+                id: prop.0,
+                value,
+                ..PARAMS
+            },
+        )
+    }
 }
 
 const PARAMS: sys::ActionParams = sys::ActionParams {

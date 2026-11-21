@@ -1363,6 +1363,9 @@ fn a_rust_built_actions_module_runs() {
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
     assert!(scene.sim().trigger_runtime.global_variable_is_set(3));
     let log = scene.runtime.simulation.ext_modules_mut().take_log();
-    assert!(log.iter().any(|l| l == "actions-demo: damage"), "{log:?}");
+    for line in ["damage", "heal", "guard"] {
+        let line = format!("actions-demo: {line}");
+        assert!(log.contains(&line), "{line} in {log:?}");
+    }
     assert!(!log.iter().any(|l| l == "actions-demo: failed"), "{log:?}");
 }

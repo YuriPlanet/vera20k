@@ -10,26 +10,54 @@
 //! | ID | Name | Owner called |
 //! | --- | --- | --- |
 //! | 1001 | `LaunchSuperWeapon` | `Simulation::fire_super_weapon` (HouseClass::Fire_SW `0x004FAE50`), manual target |
+//! | 1002 | `SpawnAnim` | `Simulation::trigger_play_anim_at_cell`, stock action 41's owner (PlayAnimAtWP `0x006E2290`) at a cell; `id` is the AnimType array index stock 41 takes, `house` optional |
 //! | 1004 | `Remove` | `Simulation::uninit_with_context` |
 //! | 1005 | `Kill` | `Simulation::commit_direct_damage_receiver`, damage = health, `C4Warhead=`, defenses ignored (as stock action 32, `0x006E2050`) |
 //! | 1006 | `Damage` | `Simulation::commit_direct_damage_receiver` with the warhead, armor applied |
+//! | 1007 | `Heal` | the `Health` write `set` uses (no credit, clamped to Strength) at health + `value` |
 //! | 1008 | `CreateObject` | `construct_object_limbo_at_height`, `reveal_constructed_object_at_coord_with_overlay_context` (Unlimbo), `grand_opening` for buildings, `queue_entity_mission_deferred` |
+//! | 1009 | `SetMission` | the `Mission` write `set` uses: the MEGAMISSION event a player's order sends, through the command receiver (`EventClass::Execute` `0x004C71F6`); `cell`, else `other`, is the mission's target or destination |
+//! | 1010 | `Teleport` | `Simulation::foot_chrono_warp_to` (Foot4DF7F0 / Infantry522FE0) at the coordinate House50D6D0 computes (`chrono_warp_coord`); `Nearby` leaves a blocked landing to the Teleport's own nearby search, `Fail` asks Can_Enter_Cell first; ground Units and Infantry only |
 //! | 1011 | `ClearTarget` | `Simulation::assign_target_represented(None)` (Assign_Target `0x006FCDB0`) |
+//! | 1012 | `ClearDisguise` | `DisguiseRuntime::clear`, the class ClearDisguise (Unit `0x00746720`) |
+//! | 1013 | `ClearMindControl` | `Simulation::free_unit` on the controller (CaptureManagerClass::FreeUnit `0x00471FF0`) |
+//! | 1014 | `AddExperience` | `Veterancy::award_kill` (VeterancyClass::Add `0x0074FF50`) as for a kill worth `value`, at the object's own Cost (no house cost factor), only for a `Trainable=` type |
 //! | 1015 | `AddMoney` | `credit_income::add_credits` |
 //! | 1017 | `SetOwner` | `Simulation::change_owner_with_rules` |
+//! | 1018 | `AddAmmo` | the `Ammo` write `set` uses at ammo + `value` |
+//! | 1021 | `SetProperty` | `SimHost::set`, the one property writer |
+//! | 1022 | `Modify` | `SimHost::modify`, the modifier store's one entry |
+//! | 1023 | `RemoveModifiers` | `ModifierStore::remove_group` for the calling module's origin |
+//! | 1024 | `SetVar` | `Simulation::write_module_var`, the writer `var_set` uses: global scope ignores the target, house scope takes the `House` target (0 the trigger house), object scope the target object |
+//! | 1025 | `DetonateWeapon` | `Simulation::trigger_explosion_at_cell`, stock action 42's owner (DoExplosionAt `0x006E2390`) at a cell, with the optional source for credit |
 //! | 1026 | `DetonateWarhead` | `world_receiver::apply_area_damage` (Apply_area_damage `0x00489280`) at the cell center |
 //! | 1030 | `EndFor` | `Simulation::flag_house_to_win` / `flag_house_to_lose` (`0x004FC9E0` / `0x004FCBD0`) |
+//! | 1031 | `SetScore` | `Economy::set_score` (`+0x54E8`) |
+//! | 1032 | `AddScore` | `Economy::add_score`, the kill and capture awards' writer |
 //! | 1033 | `Log` | the module log |
+//! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`), permanent only |
 //!
 //! Every other atomic action answers `(0, Unsupported)` and `has_kind`
-//! reports 0: `FireWeapon`, `SpawnAnim`, `DetonateWeapon` (the stock
-//! executor's anim and explosion owners take waypoints, not cells),
-//! `AttachAnim`, `Heal`, `SetMission`, `Teleport`, `ClearDisguise`,
-//! `ClearMindControl`, `AddExperience`, `AllowType`, `AddAmmo`,
-//! `AddPassenger`, `RemovePassenger`, `Convert`, `Push`, the projectile and
-//! team actions, `SetScore`, `AddScore`, and `SetProperty`, `Modify`,
-//! `RemoveModifiers`, `SetVar`, `Module`, which belong with property writes,
-//! modifiers, variables and module triggers.
+//! reports 0:
+//! - `FireWeapon`: FireAt runs only inside the shooter's own combat visit
+//!   (`world_fire::resolve_attacker_fire`); there is no standalone
+//!   Fire_At(target, weapon) entry to call.
+//! - `AttachAnim`: no owner keeps an animation on an object for a count of
+//!   frames.
+//! - `AllowType`: buildability comes from prerequisites, tech level and
+//!   `BuildLimit=`; no per-house allow list exists to write.
+//! - `AddPassenger`, `RemovePassenger`: boarding and unloading run through
+//!   the transport's radio and mission chain, not one call.
+//! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: no
+//!   projectile references yet.
+//! - `Push`: no forced-motion owner.
+//! - The team actions: no team references yet.
+//! - `Module`, which only a module trigger runs (it queues an `on_events`
+//!   record; `ext_modules::triggers`).
+//!
+//! Also unsupported: a timed `Convert` (`value2` other than 0), and
+//! `ClearMindControl` of the Psychic Dominator's permanent control (no
+//! controller to free it; `Refused`).
 //!
 //! # Stock actions (5.2)
 //!
@@ -82,42 +110,79 @@
 //! - 15 (a trigger flag), 39, 49, 50 (unavailable);
 //! - Ares actions without Ares.
 
-use vera20k_wasm_ext::{ActionParams, Invalid, Status};
+use vera20k_wasm_ext::{ActionParams, Invalid, SimHost, Status, VarScope, property_name};
+
+use super::modifiers::Stat;
+use super::{Host, ModuleSource};
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::{RAD_NO_ATTACKER, TargetKind};
 use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
+use crate::sim::rng::SimRng;
 use crate::sim::trigger_runtime::{StockActionCall, StockReference, StockReferenceKind};
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 /// Atomic action IDs (appendix 5.3 order from 1000; open question 5).
 pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
+pub const SPAWN_ANIM: i32 = 1002;
 pub const REMOVE: i32 = 1004;
 pub const KILL: i32 = 1005;
 pub const DAMAGE: i32 = 1006;
+pub const HEAL: i32 = 1007;
 pub const CREATE_OBJECT: i32 = 1008;
+pub const SET_MISSION: i32 = 1009;
+pub const TELEPORT: i32 = 1010;
 pub const CLEAR_TARGET: i32 = 1011;
+pub const CLEAR_DISGUISE: i32 = 1012;
+pub const CLEAR_MIND_CONTROL: i32 = 1013;
+pub const ADD_EXPERIENCE: i32 = 1014;
 pub const ADD_MONEY: i32 = 1015;
 pub const SET_OWNER: i32 = 1017;
+pub const ADD_AMMO: i32 = 1018;
+pub const SET_PROPERTY: i32 = 1021;
+pub const MODIFY: i32 = 1022;
+pub const REMOVE_MODIFIERS: i32 = 1023;
+pub const SET_VAR: i32 = vera20k_wasm_ext::triggers::ACTION_SET_VAR;
+pub const DETONATE_WEAPON: i32 = 1025;
 pub const DETONATE_WARHEAD: i32 = 1026;
 pub const END_FOR: i32 = 1030;
+pub const SET_SCORE: i32 = 1031;
+pub const ADD_SCORE: i32 = 1032;
 pub const LOG: i32 = 1033;
+pub const CONVERT: i32 = 1034;
 
-const ATOMIC: [i32; 11] = [
+const ATOMIC: [i32; 27] = [
     LAUNCH_SUPER_WEAPON,
+    SPAWN_ANIM,
     REMOVE,
     KILL,
     DAMAGE,
+    HEAL,
     CREATE_OBJECT,
+    SET_MISSION,
+    TELEPORT,
     CLEAR_TARGET,
+    CLEAR_DISGUISE,
+    CLEAR_MIND_CONTROL,
+    ADD_EXPERIENCE,
     ADD_MONEY,
     SET_OWNER,
+    ADD_AMMO,
+    SET_PROPERTY,
+    MODIFY,
+    REMOVE_MODIFIERS,
+    SET_VAR,
+    DETONATE_WEAPON,
     DETONATE_WARHEAD,
     END_FOR,
+    SET_SCORE,
+    ADD_SCORE,
     LOG,
+    CONVERT,
 ];
 
 /// `Mission` "none" for `CreateObject`: keep the constructor's mission.
@@ -133,6 +198,9 @@ pub struct ActionContext<'a, 'f> {
     /// The firing trigger's house inside a trigger, where a house of 0
     /// selects it. `None` for a direct call, where a house of 0 is invalid.
     pub trigger_house: Option<InternedId>,
+    /// The calling module (or the trigger's): the origin of the modifiers
+    /// `Modify` adds and `RemoveModifiers` removes.
+    pub source: ModuleSource,
 }
 
 /// Runs action `kind` against `target` (a reference; a trigger resolves its
@@ -191,6 +259,14 @@ fn invalid<T>(why: String) -> Act<T> {
 
 fn status<T>(status: Status) -> Act<T> {
     Err(Stop::Status(status))
+}
+
+/// An owner's answer as the action's: 0 for `Ok`, else the status.
+fn answer(answer: Status) -> Act<i64> {
+    match answer {
+        Status::Ok => Ok(0),
+        other => status(other),
+    }
 }
 
 /// A decoded target or parameter reference.
@@ -423,6 +499,44 @@ impl Run<'_, '_, '_, '_> {
         }
     }
 
+    /// A property ID's name; an unknown ID is invalid.
+    fn property(&self, id: i32) -> Act<i32> {
+        match property_name(id) {
+            Some(_) => Ok(id),
+            None => invalid(format!("unknown property {id}")),
+        }
+    }
+
+    /// A cell on the map, from a cell, waypoint or object reference.
+    fn map_cell(&self, reference: i64) -> Act<(i16, i16)> {
+        let (x, y) = self.cell(reference)?;
+        let on_map = self
+            .sim
+            .resolved_terrain()
+            .is_some_and(|terrain| terrain.cell(x, y).is_some());
+        match (on_map, i16::try_from(x), i16::try_from(y)) {
+            (true, Ok(x), Ok(y)) => Ok((x, y)),
+            _ => status(Status::NotFound),
+        }
+    }
+
+    /// Runs `f` on the host the `set` and `modify` imports use, lent this
+    /// action's context. Neither draws from a stream nor queues an order.
+    fn host<R>(&mut self, f: impl FnOnce(&mut Host<'_, '_>) -> R) -> R {
+        let mut rng = SimRng::new(0);
+        let mut orders = Vec::new();
+        f(&mut Host {
+            sim: &mut *self.sim,
+            rules: self.ctx.rules,
+            overlay_registry: self.ctx.overlay_registry,
+            frame_effects: &mut *self.ctx.frame_effects,
+            rng: &mut rng,
+            source: self.ctx.source,
+            orders: &mut orders,
+            rules_ini: None,
+        })
+    }
+
     fn atomic(&mut self, kind: i32, target: i64) -> Act<i64> {
         match kind {
             ADD_MONEY => {
@@ -502,13 +616,371 @@ impl Run<'_, '_, '_, '_> {
                 };
                 Ok(0)
             }
+            SET_VAR => self.set_var(target),
             LOG => {
                 log::info!(target: "ext_module", "{}", self.ctx.text);
                 self.sim.ext_modules.log.push(self.ctx.text.to_owned());
                 Ok(0)
             }
+            SET_PROPERTY => {
+                let prop = self.property(self.params.id)?;
+                let value = self.params.value;
+                answer(self.host(|host| host.set(target, prop, value))?)
+            }
+            MODIFY => self.modify(target),
+            REMOVE_MODIFIERS => self.remove_modifiers(target),
+            HEAL => {
+                let id = self.object(target)?;
+                if self.params.value < 0 {
+                    return invalid(format!("negative Heal {}", self.params.value));
+                }
+                let health = self
+                    .sim
+                    .entities()
+                    .get(id)
+                    .map_or(0, |entity| entity.health.current());
+                let health = i64::from(health).saturating_add(self.params.value);
+                answer(self.host(|host| host.write_health(id, health)))
+            }
+            SET_MISSION => self.set_mission(target),
+            ADD_AMMO => {
+                let id = self.object(target)?;
+                let Some(ammo) = self.sim.entities().get(id).and_then(|e| e.ammo()) else {
+                    return status(Status::Refused);
+                };
+                let count = i64::from(ammo.current()).saturating_add(self.params.value);
+                answer(self.host(|host| host.write_ammo(id, count)))
+            }
+            ADD_EXPERIENCE => self.add_experience(target),
+            SPAWN_ANIM => self.spawn_anim(target),
+            DETONATE_WEAPON => self.detonate_weapon(target),
+            TELEPORT => self.teleport(target),
+            CLEAR_DISGUISE => {
+                let id = self.object(target)?;
+                let sim = &mut *self.sim;
+                let disguised = sim.substrate.entities.get(id).and_then(|entity| {
+                    let disguise = entity.seldom.disguise.as_ref()?;
+                    disguise.is_disguised().then_some(entity.category())
+                });
+                if let Some(category) = disguised {
+                    // A worn look ends: a new look for the atlas check.
+                    sim.substrate.entities.note_look(id);
+                    if let Some(disguise) = sim
+                        .substrate
+                        .entities
+                        .get_mut(id)
+                        .and_then(|entity| entity.seldom.disguise.as_mut())
+                    {
+                        disguise.clear(category);
+                    }
+                }
+                Ok(0)
+            }
+            CLEAR_MIND_CONTROL => {
+                let id = self.object(target)?;
+                let link = self
+                    .sim
+                    .entities()
+                    .get(id)
+                    .map(|entity| &entity.seldom.mind_control);
+                let controller = link.and_then(|link| link.controller());
+                if controller.is_none() {
+                    return match link.is_some_and(|link| link.permanent()) {
+                        true => status(Status::Refused),
+                        false => Ok(0),
+                    };
+                }
+                let freed = controller.is_some_and(|controller| {
+                    self.sim.free_unit(
+                        controller,
+                        id,
+                        self.ctx.rules,
+                        self.ctx.overlay_registry,
+                        self.ctx.frame_effects,
+                    )
+                });
+                if freed {
+                    Ok(0)
+                } else {
+                    status(Status::Refused)
+                }
+            }
+            CONVERT => {
+                let id = self.object(target)?;
+                if self.params.value2 != 0 {
+                    // Timed conversion (module residuals).
+                    return status(Status::Unsupported);
+                }
+                let object = techno_type(self.ctx.rules, self.params.id)?;
+                let destination = crate::rules::superweapon_type::TechnoTypeReference {
+                    category: object.category,
+                    id: object.id.clone(),
+                };
+                let converted = self.sim.convert_techno_type(
+                    id,
+                    &destination,
+                    self.ctx.rules,
+                    self.ctx.frame_effects,
+                );
+                if converted {
+                    Ok(0)
+                } else {
+                    status(Status::Refused)
+                }
+            }
+            SET_SCORE | ADD_SCORE => {
+                let owner = self.house(target)?;
+                let score = self.value_i32("score")?;
+                if let Some(house) = self.sim.houses.get_mut(&owner) {
+                    let economy = house.economy_mut();
+                    match kind {
+                        SET_SCORE => economy.set_score(score),
+                        _ => economy.add_score(score),
+                    }
+                }
+                Ok(0)
+            }
             _ if vera20k_wasm_ext::action_kind_name(kind).is_some() => status(Status::Unsupported),
             _ => invalid(format!("unknown action kind {kind}")),
+        }
+    }
+
+    /// Modify: `modify` with the action's operands (appendix 5.3).
+    fn modify(&mut self, target: i64) -> Act<i64> {
+        let prop = self.property(self.params.id)?;
+        let op = self.params.arg;
+        if !(0..=2).contains(&op) {
+            return invalid(format!("unknown ModifierOp {op}"));
+        }
+        let Ok(frames) = i32::try_from(self.params.value2) else {
+            return invalid(format!("{} modifier frames", self.params.value2));
+        };
+        let (value, source, group) = (self.params.value, self.params.other, self.params.arg2);
+        match self.host(|host| host.modify(target, prop, op, value, frames, source, group))? {
+            (handle, Status::Ok) => Ok(handle),
+            (_, other) => status(other),
+        }
+    }
+
+    /// RemoveModifiers: this origin's modifiers on the object in group
+    /// `arg2`, of property `id` unless it is −1. Houses take no modifiers.
+    fn remove_modifiers(&mut self, target: i64) -> Act<i64> {
+        let stat = match self.params.id {
+            -1 => None,
+            id => {
+                let name = property_name(self.property(id)?).unwrap_or_default();
+                match Stat::from_property(name) {
+                    Some(stat) => Some(stat),
+                    // A modifiable property no modifier is wired to holds none.
+                    None if super::property_id_range(super::MODIFIABLE).contains(&id) => {
+                        return Ok(0);
+                    }
+                    None => return status(Status::Refused),
+                }
+            }
+        };
+        let id = match decode(target)? {
+            Target::House(_) => return status(Status::Unsupported),
+            _ => self.object(target)?,
+        };
+        let sim = &mut *self.sim;
+        sim.ext_modules.modifiers.remove_group(
+            &mut sim.substrate.entities,
+            id,
+            self.ctx.source,
+            self.params.arg2,
+            stat,
+        );
+        Ok(0)
+    }
+
+    /// SetMission: `cell`, else `other`, is the mission's target or
+    /// destination; neither orders it untargeted.
+    fn set_mission(&mut self, target: i64) -> Act<i64> {
+        let id = self.object(target)?;
+        let token = if self.params.cell != 0 {
+            let (x, y) = self.cell(self.params.cell)?;
+            Some(TargetKind::Cell(x, y))
+        } else {
+            match decode(self.params.other)? {
+                Target::None => None,
+                Target::Object(other) => match self.sim.entities().get(other) {
+                    Some(_) => Some(TargetKind::Entity(other)),
+                    None => return status(Status::Gone),
+                },
+                other => return invalid(format!("{other:?} is not a mission target")),
+            }
+        };
+        let mission = i64::from(self.params.arg);
+        answer(self.host(|host| host.order_mission(id, mission, token))?)
+    }
+
+    /// AddExperience: `VeterancyClass::Add` (`0x0074FF50`) as a kill worth
+    /// `value` would add it, at the object's own Cost.
+    fn add_experience(&mut self, target: i64) -> Act<i64> {
+        let id = self.object(target)?;
+        let points = self.value_i32("AddExperience points")?;
+        if points < 0 {
+            return invalid(format!("negative experience {points}"));
+        }
+        let rules = self.ctx.rules;
+        let sim = &mut *self.sim;
+        let object = sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| sim.entity_object_type(entity, rules));
+        let Some(object) = object.filter(|object| object.trainable) else {
+            return status(Status::Refused);
+        };
+        let cost = rules.cost_of(object, None);
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.veterancy.award_kill(
+                cost,
+                points,
+                true,
+                rules.general.veteran_ratio,
+                rules.general.veteran_cap,
+            );
+        }
+        Ok(0)
+    }
+
+    /// SpawnAnim: stock action 41's owner at a cell.
+    fn spawn_anim(&mut self, target: i64) -> Act<i64> {
+        let cell = self.map_cell(target)?;
+        let rules = self.ctx.rules;
+        let index = self.params.id;
+        if rules.anim_type_runtime_key_by_index(index).is_none() {
+            return invalid(format!("no animation {index}"));
+        }
+        let house = match self.params.house {
+            0 => None,
+            house => Some(self.house(house)?),
+        };
+        if self
+            .sim
+            .trigger_play_anim_at_cell(rules, index, cell, house, self.ctx.frame_effects)
+        {
+            Ok(0)
+        } else {
+            status(Status::Refused)
+        }
+    }
+
+    /// DetonateWeapon: stock action 42's owner at a cell, crediting the
+    /// source.
+    fn detonate_weapon(&mut self, target: i64) -> Act<i64> {
+        let cell = self.map_cell(target)?;
+        let rules = self.ctx.rules;
+        let Some(weapon) = u32::try_from(self.params.id)
+            .ok()
+            .and_then(|id| rules.weapon_at(id))
+        else {
+            return invalid(format!("no weapon {}", self.params.id));
+        };
+        let source = self.source()?;
+        let source_house = source.and_then(|s| self.sim.entities().get(s).map(|e| e.owner()));
+        let changed = self.sim.trigger_explosion_at_cell(
+            rules,
+            weapon,
+            cell,
+            (source.unwrap_or(RAD_NO_ATTACKER), source_house),
+            self.ctx.overlay_registry,
+            self.ctx.frame_effects,
+        );
+        match changed {
+            Some(changed) => {
+                if changed {
+                    self.sim.publish_trigger_effects([
+                        crate::sim::trigger_runtime::TriggerEffect::BridgeStateChanged,
+                    ]);
+                }
+                Ok(0)
+            }
+            None => status(Status::Refused),
+        }
+    }
+
+    /// Teleport: a Chrono warp of a ground Unit or Infantry to `cell`.
+    /// `Blocked` (`arg`) 0 `Nearby` lets the Teleport's own blocked landing
+    /// choose a nearby cell; 1 `Fail` refuses a cell it cannot enter.
+    fn teleport(&mut self, target: i64) -> Act<i64> {
+        use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
+        let id = self.object(target)?;
+        let cell = self.map_cell(self.params.cell)?;
+        let fail = match self.params.arg {
+            0 => false,
+            1 => true,
+            arg => return invalid(format!("unknown Blocked {arg}")),
+        };
+        let rules = self.ctx.rules;
+        let infantry = match self.sim.entities().get(id) {
+            Some(entity)
+                if entity.lifecycle.object_alive()
+                    && !entity.lifecycle.in_limbo()
+                    && entity.passenger_role().transporter().is_none() =>
+            {
+                match entity.category() {
+                    EntityCategory::Infantry => true,
+                    EntityCategory::Unit => false,
+                    _ => return status(Status::Refused),
+                }
+            }
+            _ => return status(Status::Refused),
+        };
+        if fail {
+            let entry = self.sim.mover_can_enter(
+                id,
+                cell,
+                InfantryEntryArgs::REPAIR,
+                EntryQueryMode::CheckLocomotor,
+                rules,
+            );
+            if entry != Ok(0) {
+                return status(Status::Refused);
+            }
+        }
+        let warped = self
+            .sim
+            .chrono_warp_coord(cell, infantry, rules)
+            .and_then(|coord| {
+                self.sim.foot_chrono_warp_to(
+                    id,
+                    coord,
+                    rules,
+                    self.ctx.overlay_registry,
+                    self.ctx.frame_effects,
+                )
+            });
+        match warped {
+            Ok(true) => Ok(0),
+            Ok(false) => status(Status::Refused),
+            Err(why) => {
+                log::info!(target: "ext_module", "Teleport of {id} refused: {why}");
+                status(Status::Refused)
+            }
+        }
+    }
+
+    /// SetVar: the variable's declared scope picks the holder (appendix 5.3).
+    fn set_var(&mut self, target: i64) -> Act<i64> {
+        let var = self.params.id;
+        let scope = match self.sim.ext_modules.vars.scope(var) {
+            // Red Alert 2 variables are global.
+            None | Some(VarScope::Global) => 0,
+            Some(VarScope::House) => {
+                let house = self.house(target)?;
+                match self.sim.houses.index_of(house) {
+                    Some(index) => super::house_ref(index),
+                    None => return status(Status::Gone),
+                }
+            }
+            Some(VarScope::Object) => target,
+        };
+        match self.sim.write_module_var(scope, var, self.params.value)? {
+            Status::Ok => Ok(0),
+            other => status(other),
         }
     }
 
@@ -538,7 +1010,7 @@ impl Run<'_, '_, '_, '_> {
         let rules = self.ctx.rules;
         let Some(warhead) = u32::try_from(self.params.id)
             .ok()
-            .and_then(|id| rules.warhead_by_id(id))
+            .and_then(|id| rules.warhead_at(id))
         else {
             return invalid(format!("no warhead {}", self.params.id));
         };
@@ -684,7 +1156,7 @@ impl Run<'_, '_, '_, '_> {
         let rules = self.ctx.rules;
         let Some(warhead) = u32::try_from(self.params.id)
             .ok()
-            .and_then(|id| rules.warhead_by_id(id))
+            .and_then(|id| rules.warhead_at(id))
         else {
             return invalid(format!("no warhead {}", self.params.id));
         };
