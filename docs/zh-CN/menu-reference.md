@@ -103,7 +103,7 @@ lang: zh-CN
 
 | 分页 | 设置项【存储】 |
 |---|---|
-| **显示** | 缩放【[VERA] Zoom】、显示器【[VERA] Display】、队伍颜色强度 1–10【[VERA] HouseColorStrength】*(对局中锁定)*、色觉辅助【[VERA] ColorVisionMode】、视觉细节（低/高）【[Options] DetailLevel】、全屏【[VERA] FullScreen】、垂直同步【[VERA] VSync】*(网页版没有)*、图形 API【[VERA] GraphicsAPI】*(仅 Windows，下次启动生效)*、原版 4:3 比例【[VERA] OriginalShape】、性能统计 *(不保存)* |
+| **显示** | 缩放【[VERA] Zoom】、显示器【[VERA] Display】、图形 API【[VERA] GraphicsAPI】*(仅 Windows，下次启动生效)*、色觉辅助【[VERA] ColorVisionMode】、队伍颜色强度 1–10【[VERA] HouseColorStrength】*(对局中锁定)*、视觉细节（低/高）【[Options] DetailLevel】、全屏【[VERA] FullScreen】、垂直同步【[VERA] VSync】*(网页版没有)*、原版 4:3 比例【[VERA] OriginalShape】、性能统计 *(不保存)* |
 | **游戏** | 难度【[Options] Difficulty】*(对局中锁定)*、Shift 点击批量排队【[VERA] ShiftQueue】、Building Production Queue（建筑生产队列）【[VERA] BuildingProductionQueue】*(下一局生效)*、自动维修【[VERA] AutoRepair】、Ares（自动/开/关）【[VERA] Ares】*(下次启动生效)*、自定义结局横幅 / 结算画面 / 结局动画【[VERA] CustomEndGameBanner / Score / Movie】、指挥官片段【[VERA] CommanderFeedback】 |
 | **界面** | 侧边栏大小（标准/大/特大）【[VERA] Sidebar】、建造列表列数 2–5【[VERA] SidebarColumns】、高清雷达【[VERA] HdRadar】、平滑侧边栏【[VERA] SmoothSidebar】、生命条（原版/所有单位/所有未满血单位）【[VERA] HealthBars】、工具提示【[Options] ToolTips】、目标线【[Options] UnitActionLines】、显示隐藏物体【[Options] ShowHidden】、精简超级武器计时器【[VERA] CompactSuperTimers】、按队伍合并超级武器计时器【[VERA] GroupedSuperTimers】、详细 EVA 文字【[VERA] DetailedEvaText】、Convenience Help（便利提示）【[VERA] ConvenienceHelp】；按钮：编辑布局 *(只在对局中可用)* |
 | **音频** | 音乐音量【[Audio] ScoreVolume】、音效音量【[Audio] SoundVolume】、语音音量【[Audio] VoiceVolume】 |

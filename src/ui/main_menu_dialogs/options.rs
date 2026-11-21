@@ -886,11 +886,17 @@ impl LauncherTrackbarId {
     }
 
     /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
-    /// plaque off (`0x4AC` with 0).
+    /// plaque off (`0x4AC` with 0). VERA's Team Color Strength has none
+    /// either, so it matches Visual Details beside it and prints its level
+    /// where Visual Details prints its step.
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Detail | Self::Difficulty | Self::Scroll | Self::GameSpeed => 0,
-            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
+            Self::Detail
+            | Self::Difficulty
+            | Self::Scroll
+            | Self::GameSpeed
+            | Self::HouseColorStrength => 0,
+            Self::Score | Self::Sound | Self::Voice => 50,
         }
     }
 
@@ -1548,14 +1554,9 @@ impl OptionsDialogState {
         self.values.house_color_position + crate::rules::house_colors::STRENGTH_MIN
     }
 
-    /// What a plaque trackbar's plaque reads. Retail's sliders show their
-    /// position; VERA's strength shows the level that position stands for, so
-    /// the player never sees a 0 for gamemd's own colours.
+    /// What a plaque trackbar's plaque reads: its position.
     pub(crate) fn trackbar_plaque_text(&self, id: LauncherTrackbarId) -> String {
-        match id {
-            LauncherTrackbarId::HouseColorStrength => self.house_color_strength().to_string(),
-            _ => self.trackbar_position(id).to_string(),
-        }
+        self.trackbar_position(id).to_string()
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` changes
@@ -2032,15 +2033,16 @@ impl Category {
         use LauncherComboId as List;
         use LauncherTrackbarId as Slider;
         match self {
-            // The sliders stand above VSync, which the browser build lacks, so
+            // One group each: the lists, the sliders, then the boxes. The
+            // sliders stand above VSync, which the browser build lacks, so
             // both builds put them in the same place: at 640x480's 0.8 fit a
             // slider's place decides whether it keeps its frame art (the note
             // on the row pitches in `shell`).
             Self::Display if !HAS_VSYNC => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
-                Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::HouseColorStrength),
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::OriginalShape),
@@ -2049,24 +2051,24 @@ impl Category {
             Self::Display if !HAS_GRAPHICS_API => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
-                Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::HouseColorStrength),
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
-            // Windows adds the Graphics API list with the other two lists
-            // about where and how the game draws, above the sliders; the
-            // boxes stay one group. `every_page_slider_lands_on_an_authored_
-            // trackbar_frame` holds for this page with the flag forced on.
+            // Windows adds the Graphics API list after Display, with the
+            // other lists about where and how the game draws.
+            // `every_page_slider_lands_on_an_authored_trackbar_frame` holds
+            // for this page with the flag forced on.
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
                 Setting::List(List::GraphicsApi),
-                Setting::Slider(Slider::HouseColorStrength),
                 Setting::List(List::ColorVision),
+                Setting::Slider(Slider::HouseColorStrength),
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
