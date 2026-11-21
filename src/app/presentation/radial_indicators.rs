@@ -294,7 +294,6 @@ pub(crate) fn build(
 /// `BuildingClass::DrawRadialIndicator @ 0x00456750(rays)`: the building's
 /// sensor range ring, or its concentric pair. `rays` reaches only the plain
 /// ring (`0x00456959`); the concentric rings always pass 0.
-#[allow(clippy::too_many_arguments)]
 fn push_building_indicator(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,
@@ -368,7 +367,6 @@ fn push_building_indicator(
 
 /// The placing building's range ring and the rings of its nearest same-type
 /// buildings, `0x006DBEA3..0x006DC1A1`.
-#[allow(clippy::too_many_arguments)]
 fn push_placement_rings(
     draws: &mut Vec<RadialIndicatorDraw>,
     sim: &Simulation,

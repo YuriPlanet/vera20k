@@ -290,7 +290,6 @@ impl Simulation {
     /// strength 1 vs Size 1.5 refuses; strength 2 vs 1.5 accepts; equality
     /// and unordered comparisons refuse. The `ReadDouble` owner preserves
     /// Size, and this arm uses the shared masked x87 compare.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn locomotor_detonation(
         &mut self,
         owner: u64,
@@ -390,7 +389,6 @@ impl Simulation {
     ///    (`0x00710386`) and, for a computer house that is not
     ///    `MultiplayPassive=` and a type that is not a gatherer, Hunt
     ///    (`0x007103D5`).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn imbue_locomotor(
         &mut self,
         firer: u64,

@@ -205,7 +205,7 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
 
 #[test]
 #[ignore = "slow; requires retail assets, an X11 display and GPU for full campaign loading"]
-#[allow(
+#[expect(
     deprecated,
     reason = "test creates an X11 loading surface without an app event loop"
 )]

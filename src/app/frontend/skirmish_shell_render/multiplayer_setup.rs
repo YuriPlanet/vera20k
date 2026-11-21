@@ -1189,7 +1189,6 @@ const ROSTER_OWN_ROW_RGB: [f32; 3] = [90.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0];
 /// One cell of VERA's roster: no face, frame or arrow, only its value in
 /// the roster's small text, or a colour's swatch. A cell whose list opens
 /// lights white under the pointer and while its list is open.
-#[allow(clippy::too_many_arguments)]
 fn push_roster_cell(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,

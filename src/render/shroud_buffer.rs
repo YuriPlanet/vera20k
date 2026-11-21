@@ -587,7 +587,6 @@ impl Compositor {
     /// cells cannot meet draws all its copies, then all its blends; that is
     /// the whole list when the frames tile, else one diagonal's run of
     /// canvases that lie apart.
-    #[allow(clippy::too_many_arguments)]
     fn encode_cells(
         &mut self,
         device: &wgpu::Device,
@@ -717,7 +716,6 @@ impl Compositor {
     /// the plane through its own scratch result and copies it back. Glows in
     /// one group never overlap, so they share a pass; an overlap starts the
     /// next group, which reads the earlier group's copies.
-    #[allow(clippy::too_many_arguments)]
     fn encode_glows(
         &mut self,
         device: &wgpu::Device,
@@ -1238,7 +1236,6 @@ impl ShroudBuffer {
     /// Native per-cell ordering is retained. A new fog generation that
     /// selects the same frames for every cell in view keeps the plane as
     /// drawn. Returns whether the plane was recomposed.
-    #[allow(clippy::too_many_arguments)]
     pub fn rebuild_if_needed(
         &mut self,
         device: &wgpu::Device,
@@ -1585,7 +1582,6 @@ impl ShroudBuffer {
 
     /// Rebuild through a submission of its own, as a frame would.
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild_submitted(
         &mut self,
         device: &wgpu::Device,

@@ -793,7 +793,6 @@ pub(crate) fn apply_area_damage_in_run(
 /// `DamageAreaTarget` (`WarheadType/Body.cpp:137..146`): the target the
 /// per-target pass of a warhead without `CellSpread` visits. Stock never
 /// reads it.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_area_damage_in_run_with_target(
     world: &mut Simulation,
     run: &mut ReceiverRun,

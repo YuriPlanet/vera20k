@@ -46,7 +46,6 @@ impl Simulation {
     /// and its timer restarts at the result, undoing the type modifier the
     /// Techno curtain applied again. On a curtain, a positive result
     /// restarts the timer and IronTintStage 4; anything else stops it.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_ares_iron_curtain_detonation(
         &mut self,
         run: &mut ReceiverRun<'_>,

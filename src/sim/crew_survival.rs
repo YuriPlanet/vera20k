@@ -626,7 +626,6 @@ impl Simulation {
     /// SpawnSurvivors UnInits it (`0x00442FE5`, vt+0xF8), Mission_Selling
     /// deletes it (`0x0044A573`, vt+0x20, whose destructor also leaves its
     /// team), and VERA UnInits both.
-    #[allow(clippy::too_many_arguments)]
     fn eject_absorbed_passenger(
         &mut self,
         rules: &RuleSet,

@@ -409,7 +409,6 @@ impl ClientSession {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn encode_uplink(
         &mut self,
         flags: u8,

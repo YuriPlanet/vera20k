@@ -579,7 +579,6 @@ impl Simulation {
 
     /// [`Self::make_ally`], within a Paranoid call walking only `paranoid`'s
     /// maps that may change.
-    #[allow(clippy::too_many_arguments)]
     fn make_ally_with(
         &mut self,
         owner: InternedId,
@@ -735,7 +734,6 @@ impl Simulation {
 
     /// [`Self::make_enemy`], within a Paranoid call walking only `paranoid`'s
     /// maps that may change.
-    #[allow(clippy::too_many_arguments)]
     fn make_enemy_with(
         &mut self,
         owner: InternedId,

@@ -42,7 +42,6 @@ use crate::sim::world::{FrameEffects, Simulation};
 ///   ([`Simulation::emp_cannon_detonate_self`]; nothing without a weapon).
 ///
 /// Always activates.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,

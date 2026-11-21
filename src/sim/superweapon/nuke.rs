@@ -534,7 +534,6 @@ pub(super) fn ares_launch(
 
 /// Step 2 of [`ares_launch`]: CreateBullet (`0x0046B050`) over the
 /// payload's BulletType, then SetWeaponType, PsiWarn and MoveTo.
-#[allow(clippy::too_many_arguments)]
 fn drop_payload(
     sim: &mut Simulation,
     rules: &RuleSet,

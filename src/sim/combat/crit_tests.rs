@@ -22,7 +22,6 @@ fn scene(
     scene_with_firer(warheads, wh_ini, target_ini, sections, "", target_house)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn scene_with_firer(
     warheads: &str,
     wh_ini: &str,

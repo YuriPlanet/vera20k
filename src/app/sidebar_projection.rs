@@ -270,7 +270,6 @@ impl PreparedSidebarOrder {
 impl SidebarProjectionState {
     /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
     /// while the frame `inputs` came from and the owner hold.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn cameo_candidates(
         &mut self,
         sim: &Simulation,

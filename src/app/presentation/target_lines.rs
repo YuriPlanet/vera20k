@@ -112,7 +112,6 @@ impl TargetLineState {
 
 /// Build selected unit action-line strokes from live simulation state.
 /// The psychic detection line's dashed stroke carries its A gate for the GPU.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_target_line_strokes(
     line_state: &TargetLineState,
     planning_active: bool,

@@ -207,7 +207,6 @@ pub(super) fn ares_deactivated_selection_click(
 /// (`Planning__AllowsAction 0x00637DB0`, called at `0x0073FEA0`,
 /// `0x0051EC1B`, `0x0051ECA4`); a building's or aircraft's is unaffected.
 /// NoDeploy orders nothing.
-#[allow(clippy::too_many_arguments)]
 pub(in crate::app::input) fn self_click_command(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -244,7 +243,6 @@ pub(in crate::app::input) fn self_click_command(
 /// ([`self_deploy_is_blocked`], [`is_simple_deploy_unit`]). Cursor and click
 /// share it. The release dispatches NoDeploy, so a click on it orders and
 /// selects nothing (`0x004ABE88`).
-#[allow(clippy::too_many_arguments)]
 pub(in crate::app::input) fn self_answers_no_deploy(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

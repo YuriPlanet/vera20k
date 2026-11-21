@@ -645,7 +645,6 @@ pub(super) fn decode_watch_grant(
 
 /// A spawn.ini `[Relay]` section carries the same `game_started` grant fields
 /// (docs/spawn.md); admit it through the lobby's own decoder.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn decode_external_relay_grant(
     address: SocketAddrV4,
     ticket: String,

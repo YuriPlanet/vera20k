@@ -758,7 +758,6 @@ fn drop_cell(
 /// The units to tell aboard this look: the owner's own infantry and vehicles
 /// at rest inside the pick-up circle, nearest the transport first, while the
 /// planned hold has room and the engine's admission answers yes.
-#[allow(clippy::too_many_arguments)]
 fn board_orders(
     sim: &Simulation,
     control: &ControlProjection<'_>,

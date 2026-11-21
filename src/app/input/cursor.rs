@@ -776,7 +776,6 @@ fn unforced_cell_attack_feedback(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn empty_cell_cursor(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
@@ -867,7 +866,6 @@ fn move_action_feedback(
 /// live gamemd session always has a map and a selection here.
 ///
 /// [`Simulation::cell_move_action`]: crate::sim::world::Simulation::cell_move_action
-#[allow(clippy::too_many_arguments)]
 fn what_action_on_cell(
     sim: &crate::sim::world::Simulation,
     viewer: Option<crate::sim::intern::InternedId>,
@@ -1524,7 +1522,6 @@ fn no_selection_cursor(
 /// `0x51E710`) set InfantryHeal (0x5A) over an Organic or Infantry target and
 /// UnitRepair (0x5B) otherwise: a Unit's GRepair (0x1D) takes the override, an
 /// Infantryman's Heal (0x1B) shows it.
-#[allow(clippy::too_many_arguments)]
 fn unit_repair_feedback(
     sim: &crate::sim::world::Simulation,
     selected: &[u64],

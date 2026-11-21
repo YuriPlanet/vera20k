@@ -1448,7 +1448,6 @@ fn factory_unload_art<'a>(
 /// `ConditionYellow=`, else 0, at the body's point. Like the bib it is a
 /// 0x6E00 draw with gradient entry 0 and the colour word, but its a7 is
 /// `-AdjustForZ(Z)`, and DrawSHP adds its embedded shadow.
-#[allow(clippy::too_many_arguments)]
 fn emit_factory_under_door(
     pieces: &mut Vec<PlannedBuildingPieceInstance>,
     atlas: &crate::render::sprite_atlas::SpriteAtlas,

@@ -1132,7 +1132,6 @@ impl Simulation {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn object_move_click_with(
         &self,
         control: &ControlProjection<'_>,

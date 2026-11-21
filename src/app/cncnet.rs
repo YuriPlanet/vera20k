@@ -19,7 +19,10 @@ pub(crate) enum ExternalMatchResult {
     Won,
     Lost,
     /// Reserved by the contract; no current end-of-match owner decides it.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "docs/spawn.md reserves exit code 12 for a draw")
+    )]
     Draw,
     Disconnected,
     Quit,
@@ -84,7 +87,10 @@ pub(crate) struct ExternalLaunchProgress {
     /// Scripted actions (docs/spawn.md "Scripted leave and resign") waiting
     /// to run, and which desktop test switches already fired.
     pub(crate) pending_actions: Vec<SpawnAction>,
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+    #[cfg_attr(
+        all(target_arch = "wasm32", target_os = "unknown"),
+        expect(dead_code, reason = "the browser build runs no scripted actions")
+    )]
     pub(crate) actions_fired: SpawnActionsFired,
 }
 
@@ -115,7 +121,10 @@ pub(crate) struct SpawnActionTimers {
     resign: Option<std::time::Duration>,
 }
 
-#[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    expect(dead_code, reason = "the browser build runs no scripted actions")
+)]
 impl SpawnActionTimers {
     /// Unset or unparsable values leave a switch off.
     pub(crate) fn from_values(leave: Option<&str>, resign: Option<&str>) -> Self {

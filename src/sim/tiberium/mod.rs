@@ -116,7 +116,10 @@ pub struct TiberiumPlacementObjectContext<'a> {
     /// `0x005FD04F` for TIB01). Production Marks read the simulation's own
     /// planes; only the test harness that builds a world from this context
     /// copies these.
-    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
+    #[cfg_attr(
+        not(any(test, feature = "test-support")),
+        expect(dead_code, reason = "only the test harness copies it")
+    )]
     raw_occupation: &'a RawCellOccupationGrid,
     rules: &'a RuleSet,
     interner: &'a StringInterner,

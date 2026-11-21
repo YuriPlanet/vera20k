@@ -106,7 +106,7 @@ fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Optio
 pub(crate) struct SelectedAnim {
     pub name: InternedId,
     /// Only the Phobos Bullet tail reads this.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    #[cfg_attr(not(feature = "phobos"), expect(dead_code, reason = "the Phobos tail reads it"))]
     pub splashed: bool,
 }
 

@@ -701,7 +701,6 @@ struct AresChronoWarp {
 ///   EmptyBunker `0x004595C0`), sends OVER_OUT to each contact, has its
 ///   passengers killed under `KillCargo` and starts its chronoshift
 ///   ([`ares_begin_building_chronoshift`]), joining `buildings`.
-#[allow(clippy::too_many_arguments)]
 fn ares_chronoport(
     sim: &mut Simulation,
     rules: &RuleSet,

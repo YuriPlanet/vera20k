@@ -518,7 +518,6 @@ pub(crate) fn all_to_hunt(
 /// VERA `[General] AINearestEnemy=` (`nearest_enemy`, off by default): among
 /// peers of equal anger the one whose base centre is nearer wins, instead of
 /// the earlier house.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAlliances,

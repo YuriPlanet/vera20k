@@ -954,7 +954,6 @@ impl Simulation {
     /// gate65E554: only OUTSIDE Size candidates reach class admission. Original
     /// execution on an already placed Unit pins all8 XY candidates and scalar
     /// cleanup; that control is not a fresh-reinforcement refusal claim.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn place_reinforcement_members(
         &mut self,
         members: &[u64],
@@ -1122,7 +1121,6 @@ impl Simulation {
     /// the raw cell's centre at Z 0. The Tunnel, idle under the ground, leaves
     /// the cell (Mark(UP)) and digs out there. A refused Unlimbo takes the
     /// Normal arm's retry (65E506).
-    #[allow(clippy::too_many_arguments)]
     fn place_tunnel_reinforcement(
         &mut self,
         member: u64,
