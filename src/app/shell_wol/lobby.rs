@@ -937,7 +937,7 @@ fn show_wait(state: &mut AppState, key: &str) {
         Some(open) => open.shell_box.body = fresh.shell_box.body,
         None => lobby.wait = Some(fresh),
     }
-    lobby.ui.cancel_pointer();
+    lobby.ui.release_buttons();
     state
         .frontend
         .shell_controller
@@ -980,7 +980,7 @@ fn put_box(state: &mut AppState, message: ShellBox, then: BoxThen) {
         return;
     };
     lobby.message = Some((message, then));
-    lobby.ui.cancel_pointer();
+    lobby.ui.release_buttons();
     state.frontend.shell_controller.reset_to(dialog, false);
 }
 
@@ -4338,6 +4338,7 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
             WolLobbyEffect::Cue(cue) => App::play_page_cue(state, cue),
             WolLobbyEffect::Card(name) => super::player_card::opened(state, &name),
             WolLobbyEffect::CardButton(id) => super::player_card::button(state, id),
+            WolLobbyEffect::CardCountry(row) => super::player_card::country_picked(state, row),
             WolLobbyEffect::Action(action) => dispatch(state, action),
         }
     }
@@ -4402,13 +4403,7 @@ pub(crate) fn password_layout(
 /// The pointer moved, pressed or released over the popup, else the open
 /// player card, else `0x113`'s children.
 fn pointer(state: &mut AppState, press: Option<bool>) {
-    let popup = lobby(state).is_some_and(|lobby| lobby.ui.popup.is_some());
-    let card = !popup
-        && match press {
-            None => super::player_card::cursor_moved(state),
-            Some(pressed) => super::player_card::mouse(state, pressed),
-        };
-    if card {
+    if press.is_some_and(|pressed| super::player_card::mouse(state, pressed)) {
         return;
     }
     sync(state);

@@ -1772,7 +1772,7 @@ impl ApplicationHandler for App {
                         .as_mut()
                         .and_then(|visit| visit.lobby_mut())
                     {
-                        lobby.ui.cancel_pointer();
+                        lobby.ui.release_buttons();
                     }
                     if state.frontend.multiplayer_setup.is_some() {
                         crate::app::input::multiplayer_setup::drop_pointer(state, false);

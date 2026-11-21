@@ -8,19 +8,13 @@
 //! paint their caption only; their owner-draw face is not traced.
 
 use super::chrome::*;
-use super::controls::{dropdown_scroll_part, push_popup_instances};
-use super::gui_paint::{GuiStyle, HostRows};
-use super::text::rect_to_text_rect;
-use super::{
-    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
-    SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
-    SHELL_LABEL_TEXT_RGB,
-};
+use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
+use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_lobby::*;
@@ -106,92 +100,27 @@ pub(crate) fn paint_wol_lobby_children(
     let font = &state.renderer.bit_font;
     let scale = layout.page.scale;
     let modern = ui.is_modern();
-    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(rect),
-            rgb,
-            align,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        )
-    };
-    // A cell `x` base columns into a row, `w` wide (to the row's end when 0).
-    let cell = |row: RectPx, x: i32, w: i32| {
-        scale.derive_rect(row, |row| {
-            let w = if w > 0 { w } else { row.w - x - 2 };
-            RectPx::new(row.x + x, row.y, w, row.h)
-        })
-    };
     let rect_of = |id| layout.control_rect(id).unwrap_or_default();
-    for (id, key) in LABELS {
-        paint.texts.push(text(
-            &state.csf_text(key),
-            rect_of(id),
-            ShellAlign::NONE,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
-    if let Some(rect) = layout.control_rect(OBSERVER_CAPTION) {
-        paint.texts.push(text(
-            &state.csf_text("GUI:Observe"),
-            rect,
-            ShellAlign::H_RIGHT,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
-
-    // The image buttons' faces and the text sort buttons' captions.
-    for (id, rect) in layout
-        .sort_buttons()
-        .chain([(REFRESH, rect_of(REFRESH)), (EMOTE, rect_of(EMOTE))])
-    {
-        let pressed = ui.pressed(id);
-        match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
-            Some((_, released_face, pressed_face)) => {
-                if let Some(art) = art {
-                    let face = if pressed { pressed_face } else { released_face };
-                    if let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) {
-                        let (w, h) = entry.native_size();
-                        let base = scale.base_rect(rect);
-                        let [x, y] = scale
-                            .scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
-                        shell_paint::push_entry_grown(
-                            &mut paint.icons,
-                            *entry,
-                            x,
-                            y,
-                            scale,
-                            SHELL_CONTROL_DEPTH - 0.00003,
-                        );
-                    }
-                }
-            }
-            None => {
-                if let Some((_, key)) = SORT_BUTTONS.iter().find(|(known, _)| *known == id) {
-                    let caption = if modern && matches!(id, SORT_ALPHA | PLAYER_SORT_ALPHA) {
-                        crate::i18n::tr("VERA:SortName")
-                    } else {
-                        state.csf_text(key)
-                    };
-                    paint.texts.push(text(
-                        &caption,
-                        rect,
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                        SHELL_LABEL_TEXT_RGB,
-                    ));
-                }
-            }
+    // The image buttons' faces.
+    for (id, released, pressed) in IMAGE_BUTTONS {
+        let face = if ui.pressed(id) { pressed } else { released };
+        let (Some(art), Some(rect)) = (art, layout.control_rect(id)) else {
+            continue;
+        };
+        if let Some((_, entry)) = art.icons.iter().find(|(name, _)| *name == face) {
+            let (w, h) = entry.native_size();
+            let base = scale.base_rect(rect);
+            let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
+            let depth = SHELL_CONTROL_DEPTH - 0.00003;
+            shell_paint::push_entry_grown(&mut paint.icons, *entry, x, y, scale, depth);
         }
     }
 
     // The observer box, the chat NewEdit (its caret on the page's blink,
     // under the popups too) and the owner-draw lists from the page's tree:
     // the channel and chat rows are the lists' own, the game and user rows
-    // paint their cells below. The transcript and the multi-select user
-    // list fill no selected row.
+    // their cells. The transcript and the multi-select user list fill no
+    // selected row; the user list fills each of its selected rows.
     let rows_of = |id: i32| -> Option<HostRows> {
         Some(match u16::try_from(id).ok()? {
             LOBBIES => (ui.lobby_rows.iter())
@@ -200,22 +129,53 @@ pub(crate) fn paint_wol_lobby_children(
             CHAT_LOG => (ui.chat.lines.iter())
                 .map(|line| (String::from_utf16_lossy(&line.text), line.color))
                 .collect(),
-            _ => Vec::new(),
+            _ => return None,
         })
+    };
+    // The modern list centres a ping under its Ping header, in the row's
+    // base pixels.
+    let ping_x = layout.control_rect(SORT_PING).map(|header| {
+        let games = ShellListGeometry::new(rect_of(GAMES), 0, 0, ListMetrics::scaled(scale));
+        (
+            scale.base_rect(header).x - scale.base_rect(games.row(0)).x,
+            scale.base_rect(header).w,
+        )
+    });
+    let cells_of = |id: i32| match u16::try_from(id).ok()? {
+        GAMES => Some(game_cells(ui, font, ping_x)),
+        PLAYERS => Some(player_cells(ui)),
+        _ => None,
+    };
+    // The headings, the Observe caption and the text sort buttons'
+    // captions; the modern lists sort by name.
+    let text_of = |id: i32| {
+        let name = modern && [SORT_ALPHA, PLAYER_SORT_ALPHA].map(i32::from).contains(&id);
+        name.then(|| crate::i18n::tr("VERA:SortName"))
     };
     let caret_of = |_| ui.caret_visible();
     let style = GuiStyle {
+        text_of: Some(&text_of),
+        buttons: ButtonArt::Caption,
         rows_of: Some(&rows_of),
+        cells_of: Some(&cells_of),
+        art,
         caret_of: Some(&caret_of),
         control_lists: true,
         ..GuiStyle::default()
     };
-    for node in [OBSERVER_TOGGLE, CHAT, LOBBIES, GAMES, PLAYERS, CHAT_LOG]
+    let captions = LABELS
+        .map(|(id, _)| id)
         .into_iter()
+        .chain([OBSERVER_CAPTION]);
+    let lists = [OBSERVER_TOGGLE, CHAT, LOBBIES, GAMES, PLAYERS, CHAT_LOG];
+    let texts = SORT_BUTTONS.iter().map(|(id, _)| *id);
+    for node in (captions.chain(texts).chain(lists))
+        .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id))
         .filter_map(|id| ui.node(id))
     {
         let widget = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
         paint.controls.extend(widget.controls);
+        paint.icons.extend(widget.icons);
         paint.texts.extend(widget.texts);
     }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
@@ -227,154 +187,119 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
-    // The cells sit on the rows the lists show.
-    let list = |id: u16, count: usize| {
-        let top = ui.list_view(id).map_or(0, |view| view.top);
-        let metrics = ListMetrics::scaled(scale);
-        (
-            ShellListGeometry::new(rect_of(id), count, top, metrics),
-            top,
-        )
-    };
-    let (games, game_top) = list(GAMES, ui.game_rows.len());
-    let (players, player_top) = list(PLAYERS, ui.player_rows.len());
-    // LBS_MULTIPLESEL: every selected user row is filled.
-    for row in &ui.selected_players {
-        if let Some(visible) = row.checked_sub(player_top)
-            && visible < players.visible_rows
-        {
-            push_solid_rect(
-                &mut paint.controls,
-                atlas,
-                players.row(visible),
-                OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                SHELL_CONTROL_DEPTH - 0.00001,
-            );
-        }
-    }
-
-    let ping_header = layout.control_rect(SORT_PING);
-    let (texts, icons) = (&mut paint.texts, &mut paint.icons);
-    let mut put = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
-        texts.push(text(value, rect, align, rgb))
-    };
-    let mut icon = |file: &str, rect: RectPx, x: i32| {
-        if let Some(art) = art {
-            push_icon(icons, art, file, rect, x, scale);
-        }
-    };
-    for (visible, row) in (ui.game_rows.iter().skip(game_top))
-        .take(games.visible_rows)
-        .enumerate()
-    {
-        let rect = games.row(visible);
-        let rgb = if row.greyed {
-            GREYED_RGB
-        } else {
-            SHELL_LABEL_TEXT_RGB
-        };
-        // The modern list keeps one retail icon, a password game's lock, in
-        // the first icon column; that row's name starts at the next one. A
-        // tag ends the name cell against the Ping column, and the name stops
-        // a gap before it.
-        let name_x = if row.keyed {
-            GAME_PASSWORD_X
-        } else {
-            GAME_TYPE_X
-        };
-        let name_end = GAME_PING_X - 2;
-        let tag = row.tag.as_deref().filter(|_| modern);
-        let tag_w = tag.map_or(0, |tag| {
-            (font.text_width(tag) as i32).min(name_end - name_x)
-        });
-        let name_w = match tag {
-            Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
-            None => name_end - name_x,
-        };
-        let name = match modern {
-            true => cell(rect, name_x, name_w.max(1)),
-            false => cell(rect, GAME_NAME_X, GAME_NAME_W),
-        };
-        put(&row.text, name, ShellAlign::V_CENTER, rgb);
-        if let Some(tag) = tag {
-            let at = cell(rect, name_end - tag_w, tag_w.max(1));
-            put(tag, at, ShellAlign::H_RIGHT | ShellAlign::V_CENTER, rgb);
-        }
-        // A -1 ping is the text "???"; any other is an integer cell. The
-        // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption. A match to
-        // watch has no ping.
-        let ping = match row.ping {
-            -1 => "???".to_owned(),
-            ping => ping.to_string(),
-        };
-        let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
-            Some(header) => (
-                RectPx::new(header.x, rect.y, header.w, rect.h),
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            ),
-            None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
-        };
-        if !row.watch {
-            put(&ping, ping_rect, ping_align, rgb);
-        }
-        if modern {
-            if row.keyed {
-                icon("wolpriv.pcx", rect, GAME_TYPE_X);
-            }
-            continue;
-        }
-        icon(row.kind.file(), rect, GAME_TYPE_X);
-        if row.keyed {
-            icon("wolpriv.pcx", rect, GAME_PASSWORD_X);
-        }
-        if let Some(file) = row.limit_icon {
-            icon(file, rect, GAME_LIMIT_X);
-        }
-    }
-    let label = SHELL_LABEL_TEXT_RGB;
-    for (visible, row) in (ui.player_rows.iter().skip(player_top))
-        .take(players.visible_rows)
-        .enumerate()
-    {
-        let rect = players.row(visible);
-        // VERA: the modern list shows only the badge of a row's high-score
-        // cells, at its left, and every name as far right of it as the retail
-        // list's, so names line up whether or not a row has a badge.
-        if modern {
-            let at = cell(rect, 2 + PLAYER_NAME_X - PLAYER_BADGE_X, 0);
-            put(&row.name, at, ShellAlign::V_CENTER, label);
-            if let Some((file, _)) = row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X) {
-                icon(file, rect, 2);
-            }
-            continue;
-        }
-        let name = cell(rect, PLAYER_NAME_X, PLAYER_NAME_W);
-        put(&row.name, name, ShellAlign::V_CENTER, label);
-        if let Some((tag, _)) = &row.clan {
-            put(
-                tag,
-                cell(rect, PLAYER_CLAN_X, 0),
-                ShellAlign::V_CENTER,
-                label,
-            );
-        }
-        if let Some(rank) = &row.rank {
-            put(
-                rank,
-                cell(rect, PLAYER_RANK_X, 0),
-                ShellAlign::V_CENTER,
-                label,
-            );
-        }
-        if let Some((file, _)) = row.icon {
-            icon(file, rect, PLAYER_ICON_X);
-        }
-        for (file, x) in &row.score_icons {
-            icon(file, rect, *x);
-        }
-    }
     paint
+}
+
+/// The game list's cells (`0x00781480`): the name, the ping and the type,
+/// password and limit icons; a full game's row greys. The modern list keeps
+/// one retail icon, a password game's lock, in the first icon column, and
+/// that row's name starts at the next one; a tag ends the name cell against
+/// the Ping column, the name stopping a gap before it. A -1 ping is the
+/// text "???"; the modern list centres it under its Ping header (`ping_x`)
+/// instead of starting it at the retail column, and a match to watch has
+/// none.
+fn game_cells(
+    ui: &WolLobbyState,
+    font: &crate::render::bit_font::BitFont,
+    ping_x: Option<(i32, i32)>,
+) -> Vec<CellRow> {
+    let modern = ui.is_modern();
+    let ping_x = ping_x.filter(|_| modern);
+    let v = ShellAlign::V_CENTER;
+    (ui.game_rows.iter())
+        .map(|game| {
+            let mut row = CellRow::default();
+            let rgb = match game.greyed {
+                true => GREYED_RGB,
+                false => SHELL_LABEL_TEXT_RGB,
+            };
+            let start = match game.keyed {
+                true => GAME_PASSWORD_X,
+                false => GAME_TYPE_X,
+            };
+            let name_end = GAME_PING_X - 2;
+            let tag = game.tag.as_deref().filter(|_| modern);
+            let tag_w = tag.map_or(0, |tag| (font.text_width(tag) as i32).min(name_end - start));
+            let (name_x, name_w) = match (modern, tag) {
+                (false, _) => (GAME_NAME_X, GAME_NAME_W),
+                (true, None) => (start, name_end - start),
+                (true, Some(_)) => (start, name_end - start - tag_w - GAME_TAG_GAP),
+            };
+            row.text(name_x, name_w.max(1), &game.text, v, rgb);
+            if let Some(tag) = tag {
+                let (x, right) = (name_end - tag_w, ShellAlign::H_RIGHT | v);
+                row.text(x, tag_w.max(1), tag, right, rgb);
+            }
+            let ping = match game.ping {
+                -1 => "???".to_owned(),
+                ping => ping.to_string(),
+            };
+            let (x, w, align) = match ping_x {
+                Some((x, w)) => (x, w, ShellAlign::H_CENTER | v),
+                None => (GAME_PING_X, 0, v),
+            };
+            if !game.watch {
+                row.text(x, w, &ping, align, rgb);
+            }
+            if modern {
+                if game.keyed {
+                    row.icons.push((GAME_TYPE_X, "wolpriv.pcx"));
+                }
+                return row;
+            }
+            row.icons.push((GAME_TYPE_X, game.kind.file()));
+            if game.keyed {
+                row.icons.push((GAME_PASSWORD_X, "wolpriv.pcx"));
+            }
+            if let Some(file) = game.limit_icon {
+                row.icons.push((GAME_LIMIT_X, file));
+            }
+            row
+        })
+        .collect()
+}
+
+/// The user list's cells (`0x00783C80`): the name, the clan tag, the ladder
+/// rank and the op/voice and high-score icons, each selected row filled
+/// (`LBS_MULTIPLESEL`). VERA: the modern list shows only the badge of a
+/// row's high-score cells, at its left, and every name as far right of it
+/// as the retail list's, so names line up whether or not a row has a badge.
+fn player_cells(ui: &WolLobbyState) -> Vec<CellRow> {
+    let (v, label) = (ShellAlign::V_CENTER, SHELL_LABEL_TEXT_RGB);
+    (ui.player_rows.iter().enumerate())
+        .map(|(index, player)| {
+            let mut row = CellRow {
+                filled: ui.selected_players.contains(&index),
+                ..CellRow::default()
+            };
+            if ui.is_modern() {
+                let x = 2 + PLAYER_NAME_X - PLAYER_BADGE_X;
+                row.text(x, 0, &player.name, v, label);
+                let badge = player
+                    .score_icons
+                    .iter()
+                    .find(|(_, x)| *x == PLAYER_BADGE_X);
+                if let Some((file, _)) = badge {
+                    row.icons.push((2, *file));
+                }
+                return row;
+            }
+            row.text(PLAYER_NAME_X, PLAYER_NAME_W, &player.name, v, label);
+            if let Some((tag, _)) = &player.clan {
+                row.text(PLAYER_CLAN_X, 0, tag, v, label);
+            }
+            if let Some(rank) = &player.rank {
+                row.text(PLAYER_RANK_X, 0, rank, v, label);
+            }
+            if let Some((file, _)) = player.icon {
+                row.icons.push((PLAYER_ICON_X, file));
+            }
+            for (file, x) in &player.score_icons {
+                row.icons.push((*x, *file));
+            }
+            row
+        })
+        .collect()
 }
 
 /// `0xC3` or `0xE1` over the covered dialog; `status` is `0xC3`'s own
@@ -578,44 +503,23 @@ pub(crate) fn paint_wol_player_card(
     paint
 }
 
-/// Your own card's open country list in the shared drop list, over the card.
-pub(crate) fn paint_wol_card_countries(
-    state: &AppState,
-    list: &crate::app::shell_wol::player_card::CountryListView,
-    scale: ShellScale,
-) -> WolLobbyPaint {
-    let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
-        return paint;
+/// Your own card's open country list, over the card: its combo's drop
+/// list from the lobby's tree.
+pub(crate) fn paint_wol_card_countries(state: &AppState, scale: ShellScale) -> WolLobbyPaint {
+    let lobby = state.frontend.wol.as_ref().and_then(|visit| visit.lobby());
+    let Some((ui, node)) =
+        lobby.and_then(|lobby| Some((&lobby.ui, lobby.ui.node(CARD_COUNTRIES)?)))
+    else {
+        return WolLobbyPaint::default();
     };
-    let popup = &list.popup;
-    push_popup_instances(
-        &mut paint.controls,
-        atlas,
-        popup.rect,
-        list.hot_row.and_then(|row| popup.row_rect(row)),
-        std::iter::empty(),
-        popup.scrollbar().zip(popup.thumb()),
-        list.pressed.map(dropdown_scroll_part),
-        scale,
-        SHELL_DROPDOWN_DEPTH - 0.00002,
-    );
-    for index in popup.first..popup.first + popup.visible_rows {
-        let (Some(row), Some(text)) = (popup.row_rect(index), list.rows.get(index)) else {
-            continue;
-        };
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            &state.renderer.bit_font,
-            text,
-            rect_to_text_rect(scale.derive_rect(row, |rect| {
-                RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h)
-            })),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            SHELL_DROPDOWN_TEXT_DEPTH,
-            scale.factor(),
-        ));
+    let style = GuiStyle {
+        combos: ComboArt::Host,
+        ..GuiStyle::default()
+    };
+    let list = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
+    WolLobbyPaint {
+        controls: list.popup,
+        icons: Vec::new(),
+        texts: list.popup_texts,
     }
-    paint
 }

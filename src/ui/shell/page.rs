@@ -25,15 +25,6 @@ pub enum PageCue {
     ListClick,
 }
 
-impl From<super::combobox::ComboCue> for PageCue {
-    fn from(cue: super::combobox::ComboCue) -> Self {
-        match cue {
-            super::combobox::ComboCue::Open => Self::ComboOpen,
-            super::combobox::ComboCue::Close => Self::ComboClose,
-        }
-    }
-}
-
 /// One user action on a control, by resource id.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PageEvent {
@@ -242,6 +233,14 @@ pub fn store_edit(
         .count();
     let _ = gui.set(node, Prop::Text, Value::Text(edit.display_text()));
     let _ = gui.set(node, Prop::Caret, Value::Int(caret as i32));
+    let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+}
+
+/// NewEdit keeps the caret in view (`scroll_to_caret`) in `available` base
+/// px of its field; the first shown unit is the node's `Top`.
+pub fn scroll_edit(gui: &mut Gui, node: NodeId, available: u32, measure: impl Fn(&str) -> u32) {
+    let mut edit = new_edit(gui, node);
+    edit.scroll_to_caret(available, measure);
     let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
 }
 

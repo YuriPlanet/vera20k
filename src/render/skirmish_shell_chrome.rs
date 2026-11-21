@@ -222,7 +222,6 @@ pub struct SkirmishShellChromeAtlas {
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
     pub white_pixel: Option<SkirmishShellChromeEntry>,
     pub start_marker: Option<SkirmishShellChromeEntry>,
-    pub assigned_player_marker_mmpb: Option<SkirmishShellChromeEntry>,
     pub flags: Vec<(String, SkirmishShellChromeEntry)>,
 }
 
@@ -573,7 +572,6 @@ pub fn build_skirmish_shell_chrome_atlas(
         "startbut.shp",
         Need::Optional,
     );
-    art.shp("mmpb.shp", &shell, 0..1, "mmpb.shp", Need::Optional);
     art.pcx(
         [
             "bue_li30.pcx",
@@ -728,7 +726,6 @@ pub fn build_skirmish_shell_chrome_atlas(
         combo_face_38: face(38),
         white_pixel: get("skirmish_white_pixel"),
         start_marker: first("startbut.shp"),
-        assigned_player_marker_mmpb: first("mmpb.shp"),
         flags: flag_names
             .into_iter()
             .filter_map(|name| Some((name.to_string(), get(&name.to_ascii_lowercase())?)))

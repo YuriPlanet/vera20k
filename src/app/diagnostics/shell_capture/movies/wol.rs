@@ -1055,7 +1055,8 @@ impl WolCapture {
             list.hot_row,
             list.popup.first
         );
-        let picked = &list.rows[row];
+        let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+        let picked = &card.countries.get(row).context("the picked row")?.text;
         ensure!(
             rows.iter().any(|(_, value)| value == picked),
             "the card shows {rows:?}"
@@ -2486,8 +2487,11 @@ impl WolCapture {
                     setup_button(state, GAME_OPTIONS)?;
                     let crates = setup_view(state)?.checks[2];
                     ensure!(
-                        setup_view(state)?.open_box
-                            == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
+                        state
+                            .frontend
+                            .multiplayer_setup
+                            .as_ref()
+                            .is_some_and(|ui| ui.game_options),
                         "Game Options did not open"
                     );
                     let layout = crate::app::input::multiplayer_setup::layout(state);
@@ -6256,12 +6260,12 @@ impl WolCapture {
             AUTO_LOGIN, BACK, COUNTRY, FORGET, HEADING, LOCALE, NICKNAME as NICKNAME_COMBO, SERVER,
             WINS,
         };
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-        let data: Vec<i32> = page.combos.iter().map(|combo| combo.data_or(-99)).collect();
+        let page = my_info_shown(state)?;
+        let data = page.data.clone();
         let snapshot = json!({
             "selected_data": data,
-            "server_face": page.combos[1].selected.map(|row| page.combos[1].rows[row].text.clone()),
-            "nicknames": page.combos[0].rows.iter().map(|row| row.text.clone()).collect::<Vec<_>>(),
+            "server_face": page.server_face,
+            "nicknames": page.nicknames,
             "auto_login": [page.auto_login, page.auto_login_enabled],
             "match_same_res": page.match_same_res,
             "forget_enabled": page.forget_enabled,
@@ -6270,7 +6274,7 @@ impl WolCapture {
         });
         if self.target == WolTarget::MyInfoDefault {
             ensure!(
-                page.slot() == -1
+                page.slot == -1
                     && !page.forget_enabled
                     && !page.play_buddy_enabled
                     && !page.auto_login_enabled
@@ -6345,17 +6349,13 @@ impl WolCapture {
                 let rect = layout_button(state, FORGET)?;
                 welcome_click(state, rect);
                 let requests = self.requests(state, frame)?;
-                let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
-                let names: Vec<&str> = page.combos[0]
-                    .rows
-                    .iter()
-                    .map(|row| row.text.as_str())
-                    .collect();
+                let page = my_info_shown(state)?;
+                let names: Vec<&str> = page.nicknames.iter().map(String::as_str).collect();
                 ensure!(
                     requests == [WolServiceRequest::ForgetCredential { slot: 1 }]
                         && names.len() == 2
                         && names[1] == PEER
-                        && page.slot() == -1
+                        && page.slot == -1
                         && !page.forget_enabled
                         && page.play_buddy_enabled
                         && !page.auto_login_enabled
@@ -6401,9 +6401,9 @@ impl WolCapture {
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
         let page = my_info::page(state).context("0x114")?;
-        let row = page
-            .combo(control)
-            .and_then(|combo| combo.rows.iter().position(&matches))
+        let index = crate::ui::wol_my_info::COMBOS.iter().position(|id| *id == control);
+        let row = index
+            .and_then(|index| page.combos[index].iter().position(&matches))
             .context("no matching row")?;
         let popup = my_info::drop_down(state, control)
             .context("the drop list did not open")?
@@ -6433,6 +6433,44 @@ impl WolCapture {
     }
 }
 
+/// What `0x114`'s widgets show.
+struct MyInfoShown {
+    data: Vec<i32>,
+    server_face: Option<String>,
+    nicknames: Vec<String>,
+    slot: i32,
+    auto_login: bool,
+    auto_login_enabled: bool,
+    match_same_res: bool,
+    forget_enabled: bool,
+    play_buddy_enabled: bool,
+    texts: Vec<(u16, String)>,
+}
+
+fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
+    use crate::app::shell_wol::my_info;
+    use crate::ui::wol_my_info::*;
+    let page = my_info::page(state).context("0x114")?;
+    let root = my_info::root(state).context("0x114's widgets")?;
+    let gui = state.frontend.shell_controller.gui();
+    let flag = |id: u16, prop: Prop| {
+        crate::ui::shell::page::get(gui, root, id, prop) != Some(&vera20k_gui::Value::Bool(false))
+    };
+    let server = selected(gui, root, SERVER).and_then(|row| page.combos[1].get(row));
+    Ok(MyInfoShown {
+        data: COMBOS.map(|id| page.data_or(gui, root, id, -99)).to_vec(),
+        server_face: server.map(|row| row.text.clone()),
+        nicknames: page.combos[0].iter().map(|row| row.text.clone()).collect(),
+        slot: page.slot(gui, root),
+        auto_login: crate::ui::shell::page::checked(gui, root, AUTO_LOGIN),
+        auto_login_enabled: flag(AUTO_LOGIN, Prop::Enabled),
+        match_same_res: crate::ui::shell::page::checked(gui, root, MATCH_SAME_RES),
+        forget_enabled: flag(FORGET, Prop::Enabled),
+        play_buddy_enabled: flag(PLAY_BUDDY, Prop::Enabled),
+        texts: page.texts.clone(),
+    })
+}
+
 fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {
     crate::app::shell_wol::my_info::layout(state)
         .page
@@ -6456,7 +6494,7 @@ impl WolCapture {
 
     fn buddy_my_info(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::wol_my_info::PLAY_BUDDY;
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
+        let page = my_info_shown(state)?;
         if self.rejoined {
             ensure!(
                 state.frontend.wol.as_ref().and_then(|visit| visit.mode())

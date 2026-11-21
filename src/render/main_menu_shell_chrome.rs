@@ -17,7 +17,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::chrome_atlas::{
     ChromeArt, ChromeAtlasEntry, ChromePiece, Need, load_palette, pack_chrome_atlas, pcx_piece,
-    read_palette, shp_file_piece, shp_piece, solid_piece,
+    read_palette, shp_file_piece, shp_piece,
 };
 use crate::render::gpu::GpuContext;
 
@@ -33,12 +33,6 @@ pub type MainMenuShellChromeEntry = ChromeAtlasEntry;
 
 pub struct MainMenuShellChromeAtlas {
     pub texture: BatchTexture,
-    /// SDBTNANM.SHP frame 2 — default (unhovered, unpressed) button art.
-    pub button_default: MainMenuShellChromeEntry,
-    /// SDBTNANM.SHP frame 3 — hover state.
-    pub button_hover: MainMenuShellChromeEntry,
-    /// SDBTNANM.SHP frame 4 — pressed state.
-    pub button_pressed: MainMenuShellChromeEntry,
     /// SDBTNANM.SHP frames 0..=16, indexed by frame number, for the first-paint
     /// slide ramp. Shared by the 0xE2 and 0x100 shell renderers (both reuse this
     /// atlas). `None` where the SHP lacks that frame.
@@ -59,22 +53,13 @@ pub struct MainMenuShellChromeAtlas {
     /// MNSCRNL.SHP frame 0 — parent background for all non-640 widths.
     /// Painted through SHELL.PAL.
     pub parent_background_large_mnscrnl: Option<MainMenuShellChromeEntry>,
-    /// MNSCRNS / MNSCRNL with every RGB565 channel one unit darker
-    /// (saturating): what an owner-draw ListBox with translucency 0 paints
-    /// under its rows (`0x00619230`), derived here so the list interior can be
-    /// composited exactly before the rows are drawn over it.
-    pub parent_background_640_mnscrns_list: Option<MainMenuShellChromeEntry>,
-    pub parent_background_large_mnscrnl_list: Option<MainMenuShellChromeEntry>,
     /// Static `0x71C` SDWRNANM frames in order (SHELL2 palette); empty when
     /// the SHP is missing.
     pub warning_monitor_frames: Vec<MainMenuShellChromeEntry>,
-    /// Opaque white texel block for solid fills (list frames, selection).
-    pub white_pixel: Option<MainMenuShellChromeEntry>,
-    /// Owner-draw list scrollbar art (`0x0061C690`): 18x22 arrows, released
-    /// and pressed, and the 18-wide grip top, middle and bottom.
-    pub list_scroll: ListScrollArt,
 }
 
+/// Owner-draw list scrollbar art (`0x0061C690`): 18x22 arrows, released and
+/// pressed, and the 18-wide grip top, middle and bottom.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ListScrollArt {
     pub up_released: Option<MainMenuShellChromeEntry>,
@@ -151,13 +136,6 @@ pub fn build_main_menu_shell_chrome_atlas(
         ] {
             art.shp(name, pal, 0..1, &name.to_ascii_lowercase(), Need::Optional);
         }
-        let darkened: Vec<ChromePiece> = art
-            .pieces
-            .iter()
-            .filter(|piece| piece.label == "mnscrns.shp#0" || piece.label == "mnscrnl.shp#0")
-            .map(|piece| blended_black(piece, format!("{}:list", piece.label), 0))
-            .collect();
-        art.pieces.extend(darkened);
     } else {
         log::warn!("Missing SHELL.PAL; skipping main-menu right-panel chrome SHPs");
     }
@@ -169,20 +147,6 @@ pub fn build_main_menu_shell_chrome_atlas(
     } else {
         log::warn!("Missing SHELL2.PAL; skipping main-menu right-panel tile and monitor SHPs");
     }
-    art.pcx(
-        [
-            "UPARROWR.PCX",
-            "UPARROWP.PCX",
-            "DNARROWR.PCX",
-            "DNARROWP.PCX",
-            "SBGRIPT.PCX",
-            "SBGRIPM.PCX",
-            "SBGRIPB.PCX",
-        ],
-        false,
-        Need::Silent,
-    );
-    art.push(solid_piece("white", 2, 2, [0xFF; 4]));
 
     let (texture, labels) = art
         .pack(gpu, batch, ATLAS_NAME)
@@ -192,10 +156,6 @@ pub fn build_main_menu_shell_chrome_atlas(
     let first = |label: &str| labels.frame(label, 0);
     Ok(MainMenuShellChromeAtlas {
         texture,
-        // The loader validates these three required states before uploading the atlas.
-        button_default: button_wave_frames[2].context("SDBTNANM frame 2")?,
-        button_hover: button_wave_frames[3].context("SDBTNANM frame 3")?,
-        button_pressed: button_wave_frames[4].context("SDBTNANM frame 4")?,
         button_wave_frames,
         right_panel_top_sdtp: first("sdtp.shp"),
         top_panel: TopPanelArt {
@@ -208,25 +168,7 @@ pub fn build_main_menu_shell_chrome_atlas(
         lower_side_large_lwscrnl: first("lwscrnl.shp"),
         parent_background_640_mnscrns: first("mnscrns.shp"),
         parent_background_large_mnscrnl: first("mnscrnl.shp"),
-        parent_background_640_mnscrns_list: labels.get("mnscrns.shp#0:list"),
-        parent_background_large_mnscrnl_list: labels.get("mnscrnl.shp#0:list"),
-        list_scroll: ListScrollArt {
-            up_released: labels.get("uparrowr.pcx"),
-            up_pressed: labels.get("uparrowp.pcx"),
-            down_released: labels.get("dnarrowr.pcx"),
-            down_pressed: labels.get("dnarrowp.pcx"),
-            grip_top: labels.get("sbgript.pcx"),
-            grip_mid: labels.get("sbgripm.pcx"),
-            grip_bottom: labels.get("sbgripb.pcx"),
-        },
         warning_monitor_frames: labels.run("sdwrnanm.shp:monitor"),
-        white_pixel: labels.get("white").map(|mut entry| {
-            // Sample only the block's center so filtering never reaches padding.
-            entry.uv_origin[0] += entry.uv_size[0] * 0.25;
-            entry.uv_origin[1] += entry.uv_size[1] * 0.25;
-            entry.uv_size = [entry.uv_size[0] * 0.5, entry.uv_size[1] * 0.5];
-            entry
-        }),
     })
 }
 

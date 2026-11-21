@@ -37,10 +37,9 @@ pub use choose_map::{
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
-    PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
-    PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,
-    initialize_rows_for_selected_map, player_row_visible, repair_teams_for_selected_mode,
-    selected_player_rows,
+    PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES, SkirmishShellDialog, SkirmishShellState,
+    accept_selected_map, initialize_rows_for_selected_map, player_name_from_profile,
+    player_row_visible, repair_teams_for_selected_mode, selected_player_rows,
 };
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,

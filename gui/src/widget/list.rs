@@ -8,47 +8,46 @@
 //! double-click timing stay in the node's `WidgetState::List`; the limits are
 //! the GUI's ([`crate::Gui::set_double_click`]).
 
-use std::sync::OnceLock;
-
-use super::{Capture, Ctx, WidgetState};
+use super::{Capture, Ctx, WidgetState, instant, ui_ms};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
-use crate::shell::list::{ListBoxState, ListMetrics, ListScrollPart, ShellListGeometry};
+use crate::shell::list::{
+    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, is_double_click,
+};
 use crate::time::{Duration, Instant};
 
-#[derive(Debug)]
+/// One owner-draw list box (the movie list `0x129`, VERA's Mods list). Its
+/// row count, top and selection are reloaded from the props before every
+/// input and written back after it.
+#[derive(Debug, Default)]
 pub struct ListState {
-    /// The shell list box. Its row count, top and selection are reloaded
-    /// from the props before every input and written back after it.
-    list: ListBoxState,
+    rows: usize,
+    /// Subclass current selection. Its LB_SETCURSEL handler
+    /// (`0x0061A534..0x0061A5F5`) always returns 0, so a fresh process opens
+    /// with nothing selected.
+    selected: Option<usize>,
+    top: usize,
+    /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
+    last_press: Option<(Instant, i32, i32)>,
+    /// Scrollbar capture and arrow repeat (`0x0061C690`).
+    scroll: ListScrollInteraction,
+    /// Rows its owner shows at once, when it lays them out itself
+    /// ([`ShellListGeometry::with_visible_rows`]); `None` fits the window.
+    visible_rows: Option<usize>,
     /// The pointer as the list last saw it: the arrow repeat steps the arrow
     /// under it (`0x0061D215..0x0061D2C8`).
     pointer: (i32, i32),
 }
 
-impl Default for ListState {
-    fn default() -> Self {
-        Self {
-            list: ListBoxState::new(),
-            pointer: (0, 0),
+impl ListState {
+    /// List and scrollbar geometry on the paint surface `list`.
+    fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
+        match self.visible_rows {
+            Some(rows) => ShellListGeometry::with_visible_rows(list, self.rows, rows, self.top, metrics),
+            None => ShellListGeometry::new(list, self.rows, self.top, metrics),
         }
     }
-}
-
-/// The substrate keeps its timers as `Instant`s; the GUI clock is `UiMs`.
-/// One process-wide epoch maps between them.
-fn epoch() -> Instant {
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
-    *EPOCH.get_or_init(Instant::now)
-}
-
-fn instant(ms: UiMs) -> Instant {
-    epoch() + Duration::from_millis(ms)
-}
-
-fn ui_ms(at: Instant) -> UiMs {
-    at.saturating_duration_since(epoch()).as_millis() as UiMs
 }
 
 /// What the host paints of a list: its rows, top, selection and the
@@ -78,7 +77,7 @@ fn row_count(n: &Node) -> usize {
 pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
     let n = tree.node(node).ok()?;
     let pressed = match &n.state {
-        WidgetState::List(state) => state.list.scroll.pressed_part(),
+        WidgetState::List(state) => state.scroll.pressed_part(),
         _ => None,
     };
     Some(ListView {
@@ -109,15 +108,15 @@ fn with_list<R>(
         WidgetState::List(state) => state,
         _ => ListState::default(),
     };
-    state.list.rows = count;
-    state.list.top = top;
-    state.list.selected = selected;
-    state.list.visible_rows = match n.props.get(&Prop::VisibleRows) {
+    state.rows = count;
+    state.top = top;
+    state.selected = selected;
+    state.visible_rows = match n.props.get(&Prop::VisibleRows) {
         Some(Value::Int(rows)) => usize::try_from(*rows).ok(),
         _ => None,
     };
     let result = f(&mut state, rect, metrics, ctx.events);
-    let (new_top, new_selected) = (state.list.top, state.list.selected);
+    let (new_top, new_selected) = (state.top, state.selected);
     let n = ctx.tree.node_mut(node).ok()?;
     n.state = WidgetState::List(state);
     if new_selected != selected {
@@ -139,7 +138,7 @@ pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
     if let Ok(n) = tree.node_mut(node)
         && let WidgetState::List(state) = &mut n.state
     {
-        state.list.scroll.cancel();
+        state.scroll.cancel();
     }
 }
 
@@ -148,7 +147,7 @@ pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
     if let Ok(n) = tree.node_mut(node)
         && let WidgetState::List(state) = &mut n.state
     {
-        state.list.last_press = None;
+        state.last_press = None;
     }
 }
 
@@ -160,23 +159,24 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
         s.pointer = (x, y);
         // The scrollbar child (0x0061C690) captures its own presses and
         // plays no sound: arrow step, track jump or thumb capture.
-        if s.list.scroll_press(rect, metrics, x, y, now) {
+        let geometry = s.geometry(rect, metrics);
+        if let Some(part) = geometry.scroll_part_at(x, y) {
+            s.scroll.press(part, geometry, &mut s.top, y, now);
             return Capture::Yes;
         }
         // CS_DBLCLKS: the second press only forwards LBN_DBLCLK
         // (0x0061A904..0x0061A945), wherever it landed; the host opens the
         // current selection.
-        if s.list.is_double_click(now, x, y, limits) {
-            if let Some(row) = s.list.selected {
+        if is_double_click(&mut s.last_press, now, x, y, limits) {
+            if let Some(row) = s.selected {
                 events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
             }
             return Capture::No;
         }
         // 0x0061A948: a press selects the row under it (the host plays
         // GenericClick); presses below the last row are ignored.
-        let geometry = s.list.geometry(rect, metrics);
-        if let Some(row) = geometry.row_at(s.list.rows, s.list.top, x, y) {
-            s.list.selected = Some(row);
+        if let Some(row) = geometry.row_at(s.rows, s.top, x, y) {
+            s.selected = Some(row);
             events.push(UiEvent::ListSelected { node, row: row as u32 });
         }
         Capture::No
@@ -188,23 +188,24 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
 pub(crate) fn drag(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     with_list(ctx, node, |s, rect, metrics, _| {
         s.pointer = (x, y);
-        s.list.scroll_pointer_moved(rect, metrics, x, y);
+        let geometry = s.geometry(rect, metrics);
+        s.scroll.pointer_moved(geometry, &mut s.top, x, y);
     });
 }
 
 /// The release ends the scrollbar's capture and its repeat (0x0061D2D3).
 pub(crate) fn release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
-    with_list(ctx, node, |s, _, _, _| s.list.scroll.cancel());
+    with_list(ctx, node, |s, _, _, _| s.scroll.cancel());
 }
 
 /// The wheel over the list; true when it scrolled. Three rows a notch, as
 /// the Mods and Keyboard pages scroll.
 pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
     with_list(ctx, node, |s, rect, metrics, _| {
-        let max_top = s.list.geometry(rect, metrics).max_top as i64;
-        let top = (s.list.top as i64 - i64::from(lines) * 3).clamp(0, max_top) as usize;
-        let scrolled = top != s.list.top;
-        s.list.top = top;
+        let max_top = s.geometry(rect, metrics).max_top as i64;
+        let top = (s.top as i64 - i64::from(lines) * 3).clamp(0, max_top) as usize;
+        let scrolled = top != s.top;
+        s.top = top;
         scrolled
     })
     .unwrap_or(false)
@@ -215,8 +216,11 @@ pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<UiMs> {
     let now = instant(ctx.now);
     with_list(ctx, node, |s, rect, metrics, _| {
         let (x, y) = s.pointer;
-        s.list.scroll_poll(rect, metrics, x, y, now);
-        s.list.scroll.repeat_at().map(ui_ms)
+        if s.scroll.repeat_at().is_some() {
+            let geometry = s.geometry(rect, metrics);
+            s.scroll.poll(geometry, &mut s.top, x, y, now);
+        }
+        s.scroll.repeat_at().map(ui_ms)
     })
     .flatten()
 }

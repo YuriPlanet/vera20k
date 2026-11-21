@@ -1,7 +1,10 @@
 use super::*;
+use crate::app::frontend::shell_layout::random_map_setup_layout;
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_route::ShellRoute;
 use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
+use crate::ui::skirmish_shell::page::Pointer;
 
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
@@ -10,6 +13,17 @@ pub(super) const RANDOM_MAP_DESCRIPTION_FALLBACK: &str = "Random Map";
 /// Retail's `[General] CliffBackImpassability=`; the preview only needs it
 /// because terrain resolution takes it, not because cliffs affect the image.
 const RANDOM_MAP_PREVIEW_CLIFF_BACK_IMPASSABILITY: u8 = 2;
+
+/// The open random-map dialog `0x105`.
+pub(super) fn random_map_dialog(
+    state: &mut AppState,
+) -> Option<&mut crate::ui::skirmish_shell::RandomMapSetupModalState> {
+    state
+        .frontend
+        .skirmish_shell_state
+        .random_map_setup_modal
+        .as_mut()
+}
 
 /// Native RMG map-storage identity used by its guarded Resize predicate.
 ///
@@ -1282,12 +1296,7 @@ impl App {
         generation_options.description = state
             .csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK)
             .into();
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
-        {
+        if let Some(modal) = random_map_dialog(state) {
             modal.options.description = generation_options.description.clone();
         }
         let options = &generation_options;
@@ -1483,7 +1492,9 @@ impl App {
                 .random_map_generation
                 .take()
                 .expect("checked present above");
-            let preview = Self::rasterise_generated_map(state, &job, run.map());
+            // Persistence belongs to common teardown, not generation completion.
+            let map = run.map();
+            let preview = Self::rasterise_map(state, &job, &map.map_file, &map.start_waypoints);
             let accept = {
                 let resident_simulation = state
                     .match_state
@@ -1513,7 +1524,7 @@ impl App {
                 // ends through its teardown slide.
                 Self::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
+                    ShellSlideKind::RandomMap,
                     App::accept_random_map_setup,
                 );
             }
@@ -1525,12 +1536,7 @@ impl App {
             // does not sit disabled forever waiting on it.
             log::warn!("random map: the generator thread ended without a result");
             state.frontend.random_map_generation = None;
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_mut()
-            {
+            if let Some(modal) = random_map_dialog(state) {
                 modal.fail_generate();
             }
             return true;
@@ -1549,11 +1555,7 @@ impl App {
         let preview =
             Self::rasterise_map(state, &job, &snapshot.map_file, &snapshot.start_waypoints);
         state.frontend.random_map_generation = Some(job);
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
+        if let Some(modal) = random_map_dialog(state)
             && let Some(preview) = preview
         {
             modal.show_progress_preview(preview);
@@ -1637,16 +1639,6 @@ impl App {
             }
         }
         Self::show_choose_map_after_random_map(state);
-    }
-
-    /// Rasterise the finished map into the dialog-owned preview surface.
-    /// Persistence belongs to common teardown, not generation completion.
-    fn rasterise_generated_map(
-        state: &mut AppState,
-        job: &RandomMapGenerationJob,
-        generated: &crate::map::rmg::GeneratedMap,
-    ) -> Option<crate::map::rmg::preview::PreviewImage> {
-        Self::rasterise_map(state, job, &generated.map_file, &generated.start_waypoints)
     }
 
     /// Colour and rasterise a map. Main thread only: the resolver reads theater
@@ -1743,9 +1735,9 @@ impl App {
     /// user activated.
     fn random_map_pointer(
         state: &mut AppState,
-        at: crate::ui::skirmish_shell::page::Pointer,
+        at: Pointer,
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
-        let layout = crate::app::frontend::shell_layout::random_map_setup_layout(state);
+        let layout = random_map_setup_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let modal = state
             .frontend
@@ -1766,26 +1758,26 @@ impl App {
     }
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
-        let preview = crate::app::frontend::shell_layout::random_map_setup_layout(state).preview;
+        let preview = random_map_setup_layout(state).preview;
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
-        let resting = state
+        let modal = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
-            .as_ref()
-            .is_some_and(|modal| {
-                !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
-            });
+            .as_ref();
+        let resting = modal.is_some_and(|modal| {
+            !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
+        });
         if !(resting && crate::app::frontend::preview_zoom::press_on_box(state, preview)) {
-            Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Down);
+            Self::random_map_pointer(state, Pointer::Down);
         }
         true
     }
 
     pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
-        Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Move);
+        Self::random_map_pointer(state, Pointer::Move);
         Self::update_random_map_status_help(state);
     }
 
@@ -1809,13 +1801,9 @@ impl App {
         let help = (controller.top_id() == Some(random_map_page::DIALOG))
             .then(|| crate::ui::shell::page::hovered_key(controller.gui()))
             .flatten()
-            .map(|key| Self::localized_status_help_text(state, key))
+            .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
-        if let Some(setup) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
+        if let Some(setup) = random_map_dialog(state)
             && setup
                 .statics
                 .hover(&help, crate::util::time::Instant::now())
@@ -1827,12 +1815,8 @@ impl App {
     pub(super) fn handle_random_map_setup_mouse_up(state: &mut AppState) -> bool {
         use crate::ui::skirmish_shell::RandomMapSetupControl as Control;
 
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_ref()
-        else {
+        let shell = &state.frontend.skirmish_shell_state;
+        let Some(modal) = shell.random_map_setup_modal.as_ref() else {
             return false;
         };
         // The release goes to a slider holding the mouse; freeing it lets the
@@ -1841,8 +1825,7 @@ impl App {
             &state.frontend.shell_controller,
             modal,
         );
-        let released =
-            Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Up);
+        let released = Self::random_map_pointer(state, Pointer::Up);
         if held {
             Self::update_random_map_status_help(state);
         }
@@ -1856,12 +1839,8 @@ impl App {
             .manager()
             .map(crate::map::rmg::RmgSettings::load)
             .unwrap_or_default();
-        let description = state
-            .process_assets
-            .csf
-            .as_ref()
-            .map(|csf| csf.text(RANDOM_MAP_DESCRIPTION_KEY).into_owned())
-            .unwrap_or_else(|| RANDOM_MAP_DESCRIPTION_FALLBACK.to_string());
+        let description =
+            state.csf_label(RANDOM_MAP_DESCRIPTION_KEY, RANDOM_MAP_DESCRIPTION_FALLBACK);
         // VERA: where the Extras view keeps the player's own presets.
         let preset_dir = Self::random_map_dir(state);
         let Some(modal) = state
@@ -2022,12 +2001,7 @@ impl App {
             let exported = Self::export_generated_map(state);
             let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
                 .map(std::path::PathBuf::from);
-            if let Some(modal) = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_mut()
-            {
+            if let Some(modal) = random_map_dialog(state) {
                 modal.exported = exported.is_some();
                 modal.exported_to = exported
                     .as_deref()
@@ -2039,12 +2013,7 @@ impl App {
             return true;
         }
         if generate_requested {
-            let options = state
-                .frontend
-                .skirmish_shell_state
-                .random_map_setup_modal
-                .as_ref()
-                .map(|modal| modal.options.clone());
+            let options = random_map_dialog(state).map(|modal| modal.options.clone());
             let started = options.is_some_and(|options| {
                 Self::start_random_map_generation(state, &options, accept_requested)
             });
@@ -2052,12 +2021,7 @@ impl App {
                 // Nothing will arrive, so the dialog must not be left sitting
                 // in its generating state with every control disabled.
                 log::warn!("random map: could not start generation for the configured options");
-                if let Some(modal) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .random_map_setup_modal
-                    .as_mut()
-                {
+                if let Some(modal) = random_map_dialog(state) {
                     modal.fail_generate();
                 }
             }
@@ -2065,19 +2029,12 @@ impl App {
             return true;
         }
         // Both results end the dialog through its teardown slide.
+        let slide = ShellSlideKind::RandomMap;
         if accept_requested {
-            Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
-                App::accept_random_map_setup,
-            );
+            Self::leave_shell_dialog(state, slide, App::accept_random_map_setup);
         }
         if close_setup {
-            Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellSlideKind::RandomMap,
-                App::cancel_random_map_setup,
-            );
+            Self::leave_shell_dialog(state, slide, App::cancel_random_map_setup);
         }
         true
     }

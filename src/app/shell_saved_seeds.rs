@@ -2,9 +2,11 @@
 //! Native driver 0x00558DD0 owns modal lifetime; MapSeed slots 0x00597760,
 //! 0x00597A30 and 0x00597D50 own persistence.
 
-use crate::app::frontend::shell_layout;
-use super::shell_random_map::{RANDOM_MAP_DESCRIPTION_FALLBACK, RANDOM_MAP_DESCRIPTION_KEY};
+use super::shell_random_map::{
+    RANDOM_MAP_DESCRIPTION_FALLBACK, RANDOM_MAP_DESCRIPTION_KEY, random_map_dialog,
+};
 use super::*;
+use crate::app::frontend::shell_layout;
 use crate::map::rmg::{SeedDescription, saved_seeds};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::skirmish_shell::{
@@ -28,6 +30,16 @@ impl App {
             .as_mut()
     }
 
+    /// The open browser's layout.
+    fn saved_seed_layout(state: &AppState) -> Option<SavedSeedLayout> {
+        let browser = state
+            .frontend
+            .skirmish_shell_state
+            .saved_seed_browser
+            .as_ref()?;
+        Some(shell_layout::saved_seed_layout(state, browser.mode))
+    }
+
     pub(super) fn open_saved_seed_browser(state: &mut AppState, mode: SavedSeedMode) {
         let entries = Self::random_map_dir(state)
             .map(|dir| saved_seeds::list_saved_seeds(&dir))
@@ -42,7 +54,7 @@ impl App {
         let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
         let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
         state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
-        state.frontend.skirmish_shell_state.player_name_edit.focused = false;
+        Self::blur_player_name(state);
     }
 
     fn close_saved_seed_browser(state: &mut AppState) {
@@ -50,12 +62,7 @@ impl App {
         // Re-entry sees physical disk state, including failed native-style deletes.
         let available =
             Self::random_map_dir(state).is_some_and(|dir| saved_seeds::saved_seeds_available(&dir));
-        if let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
-        {
+        if let Some(modal) = random_map_dialog(state) {
             modal.saved_seed_buttons_enabled = available;
             // `0x105` is uncovered, not shown again: its statics repaint.
             modal.statics.uncovered();
@@ -103,12 +110,7 @@ impl App {
         let Some(dir) = Self::random_map_dir(state) else {
             return;
         };
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_mut()
-        else {
+        let Some(modal) = random_map_dialog(state) else {
             return;
         };
         // MapSeed Save 0x00597804 updates the working description before file I/O.
@@ -197,11 +199,7 @@ impl App {
                         modal.begin_generate();
                         Self::close_saved_seed_browser(state);
                         if !Self::start_random_map_generation(state, &options, false)
-                            && let Some(modal) = state
-                                .frontend
-                                .skirmish_shell_state
-                                .random_map_setup_modal
-                                .as_mut()
+                            && let Some(modal) = random_map_dialog(state)
                         {
                             modal.fail_generate();
                         }
@@ -249,16 +247,10 @@ impl App {
                     .saved_seed_browser
                     .as_ref();
                 let row = browser.and_then(|browser| browser.selected_entry());
-                let description = row
-                    .map(|row| row.description.display_text())
-                    .unwrap_or_default();
-                let body = format!("{prefix}\n\n{description}");
-                Self::show_saved_seed_prompt(
-                    state,
-                    SavedSeedPromptPurpose::Delete { file_name },
-                    body,
-                    true,
-                );
+                let description = row.map(|row| row.description.display_text());
+                let body = format!("{prefix}\n\n{}", description.unwrap_or_default());
+                let purpose = SavedSeedPromptPurpose::Delete { file_name };
+                Self::show_saved_seed_prompt(state, purpose, body, true);
             }
         }
     }
@@ -294,16 +286,9 @@ impl App {
     /// One pointer message on the browser (`down`: `None` moves); false
     /// when none is open.
     pub(super) fn saved_seed_browser_pointer(state: &mut AppState, down: Option<bool>) -> bool {
-        let Some(mode) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()
-            .map(|b| b.mode)
-        else {
+        let Some(layout) = Self::saved_seed_layout(state) else {
             return false;
         };
-        let layout = shell_layout::saved_seed_layout(state, mode);
         let extent = (state.render_width(), state.render_height());
         let pointer = state.match_state.input.cursor_px();
         if let Some(browser) = Self::saved_seed_browser(state) {
@@ -319,16 +304,9 @@ impl App {
         if pointer_moved {
             Self::saved_seed_browser_pointer(state, None);
         }
-        let Some(mode) = state
-            .frontend
-            .skirmish_shell_state
-            .saved_seed_browser
-            .as_ref()
-            .map(|b| b.mode)
-        else {
+        let Some(layout) = Self::saved_seed_layout(state) else {
             return;
         };
-        let layout = shell_layout::saved_seed_layout(state, mode);
         let extent = (state.render_width(), state.render_height());
         let font = &state.renderer.bit_font;
         if let Some(browser) = state

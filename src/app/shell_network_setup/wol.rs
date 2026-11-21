@@ -792,11 +792,9 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
         return;
     };
     let events = verify.pointer(&layout, ok, at, down);
-    for event in App::play_page_cues(state, events, false) {
-        match event {
-            PageEvent::Activated(crate::ui::wol_shell::BOX_OK) => mismatch_ok(state),
-            _ => {}
-        }
+    let events = App::play_page_cues(state, events, false);
+    if events.contains(&PageEvent::Activated(crate::ui::wol_shell::BOX_OK)) {
+        mismatch_ok(state);
     }
 }
 

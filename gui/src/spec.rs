@@ -111,7 +111,7 @@ mod tests {
     fn a_refused_prop_leaves_nothing_behind() {
         let mut g = Gui::new(8);
         let spec = NodeSpec::new(NodeKind::Dialog)
-            .child(NodeSpec::new(NodeKind::Text).with(Prop::Command, Value::Text("x".into())));
+            .child(NodeSpec::new(NodeKind::Text).with(Prop::Toggled, Value::Bool(true)));
         assert_eq!(g.create_tree(&spec, None), Err(Refused::WrongKind));
         assert_eq!(g.tree().live_count(), 0);
     }

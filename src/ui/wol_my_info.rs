@@ -133,38 +133,6 @@ impl MyInfoRow {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct MyInfoCombo {
-    pub(crate) rows: Vec<MyInfoRow>,
-    pub(crate) selected: Option<usize>,
-    pub(crate) enabled: bool,
-}
-
-impl MyInfoCombo {
-    fn new(rows: Vec<MyInfoRow>) -> Self {
-        Self {
-            rows,
-            selected: None,
-            enabled: true,
-        }
-    }
-
-    /// The selection's item data, or `none` without one.
-    pub(crate) fn data_or(&self, none: i32) -> i32 {
-        self.selected
-            .and_then(|row| self.rows.get(row))
-            .map_or(none, |row| row.data)
-    }
-
-    /// `0x77A9F0`'s item-data search: the first row holding `data`, else the
-    /// selection stays.
-    fn select_data(&mut self, data: i32) {
-        if let Some(row) = self.rows.iter().position(|row| row.data == data) {
-            self.selected = Some(row);
-        }
-    }
-}
-
 /// What `0x114`'s init and refreshes read from a persona record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MyInfoPersona {
@@ -205,19 +173,17 @@ pub(crate) enum MyInfoAction {
     Browser(&'static str),
 }
 
-/// Dialog `0x114` while it exists.
+/// Dialog `0x114` while it exists: its combos' rows and its texts. Its
+/// widgets hold the selections, the enables and the boxes.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolMyInfoPage {
     /// [`COMBOS`] order.
-    pub(crate) combos: [MyInfoCombo; 5],
-    pub(crate) auto_login: bool,
-    pub(crate) auto_login_enabled: bool,
-    pub(crate) match_same_res: bool,
-    pub(crate) forget_enabled: bool,
-    pub(crate) play_buddy_enabled: bool,
+    pub(crate) combos: [Vec<MyInfoRow>; 5],
     /// The heading, the five statistics and the update line by control id
     /// (`0x77A9F0`).
     pub(crate) texts: Vec<(u16, String)>,
+    /// A text never written keeps its template `GUI:UnknownStats`.
+    unknown: String,
 }
 
 fn combo_index(control: u16) -> Option<usize> {
@@ -238,119 +204,148 @@ pub(crate) struct MyInfoRows {
     pub(crate) colors: Vec<MyInfoRow>,
 }
 
+fn set_flag(gui: &mut Gui, root: NodeId, ids: &[u16], prop: Prop, on: bool) {
+    for id in ids {
+        page::set(gui, root, *id, prop, Value::Bool(on));
+    }
+}
+
+/// Combo `control`'s selected row.
+pub(crate) fn selected(gui: &Gui, root: NodeId, control: u16) -> Option<usize> {
+    usize::try_from(page::int(gui, root, control, Prop::Selected)?).ok()
+}
+
 impl WolMyInfoPage {
-    /// Init `0x497`: fill the combos (nickname, locale, country, colour,
-    /// then server), then `0x77A9F0` with the nickname fill and the enables
-    /// by slot alone. The colour and country start at row 0 (`0x14E` 0).
+    /// Init `0x497` on the page's widgets: fill the combos (nickname,
+    /// locale, country, colour, then server), then `0x77A9F0` with the
+    /// nickname fill and the enables by slot alone. The colour and country
+    /// start at row 0 (`0x14E` 0); `0x7896A0`'s server pick is redone by
+    /// `0x77A9F0`. `unknown` is `GUI:UnknownStats`.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open(
+        gui: &mut Gui,
+        root: NodeId,
         rows: MyInfoRows,
         nickname: &str,
         persona: &MyInfoPersona,
         texts: Vec<(u16, String)>,
         auto_login_names_it: bool,
+        unknown: &str,
     ) -> Self {
         let mut nicknames = vec![MyInfoRow::text(rows.default_text, -1)];
         nicknames.extend(rows.nicknames);
-        let mut nickname_combo = MyInfoCombo::new(nicknames);
-        nickname_combo.selected = Some(0);
-        let server = match rows.servers {
-            Some(names) => MyInfoCombo::new(
-                names
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, name)| MyInfoRow::text(name, index as i32 + 1))
-                    .collect(),
-            ),
-            None => MyInfoCombo {
-                rows: vec![MyInfoRow::text(NO_SERVERS, 0)],
-                selected: None,
-                enabled: false,
-            },
+        let servers = match &rows.servers {
+            Some(names) => (names.iter().enumerate())
+                .map(|(index, name)| MyInfoRow::text(name.clone(), index as i32 + 1))
+                .collect(),
+            None => vec![MyInfoRow::text(NO_SERVERS, 0)],
         };
-        let mut country = MyInfoCombo::new(rows.countries);
-        country.selected = Some(0);
-        let mut color = MyInfoCombo::new(rows.colors);
-        color.selected = Some(0);
         let mut page = Self {
             combos: [
-                nickname_combo,
-                server,
-                MyInfoCombo::new(rows.locales),
-                country,
-                color,
+                nicknames,
+                servers,
+                rows.locales,
+                rows.countries,
+                rows.colors,
             ],
-            ..Self::default()
+            texts: Vec::new(),
+            unknown: unknown.to_owned(),
         };
-        // 0x7896A0 selects the persona's server or row 0 before 0x77A9F0
-        // looks again.
-        let server = &mut page.combos[1];
-        if server.enabled {
-            server.selected = Some(
-                server
-                    .rows
-                    .iter()
-                    .position(|row| row.text.eq_ignore_ascii_case(&persona.server))
-                    .unwrap_or(0),
-            );
+        for control in COMBOS {
+            page.fill(gui, root, control);
+            page::set(gui, root, control, Prop::Selected, Value::Int(-1));
         }
-        page.select_nickname(nickname);
-        page.refresh(persona, texts);
-        let slot = page.slot();
-        page.forget_enabled = slot != -1;
-        page.play_buddy_enabled = slot != -1;
-        page.auto_login_enabled = slot != -1;
-        page.auto_login = auto_login_names_it;
+        set_flag(gui, root, &[SERVER], Prop::Enabled, rows.servers.is_some());
+        for control in [COUNTRY, COLOR] {
+            page::set(gui, root, control, Prop::Selected, Value::Int(0));
+        }
+        // 0x77A9F0's nickname part: the stored row, else `GUI:Default`.
+        let found = (!nickname.is_empty())
+            .then(|| {
+                (page.combos[0].iter().skip(1))
+                    .position(|row| row.text.eq_ignore_ascii_case(nickname))
+                    .map(|row| row as i32 + 1)
+            })
+            .flatten();
+        page::set(gui, root, NICKNAME, Prop::Selected, Value::Int(found.unwrap_or(0)));
+        page.refresh(gui, root, persona, texts);
+        let stored = page.slot(gui, root) != -1;
+        set_flag(gui, root, &[FORGET, PLAY_BUDDY, AUTO_LOGIN], Prop::Enabled, stored);
+        set_flag(gui, root, &[AUTO_LOGIN], Prop::Checked, auto_login_names_it);
         page
     }
 
-    /// `0x77A9F0`'s nickname part: the stored row, else `GUI:Default`.
-    fn select_nickname(&mut self, nickname: &str) {
-        let combo = &mut self.combos[0];
-        let found = (!nickname.is_empty())
-            .then(|| {
-                combo
-                    .rows
-                    .iter()
-                    .skip(1)
-                    .position(|row| row.text.eq_ignore_ascii_case(nickname))
-                    .map(|row| row + 1)
-            })
-            .flatten();
-        combo.selected = Some(found.unwrap_or(0));
+    /// Combo `control`'s rows into its widget.
+    fn fill(&self, gui: &mut Gui, root: NodeId, control: u16) {
+        let Some(rows) = combo_index(control).map(|index| &self.combos[index]) else {
+            return;
+        };
+        let items = |f: fn(&MyInfoRow) -> String| Value::Items(rows.iter().map(f).collect());
+        page::set(gui, root, control, Prop::Items, items(|row| row.text.clone()));
+        let swatches = items(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default());
+        page::set(gui, root, control, Prop::Swatches, swatches);
+    }
+
+    /// `0x77A9F0`'s item-data search: the first row holding `data`, else the
+    /// selection stays.
+    fn select_data(&self, gui: &mut Gui, root: NodeId, control: u16, data: i32) {
+        let rows = combo_index(control).map_or(&[][..], |index| &self.combos[index]);
+        if let Some(row) = rows.iter().position(|row| row.data == data) {
+            page::set(gui, root, control, Prop::Selected, Value::Int(row as i32));
+        }
     }
 
     /// `0x77A9F0` without the nickname: the server by name (none when
     /// absent), the locale, country and colour by item data, MatchSameRes
     /// and the texts.
-    pub(crate) fn refresh(&mut self, persona: &MyInfoPersona, texts: Vec<(u16, String)>) {
-        let server = &mut self.combos[1];
-        server.selected = server
-            .rows
-            .iter()
+    pub(crate) fn refresh(
+        &mut self,
+        gui: &mut Gui,
+        root: NodeId,
+        persona: &MyInfoPersona,
+        texts: Vec<(u16, String)>,
+    ) {
+        let server = (self.combos[1].iter())
             .position(|row| row.text.eq_ignore_ascii_case(&persona.server));
-        self.combos[2].select_data(persona.locale);
-        self.combos[3].select_data(persona.country);
-        self.combos[4].select_data(persona.color);
-        self.match_same_res = persona.match_by_res;
+        let server = Value::Int(server.map_or(-1, |row| row as i32));
+        page::set(gui, root, SERVER, Prop::Selected, server);
+        self.select_data(gui, root, LOCALE, persona.locale);
+        self.select_data(gui, root, COUNTRY, persona.country);
+        self.select_data(gui, root, COLOR, persona.color);
+        set_flag(gui, root, &[MATCH_SAME_RES], Prop::Checked, persona.match_by_res);
         self.texts = texts;
+        for id in [HEADING, UPDATE].into_iter().chain(STATS) {
+            let text = self.texts.iter().find(|(control, _)| *control == id);
+            let text = text.map_or(&self.unknown, |(_, text)| text);
+            page::set(gui, root, id, Prop::Text, Value::Text(text.clone()));
+        }
+    }
+
+    /// API+0xD0's count fills `0x62A` (`0x00798F50`) and selects `locale`.
+    pub(crate) fn fill_locales(
+        &mut self,
+        gui: &mut Gui,
+        root: NodeId,
+        rows: Vec<MyInfoRow>,
+        locale: i32,
+    ) {
+        self.combos[2] = rows;
+        self.fill(gui, root, LOCALE);
+        page::set(gui, root, LOCALE, Prop::Selected, Value::Int(-1));
+        self.select_data(gui, root, LOCALE, locale);
+    }
+
+    /// Combo `control`'s selected row's item data, or `none` without one.
+    pub(crate) fn data_or(&self, gui: &Gui, root: NodeId, control: u16, none: i32) -> i32 {
+        let rows = combo_index(control).map_or(&[][..], |index| &self.combos[index]);
+        selected(gui, root, control)
+            .and_then(|row| rows.get(row))
+            .map_or(none, |row| row.data)
     }
 
     /// The nickname combo's item data, -1 without a stored row.
-    pub(crate) fn slot(&self) -> i32 {
-        self.combos[0].data_or(-1)
-    }
-
-    pub(crate) fn combo(&self, control: u16) -> Option<&MyInfoCombo> {
-        combo_index(control).map(|index| &self.combos[index])
-    }
-
-    pub(crate) fn enabled(&self, control: u16) -> bool {
-        match control {
-            FORGET => self.forget_enabled,
-            PLAY_BUDDY => self.play_buddy_enabled,
-            AUTO_LOGIN => self.auto_login_enabled,
-            control => self.combo(control).is_none_or(|combo| combo.enabled),
-        }
+    pub(crate) fn slot(&self, gui: &Gui, root: NodeId) -> i32 {
+        self.data_or(gui, root, NICKNAME, -1)
     }
 
     /// `0x628`'s handler after the app changed `[0xB73E40]` and loaded its
@@ -358,62 +353,56 @@ impl WolMyInfoPage {
     /// nonempty nickname. The combo itself is not refilled.
     pub(crate) fn nickname_changed(
         &mut self,
+        gui: &mut Gui,
+        root: NodeId,
         persona: &MyInfoPersona,
         texts: Vec<(u16, String)>,
         nickname_set: bool,
         auto_login_names_it: bool,
     ) {
-        let slot = self.slot();
-        self.auto_login_enabled = slot != -1;
-        self.auto_login = auto_login_names_it;
-        self.refresh(persona, texts);
-        self.forget_enabled = slot != -1 && nickname_set;
-        self.play_buddy_enabled = slot != -1 && nickname_set;
+        let stored = self.slot(gui, root) != -1;
+        set_flag(gui, root, &[AUTO_LOGIN], Prop::Enabled, stored);
+        set_flag(gui, root, &[AUTO_LOGIN], Prop::Checked, auto_login_names_it);
+        self.refresh(gui, root, persona, texts);
+        let on = stored && nickname_set;
+        set_flag(gui, root, &[FORGET, PLAY_BUDDY], Prop::Enabled, on);
     }
 
     /// A drop-list row was picked: CBN_SELCHANGE.
-    pub(crate) fn select(&mut self, control: u16, row: usize) -> Option<MyInfoAction> {
-        let combo = &mut self.combos[combo_index(control)?];
-        if !combo.enabled || row >= combo.rows.len() {
-            return None;
-        }
-        combo.selected = Some(row);
-        let data = combo.rows[row].data;
+    pub(crate) fn select(&self, control: u16, row: usize) -> Option<MyInfoAction> {
+        let picked = self.combos[combo_index(control)?].get(row)?;
+        let data = picked.data;
         Some(match control {
             NICKNAME => MyInfoAction::Nickname { slot: data },
-            SERVER => MyInfoAction::Server(combo.rows[row].text.clone()),
+            SERVER => MyInfoAction::Server(picked.text.clone()),
             LOCALE => MyInfoAction::Locale(data),
             COUNTRY => MyInfoAction::Country(data),
             _ => MyInfoAction::Color(data),
         })
     }
 
-    /// A click on a checkbox's icon: BS_AUTOCHECKBOX flips it.
-    pub(crate) fn toggle(&mut self, control: u16) -> Option<MyInfoAction> {
+    /// A box flipped (BS_AUTOCHECKBOX).
+    pub(crate) fn toggle(control: u16, checked: bool) -> Option<MyInfoAction> {
         match control {
-            AUTO_LOGIN if self.auto_login_enabled => {
-                self.auto_login = !self.auto_login;
-                Some(MyInfoAction::AutoLogin(self.auto_login))
-            }
-            MATCH_SAME_RES => {
-                self.match_same_res = !self.match_same_res;
-                Some(MyInfoAction::MatchSameRes(self.match_same_res))
-            }
+            AUTO_LOGIN => Some(MyInfoAction::AutoLogin(checked)),
+            MATCH_SAME_RES => Some(MyInfoAction::MatchSameRes(checked)),
             _ => None,
         }
     }
 
     /// A released button.
-    pub(crate) fn activate(&mut self, control: u16) -> Option<MyInfoAction> {
-        if !self.enabled(control) {
-            return None;
-        }
+    pub(crate) fn activate(
+        &mut self,
+        gui: &mut Gui,
+        root: NodeId,
+        control: u16,
+    ) -> Option<MyInfoAction> {
         match control {
             BACK | PLAY_BUDDY => Some(MyInfoAction::Close(control)),
             CLAN => Some(MyInfoAction::Browser("Battleclans")),
             TOURNAMENT => Some(MyInfoAction::Browser("Ladder")),
             MANAGE => Some(MyInfoAction::Browser("Manage")),
-            FORGET => self.forget(),
+            FORGET => self.forget(gui, root),
             _ => None,
         }
     }
@@ -421,72 +410,22 @@ impl WolMyInfoPage {
     /// Forget Account (`0x00799692..0x007998CC`): a stored row is deleted;
     /// then the selection returns to `GUI:Default` without a notification,
     /// Forget and AutoLogin go off. `[0xB73E40]` and Play Buddy stay.
-    fn forget(&mut self) -> Option<MyInfoAction> {
-        let combo = &mut self.combos[0];
-        let action = combo.selected.and_then(|row| {
-            let stored = combo.rows.get(row)?.clone();
+    fn forget(&mut self, gui: &mut Gui, root: NodeId) -> Option<MyInfoAction> {
+        let action = selected(gui, root, NICKNAME).and_then(|row| {
+            let stored = self.combos[0].get(row)?.clone();
             if stored.data != -1 {
-                combo.rows.remove(row);
+                self.combos[0].remove(row);
             }
             Some(MyInfoAction::Forget {
                 name: stored.text,
                 slot: stored.data,
             })
         });
-        combo.selected = Some(0);
-        self.forget_enabled = false;
-        self.auto_login = false;
-        self.auto_login_enabled = false;
+        self.fill(gui, root, NICKNAME);
+        page::set(gui, root, NICKNAME, Prop::Selected, Value::Int(0));
+        set_flag(gui, root, &[FORGET, AUTO_LOGIN], Prop::Enabled, false);
+        set_flag(gui, root, &[AUTO_LOGIN], Prop::Checked, false);
         action
-    }
-
-    /// Shows the page in its widgets: the combos' rows, selections and
-    /// enables, the boxes, the buttons' enables and the texts (a text never
-    /// written keeps its template `GUI:UnknownStats`, `unknown`).
-    pub(crate) fn present(&self, gui: &mut Gui, root: NodeId, unknown: &str) {
-        let mut set = |id: u16, prop: Prop, value: Value| page::set(gui, root, id, prop, value);
-        for (id, combo) in COMBOS.into_iter().zip(&self.combos) {
-            let rows =
-                |f: fn(&MyInfoRow) -> String| Value::Items(combo.rows.iter().map(f).collect());
-            set(id, Prop::Items, rows(|row| row.text.clone()));
-            set(
-                id,
-                Prop::Swatches,
-                rows(|row| row.swatch.map(|s| s.to_string()).unwrap_or_default()),
-            );
-            set(
-                id,
-                Prop::Selected,
-                Value::Int(combo.selected.map_or(-1, |row| row as i32)),
-            );
-            set(id, Prop::Enabled, Value::Bool(combo.enabled));
-        }
-        for (id, checked) in [
-            (AUTO_LOGIN, self.auto_login),
-            (MATCH_SAME_RES, self.match_same_res),
-        ] {
-            // The caption greys as a disabled button's does.
-            let enabled = self.enabled(id);
-            let color = if enabled {
-                Rgba(0xFF, 0xFF, 0, 0xFF)
-            } else {
-                Rgba(0x48, 0, 0, 0xFF)
-            };
-            set(id, Prop::Checked, Value::Bool(checked));
-            set(id, Prop::Enabled, Value::Bool(enabled));
-            set(id, Prop::Color, Value::Rgba(color));
-        }
-        for id in [FORGET, PLAY_BUDDY] {
-            set(id, Prop::Enabled, Value::Bool(self.enabled(id)));
-        }
-        for id in [HEADING, UPDATE].into_iter().chain(STATS) {
-            let text = self.texts.iter().find(|(control, _)| *control == id);
-            set(
-                id,
-                Prop::Text,
-                Value::Text(text.map_or(unknown, |(_, text)| text).to_owned()),
-            );
-        }
     }
 }
 
@@ -516,8 +455,11 @@ pub(crate) fn spec() -> NodeSpec {
         (MATCH_SAME_RES, MATCH_SAME_RES_KEY),
     ]
     .map(|(id, key)| {
+        // The caption greys as a disabled button's does.
         help(NodeSpec::new(NodeKind::Checkbox), id)
             .label(key)
+            .with(Prop::Color, Value::Rgba(Rgba(0xFF, 0xFF, 0, 0xFF)))
+            .with(Prop::DisabledColor, Value::Rgba(Rgba(0x48, 0, 0, 0xFF)))
     });
     let texts = [
         (HEADING, ShellAlign::H_CENTER),
@@ -674,16 +616,52 @@ mod tests {
         }
     }
 
-    fn selected_data(page: &WolMyInfoPage) -> Vec<i32> {
-        page.combos.iter().map(|combo| combo.data_or(-99)).collect()
+    /// `0x114`'s widgets with the page opened on them.
+    struct Page {
+        gui: Gui,
+        root: NodeId,
+        page: WolMyInfoPage,
+    }
+
+    impl Page {
+        fn open(rows: MyInfoRows, nickname: &str, persona: &MyInfoPersona, auto: bool) -> Self {
+            let mut gui = Gui::new(64);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            page::ensure_built(&mut gui, root, spec);
+            let page = WolMyInfoPage::open(
+                &mut gui,
+                root,
+                rows,
+                nickname,
+                persona,
+                Vec::new(),
+                auto,
+                "?",
+            );
+            Self { gui, root, page }
+        }
+
+        fn data(&self) -> Vec<i32> {
+            (COMBOS.iter())
+                .map(|id| self.page.data_or(&self.gui, self.root, *id, -99))
+                .collect()
+        }
+
+        fn flag(&self, id: u16, prop: Prop) -> bool {
+            page::get(&self.gui, self.root, id, prop) == Some(&Value::Bool(true))
+        }
+
+        fn enabled(&self, ids: &[u16]) -> Vec<bool> {
+            ids.iter().map(|id| self.flag(*id, Prop::Enabled)).collect()
+        }
     }
 
     #[test]
     fn init_fills_from_the_persona_and_enables_by_slot() {
-        let page = WolMyInfoPage::open(rows(), "Tester", &persona(), Vec::new(), true);
-        assert_eq!(selected_data(&page), [1, 2, 5, 3, 2]);
-        assert!(page.forget_enabled && page.play_buddy_enabled && page.auto_login_enabled);
-        assert!(page.auto_login && !page.match_same_res);
+        let page = Page::open(rows(), "Tester", &persona(), true);
+        assert_eq!(page.data(), [1, 2, 5, 3, 2]);
+        assert_eq!(page.enabled(&[FORGET, PLAY_BUDDY, AUTO_LOGIN]), [true; 3]);
+        assert!(page.flag(AUTO_LOGIN, Prop::Checked) && !page.flag(MATCH_SAME_RES, Prop::Checked));
 
         // An empty or unlisted nickname shows Default; the server combo
         // loses its selection when the persona names none listed.
@@ -691,23 +669,23 @@ mod tests {
             server: String::new(),
             ..persona()
         };
-        let mut page = WolMyInfoPage::open(rows(), "", &default, Vec::new(), false);
-        assert_eq!(page.slot(), -1);
-        assert_eq!(page.combos[1].selected, None);
-        assert!(!page.forget_enabled && !page.play_buddy_enabled && !page.auto_login_enabled);
-        assert!(!page.enabled(FORGET) && page.activate(FORGET).is_none());
+        let page = Page::open(rows(), "", &default, false);
+        assert_eq!(page.page.slot(&page.gui, page.root), -1);
+        assert_eq!(selected(&page.gui, page.root, SERVER), None);
+        assert_eq!(page.enabled(&[FORGET, PLAY_BUDDY, AUTO_LOGIN]), [false; 3]);
 
         // One server record: the disabled placeholder.
         let mut single = rows();
         single.servers = None;
-        let page = WolMyInfoPage::open(single, "tester", &persona(), Vec::new(), false);
-        assert!(!page.enabled(SERVER));
-        assert_eq!(page.combos[1].rows[0].text, NO_SERVERS);
+        let page = Page::open(single, "tester", &persona(), false);
+        assert_eq!(page.enabled(&[SERVER]), [false]);
+        assert_eq!(page.page.combos[1][0].text, NO_SERVERS);
     }
 
     #[test]
     fn handlers_follow_the_proc_table() {
-        let mut page = WolMyInfoPage::open(rows(), "tester", &persona(), Vec::new(), false);
+        let mut p = Page::open(rows(), "tester", &persona(), false);
+        let page = &mut p.page;
         assert_eq!(
             page.select(SERVER, 0),
             Some(MyInfoAction::Server("Ladder".into()))
@@ -717,24 +695,23 @@ mod tests {
         assert_eq!(page.select(COLOR, 1), Some(MyInfoAction::Color(0)));
         assert_eq!(page.select(COLOR, 99), None);
         assert_eq!(
-            page.toggle(MATCH_SAME_RES),
+            WolMyInfoPage::toggle(MATCH_SAME_RES, true),
             Some(MyInfoAction::MatchSameRes(true))
         );
-        assert_eq!(page.toggle(AUTO_LOGIN), Some(MyInfoAction::AutoLogin(true)));
-        assert_eq!(page.activate(BACK), Some(MyInfoAction::Close(BACK)));
         assert_eq!(
-            page.activate(PLAY_BUDDY),
-            Some(MyInfoAction::Close(PLAY_BUDDY))
+            WolMyInfoPage::toggle(AUTO_LOGIN, true),
+            Some(MyInfoAction::AutoLogin(true))
         );
-        assert_eq!(
-            page.activate(CLAN),
-            Some(MyInfoAction::Browser("Battleclans"))
-        );
-        assert_eq!(
-            page.activate(TOURNAMENT),
-            Some(MyInfoAction::Browser("Ladder"))
-        );
-        assert_eq!(page.activate(MANAGE), Some(MyInfoAction::Browser("Manage")));
+        let (gui, root) = (&mut p.gui, p.root);
+        for (control, action) in [
+            (BACK, MyInfoAction::Close(BACK)),
+            (PLAY_BUDDY, MyInfoAction::Close(PLAY_BUDDY)),
+            (CLAN, MyInfoAction::Browser("Battleclans")),
+            (TOURNAMENT, MyInfoAction::Browser("Ladder")),
+            (MANAGE, MyInfoAction::Browser("Manage")),
+        ] {
+            assert_eq!(page.activate(gui, root, control), Some(action));
+        }
 
         // The nickname change: Default clears the enables, a stored row with
         // a nickname sets them; AutoLogin follows the slot alone.
@@ -742,35 +719,38 @@ mod tests {
             page.select(NICKNAME, 0),
             Some(MyInfoAction::Nickname { slot: -1 })
         );
-        page.nickname_changed(&persona(), Vec::new(), false, false);
-        assert!(!page.forget_enabled && !page.play_buddy_enabled && !page.auto_login_enabled);
+        page::set(gui, root, NICKNAME, Prop::Selected, Value::Int(0));
+        page.nickname_changed(gui, root, &persona(), Vec::new(), false, false);
+        assert_eq!(p.enabled(&[FORGET, PLAY_BUDDY, AUTO_LOGIN]), [false; 3]);
+        let (gui, root, page) = (&mut p.gui, p.root, &mut p.page);
         assert_eq!(
             page.select(NICKNAME, 2),
             Some(MyInfoAction::Nickname { slot: 32 })
         );
-        page.nickname_changed(&persona(), Vec::new(), true, true);
-        assert!(page.forget_enabled && page.play_buddy_enabled && page.auto_login);
+        page::set(gui, root, NICKNAME, Prop::Selected, Value::Int(2));
+        page.nickname_changed(gui, root, &persona(), Vec::new(), true, true);
+        assert_eq!(p.enabled(&[FORGET, PLAY_BUDDY]), [true; 2]);
+        assert!(p.flag(AUTO_LOGIN, Prop::Checked));
     }
 
     #[test]
     fn forget_removes_the_row_and_keeps_play_buddy() {
-        let mut page = WolMyInfoPage::open(rows(), "Other", &persona(), Vec::new(), true);
+        let mut p = Page::open(rows(), "Other", &persona(), true);
         assert_eq!(
-            page.activate(FORGET),
+            p.page.activate(&mut p.gui, p.root, FORGET),
             Some(MyInfoAction::Forget {
                 name: "Other".into(),
                 slot: 32
             })
         );
-        let names: Vec<&str> = page.combos[0]
-            .rows
+        let names: Vec<&str> = p.page.combos[0]
             .iter()
             .map(|row| row.text.as_str())
             .collect();
         assert_eq!(names, ["Default", "tester"]);
-        assert_eq!(page.slot(), -1);
-        assert!(!page.forget_enabled && !page.auto_login && !page.auto_login_enabled);
-        assert!(page.play_buddy_enabled);
+        assert_eq!(p.page.slot(&p.gui, p.root), -1);
+        assert_eq!(p.enabled(&[FORGET, AUTO_LOGIN, PLAY_BUDDY]), [false, false, true]);
+        assert!(!p.flag(AUTO_LOGIN, Prop::Checked));
     }
 
     #[test]

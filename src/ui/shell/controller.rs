@@ -44,6 +44,7 @@ impl Default for DialogController {
         let mut gui = Gui::new(4096);
         let (time, width, height) = super::saved_file_input::host_double_click_limits();
         gui.set_double_click(time.as_millis() as u64, width, height);
+        gui.set_byte_len(|text| crate::util::native_string::acp_encode(text).len());
         Self { gui, stack: Vec::new(), epoch: Instant::now(), pending: Vec::new() }
     }
 }

@@ -23,6 +23,7 @@ use vera20k_gui::{
     Value,
 };
 
+use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::{
     LanChatState, PlayerNameMatch, apply_chat_length_limit, saved_player_name_matches,
 };
@@ -443,6 +444,8 @@ pub(crate) enum WolLobbyEffect {
     Card(String),
     /// A card button released.
     CardButton(u16),
+    /// A row of your card's country list picked.
+    CardCountry(usize),
 }
 
 /// The dialog's children: list contents, chat transcript, popups and the
@@ -491,6 +494,7 @@ impl std::fmt::Debug for WolLobbyState {
 fn page_spec() -> NodeSpec {
     let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
     let checkbox = |id: u16| NodeSpec::new(NodeKind::Checkbox).id(id.into());
+    let align = |a: ShellAlign| Value::Int(i32::from(a.0));
     // The transcript and the multi-select user list paint no selected row.
     let list = |id: u16| {
         NodeSpec::new(NodeKind::List)
@@ -508,16 +512,22 @@ fn page_spec() -> NodeSpec {
                 .chain([QUICK_MATCH, BACK_TO_ROOM])
                 .map(button),
         )
-        .children(
-            SORT_BUTTONS
-                .iter()
-                .map(|(id, _)| *id)
-                .chain([REFRESH, EMOTE])
-                .map(button),
-        )
+        .children(SORT_BUTTONS.iter().map(|(id, key)| {
+            let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+            button(*id).label(key).with(Prop::Align, align(centre))
+        }))
+        .children([REFRESH, EMOTE].map(button))
         .children([OBSERVER_TOGGLE, OBSERVER_IMAGE].map(checkbox))
         .children([LOBBIES, GAMES, PLAYERS, CHAT_LOG].map(list))
         .child(NodeSpec::new(NodeKind::Edit).id(CHAT.into()))
+        .children(
+            (LABELS.iter().map(|(id, key)| (*id, *key, ShellAlign::NONE)))
+                .chain([(OBSERVER_CAPTION, "GUI:Observe", ShellAlign::H_RIGHT)])
+                .map(|(id, key, a)| {
+                    let text = NodeSpec::new(NodeKind::Text).id(id.into()).label(key);
+                    text.with(Prop::Align, align(a))
+                }),
+        )
 }
 
 impl WolLobbyState {
@@ -727,9 +737,10 @@ impl WolLobbyState {
             else {
                 continue;
             };
-            let mut edit = self.edit(id);
-            edit.scroll_to_caret((self.scale.base_rect(rect).w - 3).max(0) as u32, measure);
-            self.set(id, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+            let available = (self.scale.base_rect(rect).w - 3).max(0) as u32;
+            if let Some(node) = self.node(id) {
+                page::scroll_edit(&mut self.gui, node, available, measure);
+            }
         }
     }
 
@@ -796,16 +807,8 @@ impl WolLobbyState {
             .and_then(|id| u16::try_from(id).ok())
     }
 
-    /// The pointer left the window or a box took it: every capture and
-    /// hover ends (a held scroll arrow lets go).
-    pub(crate) fn cancel_pointer(&mut self) {
-        self.release_buttons();
-        if let Some(card) = self.card.as_mut() {
-            card.country_list.cancel_pointer();
-        }
-    }
-
-    /// Only the buttons' press and hover end (the page slides out).
+    /// The pointer left the window, a box took it or the page slides out:
+    /// every capture and hover ends (a held scroll arrow lets go).
     pub(crate) fn release_buttons(&mut self) {
         let up = InputEvent::PointerUp {
             x: i32::MIN / 2,
@@ -987,23 +990,16 @@ impl WolLobbyState {
         }
         let name = self.player_rows.get(row)?.name.clone();
         self.close_card();
-        let card = [
-            CARD_MESSAGE,
-            CARD_COUNTRY,
-            CARD_BUDDY,
-            CARD_PROFILE,
-            CARD_CLOSE,
-        ]
-        .map(|id| NodeSpec::new(NodeKind::Button).id(id.into()));
-        if let Ok(root) = self
-            .gui
-            .create_tree(&NodeSpec::new(NodeKind::Dialog).children(card), None)
+        if let Ok(root) = self.gui.create_tree(&player_card::card_spec(), None)
             && let Ok(dialog) = self.gui.push_dialog(root, DialogKind::Modal, None, None)
         {
             self.gui.set_dialog_scale(dialog, self.scale);
             self.card_dialog = Some((dialog, root));
         }
-        self.card = Some(WolPlayerCard::new(name.clone()));
+        self.card = Some(WolPlayerCard {
+            name: name.clone(),
+            countries: Vec::new(),
+        });
         Some(name)
     }
 
@@ -1011,25 +1007,6 @@ impl WolLobbyState {
         self.card = None;
         if let Some((dialog, _)) = self.card_dialog.take() {
             let _ = self.gui.pop_dialog(dialog);
-        }
-    }
-
-    /// Puts the card's buttons on their rects (`None`: hidden) and sets
-    /// which take a press.
-    pub(crate) fn sync_card(&mut self, place: impl Fn(u16) -> Option<(RectPx, bool)>) {
-        let Some((_, root)) = self.card_dialog else {
-            return;
-        };
-        page::sync_rects(&mut self.gui, root, |id| place(id).map(|(rect, _)| rect));
-        for id in [
-            CARD_MESSAGE,
-            CARD_COUNTRY,
-            CARD_BUDDY,
-            CARD_PROFILE,
-            CARD_CLOSE,
-        ] {
-            let enabled = place(id).is_none_or(|(_, enabled)| enabled);
-            page::set(&mut self.gui, root, id, Prop::Enabled, Value::Bool(enabled));
         }
     }
 
@@ -1183,6 +1160,9 @@ impl WolLobbyState {
                 ),
                 PageEvent::Activated(id) if self.card_dialog.is_some() => {
                     out.push(WolLobbyEffect::CardButton(id))
+                }
+                PageEvent::Picked(CARD_COUNTRIES, row) => {
+                    out.extend(usize::try_from(row).ok().map(WolLobbyEffect::CardCountry))
                 }
                 PageEvent::Activated(id) => {
                     out.extend(self.activate(id).map(WolLobbyEffect::Action))

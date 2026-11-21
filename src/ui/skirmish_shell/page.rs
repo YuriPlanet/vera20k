@@ -67,6 +67,9 @@ const CONTROLS: [(u16, Target); 18] = [
     (0x5A8, Target::ScenarioLabel0x5a8),
     (0x695, Target::StatusHelp0x695),
 ];
+/// The name box: a dialog's Win32 edit, so a press that focuses it selects
+/// the name, and `EM_LIMITTEXT` caps its ANSI bytes.
+const PLAYER_NAME: u16 = 0x6A0;
 /// The row slots' flag pictures (gamemd's `0x6DA..0x6E1`, then VERA's).
 const FLAG: u16 = 0x7300;
 /// The row slots' combos: `COMBO + kind * 0x20 + slot`, kind 0 the computer
@@ -145,6 +148,16 @@ fn spec() -> NodeSpec {
             Target::Checkbox(_) => NodeSpec::new(NodeKind::Checkbox),
             Target::Trackbar(_) => NodeSpec::new(NodeKind::Trackbar),
             Target::OwnerDrawButton(_) => NodeSpec::new(NodeKind::Button),
+            Target::PlayerName0x6a0 => NodeSpec::new(NodeKind::Edit)
+                .with(
+                    Prop::TextInset,
+                    Value::Rect(super::layout::FRAMED_EDIT_TEXT_INSET),
+                )
+                .with(Prop::SelectOnFocus, Value::Bool(true))
+                .with(
+                    Prop::MaxBytes,
+                    Value::Int(super::state::PLAYER_NAME_EDIT_LIMIT_BYTES as i32),
+                ),
             // A static hovers for its status help, none for the status line.
             _ => NodeSpec::new(NodeKind::Text),
         };
@@ -251,6 +264,8 @@ pub fn sync_page(
             page::set(gui, root, node, prop, value);
         }
     }
+    let name = Value::Text(state.player_name.clone());
+    page::set(gui, root, PLAYER_NAME, Prop::Text, name);
     for (index, heading) in (HEADINGS..).zip(&labels.headings) {
         page::set(gui, root, index, Prop::Text, Value::Text(heading.clone()));
     }
@@ -347,6 +362,9 @@ fn handle(
     for event in events {
         match event {
             PageEvent::Cue(cue) => cues.push(cue),
+            PageEvent::TextChanged(PLAYER_NAME, name) => {
+                state.player_name = crate::util::native_string::acp_round_trip(&name);
+            }
             PageEvent::Activated(id) => {
                 if let Some(Target::OwnerDrawButton(button)) = control(id) {
                     action = Some(match button {
@@ -475,6 +493,43 @@ pub fn pointer(
     }
     let events = route(controller, at, x, y, scrolling);
     handle(state, maps, events)
+}
+
+/// A key or typed text for the focused name box, which keeps its caret in
+/// view (`measure` the font's text widths); whether the name box has the
+/// focus. Tab moves the focus on: the page models no other stop, so the box
+/// loses it.
+pub fn key(
+    controller: &mut DialogController,
+    state: &mut SkirmishShellState,
+    layout: &SkirmishShellLayout,
+    event: Option<vera20k_gui::InputEvent>,
+    measure: impl Fn(&str) -> u32,
+) -> bool {
+    if controller.focused_control(DIALOG) != Some(PLAYER_NAME) {
+        return false;
+    }
+    let Some(event) = event else {
+        controller.focus_control(DIALOG, None);
+        return true;
+    };
+    controller.on_input(event);
+    let raw = controller.drain_events();
+    handle(state, &[], page::page_events(controller.gui(), raw));
+    scroll_player_name(controller, layout, measure);
+    true
+}
+
+/// NewEdit keeps the name box's caret in view.
+pub fn scroll_player_name(
+    controller: &mut DialogController,
+    layout: &SkirmishShellLayout,
+    measure: impl Fn(&str) -> u32,
+) {
+    if let Some(node) = controller.control(DIALOG, PLAYER_NAME) {
+        let available = super::layout::framed_edit_text_width(layout.player_name, layout.scale);
+        page::scroll_edit(controller.gui_mut(), node, available, measure);
+    }
 }
 
 /// The control whose status help the pointer at `x`, `y` shows: nothing

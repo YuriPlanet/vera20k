@@ -2,20 +2,18 @@
 //!
 //! Covers Choose Map and validation modal instance construction.
 
-use super::shell_box::push_saved_browser_prompt_instances;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::geom::{LOWER_STRIP_H, ShellScale};
-use crate::ui::shell::list::ListMetrics;
 use crate::ui::skirmish_shell::{
     ChooseMapModalLayout, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
-    SavedSeedBrowserState, SavedSeedLayout, SkirmishShellLayout,
+    SkirmishShellLayout,
 };
 
 use super::chrome::{
     common_shell_origin, push_entry_grown, push_lower_strip_instance, push_rect_outline,
-    push_right_panel_base_instances, push_right_panel_button_shp, push_solid_rect,
+    push_right_panel_base_instances, push_solid_rect,
 };
 use super::controls::{ControlPaint, paint_control};
 use super::draw_order::{GenericBackgroundRole, generic_background_role};
@@ -425,82 +423,4 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             SHELL_DROPDOWN_DEPTH - 0.00014,
         );
     }
-}
-
-/// Shared native list/editor/prompt painting; active-game callers supply
-/// SIDEBTTN from the side atlas and therefore omit the launcher column buttons.
-pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    font: &crate::render::bit_font::BitFont,
-    layout: &SavedSeedLayout,
-    browser: &SavedSeedBrowserState<I>,
-    interior: BackdropInteriorPaint,
-    column_buttons: bool,
-) {
-    use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, DELETE, LOAD};
-    let top = browser.top();
-    let geometry = crate::ui::shell::list::ShellListGeometry::new(
-        layout.list,
-        browser.entries.len(),
-        top,
-        ListMetrics::scaled(layout.scale),
-    );
-    let (selected, pressed) = (browser.selected(), browser.list_pressed());
-    let solid = interior.paints_solid_fill();
-    super::list::paint_list(
-        out,
-        atlas,
-        geometry,
-        top,
-        selected,
-        pressed,
-        solid,
-        layout.scale,
-    );
-    // The name field is a plain sunken plate; Save is the only mode that has one.
-    if let Some(edit) = layout.name_edit {
-        super::controls::push_new_edit_instances(
-            out,
-            atlas,
-            font,
-            &browser.edit(),
-            super::controls::NewEditPaint {
-                frame: edit,
-                text: crate::ui::skirmish_shell::player_name_edit_text_rect(edit, layout.scale),
-                background: Some(SHELL_MODAL_PANEL_RGB),
-                frame_depth: SHELL_DROPDOWN_DEPTH - 0.00011,
-                caret_depth: SHELL_DROPDOWN_DEPTH - 0.00012,
-                caret_visible: browser.caret_visible(),
-            },
-            layout.scale,
-        );
-    }
-    if column_buttons {
-        // VERA's Setups page adds Load and Delete, which act on a saved row.
-        for (rect, control) in [
-            (Some(layout.action), ACTION),
-            (layout.load, LOAD),
-            (layout.delete, DELETE),
-            (Some(layout.back), BACK),
-        ] {
-            let Some(rect) = rect else {
-                continue;
-            };
-            let disabled = match control {
-                ACTION => !browser.action_enabled(),
-                LOAD | DELETE => browser.selected_saved().is_none(),
-                _ => false,
-            };
-            push_right_panel_button_shp(
-                out,
-                atlas,
-                rect,
-                browser.pressed(control),
-                disabled,
-                SHELL_DROPDOWN_DEPTH - 0.00012,
-            );
-        }
-    }
-    push_saved_browser_prompt_instances(out, atlas, layout, browser);
 }

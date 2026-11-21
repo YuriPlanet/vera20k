@@ -936,8 +936,8 @@ impl App {
                     .as_ref()
                     .and_then(|config| config.profile.player_name())
                 {
-                    skirmish_shell_state.player_name_edit =
-                        crate::ui::skirmish_shell::PlayerNameEditState::with_name(profile_name);
+                    skirmish_shell_state.player_name =
+                        crate::ui::skirmish_shell::player_name_from_profile(profile_name);
                 }
                 crate::ui::skirmish_shell::repair_teams_for_selected_mode(
                     &mut skirmish_shell_state,

@@ -15,7 +15,7 @@ mod widget;
 
 pub use shell::geom::RectPx as Rect;
 pub use gui::{
-    DialogId, DialogKind, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs, hover_flash_on,
+    DialogId, DialogKind, Gui, InputEvent, InputResult, Key, MouseButton, UiEvent, UiMs,
 };
 pub use node::{NodeId, NodeKind, Prop, Refused, Rgba, Tree, Value};
 pub use widget::combo::ComboDropDown;

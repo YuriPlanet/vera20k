@@ -12,13 +12,11 @@ use crate::render::shell_paint::{self, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition};
 use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
     COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalLayout, RandomMapSetupLayout, RectPx,
-    SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboItem,
-    SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellState, combo_text_rect,
-    player_name_edit_text_rect, random_map_setup_dropdown_rect,
+    SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboItem, SkirmishCountryChoice,
+    SkirmishShellLayout, combo_text_rect, random_map_setup_dropdown_rect,
 };
 
 use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
@@ -140,19 +138,7 @@ pub(super) fn combo_face_text_color(disabled: bool) -> [f32; 3] {
 /// the result. `ShellScale::RETAIL` reproduces the plain offsets.
 pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
     scale.derive_rect(rect, |rect| {
-        let mut x = rect.x;
-        let y = if pressed {
-            x += 2;
-            rect.y + 5
-        } else {
-            rect.y + 1
-        };
-        RectPx::new(
-            x,
-            y,
-            (rect.x + rect.w - 2 - x).max(0),
-            (rect.y + rect.h - y).max(0),
-        )
+        crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed)
     })
 }
 
@@ -185,12 +171,7 @@ pub(super) fn push_text_draw(
 }
 
 pub(super) fn rect_to_text_rect(rect: RectPx) -> TextRect {
-    TextRect {
-        x: rect.x,
-        y: rect.y,
-        w: rect.w.max(0) as u32,
-        h: rect.h.max(0) as u32,
-    }
+    TextRect::of(rect)
 }
 
 pub(super) fn combo_dropdown_text_fit_width(content: RectPx, scale: ShellScale) -> u32 {
@@ -362,51 +343,12 @@ pub(super) fn dialog_statics_labels(
         .collect()
 }
 
-pub(super) fn push_player_name_edit_text_draw(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    shell: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-) {
-    let scale = layout.scale.factor();
-    let rect = player_name_edit_text_rect(layout.player_name, layout.scale);
-    let scissor = shell_text::ScissorRect {
-        x: rect.x.max(0) as u32,
-        y: rect.y.max(0) as u32,
-        w: rect.w.max(0) as u32,
-        h: rect.h.max(0) as u32,
-    };
-    if shell.player_name_edit.text.is_empty() {
-        out.push(ShellTextDraw {
-            instances: Vec::new(),
-            scissor,
-        });
-        return;
-    }
-
-    // The scroll offset is in authored glyph units, so it advances with the
-    // scaled text.
-    let line_y = rect.y as f32
-        + ((rect.h as f32 - state.renderer.bit_font.glyph_height() * scale).max(0.0) / 2.0).floor();
-    let instances = state.renderer.bit_font.build_text(
-        &shell.player_name_edit.text,
-        rect.x as f32 - (shell.player_name_edit.scroll_x.max(0) as f32 * scale),
-        line_y,
-        scale,
-        SHELL_CONTROL_TEXT_DEPTH,
-        SHELL_LABEL_TEXT_RGB,
-        [0.0, 0.0],
-    );
-    out.push(ShellTextDraw { instances, scissor });
-}
-
 /// The dialog's text: the kind-1 statics (`statics`, from
-/// [`paint_skirmish_statics`]), the name box and the widgets' captions
-/// (`widgets`, [`super::gui_paint`]).
+/// [`paint_skirmish_statics`]) and the widgets' texts, the name box's among
+/// them (`widgets`, [`super::gui_paint`]).
 pub(super) fn build_shell_text_draws(
     state: &AppState,
     layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
     statics: &[PaintLabel<'_>],
     widgets: Vec<ShellTextDraw>,
 ) -> Vec<ShellTextDraw> {
@@ -416,7 +358,6 @@ pub(super) fn build_shell_text_draws(
         SHELL_CONTROL_TEXT_DEPTH,
         layout.scale.factor(),
     );
-    push_player_name_edit_text_draw(&mut shell_draws, state, shell, layout);
     shell_draws.extend(widgets);
     shell_draws
 }
@@ -880,133 +821,6 @@ pub(super) fn start_marker_label_origin(
     )
 }
 
-/// A pre-match browser's text: the saved-seed browser over `0x105` or VERA's
-/// Setups page over `0x102` (`title`, a Save browser with Load and Delete),
-/// with its rows, name field, captions and a message box when one is up.
-/// Pre-match saved seeds hide `0x40C`.
-pub(super) fn push_seed_browser_text_draws<I>(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    layout: &SavedSeedLayout,
-    browser: &crate::ui::skirmish_shell::SavedSeedBrowserState<I>,
-    title: &str,
-) {
-    let scale = layout.scale;
-    let centred = |out: &mut Vec<ShellTextDraw>, text: &str, rect: RectPx| {
-        let rgb = SHELL_LABEL_TEXT_RGB;
-        let align = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-        push_text_draw(
-            out,
-            state,
-            text,
-            rect_to_text_rect(rect),
-            rgb,
-            align,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
-            scale.factor(),
-        );
-    };
-    centred(out, title, layout.title);
-    push_saved_browser_contents_text(out, state, layout, browser);
-    let (action_key, action_fallback) = browser.mode.action_label();
-    for (rect, key, fallback) in [
-        (Some(layout.action), action_key, action_fallback),
-        (layout.load, "GUI:Load", "Load"),
-        (layout.delete, "GUI:Delete", "Delete"),
-        (Some(layout.back), "GUI:Back", "Back"),
-    ] {
-        if let Some(rect) = rect {
-            centred(out, &state.csf_label(key, fallback), rect);
-        }
-    }
-    super::shell_box::push_saved_browser_prompt_text(out, state, layout, browser);
-}
-
-pub(super) fn push_saved_browser_contents_text<I>(
-    out: &mut Vec<ShellTextDraw>,
-    state: &AppState,
-    layout: &SavedSeedLayout,
-    browser: &crate::ui::skirmish_shell::SavedSeedBrowserState<I>,
-) {
-    let scale = layout.scale;
-    let top = browser.top();
-    let geometry = crate::ui::shell::list::ShellListGeometry::new(
-        layout.list,
-        browser.entries.len(),
-        top,
-        ListMetrics::scaled(scale),
-    );
-    let visible = geometry.visible_rows;
-    for row in 0..visible {
-        let Some(entry) = browser.entries.get(top + row) else {
-            break;
-        };
-        let rect = geometry.row(row);
-        if rect.h <= 0 {
-            continue;
-        }
-        // The three columns are laid out in the template's authored pixels and
-        // stretched once with the row, so their offsets keep their proportion.
-        let base = scale.base_rect(rect);
-        let (date, time) =
-            crate::util::native_file_time::format_file_time_parts(entry.last_write_time)
-                .unwrap_or_default();
-        for (text, offset, width) in [
-            (entry.description.display_text(), 2, 249),
-            (date, 255, 56),
-            (time, 315, 0),
-        ] {
-            let left = base.x + offset;
-            let available = (base.x + base.w - left).max(0);
-            let width = if width == 0 {
-                available
-            } else {
-                width.min(available)
-            };
-            if width <= 0 {
-                continue;
-            }
-            // 0x00619969 trims by wide units and appends the literal three dots.
-            let mut units: Vec<u16> = text.encode_utf16().collect();
-            let mut label = text;
-            if state.renderer.bit_font.text_width(&label) > width as u32 {
-                while !units.is_empty() {
-                    units.pop();
-                    label = format!("{}...", String::from_utf16_lossy(&units));
-                    if state.renderer.bit_font.text_width(&label) <= width as u32 {
-                        break;
-                    }
-                }
-            }
-            push_text_draw(
-                out,
-                state,
-                &label,
-                rect_to_text_rect(scale.scale_rect(RectPx::new(left, base.y, width, base.h))),
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::NONE,
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00011,
-                scale.factor(),
-            );
-        }
-        // Native559A07 attempts an x200 marker, but the4A8 setter61B0D4
-        // rejects that absent column. These templates register only2/255/315.
-    }
-
-    if let Some(edit) = layout.name_edit {
-        push_text_draw(
-            out,
-            state,
-            &browser.edit().painted_text(),
-            rect_to_text_rect(player_name_edit_text_rect(edit, scale)),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00011,
-            scale.factor(),
-        );
-    }
-}
-
 /// Chrome is drawn before text in this renderer: cut a message box's
 /// rectangle out of the text already queued so it cannot paint through the
 /// box's panel.
@@ -1182,7 +996,7 @@ mod tests {
 
     #[test]
     fn combo_face_text_color_uses_disabled_source_for_inactive_siblings() {
-        let shell = SkirmishShellState::default();
+        let shell = crate::ui::skirmish_shell::SkirmishShellState::default();
 
         assert_eq!(combo_face_text_color(false), SHELL_LABEL_TEXT_RGB);
         assert_eq!(

@@ -543,7 +543,7 @@ pub(crate) fn render_wol_page(
                     (
                         list.popup.rect,
                         crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
-                            state, list, scale,
+                            state, scale,
                         ),
                     )
                 }),

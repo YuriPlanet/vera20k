@@ -3,7 +3,7 @@
 //! substrate in [`crate::shell::combobox`].
 //!
 //! Any press on an enabled face plays the open cue; only the arrow zone opens
-//! the list ([`ComboPress::on_face`]). The open list is the dialog's popup and
+//! the list ([`combo_arrow_hit_rect`]). The open list is the dialog's popup and
 //! takes every pointer input: its scrollbar takes a press silently, a row or
 //! anywhere else closes it with the close cue.
 //!
@@ -12,31 +12,39 @@
 //! `RowCount`, `Selected`, `VisibleRows` (0 = every row). The widget writes
 //! `Open`, `Top` and, on a pick, `Selected`.
 
-use super::{Capture, Ctx, WidgetState};
+use super::{Capture, Ctx, WidgetState, instant, ui_ms};
 use crate::gui::UiEvent;
 use crate::node::{Node, NodeId, Prop, Tree, Value};
-use crate::shell::combobox::{ComboPopup, ComboPopupInteraction, ComboPress, combo_face_rect};
+use crate::shell::combobox::{ComboPopup, combo_arrow_hit_rect, combo_face_rect};
 use crate::shell::geom::ShellScale;
-use crate::shell::list::ListScrollPart;
-use crate::time::{Duration, Instant};
+use crate::shell::list::{ListScrollInteraction, ListScrollPart};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ComboState {
-    list: ComboPopupInteraction<NodeId>,
-    /// `UiMs` 0 on the substrate's clock (its arrow-repeat deadline).
-    epoch: Instant,
+    /// The list is open.
+    open: bool,
+    top_index: usize,
+    /// 60E262: the row under the pointer, kept after it leaves the rows.
+    hot_row: Option<usize>,
+    scroll: ListScrollInteraction,
     /// The pointer as the open list last saw it: the arrow repeat steps the
     /// arrow under it.
     pointer: (i32, i32),
 }
 
-impl Default for ComboState {
-    fn default() -> Self {
-        Self {
-            list: ComboPopupInteraction::default(),
-            epoch: Instant::now(),
-            pointer: (0, 0),
-        }
+impl ComboState {
+    /// 6181DA initializes top0; the current selection supplies the initial
+    /// hot row, even when that row lies below the first visible page.
+    fn open(&mut self, selected: Option<usize>) {
+        self.open = true;
+        self.top_index = 0;
+        self.hot_row = selected;
+        self.scroll.cancel();
+    }
+
+    fn close(&mut self) {
+        self.open = false;
+        self.scroll.cancel();
     }
 }
 
@@ -58,12 +66,14 @@ pub(crate) fn drop_down(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<
     let WidgetState::Combo(st) = &tree.node(node).ok()?.state else {
         return None;
     };
-    st.list.control?;
+    if !st.open {
+        return None;
+    }
     Some(ComboDropDown {
-        popup: popup_at(tree, node, scale, st.list.top_index)?,
-        hot_row: st.list.hot_row,
-        pressed_part: st.list.scroll.pressed_part(),
-        captured_part: st.list.scroll.captured_part(),
+        popup: popup_at(tree, node, scale, st.top_index)?,
+        hot_row: st.hot_row,
+        pressed_part: st.scroll.pressed_part(),
+        captured_part: st.scroll.captured_part(),
     })
 }
 
@@ -122,7 +132,7 @@ fn state_mut(tree: &mut Tree, node: NodeId) -> Option<&mut ComboState> {
 
 /// Mirrors the substrate's first row into `Top`, reporting a scroll.
 fn sync_top(ctx: &mut Ctx<'_>, node: NodeId, before: usize) {
-    let Some(top) = state_mut(ctx.tree, node).map(|st| st.list.top_index) else {
+    let Some(top) = state_mut(ctx.tree, node).map(|st| st.top_index) else {
         return;
     };
     let _ = ctx.tree.set(node, Prop::Top, Value::Int(top as i32));
@@ -137,7 +147,7 @@ fn sync_top(ctx: &mut Ctx<'_>, node: NodeId, before: usize) {
 /// Closes the list with the close cue (0x0060E4E9..0x0060E500).
 fn close(ctx: &mut Ctx<'_>, node: NodeId) {
     if let Some(st) = state_mut(ctx.tree, node) {
-        st.list.close();
+        st.close();
     }
     *ctx.popup = None;
     let _ = ctx.tree.set(node, Prop::Open, Value::Bool(false));
@@ -148,16 +158,28 @@ fn close(ctx: &mut Ctx<'_>, node: NodeId) {
 /// the pointer; the list stays open.
 pub(crate) fn release_scroll(tree: &mut Tree, node: NodeId) {
     if let Some(st) = state_mut(tree, node) {
-        st.list.cancel_pointer();
+        st.scroll.cancel();
     }
 }
 
 /// Closes the list for the host: no cue, no event.
 pub(crate) fn dismiss(tree: &mut Tree, node: NodeId) {
     if let Some(st) = state_mut(tree, node) {
-        st.list.close();
+        st.close();
     }
     let _ = tree.set(node, Prop::Open, Value::Bool(false));
+}
+
+/// Opens the list for the host at first row `top`, the selection lit: no
+/// cue, no event.
+pub(crate) fn open_for_host(tree: &mut Tree, node: NodeId, top: usize) {
+    let selected = tree.node(node).ok().and_then(selected);
+    if let Some(st) = state_mut(tree, node) {
+        st.open(selected);
+        st.top_index = top;
+    }
+    let _ = tree.set(node, Prop::Open, Value::Bool(true));
+    let _ = tree.set(node, Prop::Top, Value::Int(top as i32));
 }
 
 pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture {
@@ -171,15 +193,8 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     let Some(st) = state_mut(ctx.tree, node) else {
         return Capture::No;
     };
-    let press = if can_open && anywhere {
-        st.list.open(node, selected);
-        ComboPress::Open
-    } else if can_open {
-        st.list.press_face(node, rect, scale, selected, x, y)
-    } else {
-        ComboPress::Face
-    };
-    if press == ComboPress::Open {
+    if can_open && (anywhere || combo_arrow_hit_rect(rect, scale).contains(x, y)) {
+        st.open(selected);
         *ctx.popup = Some(node);
         let _ = ctx.tree.set(node, Prop::Open, Value::Bool(true));
         let _ = ctx.tree.set(node, Prop::Top, Value::Int(0));
@@ -198,7 +213,7 @@ pub(crate) fn release(_ctx: &mut Ctx<'_>, _node: NodeId, _x: i32, _y: i32) {}
 /// away (the list then closes).
 fn open_popup(ctx: &mut Ctx<'_>, node: NodeId) -> Option<ComboPopup> {
     let top = match &ctx.tree.node(node).ok()?.state {
-        WidgetState::Combo(st) if st.list.control.is_some() => Some(st.list.top_index),
+        WidgetState::Combo(st) if st.open => Some(st.top_index),
         _ => None,
     };
     let popup = top.and_then(|top| popup_at(ctx.tree, node, ctx.scale, top));
@@ -220,23 +235,25 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
     };
-    let before = st.list.top_index;
+    let before = st.top_index;
     st.pointer = (x, y);
-    let now = st.epoch + Duration::from_millis(now);
-    match st.list.press_list(popup, x, y, now) {
-        ComboPress::Scroll(_) => sync_top(ctx, node, before),
-        // CBN_SELCHANGE on every pick, the current row too.
-        ComboPress::Pick(row) => {
-            close(ctx, node);
-            let value = Value::Int(row as i32);
-            let _ = ctx.tree.set(node, Prop::Selected, value.clone());
-            ctx.events.push(UiEvent::Changed {
-                node,
-                value,
-                final_: true,
-            });
-        }
-        ComboPress::Dismiss | ComboPress::Face | ComboPress::Open => close(ctx, node),
+    let now = instant(now);
+    if let Some(part) = popup.scroll_part_at(x, y) {
+        st.scroll.press(part, popup.scroll_geometry(), &mut st.top_index, y, now);
+        sync_top(ctx, node, before);
+        return;
+    }
+    let pick = popup.row_at(x, y);
+    close(ctx, node);
+    // CBN_SELCHANGE on every pick, the current row too.
+    if let Some(row) = pick {
+        let value = Value::Int(row as i32);
+        let _ = ctx.tree.set(node, Prop::Selected, value.clone());
+        ctx.events.push(UiEvent::Changed {
+            node,
+            value,
+            final_: true,
+        });
     }
 }
 
@@ -248,9 +265,10 @@ pub(crate) fn popup_move(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
     };
-    let before = st.list.top_index;
+    let before = st.top_index;
     st.pointer = (x, y);
-    st.list.pointer_moved(popup, x, y);
+    popup.track_hot_row(&mut st.hot_row, x, y);
+    st.scroll.pointer_moved(popup.scroll_geometry(), &mut st.top_index, x, y);
     sync_top(ctx, node, before);
 }
 
@@ -264,11 +282,11 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, rows: i32, x: i32, y: i32) 
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
     };
-    let before = st.list.top_index;
+    let before = st.top_index;
     let max = popup.total - popup.visible_rows;
     popup.first = popup.first.saturating_add_signed(rows as isize).min(max);
-    st.list.top_index = popup.first;
-    popup.track_hot_row(&mut st.list.hot_row, x, y);
+    st.top_index = popup.first;
+    popup.track_hot_row(&mut st.hot_row, x, y);
     sync_top(ctx, node, before);
 }
 
@@ -278,19 +296,16 @@ pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<crate::gui::UiMs> 
     let popup = open_popup(ctx, node)?;
     let now = ctx.now;
     let st = state_mut(ctx.tree, node)?;
-    let before = st.list.top_index;
+    let before = st.top_index;
     let (x, y) = st.pointer;
-    st.list.scroll.poll(popup.scroll_geometry(), &mut st.list.top_index, x, y, st.epoch + Duration::from_millis(now));
-    let epoch = st.epoch;
-    let next = st.list.scroll.repeat_at().map(|at| at.saturating_duration_since(epoch).as_millis() as crate::gui::UiMs);
+    st.scroll.poll(popup.scroll_geometry(), &mut st.top_index, x, y, instant(now));
+    let next = st.scroll.repeat_at().map(ui_ms);
     sync_top(ctx, node, before);
     next
 }
 
 pub(crate) fn popup_release(ctx: &mut Ctx<'_>, node: NodeId, _x: i32, _y: i32) {
-    if let Some(st) = state_mut(ctx.tree, node) {
-        st.list.cancel_pointer();
-    }
+    release_scroll(ctx.tree, node);
 }
 
 #[cfg(test)]

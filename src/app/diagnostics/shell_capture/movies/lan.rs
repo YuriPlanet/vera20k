@@ -1546,7 +1546,7 @@ impl LanCapture {
                             let view =
                                 setup::view(state).context("BC projection after departure")?;
                             ensure!(
-                                view.host
+                                view.dialog.host
                                     // Visible vacant rows retain their country flag;
                                     // only participant status must disappear.
                                     && view.row_icons[1].as_ref().is_none_or(|icon| {

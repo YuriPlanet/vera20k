@@ -726,17 +726,10 @@ pub fn paint_labels_at_depth_scaled(
     depth: f32,
     scale: f32,
 ) -> Vec<ShellTextDraw> {
-    use crate::render::shell_text::TextRect;
-
     labels
         .iter()
         .map(|label| {
-            let text_rect = TextRect {
-                x: label.rect.x,
-                y: label.rect.y,
-                w: label.rect.w.max(0) as u32,
-                h: label.rect.h.max(0) as u32,
-            };
+            let text_rect = crate::render::shell_text::TextRect::of(label.rect);
             match label.path_a_reveal {
                 Some(reveal) => crate::render::shell_text::draw_in_rect_path_a_scaled(
                     font,

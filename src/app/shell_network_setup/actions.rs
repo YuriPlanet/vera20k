@@ -148,10 +148,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
-        SetupAction::OpenBox(open) => {
+        SetupAction::GameOptions(open) => {
             crate::app::input::multiplayer_setup::drop_pointer(state, true);
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                ui.show_box(open);
+                ui.show_game_options(open);
             }
             Ok(())
         }

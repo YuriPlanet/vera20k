@@ -20,30 +20,24 @@ pub enum Refused {
     Stale,
     WrongKind,
     Limit,
-    NoSuchName,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeKind {
     Panel,
     Dialog,
-    Row,
-    Column,
     Text,
-    Image,
     Button,
     Checkbox,
     Combo,
     List,
     Trackbar,
-    ScrollBar,
     Edit,
-    Custom,
 }
 
 impl NodeKind {
     pub fn is_container(self) -> bool {
-        matches!(self, NodeKind::Panel | NodeKind::Dialog | NodeKind::Row | NodeKind::Column)
+        matches!(self, NodeKind::Panel | NodeKind::Dialog)
     }
 
     pub fn is_focusable(self) -> bool {
@@ -54,7 +48,6 @@ impl NodeKind {
                 | NodeKind::Combo
                 | NodeKind::List
                 | NodeKind::Trackbar
-                | NodeKind::ScrollBar
                 | NodeKind::Edit
         )
     }
@@ -70,13 +63,8 @@ pub enum Prop {
     Enabled,
     Text,
     Label,
-    Picture,
-    Command,
     Tooltip,
-    Name,
     Rect,
-    OffsetX,
-    OffsetY,
     Toggled,
     Checked,
     Selected,
@@ -101,6 +89,15 @@ pub enum Prop {
     Password,
     /// Edit: typing admits only units below 0x100 (NewEdit's byte-only flag).
     ByteOnly,
+    /// Edit: the most bytes the text takes in the host's code page
+    /// ([`crate::Gui::set_byte_len`]): an ANSI edit's `EM_LIMITTEXT`. 0 or
+    /// unset is unlimited.
+    MaxBytes,
+    /// Edit: every press selects the whole text (`EM_SETSEL 0, -1`).
+    SelectOnFocus,
+    /// Edit: the whole text is selected. Typing replaces it, Backspace and
+    /// Delete remove it, a caret key drops it.
+    AllSelected,
     /// Edit: characters typing refuses (NewEdit's reject table).
     Rejected,
     /// Edit: when set, the only characters typing admits.
@@ -122,7 +119,6 @@ pub enum Prop {
     /// rows, whose caption toggles too).
     HitRect,
     Color,
-    Font,
     /// Combo: each row's colour swatch for the host to paint in place of its
     /// text (a palette index in decimal; empty for a text row).
     Swatches,
@@ -199,14 +195,13 @@ impl Prop {
             | Prop::PressThrough
             | Prop::PopupHidden
             | Prop::NoSelectionFill
+            | Prop::SelectOnFocus
+            | Prop::AllSelected
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches => ValueType::Items,
             Prop::Text
             | Prop::Label
-            | Prop::Picture
-            | Prop::Command
             | Prop::Tooltip
-            | Prop::Name
             | Prop::Rejected
             | Prop::Allowed => {
                 ValueType::Text
@@ -214,8 +209,6 @@ impl Prop {
             Prop::Rect | Prop::HitRect | Prop::PopupRect | Prop::ScaleScreen | Prop::TextInset => ValueType::Rect,
             Prop::Color | Prop::DisabledColor => ValueType::Rgba,
             Prop::Id
-            | Prop::OffsetX
-            | Prop::OffsetY
             | Prop::Selected
             | Prop::Pos
             | Prop::Min
@@ -225,20 +218,19 @@ impl Prop {
             | Prop::Top
             | Prop::VisibleRows
             | Prop::MaxLen
+            | Prop::MaxBytes
             | Prop::Caret
             | Prop::Align
             | Prop::PopupBottom
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
-            | Prop::RowHeight
-            | Prop::Font => ValueType::Int,
+            | Prop::RowHeight => ValueType::Int,
         }
     }
 
-    /// `Command` belongs to buttons only (§2.3).
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
-            Prop::Command | Prop::Toggled => kind == NodeKind::Button,
+            Prop::Toggled => kind == NodeKind::Button,
             Prop::Checked => kind == NodeKind::Checkbox,
             Prop::OpenAnywhere
             | Prop::PopupBottom
@@ -249,7 +241,7 @@ impl Prop {
             Prop::NoSelectionFill => kind == NodeKind::List,
             Prop::RowHeight => matches!(kind, NodeKind::List | NodeKind::Combo),
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
-            Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
+            Prop::Min | Prop::Max | Prop::Step => kind == NodeKind::Trackbar,
             _ => true,
         }
     }
@@ -318,21 +310,16 @@ pub struct Tree {
     free: Vec<u32>,
     live: usize,
     max_nodes: usize,
-    roots: Vec<NodeId>,
 }
 
 impl Tree {
     pub fn new(max_nodes: usize) -> Self {
-        Tree { slots: Vec::new(), free: Vec::new(), live: 0, max_nodes, roots: Vec::new() }
+        Tree { slots: Vec::new(), free: Vec::new(), live: 0, max_nodes }
     }
 
+    #[cfg(test)]
     pub fn live_count(&self) -> usize {
         self.live
-    }
-
-    /// Top-level nodes in creation order (drawn first to last).
-    pub fn roots(&self) -> &[NodeId] {
-        &self.roots
     }
 
     pub fn create(&mut self, kind: NodeKind, parent: Option<NodeId>) -> Result<NodeId, Refused> {
@@ -358,19 +345,16 @@ impl Tree {
             }
         };
         self.live += 1;
-        match parent {
-            Some(p) => self.node_mut(p).expect("checked above").children.push(id),
-            None => self.roots.push(id),
+        if let Some(p) = parent {
+            self.node_mut(p).expect("checked above").children.push(id);
         }
         Ok(id)
     }
 
     /// Removes the node and its subtree; every id inside becomes `Stale`.
     pub fn remove(&mut self, id: NodeId) -> Result<(), Refused> {
-        let parent = self.node(id)?.parent;
-        match parent {
-            Some(p) => self.node_mut(p)?.children.retain(|c| *c != id),
-            None => self.roots.retain(|c| *c != id),
+        if let Some(p) = self.node(id)?.parent {
+            self.node_mut(p)?.children.retain(|c| *c != id);
         }
         self.remove_subtree(id);
         Ok(())
@@ -412,15 +396,6 @@ impl Tree {
         Ok(self.node(id)?.parent)
     }
 
-    /// Depth-first search under `root` for a node whose `Name` is `name`.
-    pub fn find(&self, root: NodeId, name: &str) -> Option<NodeId> {
-        let node = self.node(root).ok()?;
-        if node.text_prop(Prop::Name) == Some(name) {
-            return Some(root);
-        }
-        node.children.iter().find_map(|c| self.find(*c, name))
-    }
-
     pub(crate) fn node(&self, id: NodeId) -> Result<&Node, Refused> {
         match self.slots.get(id.idx as usize) {
             None => Err(Refused::NotFound),
@@ -450,33 +425,15 @@ impl Tree {
         true
     }
 
-    /// Sum of `OffsetX`/`OffsetY` over the node and its ancestors (§9.2).
-    pub(crate) fn offset(&self, id: NodeId) -> (i32, i32) {
-        let (mut dx, mut dy) = (0, 0);
-        let mut cur = Some(id);
-        while let Some(c) = cur {
-            let Ok(n) = self.node(c) else { break };
-            dx += n.int_prop(Prop::OffsetX, 0);
-            dy += n.int_prop(Prop::OffsetY, 0);
-            cur = n.parent;
-        }
-        (dx, dy)
-    }
-
-    /// Screen rect: the node's `Rect` moved by the offsets on its path.
+    /// Screen rect: the node's `Rect`.
     pub fn screen_rect(&self, id: NodeId) -> Result<Rect, Refused> {
-        let r = self.node(id)?.rect();
-        let (dx, dy) = self.offset(id);
-        Ok(r.translate(dx, dy))
+        Ok(self.node(id)?.rect())
     }
 
     /// Screen area the pointer hits: `HitRect` when set, else the `Rect`.
     pub fn screen_hit_rect(&self, id: NodeId) -> Result<Rect, Refused> {
         match self.node(id)?.props.get(&Prop::HitRect) {
-            Some(Value::Rect(r)) => {
-                let (dx, dy) = self.offset(id);
-                Ok(r.translate(dx, dy))
-            }
+            Some(Value::Rect(r)) => Ok(*r),
             _ => self.screen_rect(id),
         }
     }
@@ -508,11 +465,11 @@ mod tests {
     }
 
     #[test]
-    fn leaves_hold_no_children_and_command_is_button_only() {
+    fn leaves_hold_no_children_and_toggled_is_button_only() {
         let mut t = Tree::new(8);
         let text = t.create(NodeKind::Text, None).unwrap();
         assert_eq!(t.create(NodeKind::Button, Some(text)), Err(Refused::WrongKind));
-        assert_eq!(t.set(text, Prop::Command, Value::Text("x".into())), Err(Refused::WrongKind));
+        assert_eq!(t.set(text, Prop::Toggled, Value::Bool(true)), Err(Refused::WrongKind));
     }
 
     #[test]

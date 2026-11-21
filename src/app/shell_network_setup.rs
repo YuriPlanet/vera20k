@@ -1215,7 +1215,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
 pub(crate) fn hide_room(state: &mut AppState) {
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.show_box(None);
+        ui.show_game_options(false);
     }
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
 }

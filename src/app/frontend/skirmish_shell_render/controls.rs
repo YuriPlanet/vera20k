@@ -1,6 +1,6 @@
 //! Owner-draw control sprite helpers for the skirmish shell renderer.
 //!
-//! Contains player-name edit chrome, checkboxes, trackbars, combo faces,
+//! Contains NewEdit chrome, checkboxes, trackbars, combo faces,
 //! and ComboDropWin popup sprite construction.
 
 use crate::app::loading::init::MapMenuEntry;
@@ -16,7 +16,7 @@ use crate::ui::shell::trackbar::{PLAQUE_RESERVE, THUMB_W};
 use crate::ui::skirmish_shell::{
     DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
     checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,
-    opponent_scroll_geometry, player_name_edit_text_rect,
+    opponent_scroll_geometry,
 };
 
 use super::chrome::{
@@ -28,9 +28,8 @@ use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
     SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE, SHELL_DROPDOWN_DEPTH,
-    SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_EDIT_SELECTION_DEPTH,
-    SHELL_LABEL_TEXT_RGB, SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE,
-    SHELL_SWATCH_DEPTH,
+    SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE, SHELL_SWATCH_DEPTH,
 };
 
 /// Original61E700 group and6208F0 plain frames both use two bevel rings and
@@ -119,47 +118,11 @@ pub(super) fn push_group_or_plain_frame(
     }
 }
 
-/// NewEdit 00614B30 shares its UTF-16 caret-only paint across saved files
-/// and D7. The layout owner supplies the native frame and text rectangles.
-pub(super) struct NewEditPaint {
-    pub frame: RectPx,
-    pub text: RectPx,
-    pub background: Option<[f32; 3]>,
-    pub frame_depth: f32,
-    pub caret_depth: f32,
-    pub caret_visible: bool,
-}
-
-pub(super) fn push_new_edit_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    font: &BitFont,
-    editor: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
-    paint: NewEditPaint,
-    scale: ShellScale,
-) {
-    if let Some(rgb) = paint.background {
-        push_solid_rect(out, atlas, paint.frame, rgb, paint.frame_depth + 0.00001);
-    }
-    push_ownerdraw_two_pixel_bevel_frame(out, atlas, paint.frame, paint.frame_depth);
-    if paint.caret_visible {
-        push_new_edit_caret(
-            out,
-            atlas,
-            font,
-            editor,
-            paint.text,
-            paint.caret_depth,
-            scale,
-        );
-    }
-}
-
 /// A NewEdit's frame, caret and text, as NewEdit__DrawTextAndCaret
-/// `0x00623880` paints them in BB, BC/BD, C2/C9 and `0x10F`: the text sits
-/// inside the frame from the first visible unit, and an open IME composition
-/// is spliced in at the caret in the composition colour (`app::input::ime`),
-/// the rest in `rgb`.
+/// `0x00623880` paints them in BB, BC/BD, C2/C9 and `0x10F`: the frame two
+/// pixels round `rect`, the text inside it from the first visible unit, and
+/// an open IME composition spliced in at the caret in the composition colour
+/// (`app::input::ime`), the rest in `rgb`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_new_edit(
     controls: &mut Vec<SpriteInstance>,
@@ -174,37 +137,49 @@ pub(super) fn push_new_edit(
     text_depth: f32,
     scale: ShellScale,
 ) {
+    let frame = scale.derive_rect(rect, |r| RectPx::new(r.x - 2, r.y - 2, r.w + 5, r.h + 5));
+    let field = scale.derive_rect(rect, |r| RectPx::new(r.x + 2, r.y, r.w - 1, r.h + 1));
+    let (rects, look) = ((frame, field), (caret_visible, rgb, text_depth));
+    push_framed_edit(
+        controls,
+        texts,
+        atlas,
+        font,
+        edit,
+        composition,
+        rects,
+        look,
+        scale,
+    );
+}
+
+/// [`push_new_edit`] with the frame and the text field given (a framed
+/// edit's `TextInset`); `caret` shows the caret, `rgb` and `depth` the text.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn push_framed_edit(
+    controls: &mut Vec<SpriteInstance>,
+    texts: &mut Vec<ShellTextDraw>,
+    atlas: &SkirmishShellChromeAtlas,
+    font: &BitFont,
+    edit: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    composition: Option<(&[u16], usize)>,
+    (frame, field): (RectPx, RectPx),
+    (caret, rgb, text_depth): (bool, [f32; 3], f32),
+    scale: ShellScale,
+) {
+    let available = (scale.base_rect(field).w - 2).max(0) as u32;
     let composed = composition.map(|(units, cursor)| {
-        edit.with_composition(
-            units,
-            cursor,
-            (scale.base_rect(rect).w - 3).max(0) as u32,
-            |text| font.text_width(text),
-        )
+        edit.with_composition(units, cursor, available, |text| font.text_width(text))
     });
     let (view, composed_units) = match &composed {
         Some((view, units)) => (view, units.clone()),
         None => (edit, 0..0),
     };
-    push_new_edit_instances(
-        controls,
-        atlas,
-        font,
-        view,
-        NewEditPaint {
-            frame: scale.derive_rect(rect, |rect| {
-                RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
-            }),
-            text: scale.derive_rect(rect, |rect| {
-                RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
-            }),
-            background: None,
-            frame_depth: SHELL_EDIT_FRAME_DEPTH,
-            caret_depth: SHELL_EDIT_CARET_DEPTH,
-            caret_visible,
-        },
-        scale,
-    );
+    push_ownerdraw_two_pixel_bevel_frame(controls, atlas, frame, SHELL_EDIT_FRAME_DEPTH);
+    if caret {
+        let depth = SHELL_EDIT_CARET_DEPTH;
+        push_new_edit_caret(controls, atlas, font, view, field, depth, scale);
+    }
     let first = view.first_visible_unit.min(view.units.len());
     let (start, end) = (
         composed_units.start.max(first),
@@ -221,13 +196,11 @@ pub(super) fn push_new_edit(
             continue;
         }
         let text = view.painted_range(units.start, units.end);
-        let field = scale.derive_rect(rect, |rect| {
-            RectPx::new(rect.x + 2 + x, rect.y, rect.w - 1 - x, rect.h + 1)
-        });
+        let at = scale.derive_rect(field, |f| RectPx::new(f.x + x, f.y, f.w - x, f.h));
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             &text,
-            rect_to_text_rect(field),
+            rect_to_text_rect(at),
             rgb,
             ShellAlign::V_CENTER,
             [0.0; 2],
@@ -287,93 +260,6 @@ pub(super) fn combo_face_entry(
         44 => chrome.combo_face_44,
         38 => chrome.combo_face_38,
         _ => None,
-    }
-}
-
-pub(super) fn char_byte_index(text: &str, char_index: usize) -> usize {
-    if char_index == 0 {
-        return 0;
-    }
-    text.char_indices()
-        .nth(char_index)
-        .map(|(idx, _)| idx)
-        .unwrap_or(text.len())
-}
-
-pub(super) fn player_name_caret_x_from_prefix_width(
-    text_rect: RectPx,
-    scroll_x: i32,
-    prefix_width: u32,
-) -> i32 {
-    text_rect.x - scroll_x.max(0) + prefix_width as i32
-}
-
-pub(super) fn player_name_caret_x(
-    font: &BitFont,
-    shell: &SkirmishShellState,
-    text_rect: RectPx,
-) -> i32 {
-    let edit = &shell.player_name_edit;
-    let prefix = &edit.text[..char_byte_index(&edit.text, edit.caret)];
-    player_name_caret_x_from_prefix_width(text_rect, edit.scroll_x, font.text_width(prefix))
-}
-
-pub(super) fn push_player_name_edit_instances(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    font: &BitFont,
-    layout: &SkirmishShellLayout,
-    shell: &SkirmishShellState,
-) {
-    push_ownerdraw_two_pixel_bevel_frame(out, atlas, layout.player_name, SHELL_EDIT_FRAME_DEPTH);
-
-    let scale = layout.scale;
-    // The caret and the selection ride the font's authored glyph metrics, so the
-    // piece is built in 800x600 numbers and stretched once; `ShellScale::RETAIL`
-    // emits the plain numbers.
-    let base = scale.base_rect(layout.player_name);
-    let text_rect = player_name_edit_text_rect(base, ShellScale::RETAIL);
-    if shell.player_name_edit.focused {
-        if let Some((start, end)) = shell.player_name_edit.selection {
-            let (start, end) = if start <= end {
-                (start, end)
-            } else {
-                (end, start)
-            };
-            if start != end {
-                let start_byte = char_byte_index(&shell.player_name_edit.text, start);
-                let end_byte = char_byte_index(&shell.player_name_edit.text, end);
-                let prefix = &shell.player_name_edit.text[..start_byte];
-                let selected = &shell.player_name_edit.text[start_byte..end_byte];
-                let x = player_name_caret_x_from_prefix_width(
-                    text_rect,
-                    shell.player_name_edit.scroll_x,
-                    font.text_width(prefix),
-                );
-                let w = font.text_width(selected) as i32;
-                push_solid_rect(
-                    out,
-                    atlas,
-                    scale.scale_rect(RectPx::new(
-                        x,
-                        text_rect.y + 2,
-                        w.max(1),
-                        (text_rect.h - 4).max(1),
-                    )),
-                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                    SHELL_EDIT_SELECTION_DEPTH,
-                );
-            }
-        } else {
-            let x = player_name_caret_x(font, shell, text_rect);
-            push_solid_rect(
-                out,
-                atlas,
-                scale.scale_rect(RectPx::new(x, text_rect.y + 2, 2, (text_rect.h - 4).max(1))),
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_EDIT_CARET_DEPTH,
-            );
-        }
     }
 }
 

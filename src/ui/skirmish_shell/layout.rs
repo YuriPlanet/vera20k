@@ -67,8 +67,16 @@ pub fn combo_dropdown_row_rect(content: RectPx, scale: ShellScale, visible_row: 
         row_h,
     )
 }
-pub const PLAYER_NAME_EDIT_CLIENT_INSET: i32 = 1;
-pub const PLAYER_NAME_EDIT_TEXT_LEFT_INSET: i32 = 2;
+/// A framed edit's text field in its rect (base px, a `TextInset`): the
+/// two-pixel bevel's client one pixel in, the text two more from its left
+/// (`0x102`'s name box `0x6A0`, the saved-file description `0x526`).
+pub const FRAMED_EDIT_TEXT_INSET: RectPx = RectPx::new(3, 1, 1, 1);
+
+/// The base px a framed edit in `rect` shows its text in, less the caret's.
+pub fn framed_edit_text_width(rect: RectPx, scale: ShellScale) -> u32 {
+    let inset = FRAMED_EDIT_TEXT_INSET;
+    (scale.base_rect(rect).w - inset.x - inset.w - 2).max(0) as u32
+}
 // Random-map setup dialog 0x105. Same 533x369-DLU frame, font and background as
 // choose-map. Its right-column controls sit 2-3 DLU left of choose-map's in the
 // resource (and the preview 2 DLU right), but every right-column rule here is
@@ -492,29 +500,6 @@ pub fn checkbox_text_rect(rect: RectPx, scale: ShellScale) -> RectPx {
     })
 }
 
-pub fn player_name_edit_client_rect(rect: RectPx, scale: ShellScale) -> RectPx {
-    scale.derive_rect(rect, |rect| {
-        RectPx::new(
-            rect.x + PLAYER_NAME_EDIT_CLIENT_INSET,
-            rect.y + PLAYER_NAME_EDIT_CLIENT_INSET,
-            rect.w - PLAYER_NAME_EDIT_CLIENT_INSET * 2,
-            rect.h - PLAYER_NAME_EDIT_CLIENT_INSET * 2,
-        )
-    })
-}
-
-pub fn player_name_edit_text_rect(rect: RectPx, scale: ShellScale) -> RectPx {
-    scale.derive_rect(rect, |rect| {
-        let client = player_name_edit_client_rect(rect, ShellScale::RETAIL);
-        RectPx::new(
-            client.x + PLAYER_NAME_EDIT_TEXT_LEFT_INSET,
-            client.y,
-            client.w - PLAYER_NAME_EDIT_TEXT_LEFT_INSET,
-            client.h,
-        )
-    })
-}
-
 /// The combo arrow's top-left anchor: a zero-size rect, because the arrow glyph
 /// is placed from it rather than fitted into it.
 pub fn combo_arrow_rect(rect: RectPx, scale: ShellScale) -> RectPx {
@@ -916,8 +901,7 @@ mod tests {
         ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, checkbox_icon_rect,
         checkbox_text_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect, combo_text_rect,
         compute_choose_map_modal_layout, compute_layout, compute_random_map_setup_layout,
-        compute_saved_seed_layout, dlu_rect, player_name_edit_client_rect,
-        player_name_edit_text_rect,
+        compute_saved_seed_layout, dlu_rect,
     };
     use crate::ui::shell::geom::fit_window;
 
@@ -1016,19 +1000,6 @@ mod tests {
     fn represented_0102_player_name_one_pixel_fixup_is_applied() {
         let layout = compute_layout(800, 600);
         assert_eq!(layout.player_name, RectPx::new(58, 59, 151, 23));
-    }
-
-    #[test]
-    fn player_name_edit_text_rect_uses_verified_client_and_text_insets() {
-        let layout = compute_layout(800, 600);
-        assert_eq!(
-            player_name_edit_client_rect(layout.player_name, ShellScale::RETAIL),
-            RectPx::new(59, 60, 149, 21)
-        );
-        assert_eq!(
-            player_name_edit_text_rect(layout.player_name, ShellScale::RETAIL),
-            RectPx::new(61, 60, 147, 21)
-        );
     }
 
     #[test]

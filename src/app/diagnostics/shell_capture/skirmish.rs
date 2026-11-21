@@ -299,7 +299,11 @@ fn guard(
                 == Some(crate::ui::skirmish_shell::page::DIALOG)
                 && (state.frontend.shell_controller.gui().popup().is_some()
                     || state.frontend.shell_controller.gui().pressed().is_some()))
-            || shell.player_name_edit.focused,
+            || state
+                .frontend
+                .shell_controller
+                .focused_control(crate::ui::skirmish_shell::page::DIALOG)
+                == Some(0x6A0),
     }
     .validate()
 }
@@ -329,7 +333,7 @@ fn selected_scene(state: &AppState) -> Result<Value> {
         "parsed_map_sha256": crate::util::sha256::sha256_hex(format!("{map:?}").as_bytes()),
         "parsed_map_hash_encoding": "Rust Debug representation; diagnostic identity only",
         "player": {
-            "name": shell.player_name_edit.text, "country": format!("{:?}", shell.player_country),
+            "name": shell.player_name, "country": format!("{:?}", shell.player_country),
             "country_random": shell.player_country_random, "color": shell.player_color_index,
             "color_claimed": shell.player_color_claimed,
             "start": format!("{:?}", shell.player_start_position), "team": shell.player_team

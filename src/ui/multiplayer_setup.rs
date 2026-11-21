@@ -650,25 +650,20 @@ pub(crate) struct RowDrag {
 /// carried; a shorter press stays a click on its cell.
 const ROW_DRAG_START: i32 = 6;
 
-/// A box VERA's room opens over itself; it takes the room's input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RoomBox {
-    GameOptions,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
     pub(crate) first_row: usize,
     pub(crate) row_count: usize,
     /// The first row of each page.
     pub(crate) pages: Vec<usize>,
+    /// In VERA's roster, where the entries showing stand ([`roster_page`]).
+    pub(crate) places: Vec<RosterPlace>,
     /// The rows (headers too) on the page showing.
     pub(crate) page_len: usize,
     /// VERA's roster: how many places it scrolls through ([`RosterScroll`])
     /// and the last; [`Self::first_row`] is the place it shows.
     pub(crate) roster_scroll: (usize, usize),
     pub(crate) dialog: SetupDialog,
-    pub(crate) host: bool,
     pub(crate) locked: bool,
     /// C2's Short Game is held on in a tournament or clan room.
     pub(crate) short_game_locked: bool,
@@ -685,8 +680,6 @@ pub(crate) struct SetupView {
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
     pub(crate) headers: [Option<SetupHeader>; MODERN_SETUP_ROWS],
-    /// The box open over VERA's room.
-    pub(crate) open_box: Option<RoomBox>,
     /// Team Starts: Teams is set and the map has starts to give.
     pub(crate) team_starts_enabled: bool,
     /// Team Colors: Teams is set.
@@ -697,8 +690,6 @@ pub(crate) struct SetupView {
     pub(crate) lobby_enabled: bool,
     /// The rows the host may drag to another box, in a room with teams.
     pub(crate) drag_rows: Vec<DragRow>,
-    /// VERA's missing-map offer is open over the room.
-    pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
@@ -753,16 +744,16 @@ impl SetupView {
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
             LOBBY => self.lobby_enabled,
-            START | CHOOSE_MAP => self.host,
+            START | CHOOSE_MAP => self.dialog.host,
             TEAM_STARTS => self.team_starts_enabled,
             TEAM_COLORS => self.team_colors_enabled,
             BALANCE => self.balance_enabled,
             PAGE => self.dialog.wol(),
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
-            ACCEPT => !self.host && self.accept_enabled,
+            ACCEPT => !self.dialog.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
+            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.dialog.host,
             id if team_join_row(id).is_some() => self
                 .header_button(id)
                 .is_some_and(|header| header.join_enabled),
@@ -806,8 +797,8 @@ pub(crate) enum SetupAction {
     RosterPage {
         forward: bool,
     },
-    /// A box over VERA's room opens, or the open one closes.
-    OpenBox(Option<RoomBox>),
+    /// VERA's Game Options box over the room opens, or closes.
+    GameOptions(bool),
     /// The host's Team Starts in the Teams box.
     TeamStarts,
     /// The host's Team Colors in the Teams box.
@@ -868,8 +859,9 @@ pub(crate) struct MultiplayerSetupState {
     pub(crate) shown: bool,
     focus_started: Instant,
     accept_flash_started: Option<Instant>,
-    /// The box open over VERA's room; it takes the room's input.
-    pub(crate) open_box: Option<RoomBox>,
+    /// VERA's Game Options box is open over the room; it takes the room's
+    /// input.
+    pub(crate) game_options: bool,
     /// VERA's missing-map offer; open until its map arrives, it takes the
     /// room's input.
     pub(crate) map_offer: Option<MapOffer>,
@@ -893,7 +885,7 @@ impl Default for MultiplayerSetupState {
             shown: false,
             focus_started: Instant::now(),
             accept_flash_started: None,
-            open_box: None,
+            game_options: false,
             map_offer: None,
             briefings_checked: Vec::new(),
         }
@@ -988,7 +980,7 @@ impl MultiplayerSetupState {
         let Some(roster) = layout.roster_scroll(view) else {
             return false;
         };
-        if view.open_box.is_some() || view.map_offer_open || lines == 0.0 {
+        if self.game_options || self.map_offer.is_some() || lines == 0.0 {
             return false;
         }
         let step = ((lines * 3.0).round() as i32).clamp(-30, 30);
@@ -1026,8 +1018,8 @@ impl MultiplayerSetupState {
         self.briefings_checked.push(file.to_owned());
         true
     }
-    pub(crate) fn show_box(&mut self, open: Option<RoomBox>) {
-        self.open_box = open;
+    pub(crate) fn show_game_options(&mut self, open: bool) {
+        self.game_options = open;
         self.cancel_pointer();
     }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
@@ -1071,11 +1063,6 @@ const OPTION_LABELS: [(u16, &str); 3] = [
     (OPTION_CAPTIONS[1], "GUI:Credits"),
     (OPTION_CAPTIONS[2], "GUI:UnitCount"),
 ];
-
-/// Previous and Next under the roster: the size of the MNBTTN art the
-/// shell's ordinary buttons draw, as Game Options' OK.
-const ROSTER_BUTTON_W: i32 = 124;
-const ROSTER_BUTTON_H: i32 = 24;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MultiplayerSetupLayout {
@@ -1183,25 +1170,11 @@ impl MultiplayerSetupLayout {
         // C2's sixth row icons sit 2 px higher (template 101); VERA keeps
         // C9's at 166.
         let icon_y = |row: usize| 36 + row as i32 * 26;
-        // A header's Join over the Side column, the size of the MNBTTN art
-        // as Previous and Next under the roster; the host's Add AI over the
-        // Colour, Start and Team columns.
-        let header_controls = std::array::from_fn(|row| {
-            let [_, side, color, _, team]: [RectPx; 5] = combos[row];
-            (
-                scale.derive_rect(side, |mut rect| {
-                    rect.w = ROSTER_BUTTON_W;
-                    rect.h = ROSTER_BUTTON_H;
-                    rect
-                }),
-                RectPx::new(color.x, color.y, team.x + team.w - color.x, color.h),
-            )
-        });
         let mut layout = Self {
             page,
             roster: false,
             combos,
-            header_controls,
+            header_controls: [Default::default(); MODERN_SETUP_ROWS],
             roster_rows: [RectPx::new(0, 0, 0, 0); MODERN_SETUP_ROWS],
             group_boxes: [None; MODERN_SETUP_ROWS],
             roster_navigation: [at(PREVIOUS_ROWS), at(NEXT_ROWS)],
@@ -1485,8 +1458,6 @@ impl MultiplayerSetupLayout {
             for rect in &mut self.combos[row] {
                 *rect = move_up(*rect);
             }
-            let (join, add_ai) = self.header_controls[row];
-            self.header_controls[row] = (move_up(join), move_up(add_ai));
             self.flags[row] = move_up(self.flags[row]);
             self.acceptance[row] = move_up(self.acceptance[row]);
         }
@@ -1495,9 +1466,9 @@ impl MultiplayerSetupLayout {
         if let Some((column, row)) = SetupColumn::decode(id) {
             return Some(self.combos[row][column as usize]);
         }
-        // In VERA's roster, a group's Join is its whole box.
+        // Only VERA's roster has headers; a group's Join is its whole box.
         if let Some(row) = team_join_row(id) {
-            return Some(self.group_boxes[row].unwrap_or(self.header_controls[row].0));
+            return self.group_boxes[row];
         }
         if let Some(row) = team_add_ai_row(id) {
             return Some(self.header_controls[row].1);
@@ -1652,14 +1623,9 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
             .with(Prop::RowCount, Value::Int(0))
             .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
     };
-    // A greyed Join's caption takes [0xAC1CB4], as a greyed combo's face.
-    let grey = Value::Rgba(vera20k_gui::Rgba(0x9F, 0, 0, 0xFF));
     let button = |id| match id {
         PREVIOUS_ROWS => node(NodeKind::Button, id).label("VERA:Previous"),
         NEXT_ROWS => node(NodeKind::Button, id).label("VERA:Next"),
-        id if team_join_row(id).is_some() => {
-            node(NodeKind::Button, id).with(Prop::DisabledColor, grey.clone())
-        }
         id => node(NodeKind::Button, id),
     };
     let help = tooltip_key(dialog, CHAT).unwrap_or_default();
@@ -1736,12 +1702,6 @@ fn map_offer_spec() -> NodeSpec {
         .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
 }
 
-fn buttons(ids: &'static [u16]) -> impl Fn() -> NodeSpec {
-    move || {
-        NodeSpec::new(NodeKind::Dialog).children(ids.iter().map(|id| node(NodeKind::Button, *id)))
-    }
-}
-
 /// Control `id`'s rect while it shows: a combo for a shown row, a trackbar
 /// the view shows, a header's Join while it has one, the team bar's buttons
 /// with the bar, Previous and Next on a roster of pages while they lead to
@@ -1780,8 +1740,8 @@ pub(crate) fn sync(
         controller.ensure_active(page, false);
     }
     for (dialog, open) in [
-        (GAME_OPTIONS_BOX, view.open_box.is_some()),
-        (MAP_OFFER_BOX, view.map_offer_open),
+        (GAME_OPTIONS_BOX, ui.game_options),
+        (MAP_OFFER_BOX, ui.map_offer.is_some()),
         (NOTICE_BOX, ui.notice.is_some()),
     ] {
         match (open, controller.root_in(dialog)) {
@@ -1793,14 +1753,15 @@ pub(crate) fn sync(
     let scale = layout.page.scale;
     let room = view.dialog;
     let spec_page = move || page_spec(room);
+    let notice = || {
+        let ok = crate::ui::shell::modal::control::OK;
+        NodeSpec::new(NodeKind::Dialog).child(node(NodeKind::Button, ok))
+    };
     let roots: [(DialogId, &dyn Fn() -> NodeSpec); 4] = [
         (page, &spec_page),
         (GAME_OPTIONS_BOX, &game_options_spec),
         (MAP_OFFER_BOX, &map_offer_spec),
-        (
-            NOTICE_BOX,
-            &buttons(&[crate::ui::shell::modal::control::OK]),
-        ),
+        (NOTICE_BOX, &notice),
     ];
     for (dialog, spec) in roots {
         let Some(root) = controller.root_in(dialog) else {
@@ -1870,7 +1831,9 @@ fn props(
         ]);
         // A colour row's swatch, by its colour index.
         let swatches = combo.choices.iter().map(|choice| {
-            choice.swatch.map_or_else(String::new, |index| index.to_string())
+            choice
+                .swatch
+                .map_or_else(String::new, |index| index.to_string())
         });
         props.push((Prop::Swatches, Value::Items(swatches.collect())));
         // VERA's roster draws no faces: a press anywhere on a cell opens its
@@ -2048,8 +2011,8 @@ pub(crate) fn action(view: &SetupView, event: PageEvent) -> Option<SetupAction> 
             PAGE => SetupAction::Page,
             PREVIOUS_ROWS => SetupAction::RosterPage { forward: false },
             NEXT_ROWS => SetupAction::RosterPage { forward: true },
-            GAME_OPTIONS => SetupAction::OpenBox(Some(RoomBox::GameOptions)),
-            GAME_OPTIONS_OK => SetupAction::OpenBox(None),
+            GAME_OPTIONS => SetupAction::GameOptions(true),
+            GAME_OPTIONS_OK => SetupAction::GameOptions(false),
             TEAM_STARTS => SetupAction::TeamStarts,
             TEAM_COLORS => SetupAction::TeamColors,
             BALANCE => SetupAction::Balance,
@@ -2205,10 +2168,10 @@ mod tests {
             first_row: 0,
             row_count: 8,
             pages: vec![0],
+            places: Vec::new(),
             page_len: 8,
             roster_scroll: (0, 0),
             dialog: dialog(true, SetupFlavor::Wol, true),
-            host: true,
             locked: false,
             short_game_locked: false,
             team_header: true,
@@ -2220,13 +2183,11 @@ mod tests {
             room_checks: [false; 7],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
-            open_box: None,
             team_starts_enabled: true,
             team_colors_enabled: true,
             balance_enabled: true,
             lobby_enabled: false,
             drag_rows: Vec::new(),
-            map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
@@ -2602,8 +2563,10 @@ mod tests {
             );
         }
         let mut view = vera_room_view();
-        view.open_box = Some(RoomBox::GameOptions);
-        let ui = MultiplayerSetupState::default();
+        let mut ui = MultiplayerSetupState {
+            game_options: true,
+            ..MultiplayerSetupState::default()
+        };
         let mut controller = widgets(&ui, &view, &popup_layout);
         let center = |rect: RectPx| (rect.x + rect.w / 2, rect.y + rect.h / 2);
         assert_eq!(
@@ -2614,7 +2577,7 @@ mod tests {
         // The team bar under the roster holds the Teams count, the host's
         // Room size, Team Starts and Team Colors and, online, Balance; a LAN
         // room has no Balance, a guest no Team Starts.
-        view.open_box = None;
+        ui.game_options = false;
         for (id, range) in [
             (TEAM_COUNT, TrackbarRange::new(1, 15, 1)),
             (ROOM_SIZE, TrackbarRange::new(2, 30, 1)),
@@ -2689,16 +2652,20 @@ mod tests {
         guest.fit_team_bar(dialog(false, SetupFlavor::Wol, true), false, false);
         assert_eq!(guest.team_bar, None);
         assert_eq!(guest.roster_bottom, ROSTER_BOTTOM);
-        view.open_box = None;
         // VERA's missing-map offer takes every press until it is answered.
-        view.map_offer_open = true;
+        ui.map_offer = Some(MapOffer {
+            name: String::new(),
+            message: String::new(),
+            downloading: false,
+            opened: Instant::now(),
+        });
         sync(&mut controller, &ui, &view, &popup_layout, true);
         assert_eq!(hit(&controller, center(popup_layout.chat), false), None);
         assert_eq!(
             hit(&controller, center(popup_layout.map_offer.button(0)), false),
             Some(MAP_OFFER_DOWNLOAD)
         );
-        view.map_offer_open = false;
+        ui.map_offer = None;
         sync(&mut controller, &ui, &view, &popup_layout, true);
         assert_ne!(
             hit(&controller, center(popup_layout.checkboxes[0]), false),

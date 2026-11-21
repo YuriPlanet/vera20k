@@ -7,10 +7,13 @@ use crate::util::time::Instant;
 
 use super::{App, AppState};
 use crate::app::frontend::menu_page_render::FamilyPage;
+use crate::app::frontend::shell_layout;
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::{
     CAMPAIGN_DIALOG, CampaignRelease, CampaignShellState, CampaignSide,
 };
+use crate::ui::shell::page::PageCue;
 
 /// Owner id of the campaign voice handle `0x00A8F300`: a new voice stops the
 /// one before it (`0x00405D40` then `0x00750920`).
@@ -47,8 +50,8 @@ impl App {
         // The 640 art set belongs to the unscaled 640 dialog; a fitted layout
         // always authors `0x94` at 800x600, so it takes the large set and the
         // trackbar frame of that control size.
-        let small = crate::app::frontend::shell_layout::art_key_screen_width(state) == 640;
-        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
+        let small = shell_layout::art_key_screen_width(state) == 640;
+        let layout = shell_layout::campaign_layout(state);
         let base = layout.scale.base_rect(layout.slider);
         state.frontend.campaign_art =
             crate::render::main_menu_shell_chrome::build_campaign_shell_art(
@@ -72,17 +75,13 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_move(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
+        let layout = shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         // A slider holding the mouse since a press on it keeps the status
         // line and Back's paint: the dialog's hit test (`0x00622CCB`) sees
         // nothing until the release. The emblems and the slider hover as
         // nodes for their status help.
-        let slider_held = state
-            .frontend
-            .campaign
-            .as_ref()
-            .is_some_and(|campaign| campaign.slider_held());
+        let slider_held = (state.frontend.campaign.as_ref()).is_some_and(|c| c.slider_held());
         if !slider_held {
             Self::family_page_pointer(state, FamilyPage::Campaign, None);
         }
@@ -99,24 +98,20 @@ impl App {
         }
         if slider_moved {
             // 0x0061E6DD: mouse-driven position changes click.
-            Self::play_generic_click_sound(state);
+            Self::play_page_cue(state, PageCue::ListClick);
         }
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
     }
 
     pub(super) fn handle_campaign_mouse_down(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
+        let layout = shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let emblem = layout.emblem_at(x, y);
-        let captured = state
-            .frontend
-            .campaign
-            .as_mut()
-            .is_some_and(|campaign| campaign.pointer_down(emblem));
+        let captured = (state.frontend.campaign.as_mut()).is_some_and(|c| c.pointer_down(emblem));
         if captured {
             // 0x0052EF52: GUIMainButtonSound (Rules +0x188).
-            Self::play_main_menu_button_sound(state);
+            Self::play_page_cue(state, PageCue::Button);
             return;
         }
         if layout.slider.contains(x, y) {
@@ -125,7 +120,7 @@ impl App {
                     campaign.slider_press(x, y, layout.slider, layout.scale)
                 });
             if moved {
-                Self::play_generic_click_sound(state);
+                Self::play_page_cue(state, PageCue::ListClick);
             }
             return;
         }
@@ -133,7 +128,7 @@ impl App {
     }
 
     pub(super) fn handle_campaign_mouse_up(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::campaign_layout(state);
+        let layout = shell_layout::campaign_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let back_pressed = Self::campaign_back_pressed(state);
         let Some(campaign) = state.frontend.campaign.as_mut() else {
@@ -153,11 +148,7 @@ impl App {
         // (their statics do not take the mouse). Back and the slider are
         // windows of their own and receive it themselves.
         let over_child = layout.slider.contains(x, y)
-            || layout
-                .page
-                .buttons
-                .iter()
-                .any(|button| button.rect.contains(x, y));
+            || (layout.page.buttons.iter()).any(|button| button.rect.contains(x, y));
         if emblem_capture || (!back_pressed && !over_child) {
             let release = campaign.pointer_up(layout.emblem_at(x, y), Instant::now());
             if let CampaignRelease::Selected(side) = release {
@@ -184,11 +175,9 @@ impl App {
         if let Some(voice) = voice {
             Self::play_campaign_voice(state, voice);
         }
-        Self::leave_shell_dialog(
-            state,
-            crate::app::frontend::shell_transition::ShellSlideKind::Campaign,
-            move |state| App::commit_campaign_start(state, side),
-        );
+        Self::leave_shell_dialog(state, ShellSlideKind::Campaign, move |state| {
+            App::commit_campaign_start(state, side)
+        });
     }
 
     pub(super) fn commit_campaign_start(state: &mut AppState, side: CampaignSide) {
@@ -216,7 +205,7 @@ impl App {
         state.frontend.campaign = None;
         state.frontend.campaign_art = None;
         Self::destroy_current_shell_dialog(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        state.frontend.shell_route = ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         let request = crate::app::loading::pump::LoadingRequest::campaign(startup);
         Self::start_campaign_scenario(state, request);
@@ -234,13 +223,11 @@ impl App {
         request: crate::app::loading::pump::LoadingRequest,
     ) {
         let movie = (|| -> anyhow::Result<Option<String>> {
-            let Some(assets) = state.process_assets.manager() else {
-                return Ok(None);
-            };
-            let Some(rules) = state.process_assets.native_rules() else {
-                return Ok(None);
-            };
-            let Some(config) = state.platform.game_config.as_ref() else {
+            let (Some(assets), Some(rules), Some(config)) = (
+                state.process_assets.manager(),
+                state.process_assets.native_rules(),
+                state.platform.game_config.as_ref(),
+            ) else {
                 return Ok(None);
             };
             let loaded = crate::map::source::load_map_by_name_or_path_with_assets(

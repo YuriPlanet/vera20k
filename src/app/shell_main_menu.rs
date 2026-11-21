@@ -1,7 +1,11 @@
 use super::*;
 use crate::app::frontend::menu_page_render::FamilyPage;
+use crate::app::frontend::shell_layout;
+use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_route::ShellRoute;
+use crate::ui::main_menu_dialogs::options::LauncherParentResult;
 use crate::ui::shell::page::PageCue;
 use crate::util::time::{Duration, Instant};
 
@@ -79,29 +83,14 @@ pub(crate) fn clear_typed_codes_for_network_session(state: &mut AppState) {
         ));
 }
 
-/// Which advice the startup error card gives. A Windows player starts
-/// vera20k.exe from a folder of their choosing; the macOS app and the Linux
-/// AppImage keep config.toml in their data folder and set up the game folder
-/// on first launch (`app_bundle`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CardHost {
-    Windows,
-    Unix,
-}
-
-impl CardHost {
-    const CURRENT: Self = if cfg!(target_os = "windows") {
-        Self::Windows
-    } else {
-        Self::Unix
-    };
-}
-
 /// The startup error card's title and text, in the language in use: the card
 /// draws VERA's bundled fonts, so any script and any path shows as it is.
 /// `menu_assets` says the game archives loaded; `details` is the failure.
+/// A `windows` player starts vera20k.exe from a folder of their choosing; the
+/// macOS app and the Linux AppImage keep config.toml in their data folder and
+/// set up the game folder on first launch (`app_bundle`).
 fn shell_error_card(
-    host: CardHost,
+    windows: bool,
     files: &crate::app::initialize::StartupFiles,
     menu_assets: bool,
     game_files: Option<&std::path::Path>,
@@ -151,18 +140,13 @@ fn shell_error_card(
                 "VERA:GameFilesNotFound"
             });
             let advice = tr_fill(
-                match host {
-                    CardHost::Windows => "VERA:GameFilesAdviceWindows",
-                    CardHost::Unix => "VERA:GameFilesAdviceUnix",
+                match windows {
+                    true => "VERA:GameFilesAdviceWindows",
+                    false => "VERA:GameFilesAdviceUnix",
                 },
                 &[("config", &config)],
             );
-            // An unconfigured launch resolves the installation to the
-            // executable's own directory, which on Android is `/system/bin`
-            // (app_process). Naming that path sends the player looking for game
-            // files that were never there, so say what is actually true: no
-            // installation is configured.
-            let game_files = game_installation_label(game_files.as_deref());
+            let game_files = game_installation_label(game_files);
             (
                 title,
                 tr_fill(
@@ -237,10 +221,7 @@ impl App {
             .multiplayer_shell_runtime
             .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(&state.frontend.frontend_main_rng);
-        state
-            .match_state
-            .session
-            .prepare_multiplayer_settings(&main);
+        (state.match_state.session).prepare_multiplayer_settings(&main);
         state.process_assets.refresh_multiplayer_country_bodies();
         // These are compatibility projections of the one process registry.
         // A finished world can remain resident behind the shell. Offline
@@ -257,15 +238,9 @@ impl App {
                 .project_multiplayer_countries(&mut runtime.resources_mut().rules);
         }
         if let Some(rules) = state.frontend.frontend_rules.as_ref() {
-            state
-                .frontend
-                .skirmish_shell_state
-                .refresh_country_catalog(rules);
+            (state.frontend.skirmish_shell_state).refresh_country_catalog(rules);
         } else if let Some(runtime) = state.match_state.sim_runtime.runtime() {
-            state
-                .frontend
-                .skirmish_shell_state
-                .refresh_country_catalog(&runtime.resources.rules);
+            (state.frontend.skirmish_shell_state).refresh_country_catalog(&runtime.resources.rules);
         }
         state
             .frontend
@@ -274,10 +249,7 @@ impl App {
         // The lobby's colour list comes from the same rules as the shell's
         // catalog above; its random draws and the room's claims follow it.
         let lobby_colors = state.frontend.skirmish_shell_state.lobby_colors();
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .set_lobby_colors(lobby_colors);
+        (state.frontend.multiplayer_shell_runtime).set_lobby_colors(lobby_colors);
         state.match_state.session.set_lobby_colors(lobby_colors);
         true
     }
@@ -355,7 +327,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 assets,
                 model.side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
+                shell_layout::art_key_screen_width(state),
                 art,
             )
         });
@@ -366,10 +338,7 @@ impl App {
         }
         state.frontend.score_page = Some(ScorePage::open(model, &texts, Instant::now()));
         state.frontend.screen = GameScreen::MissionResult { title, detail };
-        state
-            .frontend
-            .shell_controller
-            .reset_to(crate::ui::score_shell::SCORE_DIALOG, false);
+        (state.frontend.shell_controller).reset_to(crate::ui::score_shell::SCORE_DIALOG, false);
     }
 
     /// Open retail Campaign StandaloneScore dialog `0x103` from the app-owned
@@ -422,7 +391,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 assets,
                 side,
-                crate::app::frontend::shell_layout::art_key_screen_width(state),
+                shell_layout::art_key_screen_width(state),
                 state.process_assets.side_score_art(side),
             )
         });
@@ -451,10 +420,7 @@ impl App {
             title: String::new(),
             detail: String::new(),
         };
-        state
-            .frontend
-            .shell_controller
-            .reset_to(CAMPAIGN_END_DIALOG, false);
+        (state.frontend.shell_controller).reset_to(CAMPAIGN_END_DIALOG, false);
     }
 
     /// Continue and VERA's result paging. Only Continue has help. Everywhere
@@ -466,23 +432,18 @@ impl App {
     /// `0x108` down with its slide; the match then ends and the shell resumes.
     pub(super) fn handle_score_shell_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::ui::score_shell::{self as score, NEXT_PAGE, PREVIOUS_PAGE};
-        let layout = crate::app::frontend::shell_layout::score_layout(state);
+        let layout = shell_layout::score_layout(state);
         let paged = state
             .frontend
             .score_page
             .as_ref()
             .is_some_and(|page| page.page_count() > 1);
-        let dialog = score::SCORE_DIALOG;
-        state.frontend.shell_controller.ensure_active(dialog, false);
         let rect_of = |id| layout.control_rect(id, paged);
-        let activated = Self::page_pointer(state, dialog, score::nodes, rect_of, &[], down);
-        if down.is_none() {
-            state.frontend.shell_status_line.repaint();
-        }
-        match activated {
+        let dialog = score::SCORE_DIALOG;
+        match Self::screen_page_pointer(state, dialog, score::nodes, rect_of, &[], down) {
             Some(score::CONTINUE_BUTTON) => Self::leave_shell_dialog(
                 state,
-                crate::app::frontend::shell_transition::ShellSlideKind::Score,
+                ShellSlideKind::Score,
                 App::leave_mission_result_screen,
             ),
             Some(id @ (PREVIOUS_PAGE | NEXT_PAGE)) => {
@@ -494,35 +455,22 @@ impl App {
         }
     }
 
-    fn campaign_score_layout(
-        state: &AppState,
-    ) -> crate::ui::campaign_score_shell::CampaignScoreLayout {
-        let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
-        let fills_window = crate::app::frontend::shell_layout::fills_window(state);
-        state.frontend.campaign_score_page.as_ref().map_or_else(
-            || {
-                let dialog = Default::default();
-                crate::ui::campaign_score_shell::CampaignScoreLayout::compute(
-                    dialog, width, height, 0,
-                )
-            },
-            |page| page.layout(width, height, fills_window),
-        )
-    }
-
     /// `0x103`'s and `0xBC7`'s pointer: hover tracks the value statics' help,
     /// and only Continue presses. Native `0x103` Continue (`0x423`, result 1)
     /// tears the dialog down with its slide before GameExit::Victory advances
     /// the campaign; `0xBC7`'s (`0x6D1`, result 1) before Main_Game returns
     /// to the shell.
     pub(super) fn handle_campaign_score_mouse(state: &mut AppState, down: Option<bool>) {
-        use crate::ui::campaign_score_shell::CampaignScoreDialog;
-        let dialog = Self::campaign_score_dialog(state);
-        let layout = Self::campaign_score_layout(state);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(dialog.id(), false);
+        use crate::ui::campaign_score_shell::{CampaignScoreDialog, CampaignScoreLayout};
+        let (width, height) = shell_layout::shell_screen_size(state);
+        let fills_window = shell_layout::fills_window(state);
+        let page = state.frontend.campaign_score_page.as_ref();
+        let dialog: CampaignScoreDialog = page.map_or_else(Default::default, |page| page.dialog);
+        let layout = page.map_or_else(
+            || CampaignScoreLayout::compute(Default::default(), width, height, 0),
+            |page| page.layout(width, height, fills_window),
+        );
+        (state.frontend.shell_controller).ensure_active(dialog.id(), false);
         let rect_of = |id| layout.control_rect(id);
         let nodes = || dialog.nodes();
         if Self::page_pointer(state, dialog.id(), nodes, rect_of, &[], down)
@@ -536,26 +484,16 @@ impl App {
                 Self::stop_campaign_score_anim_sound(state);
                 Self::leave_shell_dialog(
                     state,
-                    crate::app::frontend::shell_transition::ShellSlideKind::CampaignScore,
+                    ShellSlideKind::CampaignScore,
                     App::leave_mission_result_screen,
                 );
             }
             CampaignScoreDialog::CampaignEnd => Self::leave_shell_dialog(
                 state,
-                crate::app::frontend::shell_transition::ShellSlideKind::CampaignEnd,
+                ShellSlideKind::CampaignEnd,
                 crate::app::cooperative_round::campaign_end_continue,
             ),
         }
-    }
-
-    fn campaign_score_dialog(
-        state: &AppState,
-    ) -> crate::ui::campaign_score_shell::CampaignScoreDialog {
-        state
-            .frontend
-            .campaign_score_page
-            .as_ref()
-            .map_or_else(Default::default, |page| page.dialog)
     }
 
     /// Shared teardown for both result-screen forms: flush the deterministic log
@@ -689,10 +627,7 @@ impl App {
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         state.frontend.shell_route = ShellRoute::Skirmish;
         // A fresh `0x102`: its widgets build on the first sync.
-        state
-            .frontend
-            .shell_controller
-            .reset_to(crate::ui::skirmish_shell::page::DIALOG, false);
+        (state.frontend.shell_controller).reset_to(crate::ui::skirmish_shell::page::DIALOG, false);
         // A new 0x102 creates its kind-1 statics hidden (0x0060A5B0).
         state.frontend.skirmish_shell_state.statics.reset();
         // Native constructs 0x102 fresh on every visit, and
@@ -710,17 +645,6 @@ impl App {
         // the skirmish shell becomes the showing screen. Clear any stale wave
         // from the source shell here so the trigger restarts cleanly.
         state.frontend.shell_first_paint_slide = None;
-    }
-
-    pub(super) fn return_from_skirmish_to_single_player_shell(state: &mut AppState) {
-        state.frontend.shell_route = ShellRoute::MainMenu;
-        state.frontend.shell_first_paint_slide = None;
-        state.frontend.skirmish_shell_state.choose_map_modal = None;
-        state.frontend.skirmish_shell_state.validation_modal = None;
-        state.frontend.skirmish_shell_state.game_options = None;
-        state.frontend.skirmish_shell_state.player_name_edit.blur();
-        state.frontend.skirmish_preview_texture = None;
-        Self::open_single_player_shell(state);
     }
 
     pub(super) fn render_shell_error(
@@ -749,7 +673,7 @@ impl App {
                 )
             } else {
                 let (title, mut text) = shell_error_card(
-                    CardHost::CURRENT,
+                    cfg!(target_os = "windows"),
                     &state.frontend.startup_files,
                     state.process_assets.manager().is_some(),
                     game_files.as_deref(),
@@ -864,18 +788,35 @@ impl App {
     }
 
     /// The sound of a shell control's cue (`ui::shell::page`): an owner-draw
-    /// button's GUIMainButtonSound (`0x0061374B`), the checkbox and combo
-    /// sounds, and a list row's GenericClick.
+    /// button's GUIMainButtonSound (`Rules+0x188`), which the button procedure
+    /// `0x00612B70` plays on every admitted press (`0x0061374B..0x00613771`)
+    /// in shell and in-game dialogs alike, the checkbox and combo sounds, and
+    /// a list row's GenericClick.
+    /// RESIDUAL: a frame-type-0 (sliced PCX) text button also plays
+    /// GenericClick when it paints pressed after an unpressed type-0 paint
+    /// (`0x0061323C..0x00613289`); that paint-time cue is not ported. Every
+    /// in-game dialog button is type 2 or 3 (`0x0060A400`), so it is a shell
+    /// difference only.
     pub(crate) fn play_page_cue(state: &mut AppState, cue: PageCue) {
-        let sound_id = state.rules().and_then(|rules| match cue {
-            PageCue::Button => rules.general.gui_main_button_sound.as_deref(),
-            PageCue::ListClick => rules.general.generic_click_sound.as_deref(),
-            PageCue::Checkbox => rules.general.gui_checkbox_sound.as_deref(),
-            PageCue::ComboOpen => rules.general.gui_combo_open_sound.as_deref(),
-            PageCue::ComboClose => rules.general.gui_combo_close_sound.as_deref(),
+        Self::play_rules_sound(state, |general| match cue {
+            PageCue::Button => general.gui_main_button_sound.as_deref(),
+            PageCue::ListClick => general.generic_click_sound.as_deref(),
+            PageCue::Checkbox => general.gui_checkbox_sound.as_deref(),
+            PageCue::ComboOpen => general.gui_combo_open_sound.as_deref(),
+            PageCue::ComboClose => general.gui_combo_close_sound.as_deref(),
         });
-        let sound_id = sound_id.map(str::to_owned);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+    }
+
+    /// Plays the rules' sound `pick` names; nothing while it is unset.
+    fn play_rules_sound(
+        state: &mut AppState,
+        pick: impl FnOnce(&crate::rules::ruleset::GeneralRules) -> Option<&str>,
+    ) {
+        let sound = state
+            .rules()
+            .and_then(|rules| pick(&rules.general))
+            .map(str::to_owned);
+        Self::play_shell_ui_sound_by_id(state, sound.as_deref());
     }
 
     pub(crate) fn native_launcher_options_active(state: &AppState) -> bool {
@@ -923,43 +864,31 @@ impl App {
             // Keyboard and the final Main Menu return. VERA's Mods leaves the
             // same way.
             Some(
-                result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods),
+                result @ (LauncherParentResult::Back
+                | LauncherParentResult::Keyboard
+                | LauncherParentResult::Mods),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
-                Self::leave_shell_dialog(
-                    state,
-                    crate::app::frontend::shell_transition::ShellSlideKind::Options,
-                    move |state| App::commit_launcher_options_result(state, result),
-                );
+                Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
+                    App::commit_launcher_options_result(state, result)
+                });
             }
             Some(result) => {
                 crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-                    state,
-                    dialog,
-                    result,
-                    None,
+                    state, dialog, result, None,
                 );
             }
             None => {
                 state.frontend.options_dialog = Some(dialog);
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 if output.check_for_updates {
-                    Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::Options,
-                        |state| {
-                            // Options closes as through Back, keeping and saving
-                            // its values; the main menu returns after the
-                            // updater's last box.
-                            Self::commit_launcher_options_result(
-                                state,
-                                crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
-                            );
-                            crate::app::updater::open_check(state);
-                        },
-                    );
+                    Self::leave_shell_dialog(state, ShellSlideKind::Options, |state| {
+                        // Options closes as through Back, keeping and saving
+                        // its values; the main menu returns after the
+                        // updater's last box.
+                        Self::commit_launcher_options_result(state, LauncherParentResult::Back);
+                        crate::app::updater::open_check(state);
+                    });
                 }
             }
         }
@@ -976,8 +905,7 @@ impl App {
         // one reopens the dialog on the page the player left. Back and
         // Terminal end the dialog for good.
         state.frontend.options_reopen_at = match result {
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
-            | crate::ui::main_menu_dialogs::options::LauncherParentResult::Mods => state
+            LauncherParentResult::Keyboard | LauncherParentResult::Mods => state
                 .frontend
                 .options_dialog
                 .as_ref()
@@ -988,10 +916,7 @@ impl App {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state,
-            dialog,
-            result,
-            None,
+            state, dialog, result, None,
         );
     }
 
@@ -1005,7 +930,7 @@ impl App {
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
             state,
             dialog,
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
+            LauncherParentResult::Back,
             Some(opened),
         );
     }
@@ -1022,8 +947,7 @@ impl App {
             state.match_state.input.cursor_x as i32,
             state.match_state.input.cursor_y as i32,
         );
-        let layout =
-            crate::app::frontend::shell_layout::launcher_options_layout(state, dialog.category());
+        let layout = shell_layout::launcher_options_layout(state, dialog.category());
         match down {
             Some(true) => dialog.shell_mouse_down(x, y, &layout),
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
@@ -1041,43 +965,50 @@ impl App {
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
             state,
             dialog,
-            crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
+            LauncherParentResult::Terminal,
             None,
         );
     }
 
-    /// One pointer message (`down`: `None` moves) on a family page: binds the
-    /// controller to the page (`ensure_active` resets only on a dialog change,
-    /// so a gesture's press survives to its release), keeps the page's nodes
-    /// on their layout rects with its runtime-disabled controls, and routes
-    /// the pointer. A press on an enabled button plays its cue on mouse DOWN
-    /// (`0x0061374B`); every hover message repaints status line `0x695`
-    /// (`0x00615EF7`). Returns the activated control.
+    /// One pointer message (`down`: `None` moves) on a family page, with its
+    /// nodes on their layout rects and its runtime-disabled controls; the
+    /// activated control.
     pub(super) fn family_page_pointer(
         state: &mut AppState,
         page: FamilyPage,
         down: Option<bool>,
     ) -> Option<u16> {
         let layout = page.layout(state);
-        let campaign = (page == FamilyPage::Campaign)
-            .then(|| crate::app::frontend::shell_layout::campaign_layout(state));
+        let campaign = (page == FamilyPage::Campaign).then(|| shell_layout::campaign_layout(state));
         let rect_of = |id| match &campaign {
             Some(campaign) => campaign.control_rect(id),
             None => layout.button_rect(id),
         };
         let enabled = page.enabled(state);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(page.dialog(), false);
-        let activated = Self::page_pointer(
+        Self::screen_page_pointer(
             state,
             page.dialog(),
             || page.nodes(),
             rect_of,
             enabled.as_slice(),
             down,
-        );
+        )
+    }
+
+    /// [`Self::page_pointer`] on the screen's own `dialog`: binds the
+    /// controller to it (`ensure_active` resets only on a dialog change, so a
+    /// gesture's press survives to its release), and every hover message
+    /// repaints status line `0x695` (`0x00615EF7`).
+    pub(super) fn screen_page_pointer(
+        state: &mut AppState,
+        dialog: crate::ui::shell::descriptor::DialogId,
+        nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
+        rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
+        enabled: &[(u16, bool)],
+        down: Option<bool>,
+    ) -> Option<u16> {
+        state.frontend.shell_controller.ensure_active(dialog, false);
+        let activated = Self::page_pointer(state, dialog, nodes, rect_of, enabled, down);
         if down.is_none() {
             state.frontend.shell_status_line.repaint();
         }
@@ -1152,26 +1083,18 @@ impl App {
         };
         match page {
             FamilyPage::MainMenu => {
-                use crate::ui::main_menu_shell::{MainMenuControlId, MainMenuShellAction};
-                let Some(action) = MainMenuControlId::from_resource_id(id)
-                    .map(crate::ui::main_menu_shell::action_for_control)
-                else {
-                    return;
+                use crate::ui::main_menu_shell::{
+                    MainMenuControlId, MainMenuShellAction as Action,
                 };
-                match action {
-                    // These results destroy 0xE2 (Exit's confirmation is state 6,
-                    // shown over the empty shell backdrop).
-                    MainMenuShellAction::SinglePlayer
-                    | MainMenuShellAction::MoviesAndCredits
-                    | MainMenuShellAction::Options
-                    | MainMenuShellAction::Network
-                    | MainMenuShellAction::WwOnline
-                    | MainMenuShellAction::ExitGame => Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
-                        move |state| App::handle_main_menu_shell_action(state, action),
-                    ),
-                    MainMenuShellAction::None => {}
+                // Every result destroys 0xE2 (Exit's confirmation is state 6,
+                // shown over the empty shell backdrop).
+                if let Some(action) = MainMenuControlId::from_resource_id(id)
+                    .map(crate::ui::main_menu_shell::action_for_control)
+                    && !matches!(action, Action::None)
+                {
+                    Self::leave_shell_dialog(state, ShellSlideKind::MainMenu, move |state| {
+                        App::handle_main_menu_shell_action(state, action)
+                    })
                 }
             }
             // States 0x12, 8, 9 and 0xB destroy 0x100.
@@ -1180,18 +1103,16 @@ impl App {
                     crate::ui::single_player_shell::SinglePlayerControlId::from_resource_id(id)
                         .map(crate::ui::single_player_shell::action_for_control)
                 {
-                    Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::SinglePlayer,
-                        move |state| App::handle_single_player_shell_action(state, action),
-                    );
+                    Self::leave_shell_dialog(state, ShellSlideKind::SinglePlayer, move |state| {
+                        App::handle_single_player_shell_action(state, action)
+                    });
                 }
             }
             FamilyPage::MoviesAndCredits => {
                 if let Some(action) = crate::ui::movies_credits_shell::action_for_control(id) {
                     Self::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::MoviesAndCredits,
+                        ShellSlideKind::MoviesAndCredits,
                         move |state| App::handle_movies_credits_action(state, action),
                     );
                 }
@@ -1200,7 +1121,7 @@ impl App {
                 if id == crate::ui::campaign_shell::BACK_BUTTON {
                     Self::leave_shell_dialog(
                         state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::Campaign,
+                        ShellSlideKind::Campaign,
                         App::commit_campaign_back,
                     );
                 }
@@ -1234,7 +1155,7 @@ impl App {
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }
-        let parts = crate::app::frontend::shell_layout::shell_box_parts(state, &shell_box);
+        let parts = shell_layout::shell_box_parts(state, &shell_box);
         if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, Some(down))
             .and_then(|id| shell_box.answer(id))
         {
@@ -1268,7 +1189,6 @@ impl App {
     /// the box has closed through the controller pop (D-B3), so mouse and Esc
     /// converge on the same teardown.
     pub(super) fn resolve_shell_message_box(state: &mut AppState, answer: usize) {
-        use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
         let Some(message_box) = state.frontend.shell_message_box.take() else {
             return;
         };
@@ -1322,46 +1242,16 @@ impl App {
                 state.frontend.scenario_catalog.shell_maps(),
                 &state.frontend.skirmish_modes,
             );
-            Self::teardown_skirmish_shell_for_start(state);
+            Self::teardown_skirmish_shell(state);
             state.frontend.multiplayer_shell_runtime.persist_snapshot();
         }
-    }
-
-    /// GUIMainButtonSound (`Rules+0x188`): the owner-draw button procedure
-    /// `0x00612B70` plays it on every admitted press (`0x0061374B..0x00613771`),
-    /// in shell and in-game dialogs alike.
-    /// RESIDUAL: a frame-type-0 (sliced PCX) text button also plays
-    /// GenericClick when it paints pressed after an unpressed type-0 paint
-    /// (`0x0061323C..0x00613289`); that paint-time cue is not ported. Every
-    /// in-game dialog button is type 2 or 3 (`0x0060A400`), so it is a shell
-    /// difference only.
-    pub(super) fn play_main_menu_button_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.gui_main_button_sound.as_deref())
-            .map(str::to_string);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
     }
 
     /// Play the shell first-paint slide-in cue ([AudioVisual] GUIMoveInSound,
     /// stock `MenuSlideIn`), once at the start of each allow-listed shell
     /// dialog's controls-reveal slide. A no-op when the key is empty/unset.
     pub(crate) fn play_shell_slide_in_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.gui_move_in_sound.as_deref())
-            .map(str::to_string);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
-    }
-
-    /// Play the shell teardown slide-out cue ([AudioVisual] GUIMoveOutSound,
-    /// stock `MenuSlideOut`) as `0x00608070` starts. A no-op when unset.
-    fn play_shell_slide_out_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.gui_move_out_sound.as_deref())
-            .map(str::to_string);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+        Self::play_rules_sound(state, |general| general.gui_move_in_sound.as_deref());
     }
 
     /// Leave the showing family dialog `kind` with the result `then`: its
@@ -1386,7 +1276,7 @@ impl App {
     ) {
         Self::begin_leaving_shell_dialog(
             state,
-            crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+            ShellSlideKind::NetworkSetup(dialog),
             true,
             Box::new(move |state| {
                 crate::app::shell_network_setup::commit_start(state, agreed_seed)
@@ -1402,7 +1292,10 @@ impl App {
     ) {
         use crate::app::frontend::shell_transition::{ShellExitStart, begin_shell_exit};
         match begin_shell_exit(state, kind, network_start, then) {
-            ShellExitStart::Sliding => Self::play_shell_slide_out_sound(state),
+            // GUIMoveOutSound (stock `MenuSlideOut`) as `0x00608070` starts.
+            ShellExitStart::Sliding => {
+                Self::play_rules_sound(state, |general| general.gui_move_out_sound.as_deref());
+            }
             ShellExitStart::Immediate(then) => then(state),
             ShellExitStart::AlreadyLeaving => {}
         }
@@ -1422,11 +1315,7 @@ impl App {
     /// (`0x00607F46..0x00607F9B`); a slide-out ends with `0x4ED` and no
     /// sound. Stock rules leave the key empty, so this is silent there.
     pub(crate) fn play_shell_slide_completion_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.shell_button_slide_sound.as_deref())
-            .map(str::to_string);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
+        Self::play_rules_sound(state, |general| general.shell_button_slide_sound.as_deref());
     }
 
     pub(super) fn maintain_main_menu_intro(state: &mut AppState) {
@@ -1453,10 +1342,7 @@ impl App {
                 .shell_message_box
                 .as_ref()
                 .map(|message| &message.purpose),
-            Some(
-                crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
-                    | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
-            )
+            Some(Purpose::CampaignReplay(_) | Purpose::CampaignVictory(_))
         ) {
             return;
         }
@@ -1523,11 +1409,7 @@ impl App {
             return true;
         }
         // 0x00531ECB..0x00531EDB: PlayGlobal(Rules->OptionsChanged, centre, 1.0).
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.options_changed_sound())
-            .map(str::to_owned);
-        Self::play_shell_ui_sound_by_id(state, sound.as_deref());
+        Self::play_rules_sound(state, |general| general.options_changed_sound());
         // RESIDUAL: 0x00531EE4..0x00531EFA paints the empty backdrop with
         // every right-panel tile shuttered (`Shell__DrawEmptyBackdrop
         // 0x0052FEC0`, DL=1) and nothing invalidates 0xE2 afterwards, so
@@ -1575,26 +1457,21 @@ impl App {
         state: &mut AppState,
         action: crate::ui::single_player_shell::SinglePlayerShellAction,
     ) {
-        use crate::ui::single_player_shell::SinglePlayerShellAction;
-
+        use crate::ui::single_player_shell::SinglePlayerShellAction as Action;
         match action {
-            SinglePlayerShellAction::None => {}
-            SinglePlayerShellAction::Skirmish => {
-                Self::enter_native_skirmish_from_single_player(state);
-            }
-            SinglePlayerShellAction::MainMenu => {
-                Self::close_single_player_shell(state);
-            }
-            SinglePlayerShellAction::LoadSavedGame => {
+            Action::None => {}
+            Action::Skirmish => Self::enter_native_skirmish_from_single_player(state),
+            Action::MainMenu => Self::close_single_player_shell(state),
+            Action::LoadSavedGame
                 if state
                     .frontend
                     .single_player_shell_state
-                    .load_saved_game_enabled
-                {
-                    Self::open_load_saved_game_page(state);
-                }
+                    .load_saved_game_enabled =>
+            {
+                Self::open_load_saved_game_page(state)
             }
-            SinglePlayerShellAction::NewCampaign => Self::open_campaign_page(state),
+            Action::LoadSavedGame => {}
+            Action::NewCampaign => Self::open_campaign_page(state),
         }
     }
 
@@ -1602,30 +1479,22 @@ impl App {
         state: &mut AppState,
         action: crate::ui::main_menu_shell::MainMenuShellAction,
     ) {
-        use crate::ui::main_menu_shell::MainMenuShellAction;
-
+        use crate::ui::main_menu_shell::MainMenuShellAction as Action;
         match action {
-            MainMenuShellAction::None => {}
+            Action::None => {}
             // The original pops a confirm message box here; it does NOT quit on
             // the first Exit click. Quitting happens only on confirm.
-            MainMenuShellAction::ExitGame => Self::open_exit_confirm(state),
-            MainMenuShellAction::SinglePlayer => {
-                Self::open_single_player_shell(state);
-            }
-            MainMenuShellAction::Options => {
-                Self::open_launcher_options_dialog(state);
-            }
-            MainMenuShellAction::MoviesAndCredits => {
-                Self::open_movies_credits_page(state);
-            }
+            Action::ExitGame => Self::open_exit_confirm(state),
+            Action::SinglePlayer => Self::open_single_player_shell(state),
+            Action::Options => Self::open_launcher_options_dialog(state),
+            Action::MoviesAndCredits => Self::open_movies_credits_page(state),
             // Both lead to a pre-match check, which compares a mod's files.
-            MainMenuShellAction::Network => {
+            Action::Network | Action::WwOnline => {
                 state.process_assets.read_mod_files_ahead();
-                Self::open_lan_lobby(state)
-            }
-            MainMenuShellAction::WwOnline => {
-                state.process_assets.read_mod_files_ahead();
-                Self::open_wol_welcome_page(state)
+                match action {
+                    Action::Network => Self::open_lan_lobby(state),
+                    _ => Self::open_wol_welcome_page(state),
+                }
             }
         }
     }
@@ -1638,18 +1507,14 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
         let shell_box = crate::ui::main_menu_dialogs::exit_confirm(&csf);
-        Self::open_shell_message_box(
-            state,
-            shell_box,
-            crate::app::frontend::state::ShellMessageBoxPurpose::ExitGame,
-        );
+        Self::open_shell_message_box(state, shell_box, Purpose::ExitGame);
     }
 
     /// ShellMessageBox__Run `0x005D3490` over the empty shell backdrop.
     pub(super) fn open_shell_message_box(
         state: &mut AppState,
         shell_box: crate::ui::shell::modal::ShellBox,
-        purpose: crate::app::frontend::state::ShellMessageBoxPurpose,
+        purpose: Purpose,
     ) {
         // The SHP modal sources PUDLGBGN/MNBTTN from the skirmish chrome atlas; load
         // it on demand so the box renders straight from the main menu.
@@ -1673,7 +1538,7 @@ impl App {
         Self::open_shell_message_box(
             state,
             crate::ui::shell::modal::ShellBox::notice(text, ok),
-            crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
+            Purpose::Notice,
         );
     }
 
@@ -1742,7 +1607,7 @@ impl App {
 
 #[cfg(all(test, tests_app))]
 mod status_error_tests {
-    use super::{CardHost, shell_error_card};
+    use super::shell_error_card;
     use crate::app::initialize::{StartupFiles, StartupProblem};
     use std::path::Path;
 
@@ -1762,7 +1627,7 @@ mod status_error_tests {
         };
         let _ = std::fs::remove_dir_all(&root);
         let details = format!("{error:#}");
-        let (title, text) = shell_error_card(CardHost::Unix, &files, false, None, None, &details);
+        let (title, text) = shell_error_card(false, &files, false, None, None, &details);
         assert_eq!(title, "config.toml could not be read");
         assert!(text.contains(config.to_str().unwrap()), "{text}");
         assert!(text.contains("not UTF-8 text"), "{text}");
@@ -1772,7 +1637,7 @@ mod status_error_tests {
             problem: Some(StartupProblem::Settings(Some("/locked/VERA20k".into()))),
         };
         let (title, text) = shell_error_card(
-            CardHost::Windows,
+            true,
             &files,
             false,
             None,
@@ -1790,15 +1655,13 @@ mod status_error_tests {
             problem: None,
         };
         let log = Path::new("~/.local/share/VERA20k/logs/ra2.log");
-        let (title, text) =
-            shell_error_card(CardHost::Unix, &files, false, None, Some(log), "missing");
+        let (title, text) = shell_error_card(false, &files, false, None, Some(log), "missing");
         assert_eq!(title, "Game files not found");
         assert!(!text.contains("vera20k.exe"), "{text}");
         assert!(text.contains("VERA20k/config.toml"), "{text}");
         assert!(text.contains("VERA20k/logs/ra2.log"), "{text}");
 
-        let (_, text) =
-            shell_error_card(CardHost::Windows, &files, false, None, Some(log), "missing");
+        let (_, text) = shell_error_card(true, &files, false, None, Some(log), "missing");
         assert!(text.contains("Copy vera20k.exe"), "{text}");
     }
 
@@ -1813,7 +1676,7 @@ mod status_error_tests {
         };
         let details = "Could not load the game archives: IO error reading asset file: \
 \u{7cfb}\u{7edf}\u{627e}\u{4e0d}\u{5230}\u{6307}\u{5b9a}\u{7684}\u{8def}\u{5f84}\u{3002} (os error 3)";
-        let (_, text) = shell_error_card(CardHost::Windows, &files, false, None, None, details);
+        let (_, text) = shell_error_card(true, &files, false, None, None, details);
         assert!(text.contains("C:/\u{6e38}\u{620f}/config.toml"), "{text}");
         assert!(text.ends_with(&format!("Details: {details}")), "{text}");
         assert!(!text.contains("boxes"), "{text}");

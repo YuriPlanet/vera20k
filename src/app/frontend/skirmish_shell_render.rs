@@ -22,7 +22,7 @@ pub(crate) use in_game_shell::{
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;
 mod saved_games;
-pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
+pub(crate) use saved_games::{paint_saved_browser, push_saved_browser_box, render_saved_game_shell};
 mod launcher_options;
 pub(crate) use launcher_options::{paint_options_settings, render_launcher_options};
 mod modals;
@@ -72,11 +72,9 @@ use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::skirmish_launch::LaunchCountry;
 #[cfg(test)]
+use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, SkirmishComboId};
 use crate::ui::skirmish_shell::{
-    COMBO_DROPDOWN_ROW_H, SkirmishComboId, player_name_edit_text_rect,
-};
-use crate::ui::skirmish_shell::{
-    ChooseMapModalLayout, RandomMapSetupLayout, RectPx, SavedSeedLayout,
+    ChooseMapModalLayout, RandomMapSetupLayout, RectPx,
     SkirmishShellAction, SkirmishShellLayout, SkirmishShellState, player_row_visible,
 };
 
@@ -208,9 +206,11 @@ fn build_skirmish_shell_instances(
     font: &BitFont,
     layout: &SkirmishShellLayout,
     choose_map_layout: Option<&ChooseMapModalLayout>,
-    seed_layout: Option<&SavedSeedLayout>,
+    // The seed browser covers `0x105`.
+    seed_browser: bool,
     setup_layout: Option<&RandomMapSetupLayout>,
-    setups_layout: Option<&SavedSeedLayout>,
+    // VERA's Setups page covers `0x102`.
+    setups_layout: bool,
     shell: &SkirmishShellState,
     search_display: &str,
     maps: &[MapMenuEntry],
@@ -230,16 +230,15 @@ fn build_skirmish_shell_instances(
         // The setup dialog REPLACES the chooser rather than overlaying it: the
         // original hides/suspends the chooser while 0x105 is up. Drawing both
         // collides their listboxes, labels and button captions.
-        if let (Some(browser), Some(seed_layout)) = (shell.saved_seed_browser.as_ref(), seed_layout)
-        {
-            let interior = push_choose_map_background_instances(
+        // The browser paints over this from its tree.
+        if seed_browser {
+            push_choose_map_background_instances(
                 &mut instances,
                 atlas,
                 layout,
                 choose_map_layout,
                 1.0,
             );
-            push_saved_browser_modal_instances(&mut instances, atlas, font, seed_layout, browser, interior, true);
         } else if let (Some(modal), Some(setup_layout)) =
             (shell.random_map_setup_modal.as_ref(), setup_layout)
         {
@@ -281,15 +280,14 @@ fn build_skirmish_shell_instances(
     // VERA's Setups page covers `0x102` as the seed browser covers `0x105`:
     // the panel, the strip, the page background, then the browser. The
     // panel keeps `0x102`'s top art, the map button framing the preview.
-    if let (Some(browser), Some(setups_layout)) = (shell.setups_browser.as_ref(), setups_layout) {
-        let interior = push_generic_shell_background_instances(&mut instances, atlas, layout);
+    if setups_layout {
+        push_generic_shell_background_instances(&mut instances, atlas, layout);
         push_steady_optional_chrome_instances(
             &mut instances,
             atlas,
             layout,
             ShellDialogChromeProfile::SkirmishSetup0x102,
         );
-        push_saved_browser_modal_instances(&mut instances, atlas, font, setups_layout, browser, interior, true);
         return instances;
     }
 
@@ -319,9 +317,8 @@ fn build_skirmish_shell_instances(
         return instances;
     }
 
-    // The player-name edit is a dialog child, so it follows the parent
-    // background: this batch has no depth test and paints in queue order.
-    push_player_name_edit_instances(&mut instances, atlas, font, layout, shell);
+    // The widgets, the name box among them, follow the parent background:
+    // this batch has no depth test and paints in queue order.
     instances.extend_from_slice(page);
     push_opponent_scrollbar_instances(&mut instances, atlas, layout, shell, maps);
 
@@ -573,16 +570,35 @@ fn render_skirmish_shell_with_atlas(
             true => gui_paint::ButtonArt::Host,
             false => gui_paint::ButtonArt::Panel,
         };
-        let style = gui_paint::GuiStyle { buttons, ..Default::default() };
+        // The name box's caret holds steady while it has the focus.
+        let caret_of = |node| gui.focus() == Some(node);
+        let style = gui_paint::GuiStyle {
+            buttons,
+            caret_of: Some(&caret_of),
+            ..Default::default()
+        };
         gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], style)
     });
-    let dialog_paint = match choose_map_layout.as_ref() {
-        Some(_) if message_box_up || leaving || seed_layout.is_some() => None,
-        Some(choose_map_layout) => match setup_layout {
+    // The chooser, `0x105`, or the saved-file browser over either page.
+    let shell = &state.frontend.skirmish_shell_state;
+    let dialog_paint = match (choose_map_layout.as_ref(), seed_layout.as_ref()) {
+        _ if message_box_up => None,
+        (Some(_), Some(seed_layout)) => shell.saved_seed_browser.as_ref().map(|browser| {
+            let (key, fallback) = browser.mode.title_label();
+            let title = state.csf_label(key, fallback);
+            saved_games::seed_browser_paint(state, seed_layout, browser, &title)
+        }),
+        (Some(_), None) if leaving => None,
+        (Some(choose_map_layout), None) => match setup_layout {
             Some(setup_layout) => text::random_map_paint(state, atlas, setup_layout, sliding),
             None => text::choose_map_paint(state, atlas, choose_map_layout, sliding),
         },
-        None => None,
+        (None, _) => setups_layout.as_ref().zip(shell.setups_browser.as_ref()).map(
+            |(setups_layout, browser)| {
+                let title = crate::i18n::tr("VERA:SetupsTitle");
+                saved_games::seed_browser_paint(state, setups_layout, browser, &title)
+            },
+        ),
     };
     let validation_ok_pressed = state.frontend.shell_controller.top_id()
         == Some(crate::ui::shell::descriptor::DialogId(0x00CE))
@@ -610,9 +626,9 @@ fn render_skirmish_shell_with_atlas(
             &state.renderer.bit_font,
             &layout,
             choose_map_layout.as_ref(),
-            seed_layout.as_ref(),
+            seed_layout.is_some(),
             setup_layout,
-            setups_layout.as_ref(),
+            setups_layout.is_some(),
             &state.frontend.skirmish_shell_state,
             &search_display,
             state.frontend.scenario_catalog.shell_maps(),
@@ -621,8 +637,7 @@ fn render_skirmish_shell_with_atlas(
             &page_paint.controls,
         )
     };
-    // Choose Map's or `0x105`'s widgets over their art; the seed browser
-    // over `0x105` paints its own.
+    // Choose Map's, `0x105`'s or a browser's widgets over their art.
     let mut dialog_paint = dialog_paint.unwrap_or_default();
     instances.append(&mut dialog_paint.controls);
     if preview_instance.is_some() {
@@ -660,32 +675,13 @@ fn render_skirmish_shell_with_atlas(
         build_shell_text_draws(
             state,
             &layout,
-            &state.frontend.skirmish_shell_state,
             &parent_statics,
             page_paint.texts,
         )
     } else {
         Vec::new()
     };
-    if choose_map_layout.is_some() && !message_box_up {
-        // Mirrors the sprite pass: the setup dialog replaces the chooser, so
-        // only one of the two contributes text.
-        let browser = state.frontend.skirmish_shell_state.saved_seed_browser.as_ref();
-        if let (Some(seed_layout), Some(browser)) = (seed_layout.as_ref(), browser) {
-            let (key, fallback) = browser.mode.title_label();
-            let title = state.csf_label(key, fallback);
-            push_seed_browser_text_draws(&mut shell_draws, state, seed_layout, browser, &title);
-        } else {
-            shell_draws.append(&mut dialog_paint.texts);
-        }
-    }
-    if let (Some(setups_layout), Some(browser)) = (
-        setups_layout.as_ref().filter(|_| !message_box_up),
-        state.frontend.skirmish_shell_state.setups_browser.as_ref(),
-    ) {
-        let title = crate::i18n::tr("VERA:SetupsTitle");
-        push_seed_browser_text_draws(&mut shell_draws, state, setups_layout, browser, &title);
-    }
+    shell_draws.append(&mut dialog_paint.texts);
     if let Some(prompt) = message_box {
         shell_box::push_choose_map_prompt(state, &prompt, None, Some(&mut shell_draws));
     }
@@ -1742,25 +1738,6 @@ mod tests {
             combo_dropdown_text_fit_width(content, ShellScale::RETAIL),
             77
         );
-    }
-
-    #[test]
-    fn player_name_edit_text_rect_uses_verified_inset() {
-        let layout = compute_layout(800, 600);
-        let text = player_name_edit_text_rect(
-            layout.player_name,
-            crate::ui::shell::geom::ShellScale::RETAIL,
-        );
-
-        assert_eq!(text, RectPx::new(61, 60, 147, 21));
-    }
-
-    #[test]
-    fn player_name_caret_x_subtracts_horizontal_scroll() {
-        let text = RectPx::new(61, 60, 147, 21);
-
-        assert_eq!(player_name_caret_x_from_prefix_width(text, 0, 42), 103);
-        assert_eq!(player_name_caret_x_from_prefix_width(text, 17, 42), 86);
     }
 
     #[test]

@@ -6,22 +6,18 @@
 //! Your own card's Change Country drops `0xFE`'s country list below the
 //! Country row; a pick is kept in VERA.INI and sent to the lobby.
 
-use crate::ui::shell::page::PageCue;
 use winit::keyboard::KeyCode;
 
 use super::service::WolServiceRequest;
+use crate::app::AppState;
 use crate::app::web_link;
-use crate::app::{App, AppState};
-use crate::ui::shell::combobox::{ComboPopup, ComboPress};
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::list::ListScrollPart;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
-    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_COUNTRY_ROWS, CARD_MESSAGE, CARD_PROFILE,
-    WolCardAction, WolPlayerCard, badge_name_key,
+    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, WolCardAction, WolLobbyState,
+    WolPlayerCard, badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
-use crate::util::time::Instant;
 
 /// What the card shows, for the painter.
 pub(crate) struct PlayerCardView {
@@ -35,29 +31,26 @@ pub(crate) struct PlayerCardView {
     pub(crate) buttons: Vec<(u16, String)>,
     /// The hovered button's help, in the box's status line.
     pub(crate) status: String,
-    pub(crate) countries: Option<CountryListView>,
+    /// The open country list.
+    pub(crate) countries: Option<vera20k_gui::ComboDropDown>,
 }
 
-/// The open country list, for the painter.
-pub(crate) struct CountryListView {
-    pub(crate) popup: ComboPopup,
-    pub(crate) rows: Vec<String>,
-    pub(crate) hot_row: Option<usize>,
-    pub(crate) pressed: Option<ListScrollPart>,
+/// The lobby's widgets while its card is open; a lobby popup over it takes
+/// the input first.
+fn card_ui(state: &AppState) -> Option<&WolLobbyState> {
+    let ui = &state.frontend.wol.as_ref()?.lobby()?.ui;
+    ui.card.as_ref().filter(|_| ui.popup.is_none())?;
+    Some(ui)
 }
 
-/// The open card; a lobby popup over it takes the input first.
 fn card(state: &AppState) -> Option<&WolPlayerCard> {
-    let lobby = state.frontend.wol.as_ref()?.lobby()?;
-    lobby.ui.card.as_ref().filter(|_| lobby.ui.popup.is_none())
+    card_ui(state)?.card.as_ref()
 }
 
-fn card_mut(state: &mut AppState) -> Option<&mut WolPlayerCard> {
-    let lobby = state.frontend.wol.as_mut()?.lobby_mut()?;
-    if lobby.ui.popup.is_some() {
-        return None;
-    }
-    lobby.ui.card.as_mut()
+fn card_ui_mut(state: &mut AppState) -> Option<&mut WolLobbyState> {
+    let ui = &mut state.frontend.wol.as_mut()?.lobby_mut()?.ui;
+    ui.card.as_ref().filter(|_| ui.popup.is_none())?;
+    Some(ui)
 }
 
 fn close(state: &mut AppState) {
@@ -109,18 +102,17 @@ pub(super) fn sync(state: &mut AppState) {
         .into_iter()
         .map(|(id, rect)| (id, rect, enabled(state, &name, id)))
         .collect();
-    if let Some(lobby) = state
-        .frontend
-        .wol
-        .as_mut()
-        .and_then(|visit| visit.lobby_mut())
-    {
-        lobby.ui.sync_card(|id| {
+    let value = country_value(state);
+    if let Some(ui) = card_ui_mut(state) {
+        ui.sync_card(|id| {
             placed
                 .iter()
                 .find(|(known, ..)| *known == id)
                 .map(|&(_, rect, on)| (rect, on))
         });
+        if let Some(value) = value.filter(|_| ui.countries_open()) {
+            ui.place_countries(value);
+        }
     }
 }
 
@@ -160,18 +152,12 @@ fn clan(state: &AppState, name: &str) -> Option<String> {
     }
 }
 
-/// The open country list, below your Country row's value.
-fn country_list(state: &AppState) -> Option<ComboPopup> {
-    let card = card(state).filter(|card| card.countries_open())?;
+/// Your Country row's value, which the country list hangs below.
+fn country_value(state: &AppState) -> Option<RectPx> {
+    let card = card(state)?;
     let row = 1 + usize::from(clan(state, &card.name).is_some());
     let (_, value) = layout(state).rows.get(row).copied()?;
-    Some(ComboPopup::new(
-        value,
-        super::lobby::popup_scale(state),
-        card.countries.len(),
-        CARD_COUNTRY_ROWS,
-        card.country_list.top_index,
-    ))
+    Some(value)
 }
 
 /// The country the lobby holds for you, 0 when it has none.
@@ -192,17 +178,10 @@ fn open_countries(state: &mut AppState) {
         (0..LOCALE_COUNT).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
     );
     let locale = own_locale(state);
-    if let Some(lobby) = state
-        .frontend
-        .wol
-        .as_mut()
-        .and_then(|visit| visit.lobby_mut())
+    if let Some(value) = country_value(state)
+        && let Some(ui) = card_ui_mut(state)
     {
-        // The list takes the pointer: no card button stays lit.
-        lobby.ui.cancel_pointer();
-        if let Some(card) = lobby.ui.card.as_mut() {
-            card.open_countries(rows, locale);
-        }
+        ui.open_countries(rows, locale, value);
     }
     state.frontend.shell_status_line.repaint();
 }
@@ -222,51 +201,11 @@ fn choose_country(state: &mut AppState, locale: i32) {
     super::service::send_locale(state, locale);
 }
 
-/// The open list captures the mouse as ComboDropWin does: its scrollbar
-/// takes a press, and a pick or a press anywhere else closes it.
-fn countries_mouse(state: &mut AppState, list: ComboPopup, pressed: bool) {
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some(card) = card_mut(state) else {
-        return;
-    };
-    if !pressed {
-        card.country_list.cancel_pointer();
-        return;
-    }
-    let press = card.country_list.press_list(list, x, y, Instant::now());
-    let picked = match press {
-        ComboPress::Pick(row) => card.countries.get(row).map(|row| row.locale),
-        _ => None,
-    };
-    if !card.countries_open() {
-        card.close_countries();
-    }
-    if let Some(cue) = press.cue() {
-        App::play_page_cue(state, PageCue::from(cue));
-    }
-    if let Some(locale) = picked {
+/// Row `row` of your country list picked.
+pub(super) fn country_picked(state: &mut AppState, row: usize) {
+    if let Some(locale) = card_ui(state).and_then(|ui| ui.country_locale(row)) {
         choose_country(state, locale);
     }
-    state.frontend.shell_status_line.repaint();
-}
-
-/// The country list's scrollbar repeats.
-pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    let list = country_list(state)?;
-    let (x, y) = state.match_state.input.cursor_px();
-    let card = card_mut(state)?;
-    let moved = card.country_list.scroll.poll(
-        list.scroll_geometry(),
-        &mut card.country_list.top_index,
-        x,
-        y,
-        Instant::now(),
-    );
-    let repeat = card.country_list.scroll.repeat_at();
-    if moved {
-        state.platform.window.request_redraw();
-    }
-    repeat
 }
 
 /// A press on a modern player row opened `name`'s card. The lobby asks for
@@ -287,30 +226,12 @@ pub(super) fn opened(state: &mut AppState, name: &str) {
     state.platform.window.request_redraw();
 }
 
-/// The open country list lights its rows and drags its thumb; otherwise the
-/// card's modal buttons take the pointer through the lobby's widgets.
-pub(super) fn cursor_moved(state: &mut AppState) -> bool {
-    let Some(list) = country_list(state) else {
-        return false;
-    };
-    let (x, y) = state.match_state.input.cursor_px();
-    if let Some(card) = card_mut(state) {
-        card.country_list.pointer_moved(list, x, y);
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-    true
-}
-
-/// The open country list takes every press, and a press outside the box
-/// closes the card; a button acts when released over itself (the modal's).
+/// A press outside the box closes the card; the card's widgets take the
+/// rest, the open country list every press (ComboDropWin's capture), a
+/// button when released over itself (the modal's).
 pub(super) fn mouse(state: &mut AppState, pressed: bool) -> bool {
-    if card(state).is_none() {
+    if card_ui(state).is_none_or(WolLobbyState::countries_open) {
         return false;
-    }
-    if let Some(list) = country_list(state) {
-        countries_mouse(state, list, pressed);
-        return true;
     }
     let (x, y) = state.match_state.input.cursor_px();
     if pressed && !layout(state).dialog.contains(x, y) {
@@ -353,13 +274,13 @@ fn act(state: &mut AppState, name: String, action: WolCardAction) {
 /// Escape closes the open country list, else the card, which keeps every
 /// key from the chat edit.
 pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
-    let Some(open) = card(state).map(WolPlayerCard::countries_open) else {
+    let Some(open) = card_ui(state).map(WolLobbyState::countries_open) else {
         return false;
     };
     if code == Some(KeyCode::Escape) {
         if open {
-            if let Some(card) = card_mut(state) {
-                card.close_countries();
+            if let Some(ui) = card_ui_mut(state) {
+                ui.close_countries();
             }
         } else {
             close(state);
@@ -371,15 +292,16 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
 /// The hovered button's help while the card is open, else the help of the
 /// row under the pointer.
 pub(super) fn status_help(state: &AppState) -> Option<String> {
-    let card = card(state)?;
-    let hovered = state.frontend.wol.as_ref()?.lobby()?.ui.hovered();
-    let key = match hovered.filter(|_| !card.countries_open()) {
+    let ui = card_ui(state)?;
+    let card = ui.card.as_ref()?;
+    let open = ui.countries_open();
+    let key = match ui.hovered().filter(|_| !open) {
         Some(CARD_MESSAGE) => "VERA:MessageHelp",
         Some(CARD_COUNTRY) => "VERA:ChangeCountryHelp",
         Some(CARD_BUDDY) if buddy(state, &card.name).is_some() => "VERA:RemoveBuddyHelp",
         Some(CARD_BUDDY) => "VERA:AddBuddyHelp",
         Some(CARD_PROFILE) => "VERA:FullProfileHelp",
-        _ if card.countries_open() => return Some(String::new()),
+        _ if open => return Some(String::new()),
         _ => {
             let (x, y) = state.match_state.input.cursor_px();
             let help = layout(state)
@@ -485,12 +407,7 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
             (id, label(key))
         })
         .collect();
-    let countries = country_list(state).map(|popup| CountryListView {
-        popup,
-        rows: card.countries.iter().map(|row| row.text.clone()).collect(),
-        hot_row: card.country_list.hot_row,
-        pressed: card.country_list.scroll.pressed_part(),
-    });
+    let countries = card_ui(state)?.countries_drop_down();
     Some(PlayerCardView {
         layout,
         badge,

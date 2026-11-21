@@ -119,46 +119,6 @@ pub(super) fn local_map_index(state: &AppState) -> Option<usize> {
         .position(|map| map.file_name.eq_ignore_ascii_case(file))
 }
 
-/// The room's rows and the page of them showing: what [`view`] fills in
-/// and [`crate::app::input::multiplayer_setup::layout`] places.
-pub(crate) struct RoomListing {
-    capacity: usize,
-    observer_row: Option<usize>,
-    visible_limit: usize,
-    several: bool,
-    add_slot: Option<u8>,
-    pub(crate) grouped: bool,
-    listed: Vec<Listed>,
-    row_count: usize,
-    /// The first row of each page.
-    pages: Vec<usize>,
-    first_row: usize,
-    /// The rows (headers too) on the page showing.
-    page_len: usize,
-    /// In VERA's room, where each of them stands ([`roster_page`]).
-    pub(crate) places: Vec<RosterPlace>,
-    /// In VERA's room, how many places it scrolls through and the last.
-    roster_scroll: (usize, usize),
-}
-impl RoomListing {
-    /// Index in the full listing, including for a team's pinned header.
-    fn shown_index(&self, visible: usize) -> Option<usize> {
-        if self.roster_scroll.0 > 0 {
-            self.places.get(visible).map(|place| place.item)
-        } else {
-            Some(self.first_row + visible)
-        }
-    }
-    fn row_at(&self, position: usize) -> Option<Listed> {
-        if self.several {
-            self.listed.get(position).copied()
-        } else {
-            (position < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
-                .then_some(Listed::Row(position as u8))
-        }
-    }
-}
-
 /// Whether the host of a VERA room has the team bar's Room size: its Max
 /// players, people who play and watch together. Quick Match's matchbot game
 /// has none.
@@ -167,10 +127,20 @@ pub(crate) fn room_size_shown(state: &AppState) -> bool {
     session.host() && session.network_people_limit().is_some() && !super::quick_match(state)
 }
 
-pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
+pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let session = &state.match_state.session;
     let launch = session.network_setup()?;
-    mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    let protocol = state.frontend.network_setup_protocol.as_ref()?;
+    let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
+    let host = session.host();
+    let host_name = protocol.wol_host.as_deref();
+    let local = launch.humans.get(launch.local_player_index)?;
+    let room = session.network_room();
+    let dialog = super::dialog(state);
+    // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
+    // team combo and the team header 0x794.
+    let clan_room = dialog.wol() && room.clan;
+    let map_index = local_map_index(state);
     let capacity = session
         .network_setup_capacity()?
         .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
@@ -191,7 +161,7 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
     } else {
         visible_limit
     };
-    let add_slot = (several && session.host())
+    let add_slot = (several && host)
         .then(|| {
             (0..visible_limit.min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT) as u8)
                 .find(|row| session.network_vacancy(*row) == Some(NetworkVacancy::Closed))
@@ -218,79 +188,63 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
             .max(observer_row.map_or(0, |row| row + 1))
             .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
     };
-    let mut listing = RoomListing {
-        capacity,
-        observer_row,
-        visible_limit,
-        several,
-        add_slot,
-        grouped,
-        listed,
-        row_count,
-        pages: Vec::new(),
-        first_row: 0,
-        page_len: 0,
-        places: Vec::new(),
-        roster_scroll: (0, 0),
+    let row_at = |position: usize| {
+        if several {
+            listed.get(position).copied()
+        } else {
+            (position < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
+                .then_some(Listed::Row(position as u8))
+        }
     };
-    let dialog = super::dialog(state);
+    // The page showing: VERA's roster's entries where [`roster_page`] puts
+    // them, above its team bar in a room with teams or the host's Room
+    // size; a native roster's pages of rows.
     let ui = state.frontend.multiplayer_setup.as_ref();
-    if dialog.modern {
+    let (pages, first_row, places, roster_scroll) = if dialog.modern {
         let items: Vec<RosterItem> = (0..row_count)
-            .map(|position| match listing.row_at(position) {
+            .map(|position| match row_at(position) {
                 Some(Listed::Header(group, _)) => RosterItem::Header(group),
                 _ => RosterItem::Row,
             })
             .collect();
-        // A room with teams, or with the host's Room size, keeps its team
-        // bar under the roster.
         let bottom = crate::app::input::multiplayer_setup::roster_bottom(
             state,
             grouped,
             room_size_shown(state),
         );
         let scroll = roster_scroll(&items, bottom);
-        listing.first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
-        let top = scroll.stops.get(listing.first_row).copied().unwrap_or(0);
-        listing.places = roster_page(&items, top, bottom);
-        listing.page_len = listing.places.len();
-        listing.pages = vec![0];
-        listing.roster_scroll = (scroll.stops.len(), scroll.max_top);
+        let first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
+        let top = scroll.stops.get(first_row).copied().unwrap_or(0);
+        let places = roster_page(&items, top, bottom);
+        (
+            vec![0],
+            first_row,
+            places,
+            (scroll.stops.len(), scroll.max_top),
+        )
     } else {
-        let rows = dialog.rows_per_page();
-        listing.pages = (0..row_count.max(1)).step_by(rows).collect();
-        listing.first_row = ui.map_or(0, |ui| ui.first_row(&listing.pages));
-        listing.page_len = rows.min(row_count.saturating_sub(listing.first_row));
-    }
-    Some(listing)
-}
-
-pub(crate) fn view(state: &AppState) -> Option<SetupView> {
-    let session = &state.match_state.session;
-    let launch = session.network_setup()?;
-    let protocol = state.frontend.network_setup_protocol.as_ref()?;
-    let mode = mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)?;
-    let host = session.host();
-    let host_name = protocol.wol_host.as_deref();
-    let local = launch.humans.get(launch.local_player_index)?;
-    let room = session.network_room();
-    let dialog = super::dialog(state);
-    // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
-    // team combo and the team header 0x794.
-    let clan_room = dialog.wol() && room.clan;
-    let map_index = local_map_index(state);
-    let listing = room_listing(state)?;
-    let RoomListing {
-        capacity,
-        observer_row,
-        visible_limit,
-        several,
-        add_slot,
-        grouped,
-        row_count,
-        first_row,
-        ..
-    } = listing;
+        let pages: Vec<usize> = (0..row_count.max(1))
+            .step_by(dialog.rows_per_page())
+            .collect();
+        let first_row = ui.map_or(0, |ui| ui.first_row(&pages));
+        (pages, first_row, Vec::new(), (0, 0))
+    };
+    // The rows (headers too) on the page showing, and the index in the full
+    // listing of each, a team's pinned header too.
+    let page_len = if dialog.modern {
+        places.len()
+    } else {
+        dialog
+            .rows_per_page()
+            .min(row_count.saturating_sub(first_row))
+    };
+    let shown_index = |visible: usize| {
+        if roster_scroll.0 > 0 {
+            places.get(visible).map(|place| place.item)
+        } else {
+            Some(first_row + visible)
+        }
+    };
     let cooperative = mode.class.uses_cooperative_setup();
     let coop = cooperative.then(|| {
         state
@@ -327,7 +281,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // VERA's roster holds the rows its page fits; a native page always has
     // its eight row controls, hidden past the room's rows.
     let rows = if dialog.modern {
-        listing.page_len
+        page_len
     } else {
         dialog.rows_per_page()
     };
@@ -335,10 +289,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let mut row_icons = std::array::from_fn(|_| None);
     let mut headers = std::array::from_fn(|_| None);
     for visible_row in 0..rows {
-        let Some(index) = listing.shown_index(visible_row) else {
+        let Some(index) = shown_index(visible_row) else {
             break;
         };
-        let row = match listing.row_at(index) {
+        let row = match row_at(index) {
             None => break,
             Some(Listed::Blank) => continue,
             Some(Listed::Row(row)) => row,
@@ -386,8 +340,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 // Team members follow their header in the full listing; the
                 // visible page may begin or end halfway through them.
                 let member_colors = if matches!(group, SetupGroup::Team(_)) {
-                    listing
-                        .listed
+                    listed
                         .iter()
                         .skip(index + 1)
                         .take(count)
@@ -820,8 +773,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     // The host drags people, itself too, and AI between the boxes of a room
     // with teams; only people go to watch.
     let mut box_of = None;
-    let drag_rows = listing
-        .listed
+    let drag_rows = listed
         .iter()
         .filter(|_| host && grouped)
         .filter_map(|listed| {
@@ -859,11 +811,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     Some(SetupView {
         first_row,
         row_count,
-        page_len: listing.page_len,
-        roster_scroll: listing.roster_scroll,
-        pages: listing.pages,
+        page_len,
+        roster_scroll,
+        pages,
+        places,
         dialog,
-        host,
         locked: protocol.locked,
         // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
         // checked and disabled in a tournament or clan room.
@@ -892,22 +844,11 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ],
         row_icons,
         headers,
-        open_box: state
-            .frontend
-            .multiplayer_setup
-            .as_ref()
-            .and_then(|ui| ui.open_box)
-            .filter(|_| dialog.modern),
         team_starts_enabled: host && teams.is_some() && local_map_index(state).is_some(),
         team_colors_enabled: host && teams.is_some(),
         balance_enabled: host && grouped && dialog.wol(),
         lobby_enabled: dialog.wol() && crate::app::shell_wol::lobby_visits(state),
         drag_rows,
-        map_offer_open: state
-            .frontend
-            .multiplayer_setup
-            .as_ref()
-            .is_some_and(|ui| ui.map_offer.is_some()),
         mode_label: label(
             state,
             if launch.selected_map_file.is_none() {

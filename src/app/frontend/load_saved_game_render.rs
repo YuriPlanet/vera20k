@@ -11,10 +11,10 @@ use crate::app::frontend::menu_page_render::{
     FamilyFrame, encode_family_page, family_art_ready, page_panel_state,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::app::frontend::skirmish_shell_render::gui_paint::GuiStyle;
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::app::frontend::skirmish_shell_render::gui_paint::ButtonArt;
+use crate::app::frontend::skirmish_shell_render::{paint_saved_browser, push_saved_browser_box};
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
-use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BROWSER_DIALOG, LIST};
+use crate::ui::skirmish_shell::saved_seed_browser::BROWSER_DIALOG;
 
 /// Paint `0xB7`. Returns `false` when the shell chrome is missing.
 pub(crate) fn render_load_saved_game_page(
@@ -34,54 +34,26 @@ pub(crate) fn render_load_saved_game_page(
         layout.page.status_help,
     );
     let leaving = panel.leaving;
-    let (Some(browser), Some(atlas)) = (
-        state.frontend.load_saved_game.as_ref(),
-        state.frontend.skirmish_shell_chrome.as_ref(),
-    ) else {
+    let Some(browser) = state.frontend.load_saved_game.as_ref() else {
         return Ok(false);
     };
-    // The browser's own Load and Back are the column's buttons, with the
-    // page's captions; a message box drops their press, so they paint
-    // released under it.
-    let caption = |id: i32| {
-        let button = LOAD_SAVED_GAME_PAGE.button(u16::try_from(id).ok()?)?;
-        Some(state.csf_text(button.csf_key))
-    };
-    let enabled = |id: i32| (id == i32::from(ACTION)).then(|| browser.action_enabled());
+    // The browser's own Load and Back are the column's buttons; a message
+    // box drops their press, so they paint released under it.
     let title = LOAD_SAVED_GAME_PAGE.title_key;
     let mut frame = FamilyFrame::new("Load Saved Game Shell", &layout.page, panel, title);
     let ui = &browser.ui;
     frame.buttons = ui.root_in(BROWSER_DIALOG).map(|root| (ui.gui(), root));
-    frame.style = GuiStyle {
-        text_of: Some(&caption),
-        enabled_of: Some(&enabled),
-        ..GuiStyle::default()
-    };
     frame.backdrop = true;
-    let view = browser.node(LIST).and_then(|list| ui.gui().list_view(list));
-    if let Some(view) = view.filter(|_| !leaving) {
-        let scale = layout.browser.scale;
-        let metrics = ListMetrics::scaled(scale);
-        let geometry = ShellListGeometry::new(layout.browser.list, view.rows, view.top, metrics);
-        crate::app::frontend::skirmish_shell_render::paint_list(
-            &mut frame.over.controls,
-            atlas,
-            geometry,
-            view.top,
-            view.selected,
-            view.pressed,
-            false,
-            scale,
-        );
-    }
-    let prompt = crate::app::frontend::skirmish_shell_render::family_saved_game_overlays(
+    // The list and its rows, blank while the teardown slide runs, then the box.
+    let mut over = paint_saved_browser(state, &layout.browser, browser, ButtonArt::Host, !leaving);
+    push_saved_browser_box(
         state,
         &layout.browser,
         browser,
-        !leaving,
-        &mut frame.over.texts,
+        &mut over.controls,
+        &mut over.texts,
     );
-    frame.over.controls.extend(prompt);
+    frame.over = over;
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
 }

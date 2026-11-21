@@ -26,7 +26,7 @@ pub use layout::{
     combo_face_rect, combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
     compute_layout, compute_layout_for_rows, compute_layout_on,
     compute_random_map_setup_layout, compute_saved_seed_layout, compute_setups_layout,
-    player_name_edit_client_rect, player_name_edit_text_rect, random_map_setup_dropdown_rect,
+    random_map_setup_dropdown_rect, FRAMED_EDIT_TEXT_INSET, framed_edit_text_width,
 };
 pub(crate) use state::CountryMenuCatalog;
 pub(crate) use state::status_help_key_for_hover_with_catalog;
@@ -35,8 +35,8 @@ pub use state::{
     ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton,
     ChooseMapPromptKind, ChooseMapSelection, DropdownScrollbarPart, EXTRAS_ROWS, ExtrasAction,
     ExtrasOutcome, ExtrasRow, ExtrasValue, FAVORITES_ROW, MainRngRanged, ONLINE_MAPS_ROW,
-    OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
-    PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, PlayerNameEditState, RandomMapPreset,
+    OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
+    PLAYERS_RANGE, RandomMapPreset,
     RandomMapSetupModalState, SAVED_SEED_DESCRIPTION_MAX_UNITS, SEARCH_MAX_CHARS, SETUP_COMBO_ROWS,
     SavedSeedBrowserRow, SavedSeedBrowserState, SavedSeedDescriptionEdit, SavedSeedOutcome,
     SavedSeedPrompt, SavedSeedPromptPurpose, SetupCombo, SetupComboItem, SkirmishAiRowType,
@@ -48,7 +48,8 @@ pub use state::{
     combo_enabled, combo_items, combo_rect, country_choices, extras_page_count, favorite_key,
     handle_option_mouse_wheel, initialize_rows_for_selected_map, launch_session,
     move_opponent_scrollbar, opponent_scroll_deadline, opponent_scroll_geometry,
-    opponent_scroll_held, pack_launch_session_without_start_validation, player_row_visible,
+    opponent_scroll_held, pack_launch_session_without_start_validation, player_name_from_profile,
+    player_row_visible,
     poll_opponent_scroll, press_opponent_scrollbar, repair_teams_for_selected_mode,
     selected_combo_item, selected_combo_item_index, selected_player_rows, setup_combo_items,
     starts_by_team, status_help_key_for_choose_map_hover,

@@ -17,7 +17,6 @@ use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
     family_list_node, family_list_selected, retained_movie_row,
 };
-use crate::ui::shell::page::PageCue;
 
 /// The Sneak Peeks movie (`0x0052DE55`).
 const SNEAK_PEEK_MOVIE: &str = "RENEGADE.BIK";
@@ -55,11 +54,7 @@ impl App {
     pub(super) fn handle_movies_credits_action(state: &mut AppState, action: MoviesCreditsAction) {
         match action {
             MoviesCreditsAction::SneakPeeks => {
-                Self::start_fullscreen_movie(
-                    state,
-                    SNEAK_PEEK_MOVIE,
-                    MovieReturn::MoviesAndCredits,
-                );
+                Self::start_fullscreen_movie(state, SNEAK_PEEK_MOVIE, MovieReturn::MoviesAndCredits)
             }
             MoviesCreditsAction::PlayMovies => Self::open_movie_list(state),
             MoviesCreditsAction::ViewCredits => {
@@ -77,12 +72,8 @@ impl App {
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
         let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
-        state.frontend.shell_route = ShellRoute::MovieList;
         state.frontend.movie_list = Some(rows);
-        state
-            .frontend
-            .shell_controller
-            .reset_to(MOVIE_LIST_DIALOG, false);
+        Self::show_shell_page(state, ShellRoute::MovieList, MOVIE_LIST_DIALOG);
         Self::movie_list_sync(state);
     }
 
@@ -107,10 +98,7 @@ impl App {
     /// wake deadline.
     pub(super) fn poll_family_list(state: &mut AppState) -> Option<Instant> {
         let window = &state.platform.window;
-        state
-            .frontend
-            .shell_controller
-            .poll_then(|| window.request_redraw())
+        (state.frontend.shell_controller).poll_then(|| window.request_redraw())
     }
 
     /// One pointer message (`down`: `None` moves). A press on a button
@@ -121,40 +109,27 @@ impl App {
     /// selects nothing. Every hover message repaints the status line
     /// (0x00615EF7).
     pub(super) fn handle_movie_list_mouse(state: &mut AppState, down: Option<bool>) {
+        use crate::app::frontend::shell_transition::ShellSlideKind::MovieList;
         let layout = Self::movie_list_sync(state);
         let rect_of = |id| layout.page.button_rect(id);
         let nodes = || crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.nodes();
-        let released = Self::page_pointer(state, MOVIE_LIST_DIALOG, nodes, rect_of, &[], down);
-        if down.is_none() {
-            state.frontend.shell_status_line.repaint();
-        }
-        match released {
+        match Self::screen_page_pointer(state, MOVIE_LIST_DIALOG, nodes, rect_of, &[], down) {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
                 if family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG)
                     .is_some()
                 {
-                    Self::leave_shell_dialog(
-                        state,
-                        crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
-                        App::play_selected_movie,
-                    );
+                    Self::leave_shell_dialog(state, MovieList, App::play_selected_movie);
                 } else {
                     // No selection: the proc stores it and keeps the dialog.
                     Self::play_selected_movie(state);
                 }
             }
             // Back writes -1: state 4 recreates Movies & Credits.
-            Some(0x0686) => Self::leave_shell_dialog(
-                state,
-                crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
-                App::open_movies_credits_page,
-            ),
+            Some(0x0686) => {
+                Self::leave_shell_dialog(state, MovieList, App::open_movies_credits_page)
+            }
             _ => {}
         }
-    }
-
-    pub(super) fn play_generic_click_sound(state: &mut AppState) {
-        Self::play_page_cue(state, PageCue::ListClick);
     }
 
     /// Play Movie (`0x0052D960..0x0052D98D`): the current selection is saved
@@ -181,11 +156,7 @@ impl App {
         state.frontend.movie_list = None;
         let stem = movie_stem(name);
         // 0x005C0640 raises campaign movie progress before the existence check.
-        state
-            .persistence
-            .options_profile
-            .movie_progress
-            .note_played(stem);
+        (state.persistence.options_profile.movie_progress).note_played(stem);
         // 0x005BED61..0x005BED6A: outside a campaign (GameMode != 0) Play_Movie
         // returns right after that note, with no video, audio hold or suspend,
         // so a skirmish or multiplayer map's movie action only moves on.
@@ -237,11 +208,7 @@ impl App {
         state.audio.set_movie_sounds_suspended(true, wall_ms);
         // The Bink soundtrack plays at VoiceVolume: BinkSetVolume(ftol(
         // VoiceVolume * 32768.0)) at `0x00432897` (32768 = unity gain).
-        let voice_volume = state
-            .persistence
-            .options_profile
-            .voice_volume
-            .clamp(0.0, 1.0);
+        let voice_volume = (state.persistence.options_profile.voice_volume).clamp(0.0, 1.0);
         // 0x006C99D0: the movie's cues, when it has any.
         let header = &surface.file().header;
         let subtitles =
@@ -287,11 +254,7 @@ impl App {
         let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
             return Ok(());
         };
-        let voice_volume = state
-            .persistence
-            .options_profile
-            .voice_volume
-            .clamp(0.0, 1.0);
+        let voice_volume = (state.persistence.options_profile.voice_volume).clamp(0.0, 1.0);
         let ended = match movie.step(&state.renderer.gpu, voice_volume) {
             Ok(ended) => ended,
             Err(err) => {
@@ -329,23 +292,23 @@ impl App {
             MovieReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
             MovieReturn::MovieList => Self::open_movie_list(state),
             MovieReturn::CampaignStart(request) => {
-                crate::app::loading::pump::begin_loading(state, *request);
+                crate::app::loading::pump::begin_loading(state, *request)
             }
             MovieReturn::CampaignLoaded(result) => {
-                crate::app::loading::transitions::apply_map_load_result(state, *result);
+                crate::app::loading::transitions::apply_map_load_result(state, *result)
             }
             MovieReturn::RunningScenario => {
                 state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
                 state.platform.window.request_redraw();
             }
             MovieReturn::CampaignResult(destination) => {
-                Self::complete_scenario_exit(state, *destination);
+                Self::complete_scenario_exit(state, *destination)
             }
             MovieReturn::CampaignVictory(victory) => {
-                Self::advance_campaign_victory(state, *victory);
+                Self::advance_campaign_victory(state, *victory)
             }
             MovieReturn::CampaignDefeat(defeat) => {
-                Self::open_campaign_replay_prompt(state, *defeat);
+                Self::open_campaign_replay_prompt(state, *defeat)
             }
         }
     }
@@ -382,10 +345,8 @@ impl App {
             return;
         };
         let lookup = |key: &str| state.csf_label(key, &format!("MISSING:'{key}'"));
-        let viewport = CreditsViewport::new(
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        );
+        let config = &state.renderer.gpu.config;
+        let viewport = CreditsViewport::new(config.width, config.height);
         let lines = crate::ui::movies_credits_shell::parse_credits(
             &bytes,
             viewport.surface_height,
@@ -404,9 +365,7 @@ impl App {
                 false,
             );
         }
-        state
-            .audio
-            .queue_theme(&ThemeRequest::Name(CREDITS_THEME.into()), now_ms);
+        (state.audio).queue_theme(&ThemeRequest::Name(CREDITS_THEME.into()), now_ms);
         let roll = CreditsRoll::new(
             lines,
             &state.renderer.bit_font,
@@ -446,9 +405,7 @@ impl App {
 
     fn finish_credits_roll_return(state: &mut AppState, return_to: CreditsReturn) {
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        state
-            .audio
-            .queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
+        (state.audio).queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
         match return_to {
             CreditsReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
             CreditsReturn::MainMenu => {

@@ -5,7 +5,7 @@
 //! dialogs. Modal-centered dialogs skip the re-anchor (the caller centers them).
 //! Render-agnostic; consumes only the descriptor + shared geometry primitives.
 
-use super::descriptor::{AnchorRule, DialogDescriptor, RepositionPolicy};
+use super::descriptor::AnchorRule;
 use super::geom::{self, RectPx, RightPanelRects};
 
 /// Centering base width — the logical shell is authored at 800x600 and
@@ -13,35 +13,6 @@ use super::geom::{self, RectPx, RightPanelRects};
 const SHELL_BASE_W: i32 = 800;
 /// Centering base height — the logical shell is authored at 800x600.
 const SHELL_BASE_H: i32 = 600;
-
-/// One control's resolved pixel rect, keyed by its resource id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LaidOutControl {
-    pub id: u16,
-    pub rect: RectPx,
-}
-
-/// Run the shell layout pass over a dialog descriptor (contract C7). Returns one
-/// resolved pixel rect per control, in descriptor order.
-pub fn layout_pass(desc: &DialogDescriptor, screen_w: i32, screen_h: i32) -> Vec<LaidOutControl> {
-    let panel = geom::right_panel_rects(screen_w, screen_h);
-    desc.controls
-        .iter()
-        .map(|c| {
-            let rect = match desc.reposition_policy {
-                RepositionPolicy::IncludeSetReanchor => {
-                    apply_anchor(c.anchor, c.dlu_rect, screen_w, screen_h, panel)
-                }
-                // Modal-centered dialogs keep their DLU-derived client rect; the
-                // caller positions the modal panel (no fullscreen re-anchor).
-                RepositionPolicy::ModalCentered => {
-                    geom::child_window(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h)
-                }
-            };
-            LaidOutControl { id: c.id, rect }
-        })
-        .collect()
-}
 
 /// Status line `0x695` of the right-panel shells outside a suspended game
 /// (`0x0060B550`): the window at `x = dx + 10`, `y = H - h - dy - 1`, where
@@ -73,14 +44,8 @@ pub fn status_text_rect(window: RectPx) -> RectPx {
     }
 }
 
-/// Resolve one include-set control outside a descriptor table, with the same
-/// per-control rule `layout_pass` applies.
-pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
-    Placer::new(screen_w, screen_h).at(rule, dlu.x, dlu.y, dlu.w, dlu.h)
-}
-
 /// Places a dialog's controls on one screen by their resource template and
-/// re-anchor rule, as `layout_pass` resolves them. On a scaled mapping the
+/// re-anchor rule. On a scaled mapping the
 /// controls are placed on the 800x600 dialog and scaled with it, so a page's
 /// retail and window-filling layouts come from one table.
 #[derive(Debug, Clone, Copy)]
@@ -268,10 +233,15 @@ fn right_anchor(screen_w: i32, screen_h: i32, rect: RectPx, inset: Option<i32>) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::descriptor::{
-        BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
-    };
+    use crate::shell::descriptor::{HEADING_ANCHOR, MONITOR_ANCHOR};
     use crate::shell::geom::SDBTNANM_CELL_W_NARROW;
+
+    const SNAP: AnchorRule = AnchorRule::OwnerDrawButtonSnap {
+        cell_w: SDBTNANM_CELL_W_NARROW,
+    };
+    const BOTTOM_ROW: AnchorRule = AnchorRule::OwnerDrawButtonBottomRow {
+        cell_w: SDBTNANM_CELL_W_NARROW,
+    };
 
     /// `0x102`'s status line (410x12 DLU) is wider than the family's and
     /// already reaches the bar's end, so its text box stays on the screen.
@@ -285,73 +255,19 @@ mod tests {
         }
     }
 
-    fn ctrl(id: u16, kind: ControlKind, dlu: RectPx, anchor: AnchorRule) -> ControlDescriptor {
-        ControlDescriptor {
-            id,
-            kind,
-            dlu_rect: dlu,
-            anchor,
-            csf_key: None,
-            tooltip_key: None,
-            group: 0,
-            enabled: true,
-            visible: true,
-        }
-    }
-
-    fn rect_for(laid: &[LaidOutControl], id: u16) -> RectPx {
-        laid.iter().find(|c| c.id == id).expect("control id").rect
-    }
-
     /// All four anchor rules reproduce the 0xE2 helper outputs at 800x600.
     #[test]
     fn anchor_rules_reproduce_main_menu_rects_800x600() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x00E2),
-            bg_kind: BgKind::RightPanelShell,
-            slide_eligible: true,
-            reposition_policy: RepositionPolicy::IncludeSetReanchor,
-            controls: vec![
-                ctrl(
-                    0x0683,
-                    ControlKind::Button,
-                    RectPx::new(425, 125, 108, 23),
-                    AnchorRule::OwnerDrawButtonSnap {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x03EE,
-                    ControlKind::Button,
-                    RectPx::new(425, 330, 108, 23),
-                    AnchorRule::OwnerDrawButtonBottomRow {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x0694,
-                    ControlKind::Static,
-                    RectPx::new(425, 1, 108, 10),
-                    crate::shell::descriptor::HEADING_ANCHOR,
-                ),
-                ctrl(
-                    0x071C,
-                    ControlKind::Static,
-                    RectPx::new(447, 29, 61, 33),
-                    crate::shell::descriptor::MONITOR_ANCHOR,
-                ),
-            ],
-        };
-        let laid = layout_pass(&desc, 800, 600);
+        let placer = Placer::new(800, 600);
         // Snap button: flush-right 156-cell, first row at y=199.
-        assert_eq!(rect_for(&laid, 0x0683), RectPx::new(644, 199, 156, 42));
+        assert_eq!(placer.at(SNAP, 425, 125, 108, 23), RectPx::new(644, 199, 156, 42));
         // Exit: same column, in the final tile immediately above the bottom cap.
-        assert_eq!(rect_for(&laid, 0x03EE), RectPx::new(644, 535, 156, 42));
+        assert_eq!(placer.rule(BOTTOM_ROW), RectPx::new(644, 535, 156, 42));
         // Title: compatibility +1w/+1h, right-anchor (635,2,163,17),
         // then the title finalizer adds +7y/+1h.
-        assert_eq!(rect_for(&laid, 0x0694), RectPx::new(635, 9, 163, 18));
+        assert_eq!(placer.at(HEADING_ANCHOR, 425, 1, 108, 10), RectPx::new(635, 9, 163, 18));
         // 0x71C monitor window: +1w/+1h, x = 800 - 37 - 93.
-        assert_eq!(rect_for(&laid, 0x071C), RectPx::new(670, 47, 93, 55));
+        assert_eq!(placer.at(MONITOR_ANCHOR, 447, 29, 61, 33), RectPx::new(670, 47, 93, 55));
     }
 
     #[test]
@@ -359,84 +275,20 @@ mod tests {
         // 0x0060B1D0: y = resource y + max(0, (H - 600) / 2), independent of
         // the panel art, which only moves from height 768.
         for (screen_h, heading_y, monitor_y) in [(480, 9, 47), (700, 59, 97), (720, 69, 107)] {
-            let heading = anchor_rect(
-                crate::shell::descriptor::HEADING_ANCHOR,
-                RectPx::new(425, 1, 108, 10),
-                800,
-                screen_h,
-            );
-            let monitor = anchor_rect(
-                crate::shell::descriptor::MONITOR_ANCHOR,
-                RectPx::new(447, 29, 61, 33),
-                800,
-                screen_h,
-            );
+            let placer = Placer::new(800, screen_h);
+            let heading = placer.at(HEADING_ANCHOR, 425, 1, 108, 10);
+            let monitor = placer.at(MONITOR_ANCHOR, 447, 29, 61, 33);
             assert_eq!(heading, RectPx::new(635, heading_y, 163, 18), "{screen_h}");
             assert_eq!(monitor, RectPx::new(670, monitor_y, 93, 55), "{screen_h}");
         }
     }
 
-    /// Modal-centered dialogs are NOT re-anchored — they keep their DLU->pixel
-    /// client rect (contract C7 include-set gating; 0x120/0xCE are excluded).
-    #[test]
-    fn modal_centered_policy_skips_reanchor() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x0120),
-            bg_kind: BgKind::ModalShp,
-            slide_eligible: false,
-            reposition_policy: RepositionPolicy::ModalCentered,
-            controls: vec![ctrl(
-                0x0001,
-                ControlKind::Button,
-                RectPx::new(425, 125, 108, 23),
-                // Anchor rule is ignored under ModalCentered.
-                AnchorRule::OwnerDrawButtonSnap {
-                    cell_w: SDBTNANM_CELL_W_NARROW,
-                },
-            )],
-        };
-        let laid = layout_pass(&desc, 800, 600);
-        // Common native resize keeps the converted position and adds one to
-        // each extent. No fullscreen snap/anchor applies to this modal.
-        assert_eq!(
-            rect_for(&laid, 0x0001),
-            geom::child_window(425, 125, 108, 23)
-        );
-        assert_eq!(rect_for(&laid, 0x0001), RectPx::new(638, 203, 163, 38));
-    }
-
     /// Re-anchor is oversized-screen aware: 1024x768 reproduces the 0xE2 cells.
     #[test]
     fn snap_and_bottom_row_track_supported_screen_sizes() {
-        let desc = DialogDescriptor {
-            id: DialogId(0x00E2),
-            bg_kind: BgKind::RightPanelShell,
-            slide_eligible: true,
-            reposition_policy: RepositionPolicy::IncludeSetReanchor,
-            controls: vec![
-                ctrl(
-                    0x0683,
-                    ControlKind::Button,
-                    RectPx::new(425, 125, 108, 23),
-                    AnchorRule::OwnerDrawButtonSnap {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-                ctrl(
-                    0x03EE,
-                    ControlKind::Button,
-                    RectPx::new(425, 330, 108, 23),
-                    AnchorRule::OwnerDrawButtonBottomRow {
-                        cell_w: SDBTNANM_CELL_W_NARROW,
-                    },
-                ),
-            ],
-        };
-        let at_640 = layout_pass(&desc, 640, 480);
-        assert_eq!(rect_for(&at_640, 0x03EE), RectPx::new(484, 409, 156, 42));
-
-        let at_1024 = layout_pass(&desc, 1024, 768);
-        assert_eq!(rect_for(&at_1024, 0x0683), RectPx::new(756, 283, 156, 42));
-        assert_eq!(rect_for(&at_1024, 0x03EE), RectPx::new(756, 619, 156, 42));
+        assert_eq!(Placer::new(640, 480).rule(BOTTOM_ROW), RectPx::new(484, 409, 156, 42));
+        let at_1024 = Placer::new(1024, 768);
+        assert_eq!(at_1024.at(SNAP, 425, 125, 108, 23), RectPx::new(756, 283, 156, 42));
+        assert_eq!(at_1024.rule(BOTTOM_ROW), RectPx::new(756, 619, 156, 42));
     }
 }

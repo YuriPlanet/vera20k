@@ -18,23 +18,26 @@ use super::text::{
     combo_face_text_draw_rect, combo_face_text_fit_width, fit_owner_draw_label, rect_to_text_rect,
 };
 use super::{
-    COMBODROPWIN_TEXT_INSET_X, SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH,
-    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
-    SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
+    COMBODROPWIN_TEXT_INSET_X, OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
+    SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
+use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::trackbar::{TrackbarRange, value_text_rect};
 
-/// Sprites (skirmish atlas) and texts of a dialog's widgets, and of an open
-/// combo drop-down over them.
+/// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
+/// widgets, and of an open combo drop-down over them.
 #[derive(Default)]
 pub(crate) struct GuiPaint {
     pub(crate) controls: Vec<SpriteInstance>,
+    /// [`CellRow`] pictures, on the style's page art.
+    pub(crate) icons: Vec<SpriteInstance>,
     pub(crate) texts: Vec<ShellTextDraw>,
     pub(crate) popup: Vec<SpriteInstance>,
     pub(crate) popup_texts: Vec<ShellTextDraw>,
@@ -43,6 +46,24 @@ pub(crate) struct GuiPaint {
 /// A list's rows as the host keeps them: each row's text and packed
 /// `00BBGGRR` colour (`u32::MAX` for the node's own).
 pub(crate) type HostRows = Vec<(String, u32)>;
+
+/// A multi-cell list row (`0x4A8`'s columns): texts and page-art pictures
+/// `x` base pixels into the row; a `filled` row shows the selection fill
+/// (a multi-select list's, `LBS_MULTIPLESEL`).
+#[derive(Default)]
+pub(crate) struct CellRow {
+    /// `(x, w, text, align, rgb)`; a `w` of 0 runs to the row's end, two short.
+    pub(crate) texts: Vec<(i32, i32, String, ShellAlign, [f32; 3])>,
+    /// `(x, PCX)`, centred vertically.
+    pub(crate) icons: Vec<(i32, &'static str)>,
+    pub(crate) filled: bool,
+}
+
+impl CellRow {
+    pub(crate) fn text(&mut self, x: i32, w: i32, text: &str, align: ShellAlign, rgb: [f32; 3]) {
+        self.texts.push((x, w, text.to_owned(), align, rgb));
+    }
+}
 
 /// How a dialog's buttons paint.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,6 +80,9 @@ pub(crate) enum ButtonArt {
     Modal,
     /// A framed plate with its caption in its `Align` (VERA's Extras rows).
     Plate,
+    /// The caption alone, in its `Align` (`0x113`'s text sort buttons, whose
+    /// owner-draw face is not traced).
+    Caption,
 }
 
 /// How a dialog's combos paint their face.
@@ -89,6 +113,10 @@ pub(crate) struct GuiStyle<'a> {
     /// without paints nothing, its host paints it. A host-counted combo's
     /// open list shows them too.
     pub(crate) rows_of: Option<&'a dyn Fn(i32) -> Option<HostRows>>,
+    /// The multi-cell rows of a host-counted list by its `Id`, in place of
+    /// `rows_of`'s, with their icons on `art`.
+    pub(crate) cells_of: Option<&'a dyn Fn(i32) -> Option<Vec<CellRow>>>,
+    pub(crate) art: Option<&'a WolPageArt>,
     /// The host's enable for a node by its `Id`, in place of its `Enabled`
     /// (a button the host greys while it still takes presses).
     pub(crate) enabled_of: Option<&'a dyn Fn(i32) -> Option<bool>>,
@@ -101,6 +129,8 @@ pub(crate) struct GuiStyle<'a> {
     /// An edit's caret shows (it has the focus, in its blink) by the host's
     /// word, for a tree the shell controller does not own.
     pub(crate) caret_of: Option<&'a dyn Fn(NodeId) -> bool>,
+    /// The fill behind a framed edit (`TextInset`), for one no art backs.
+    pub(crate) edit_fill: Option<[f32; 3]>,
     /// The glyph scale of every caption, value and row, when not the
     /// `scale` the widgets paint at (VERA's room's smaller text).
     pub(crate) text_factor: Option<f32>,
@@ -116,10 +146,13 @@ impl Default for GuiStyle<'_> {
             art_of: None,
             text_of: None,
             rows_of: None,
+            cells_of: None,
+            art: None,
             enabled_of: None,
             control_lists: false,
             combos: ComboArt::Plain,
             caret_of: None,
+            edit_fill: None,
             text_factor: None,
             rgb: SHELL_LABEL_TEXT_RGB,
         }
@@ -291,6 +324,7 @@ impl GuiPaint {
     /// Appends `other`'s draws after this one's.
     pub(crate) fn extend(&mut self, other: GuiPaint) {
         self.controls.extend(other.controls);
+        self.icons.extend(other.icons);
         self.texts.extend(other.texts);
         self.popup.extend(other.popup);
         self.popup_texts.extend(other.popup_texts);
@@ -366,6 +400,7 @@ pub(crate) fn paint_gui_with(
                 } == Some(node);
                 match art {
                     ButtonArt::Host => continue,
+                    ButtonArt::Caption => {}
                     ButtonArt::Panel => super::chrome::push_right_panel_button_shp(
                         &mut paint.controls,
                         atlas,
@@ -537,6 +572,10 @@ pub(crate) fn paint_gui_with(
             }
             NodeKind::List => {
                 // A host-counted list's rows are the host's, or it paints it.
+                let cells = style
+                    .cells_of
+                    .zip(id(node))
+                    .and_then(|(cells_of, id)| cells_of(id));
                 let host_rows = match gui.get(node, Prop::RowCount).ok().flatten() {
                     Some(_) => match style
                         .rows_of
@@ -544,6 +583,7 @@ pub(crate) fn paint_gui_with(
                         .and_then(|(rows_of, id)| rows_of(id))
                     {
                         Some(rows) => Some(rows),
+                        None if cells.is_some() => None,
                         None => continue,
                     },
                     None => None,
@@ -577,6 +617,14 @@ pub(crate) fn paint_gui_with(
                         scale,
                     ),
                 }
+                if let Some(cells) = cells {
+                    let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
+                    for (visible, row) in rows.enumerate() {
+                        let r = geometry.row(visible);
+                        paint_cells(&mut paint, state, style, row, r, scale, covered);
+                    }
+                    continue;
+                }
                 let normal = text_rgb(gui, node, true, style.rgb, None);
                 let rows: Vec<(&str, u32)> = match &host_rows {
                     Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
@@ -605,8 +653,9 @@ pub(crate) fn paint_gui_with(
                         .push(text(state, row, at, align, glyph, rgb, depth));
                 }
             }
-            // NewEdit `0x00614B30` as `push_new_edit` paints it; the open IME
-            // composition shows in the focused one.
+            // NewEdit `0x00614B30` as `push_new_edit` paints it, or framed in
+            // its rect with a `TextInset` field; the open IME composition
+            // shows in the focused one, a whole-text selection fills behind it.
             NodeKind::Edit => {
                 let mut edit = new_edit(gui, node);
                 let composition = state
@@ -619,17 +668,50 @@ pub(crate) fn paint_gui_with(
                     None => state.frontend.shell_controller.caret_visible(node),
                 };
                 edit.focused |= style.caret_of.is_some() && caret;
-                super::controls::push_new_edit(
+                let font = &state.renderer.bit_font;
+                let rgb = text_rgb(gui, node, true, style.rgb, None);
+                let Some(field) = inset(gui, node, rect, scale) else {
+                    let (out, texts) = (&mut paint.controls, &mut paint.texts);
+                    super::controls::push_new_edit(
+                        out,
+                        texts,
+                        atlas,
+                        font,
+                        &edit,
+                        composition,
+                        rect,
+                        caret,
+                        rgb,
+                        depth,
+                        scale,
+                    );
+                    continue;
+                };
+                if let Some(fill) = style.edit_fill {
+                    super::chrome::push_solid_rect(&mut paint.controls, atlas, rect, fill, depth);
+                }
+                let selected = edit.focused && flag(gui, node, Prop::AllSelected, false);
+                if selected {
+                    let width = font.text_width(&edit.painted_text()) as i32;
+                    let at =
+                        scale.derive_rect(field, |f| RectPx::new(f.x, f.y + 2, width, f.h - 4));
+                    super::chrome::push_solid_rect(
+                        &mut paint.controls,
+                        atlas,
+                        at,
+                        OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                        super::SHELL_EDIT_SELECTION_DEPTH,
+                    );
+                }
+                super::controls::push_framed_edit(
                     &mut paint.controls,
                     &mut paint.texts,
                     atlas,
-                    &state.renderer.bit_font,
+                    font,
                     &edit,
                     composition,
-                    rect,
-                    caret,
-                    text_rgb(gui, node, true, style.rgb, None),
-                    depth,
+                    (rect, field),
+                    (caret && !selected, rgb, depth),
                     scale,
                 );
             }
@@ -646,6 +728,43 @@ pub(crate) fn paint_gui_with(
         }
     }
     paint
+}
+
+/// A multi-cell row on `row`: its fill, then its cells' texts and pictures.
+fn paint_cells(
+    paint: &mut GuiPaint,
+    state: &AppState,
+    style: GuiStyle<'_>,
+    cells: CellRow,
+    row: RectPx,
+    scale: ShellScale,
+    covered: bool,
+) {
+    if let (true, Some(atlas)) = (cells.filled, state.frontend.skirmish_shell_chrome.as_ref()) {
+        super::chrome::push_solid_rect(
+            &mut paint.controls,
+            atlas,
+            row,
+            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+            SHELL_CONTROL_DEPTH - 0.00001,
+        );
+    }
+    let glyph = style.text_factor.unwrap_or(scale.factor());
+    for (x, w, value, align, rgb) in cells.texts.into_iter().filter(|_| !covered) {
+        let at = scale.derive_rect(row, |row| {
+            let w = if w > 0 { w } else { row.w - x - 2 };
+            RectPx::new(row.x + x, row.y, w, row.h)
+        });
+        let depth = SHELL_CONTROL_TEXT_DEPTH;
+        paint
+            .texts
+            .push(text(state, &value, at, align, glyph, rgb, depth));
+    }
+    if let Some(art) = style.art {
+        for (x, file) in cells.icons {
+            super::wol_lobby::push_icon(&mut paint.icons, art, file, row, x, scale);
+        }
+    }
 }
 
 /// An owner-draw combo's face, its caption unless an overlay covers it, and

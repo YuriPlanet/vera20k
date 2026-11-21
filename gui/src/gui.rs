@@ -58,7 +58,7 @@ pub struct InputResult {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiEvent {
-    Activated { node: NodeId, command: Option<String> },
+    Activated { node: NodeId },
     Hovered { node: NodeId, entered: bool },
     /// Checkbox (`Bool`) or Trackbar (`Int`). `final_` is false for the
     /// intermediate positions of a drag and true once the user lets go.
@@ -96,7 +96,6 @@ pub struct DialogId(u32);
 struct Pointer {
     pressed: Option<NodeId>,
     hovered: Option<NodeId>,
-    hover_started: Option<UiMs>,
     /// The captured trackbar follows the pointer (a press on its thumb).
     dragging: bool,
     /// An open combo drop-down; it takes the dialog's pointer input first.
@@ -128,6 +127,8 @@ pub struct Gui {
     /// List double-click limits: milliseconds within a width x height
     /// rectangle of the previous press.
     double_click: (UiMs, i32, i32),
+    /// The text's length in the host's code page, for `MaxBytes`.
+    byte_len: fn(&str) -> usize,
 }
 
 impl Gui {
@@ -140,7 +141,14 @@ impl Gui {
             // The host policy off Windows (`host_double_click_limits` in the
             // engine's `saved_file_input`).
             double_click: (500, 4, 4),
+            byte_len: str::len,
         }
+    }
+
+    /// How many bytes a text takes in the host's code page (`MaxBytes`);
+    /// UTF-8's until set.
+    pub fn set_byte_len(&mut self, byte_len: fn(&str) -> usize) {
+        self.byte_len = byte_len;
     }
 
     /// The host's double-click time and rectangle (Windows: GetDoubleClickTime,
@@ -283,7 +291,6 @@ impl Gui {
         }
         d.pointer.dragging = false;
         d.pointer.hovered = None;
-        d.pointer.hover_started = None;
         if let Some(popup) = d.pointer.popup {
             widget::combo::release_scroll(&mut self.tree, popup);
         }
@@ -315,10 +322,6 @@ impl Gui {
         self.top_pointer().hovered
     }
 
-    pub fn hover_started(&self) -> Option<UiMs> {
-        self.top_pointer().hover_started
-    }
-
     /// The pushed look: captured and still under the pointer (612B70).
     pub fn shows_pressed(&self, id: NodeId) -> bool {
         let p = self.top_pointer();
@@ -346,7 +349,7 @@ impl Gui {
                     // still hit-tests the rest of the screen (status help).
                     let covered = self.combo_drop_down(popup).is_some_and(|d| d.popup.rect.contains(x, y));
                     let over = self.hit(root, x, y).filter(|_| !covered);
-                    self.set_hover(over, now);
+                    self.set_hover(over);
                     return InputResult { consumed: true };
                 }
                 InputEvent::PointerUp { x, y, button: MouseButton::Left } => {
@@ -363,7 +366,7 @@ impl Gui {
                         Ok(NodeKind::Trackbar) => {
                             // The trackbar holds the pointer: nothing else
                             // sees it until the release (`SetCapture` 0x0061E4DF).
-                            self.set_hover(None, now);
+                            self.set_hover(None);
                             if self.top_mut().pointer.dragging {
                                 self.drag_trackbar(held, x);
                             }
@@ -379,7 +382,7 @@ impl Gui {
                     }
                 }
                 let over = self.hit(root, x, y);
-                self.set_hover(over, now);
+                self.set_hover(over);
                 InputResult { consumed: over.is_some() || modal }
             }
             InputEvent::PointerDown { x, y, button: MouseButton::Left } => {
@@ -485,12 +488,8 @@ impl Gui {
     /// the focus from elsewhere restarts NewEdit's caret blink, as a press
     /// does.
     pub fn focus_edit(&mut self, node: Option<NodeId>, now: UiMs) -> Result<(), Refused> {
-        let before = self.focus();
-        self.set_focus(node)?;
-        if let Some(n) = node.filter(|n| before != Some(*n)) {
-            self.tree.node_mut(n)?.state = widget::WidgetState::Edit(widget::edit::EditState { focused_at: now });
-        }
-        Ok(())
+        let top = self.dialogs.last().map_or(DialogId(u32::MAX), |d| d.id);
+        self.focus_edit_in(top, node, now)
     }
 
     /// The edit holding dialog `id`'s keyboard focus, on top or not.
@@ -526,6 +525,18 @@ impl Gui {
         };
         widget::combo::dismiss(&mut self.tree, node);
         true
+    }
+
+    /// Opens combo `node`'s list as the top dialog's drop-down for the host
+    /// (a button that drops it), `top` its first shown row: no cue, no event.
+    pub fn open_popup(&mut self, node: NodeId, top: usize) -> Result<(), Refused> {
+        if self.tree.kind(node)? != NodeKind::Combo {
+            return Err(Refused::WrongKind);
+        }
+        let d = self.dialogs.last_mut().ok_or(Refused::NotFound)?;
+        d.pointer.popup = Some(node);
+        widget::combo::open_for_host(&mut self.tree, node, top);
+        Ok(())
     }
 
     /// The wheel for the top dialog's open drop-down, for a host whose lists
@@ -566,6 +577,7 @@ impl Gui {
             scale: d.scale,
             now,
             double_click: self.double_click,
+            byte_len: self.byte_len,
             popup: &mut d.pointer.popup,
             focus: &mut d.pointer.focus,
         };
@@ -699,18 +711,16 @@ impl Gui {
     }
 
     fn activate(&mut self, node: NodeId) {
-        let command = self.tree.node(node).ok().and_then(|n| n.text_prop(Prop::Command)).map(str::to_owned);
-        self.events.push(UiEvent::Activated { node, command });
+        self.events.push(UiEvent::Activated { node });
     }
 
-    fn set_hover(&mut self, over: Option<NodeId>, now: UiMs) {
+    fn set_hover(&mut self, over: Option<NodeId>) {
         let pointer = &mut self.top_mut().pointer;
         if pointer.hovered == over {
             return;
         }
         let old = pointer.hovered;
         pointer.hovered = over;
-        pointer.hover_started = over.map(|_| now);
         if let Some(old) = old {
             self.events.push(UiEvent::Hovered { node: old, entered: false });
         }
@@ -764,11 +774,6 @@ fn trackbar_range(n: &crate::node::Node) -> TrackbarRange {
         .with_plaque(n.bool_prop(Prop::ShowValue, true))
 }
 
-/// 612B70's timer highlight: 1000 ms alternating, starting off.
-pub fn hover_flash_on(started: UiMs, now: UiMs) -> bool {
-    now.saturating_sub(started) / 1000 % 2 == 1
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -780,7 +785,6 @@ mod tests {
         let b = g.create(NodeKind::Button, Some(root)).unwrap();
         g.set(a, Prop::Rect, Value::Rect(Rect::new(0, 0, 10, 10))).unwrap();
         g.set(b, Prop::Rect, Value::Rect(Rect::new(10, 0, 10, 10))).unwrap();
-        g.set(a, Prop::Command, Value::Text("A".into())).unwrap();
         g.push_dialog(root, DialogKind::Page, None, None).unwrap();
         (g, a, b)
     }
@@ -832,7 +836,6 @@ mod tests {
         g.set(b, Prop::Enabled, Value::Bool(false)).unwrap();
         g.input(InputEvent::PointerMove { x: 15, y: 5 }, 7);
         assert_eq!(g.hovered(), Some(b));
-        assert_eq!(g.hover_started(), Some(7));
         down(&mut g, 15);
         assert_eq!(g.pressed(), None);
         up(&mut g, 15);
@@ -954,13 +957,6 @@ mod tests {
         assert!(activations(&mut g).is_empty());
     }
 
-    #[test]
-    fn hover_flash_starts_off_and_alternates_each_second() {
-        assert!(!hover_flash_on(100, 1099));
-        assert!(hover_flash_on(100, 1100));
-        assert!(!hover_flash_on(100, 2100));
-    }
-
     /// A page with an `Edit` at 0..100 x 0..10 and an OK/Cancel pair.
     fn page_with_edit() -> (Gui, NodeId, NodeId, NodeId) {
         let mut g = Gui::new(8);
@@ -1019,6 +1015,21 @@ mod tests {
     }
 
     #[test]
+    fn select_on_focus_is_replaced_by_typing_and_bytes_cap_the_text() {
+        let (mut g, edit, _, _) = page_with_edit();
+        g.set(edit, Prop::Text, Value::Text("Player".into())).unwrap();
+        g.set(edit, Prop::SelectOnFocus, Value::Bool(true)).unwrap();
+        g.set(edit, Prop::MaxBytes, Value::Int(4)).unwrap();
+        g.input(InputEvent::PointerDown { x: 5, y: 5, button: MouseButton::Left }, 0);
+        assert_eq!(g.get(edit, Prop::AllSelected).unwrap(), Some(&Value::Bool(true)));
+        g.input(InputEvent::Text("aé\u{20ac}b".into()), 0);
+        // UTF-8 bytes until the host sets its code page: é takes two, € three.
+        assert_eq!(text_of(&g, edit), ("aéb".into(), 3));
+        g.input(InputEvent::Key(Key::Backspace), 0);
+        assert_eq!(text_of(&g, edit), ("aé".into(), 2), "the selection went with the typing");
+    }
+
+    #[test]
     fn edit_filters_typing_by_its_props() {
         let (mut g, edit, _, _) = page_with_edit();
         g.set_focus(Some(edit)).unwrap();
@@ -1044,9 +1055,9 @@ mod tests {
             g.drain_events(),
             [
                 UiEvent::Submitted { node: edit, text: "hi".into() },
-                UiEvent::Activated { node: ok, command: None },
+                UiEvent::Activated { node: ok },
                 UiEvent::Cancelled { node: edit },
-                UiEvent::Activated { node: cancel, command: None },
+                UiEvent::Activated { node: cancel },
             ]
         );
     }

@@ -5,7 +5,7 @@
 //! control's status help. Each page keeps its node table, its rects and what
 //! its control-id events do.
 
-use vera20k_gui::{NodeId, NodeSpec, Prop, Value};
+use vera20k_gui::{NodeId, NodeSpec, Prop};
 
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::skirmish_shell_render::gui_paint;
@@ -162,11 +162,8 @@ pub(super) fn scroll_edit(state: &mut AppState, node: NodeId, scale: ShellScale)
     let Ok(rect) = gui.tree().screen_rect(node) else {
         return;
     };
-    let mut edit = gui_paint::new_edit(gui, node);
-    edit.scroll_to_caret((scale.base_rect(rect).w - 3).max(0) as u32, |text| {
-        font.text_width(text)
-    });
-    let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+    let available = (scale.base_rect(rect).w - 3).max(0) as u32;
+    page::scroll_edit(gui, node, available, |text| font.text_width(text));
 }
 
 /// Control `id`'s text under `dialog`'s root ("" when it has none).

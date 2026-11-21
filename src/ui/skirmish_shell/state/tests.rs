@@ -542,7 +542,11 @@ fn owner_draw_button_hit_test_returns_control_identity() {
         Some(OwnerDrawButton::ChooseMap0x5aa)
     );
     assert_eq!(
-        hit_test_owner_draw_button(&layout, layout.static_rect(0x5C0).x + 1, layout.static_rect(0x5C0).y + 1),
+        hit_test_owner_draw_button(
+            &layout,
+            layout.static_rect(0x5C0).x + 1,
+            layout.static_rect(0x5C0).y + 1
+        ),
         Some(OwnerDrawButton::Back0x5c0)
     );
     assert_eq!(
@@ -608,92 +612,53 @@ fn extra_credit_presets_are_reachable_by_drag_and_reach_the_launched_match() {
 }
 
 #[test]
-fn player_name_focus_selects_all_and_typing_replaces_default() {
+fn player_name_press_selects_it_and_typing_replaces_it_within_nineteen_bytes() {
+    let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();
-
-    assert!(shell.player_name_edit.focus_select_all());
-    assert_eq!(shell.player_name_edit.selection, Some((0, 6)));
-    assert_eq!(shell.player_name_edit.caret, 6);
-
-    assert!(shell.player_name_edit.insert_text("Commander"));
-    assert_eq!(shell.player_name_edit.text, "Commander");
-    assert_eq!(shell.player_name_edit.selection, None);
-    assert_eq!(shell.player_name_edit.caret, 9);
+    let name = layout.player_name;
+    handle_option_mouse_down(&mut shell, &layout, &[], name.x + 4, name.y + 4);
+    handle_option_mouse_up(&mut shell);
+    let typed = |shell: &mut SkirmishShellState, event| {
+        PAGE.with_borrow_mut(|(controller, _, _)| {
+            page::key(controller, shell, &layout, Some(event), |t| {
+                t.len() as u32 * 6
+            })
+        })
+    };
+    assert!(typed(
+        &mut shell,
+        vera20k_gui::InputEvent::Text("Ace\r".into())
+    ));
+    assert_eq!(shell.player_name, "Ace", "the selected default went");
+    let long = "é".repeat(PLAYER_NAME_EDIT_LIMIT_BYTES);
+    typed(&mut shell, vera20k_gui::InputEvent::Text(long));
+    let bytes = crate::util::native_string::acp_encode(&shell.player_name).len();
+    assert!(bytes <= PLAYER_NAME_EDIT_LIMIT_BYTES && bytes + 2 > PLAYER_NAME_EDIT_LIMIT_BYTES);
 }
 
 #[test]
-fn player_name_user_entry_stops_at_nineteen_acp_bytes() {
-    let mut state = PlayerNameEditState::with_name("");
-    assert!(state.insert_text(&"é".repeat(PLAYER_NAME_EDIT_LIMIT_BYTES)));
-
-    assert!(
-        crate::util::native_string::acp_encode(&state.text).len() <= PLAYER_NAME_EDIT_LIMIT_BYTES
+fn player_name_press_while_focused_selects_it_again() {
+    let layout = compute_layout(800, 600);
+    let mut shell = controlled_country_shell();
+    let name = layout.player_name;
+    let click = |shell: &mut SkirmishShellState| {
+        handle_option_mouse_down(shell, &layout, &[], name.x + 4, name.y + 4);
+        handle_option_mouse_up(shell);
+    };
+    let typed = |shell: &mut SkirmishShellState, text: &str| {
+        let event = vera20k_gui::InputEvent::Text(text.into());
+        PAGE.with_borrow_mut(|(controller, _, _)| {
+            page::key(controller, shell, &layout, Some(event), |t| t.len() as u32)
+        })
+    };
+    click(&mut shell);
+    typed(&mut shell, "Ace");
+    click(&mut shell);
+    typed(&mut shell, "Bo");
+    assert_eq!(
+        shell.player_name, "Bo",
+        "the second press selected the name again"
     );
-    assert!(
-        crate::util::native_string::acp_encode(&(state.text.clone() + "é")).len()
-            > PLAYER_NAME_EDIT_LIMIT_BYTES
-    );
-}
-
-#[test]
-fn player_name_enter_and_tab_do_not_insert_control_text() {
-    let mut shell = controlled_country_shell();
-    shell.player_name_edit.focus_select_all();
-    shell.player_name_edit.insert_text("Ace");
-
-    assert!(!shell.player_name_edit.insert_text("\r\n\t"));
-    assert_eq!(shell.player_name_edit.text, "Ace");
-    assert!(!shell.player_name_edit.text.contains('\r'));
-    assert!(!shell.player_name_edit.text.contains('\n'));
-    assert!(!shell.player_name_edit.text.contains('\t'));
-}
-
-#[test]
-fn player_name_backspace_and_delete_remove_selection_first() {
-    let mut shell = controlled_country_shell();
-    shell.player_name_edit.focus_select_all();
-    shell.player_name_edit.insert_text("Alpha");
-    shell.player_name_edit.selection = Some((1, 4));
-    shell.player_name_edit.caret = 4;
-
-    assert!(shell.player_name_edit.backspace());
-    assert_eq!(shell.player_name_edit.text, "Aa");
-    assert_eq!(shell.player_name_edit.caret, 1);
-
-    shell.player_name_edit.selection = Some((0, 1));
-    shell.player_name_edit.caret = 1;
-    assert!(shell.player_name_edit.delete());
-    assert_eq!(shell.player_name_edit.text, "a");
-    assert_eq!(shell.player_name_edit.caret, 0);
-}
-
-#[test]
-fn player_name_scroll_keeps_caret_visible_with_five_pixel_margin() {
-    let mut shell = controlled_country_shell();
-    shell.player_name_edit.text = "1234567890123456789".to_string();
-    shell.player_name_edit.caret = PLAYER_NAME_EDIT_LIMIT_BYTES;
-
-    assert!(shell.player_name_edit.scroll_to_caret(50, 120));
-    assert_eq!(shell.player_name_edit.scroll_x, 75);
-
-    shell.player_name_edit.caret = 0;
-    assert!(shell.player_name_edit.scroll_to_caret(50, 0));
-    assert_eq!(shell.player_name_edit.scroll_x, 0);
-}
-
-#[test]
-fn player_name_focus_survives_status_hover_update() {
-    let mut shell = controlled_country_shell();
-    shell.player_name_edit.focus_select_all();
-
-    assert!(
-        shell
-            .statics
-            .hover("Start Game", crate::util::time::Instant::now())
-    );
-
-    assert!(shell.player_name_edit.focused);
-    assert_eq!(shell.player_name_edit.selection, Some((0, 6)));
 }
 
 #[test]
@@ -1217,7 +1182,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
         selected_map_idx: 1,
         ..Default::default()
     };
-    shell.player_name_edit.text = "Commander".to_string();
+    shell.player_name = "Commander".to_string();
     shell.player_country = LaunchCountry::Korea;
     shell.player_color_index = 3;
     shell.player_start_position = LaunchStartPosition::Position(2);
@@ -1269,7 +1234,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
 #[test]
 fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
     let mut shell = SkirmishShellState::default();
-    shell.player_name_edit.text = "Commander".to_string();
+    shell.player_name = "Commander".to_string();
     for opponent in &mut shell.opponents {
         opponent.row_type = SkirmishAiRowType::Easy;
     }
@@ -1286,7 +1251,7 @@ fn a_one_hundred_twenty_start_map_packs_every_offline_row() {
 #[test]
 fn launch_session_forces_the_dialogs_fixed_session_options() {
     let mut shell = SkirmishShellState::default();
-    shell.player_name_edit.text = "Commander".to_string();
+    shell.player_name = "Commander".to_string();
     shell.launch_options_base.fog_of_war = true;
     shell.launch_options_base.bridges_destroyable = false;
     shell.launch_options_base.harvester_truce = true;
@@ -2916,4 +2881,3 @@ fn a_low_row_of_the_longer_list_opens_its_list_upward() {
     let (list, face) = list_and_face(SkirmishComboId::Start(1));
     assert_eq!(list.y, face.y + face.h + 1);
 }
-

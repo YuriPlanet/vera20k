@@ -39,7 +39,7 @@ pub(crate) fn render_multiplayer_setup(
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
-    let layout = crate::app::input::multiplayer_setup::layout(state);
+    let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
     let now = Instant::now();
@@ -53,7 +53,7 @@ pub(crate) fn render_multiplayer_setup(
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
         ensure_map_preview_texture(state, index, layout.map_preview);
-    } else if !view.host {
+    } else if !view.dialog.host {
         super::preview::ensure_received_preview_texture(state);
     } else {
         state.frontend.skirmish_preview_texture = None;
@@ -65,7 +65,7 @@ pub(crate) fn render_multiplayer_setup(
         .multiplayer_setup
         .as_mut()
         .expect("active setup")
-        .accept_highlight(!view.host && view.start_requested, now);
+        .accept_highlight(!view.dialog.host && view.start_requested, now);
     let controller = &mut state.frontend.shell_controller;
     if let Some(node) = controller.control(view.page().dialog, ACCEPT) {
         let lit = vera20k_gui::Value::Bool(accept_highlight);
@@ -271,76 +271,55 @@ pub(crate) fn render_multiplayer_setup(
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
         }
-        // VERA's header rows: the caption where the players' names stand,
-        // then Join (or Watch), as text in its compact roster and drawn as
-        // the roster's Previous and Next otherwise.
-        let mut header_buttons = Vec::new();
-        for (row, header) in view.headers.iter().enumerate() {
-            let Some(header) = header else {
-                continue;
-            };
-            texts.push(sized(
-                &header.caption,
-                if layout.roster {
-                    layout.combos[row][0]
-                } else {
-                    crate::ui::skirmish_shell::combo_text_rect(layout.combos[row][0], scale)
-                },
-                ShellAlign::V_CENTER,
-                team_caption_tint(state.rules(), &header.member_colors).unwrap_or(label_rgb),
-                SHELL_CONTROL_TEXT_DEPTH,
-                roster_size,
-            ));
-            let Some(caption) = &header.join else {
-                continue;
-            };
-            let id = team_join(row);
-            // VERA's roster: Join is text at the column's right end, like
-            // its cells, lit with its group's box under the pointer and grey
-            // while it is closed.
-            if layout.roster {
-                let enabled = view.enabled(id);
-                texts.push(sized(
-                    caption,
-                    layout.header_controls[row].0,
-                    ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-                    if !enabled {
-                        ROOM_CLOSED_TEXT_RGB
-                    } else if look.pressed(id) || look.target == Some(id) {
-                        [1.0, 1.0, 1.0]
-                    } else {
-                        ROOM_TEXT_RGB
-                    },
-                    SHELL_CONTROL_TEXT_DEPTH,
-                    roster_size,
-                ));
-                continue;
-            }
-            let join = paint_ids(page_root, &[id], scale, room_style);
-            header_buttons.extend(join.controls);
-            texts.extend(join.texts);
-        }
-        controls.extend(header_buttons);
-        // VERA's roster: a box around each group, lit while a press in it
-        // joins the group or the host carries a row over it.
+        // VERA's roster's headers: the caption where the players' names
+        // stand, then Join (or Watch), text at the column's right end like
+        // its cells, lit with its group's box under the pointer and grey
+        // while it is closed; and a box around each group, lit while a press
+        // in it joins the group or the host carries a row over it.
         if layout.roster {
             let target = ui.row_drag.and_then(|drag| drag.target);
             for (row, header) in view.headers.iter().enumerate() {
-                let (Some(header), Some(rect)) = (header, layout.group_boxes[row]) else {
+                let Some(header) = header else {
                     continue;
                 };
+                texts.push(sized(
+                    &header.caption,
+                    layout.combos[row][0],
+                    ShellAlign::V_CENTER,
+                    team_caption_tint(state.rules(), &header.member_colors).unwrap_or(label_rgb),
+                    SHELL_CONTROL_TEXT_DEPTH,
+                    roster_size,
+                ));
                 let id = team_join(row);
+                if let Some(caption) = &header.join {
+                    texts.push(sized(
+                        caption,
+                        layout.header_controls[row].0,
+                        ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+                        if !view.enabled(id) {
+                            ROOM_CLOSED_TEXT_RGB
+                        } else if look.pressed(id) || look.target == Some(id) {
+                            [1.0, 1.0, 1.0]
+                        } else {
+                            ROOM_TEXT_RGB
+                        },
+                        SHELL_CONTROL_TEXT_DEPTH,
+                        roster_size,
+                    ));
+                }
                 let lit = target == Some(row)
                     || header.join.is_some()
                         && view.enabled(id)
                         && (look.target == Some(id) || look.pressed(id));
-                push_rect_outline(
-                    &mut controls,
-                    atlas,
-                    rect,
-                    if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB },
-                    SHELL_CONTROL_DEPTH,
-                );
+                if let Some(rect) = layout.group_boxes[row] {
+                    push_rect_outline(
+                        &mut controls,
+                        atlas,
+                        rect,
+                        if lit { ROOM_TEXT_RGB } else { ROSTER_BOX_RGB },
+                        SHELL_CONTROL_DEPTH,
+                    );
+                }
             }
             // The carried row's name follows the pointer, centred on it.
             if let Some(drag) = ui.row_drag.filter(|drag| drag.carrying)
@@ -460,9 +439,11 @@ pub(crate) fn render_multiplayer_setup(
         }
         let rows_of = |id: i32| {
             let combo = view.combo(u16::try_from(id).ok()?)?;
-            let row = |choice: &SetupChoice| match choice.swatch {
-                Some(_) => (String::new(), u32::MAX),
-                None => (choice.text.clone(), u32::MAX),
+            let row = |choice: &SetupChoice| {
+                let text = choice
+                    .swatch
+                    .map_or_else(|| choice.text.clone(), |_| String::new());
+                (text, u32::MAX)
             };
             Some(combo.choices.iter().map(row).collect())
         };
@@ -516,19 +497,6 @@ pub(crate) fn render_multiplayer_setup(
                     layout.acceptance[row],
                     scale,
                     SHELL_CONTROL_DEPTH,
-                );
-            }
-            // VERA's online room: the badge over the name's face, as the
-            // colour list's swatch.
-            if let Some((entry, rect)) =
-                player_badge(atlas, &view, &layout, SetupColumn::Player.control(row))
-            {
-                push_flag_entry_clipped_centered(
-                    &mut controls,
-                    entry,
-                    rect,
-                    scale,
-                    SHELL_SWATCH_DEPTH,
                 );
             }
         }
@@ -706,7 +674,7 @@ pub(crate) fn render_multiplayer_setup(
         ));
         // VERA's Game Options over the room, on the box art the online
         // lobby's popups use: the box and its OK first, then its controls.
-        if view.open_box.is_some()
+        if ui.game_options
             && let Some(popup) = layout.game_options
         {
             overlay
@@ -726,9 +694,7 @@ pub(crate) fn render_multiplayer_setup(
         }
         // VERA asks a guest before downloading a map it does not have, then
         // shows the download, on the art of VERA's other online-service boxes.
-        if view.map_offer_open
-            && let Some(offer) = ui.map_offer.as_ref()
-        {
+        if let Some(offer) = ui.map_offer.as_ref() {
             use crate::ui::shell::geom::ShellScale;
             let boxed = &layout.map_offer;
             let progress = offer
@@ -857,9 +823,6 @@ pub(crate) fn render_multiplayer_setup(
     Ok(())
 }
 
-/// VERA's online room: a Player list's badge ([`SetupRowIcon::badge`]) and
-/// its cell, one badge wide at the right end of the list's face, as far
-/// short of the arrow as the name starts in from the left.
 /// VERA's room on a window wider than the shell, which stands at its right
 /// edge: the background's art left of the right panel and the lower strip,
 /// stretched across from the window's left edge, under the room's columns.
@@ -912,13 +875,14 @@ fn push_room_spread(
     }
 }
 
+/// VERA's online room: a Player cell's badge ([`SetupRowIcon::badge`]) and
+/// where it stands, at the right end of the name, shrunk to the row.
 fn player_badge(
     atlas: &SkirmishShellChromeAtlas,
     view: &SetupView,
     layout: &MultiplayerSetupLayout,
     control: u16,
 ) -> Option<(SkirmishShellChromeEntry, RectPx)> {
-    use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET};
     let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
         return None;
     };
@@ -928,14 +892,8 @@ fn player_badge(
         .page
         .scale
         .derive_rect(layout.control_rect(control)?, |rect| {
-            if layout.roster {
-                // At the right end of the name, shrunk to the row.
-                let width = (art_w * (rect.h as f32 / art_h.max(1.0)).min(1.0)).round() as i32;
-                return RectPx::new(rect.x + rect.w - width, rect.y, width, rect.h);
-            }
-            let width = art_w.round() as i32;
-            let right = rect.x + rect.w - COMBO_ARROW_RESERVE_W - COMBO_TEXT_LEFT_INSET;
-            RectPx::new(right - width, rect.y, width, COMBO_FACE_H)
+            let width = (art_w * (rect.h as f32 / art_h.max(1.0)).min(1.0)).round() as i32;
+            RectPx::new(rect.x + rect.w - width, rect.y, width, rect.h)
         });
     Some((entry, cell))
 }
@@ -1025,13 +983,10 @@ fn push_roster_cell(
 }
 
 /// The room's own texts for its widgets: the lists' faces, the page
-/// buttons' and team bar's captions, a header's Join caption and the
-/// trackbars' values the room words itself.
+/// buttons' and team bar's captions and the trackbars' values the room
+/// words itself.
 fn widget_text(state: &AppState, view: &SetupView, id: i32) -> Option<String> {
     let id = u16::try_from(id).ok()?;
-    if let Some(header) = view.header_button(id) {
-        return header.join.clone();
-    }
     // A list's face shows its pick, a colour as its swatch alone.
     if let Some(combo) = view.combo(id) {
         let selected = combo.selected.and_then(|row| combo.choices.get(row));

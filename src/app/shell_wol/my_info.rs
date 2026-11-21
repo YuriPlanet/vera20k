@@ -83,9 +83,10 @@ pub(super) fn open(state: &mut AppState) {
     let texts = super::persona::profile_texts(state, &nickname, &persona);
     let auto_login = auto_login_names(state);
     let default_text = state.csf_text(DEFAULT_KEY);
+    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
     let countries = country_rows(state);
     let colors = color_rows(state);
-    let Some(visit) = state.frontend.wol.as_mut() else {
+    let Some(visit) = state.frontend.wol.as_ref() else {
         return;
     };
     let nicknames = visit
@@ -112,13 +113,22 @@ pub(super) fn open(state: &mut AppState) {
         countries,
         colors,
     };
-    let page = WolMyInfoPage::open(rows, &nickname, &view(&persona), texts, auto_login);
-    visit.page = WolPage::MyInformation(Box::new(page));
-    visit.requests.push(WolServiceRequest::LocaleCount);
     super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
-    present(state);
+    let Some(root) = sync(state) else {
+        return;
+    };
+    let frontend = &mut state.frontend;
+    let gui = frontend.shell_controller.gui_mut();
+    let persona = view(&persona);
+    let page = WolMyInfoPage::open(
+        gui, root, rows, &nickname, &persona, texts, auto_login, &unknown,
+    );
+    if let Some(visit) = frontend.wol.as_mut() {
+        visit.page = WolPage::MyInformation(Box::new(page));
+        visit.requests.push(WolServiceRequest::LocaleCount);
+    }
 }
 
 /// API+0xD0's count fills `0x62A` (`0x00798F50`) and selects the persona's
@@ -129,15 +139,12 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
     let rows = crate::ui::wol_persona::locale_rows(
         (0..count.max(0)).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
     );
-    if let Some(page) = page_mut(state) {
-        let combo = &mut page.combos[2];
-        combo.rows = rows
-            .into_iter()
-            .map(|row| MyInfoRow::text(row.text, row.locale))
-            .collect();
-        combo.selected = combo.rows.iter().position(|row| row.data == persona.locale);
-    }
-    present(state);
+    let rows = (rows.into_iter())
+        .map(|row| MyInfoRow::text(row.text, row.locale))
+        .collect();
+    with_page(state, |page, gui, root| {
+        page.fill_locales(gui, root, rows, persona.locale)
+    });
 }
 
 pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
@@ -147,11 +154,22 @@ pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
     }
 }
 
-fn page_mut(state: &mut AppState) -> Option<&mut WolMyInfoPage> {
-    match &mut state.frontend.wol.as_mut()?.page {
-        WolPage::MyInformation(page) => Some(page),
+/// Runs `f` on the page and its widgets.
+fn with_page<R>(
+    state: &mut AppState,
+    f: impl FnOnce(&mut WolMyInfoPage, &mut vera20k_gui::Gui, NodeId) -> R,
+) -> Option<R> {
+    let root = sync(state)?;
+    let frontend = &mut state.frontend;
+    match &mut frontend.wol.as_mut()?.page {
+        WolPage::MyInformation(page) => Some(f(page, frontend.shell_controller.gui_mut(), root)),
         _ => None,
     }
+}
+
+/// The page's widgets, for a reader of their state.
+pub(crate) fn root(state: &AppState) -> Option<NodeId> {
+    leaf::root(state, DIALOG)
 }
 
 pub(super) fn page_open(state: &AppState) -> bool {
@@ -174,18 +192,6 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 pub(crate) fn drop_down(state: &AppState, control: u16) -> Option<vera20k_gui::ComboDropDown> {
     let gui = state.frontend.shell_controller.gui();
     gui.combo_drop_down(gui.find_id(leaf::root(state, DIALOG)?, control.into())?)
-}
-
-/// Shows the page in its widgets.
-fn present(state: &mut AppState) {
-    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
-    let Some(root) = sync(state) else {
-        return;
-    };
-    let frontend = &mut state.frontend;
-    if let Some(WolPage::MyInformation(page)) = frontend.wol.as_ref().map(|visit| &visit.page) {
-        page.present(frontend.shell_controller.gui_mut(), root, &unknown);
-    }
 }
 
 /// Run one control's persona write or account change at once.
@@ -221,9 +227,10 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             let persona = super::persona::load(state, &name);
             let texts = super::persona::profile_texts(state, &name, &persona);
             let auto_login = auto_login_names(state);
-            if let Some(page) = page_mut(state) {
-                page.nickname_changed(&view(&persona), texts, !name.is_empty(), auto_login);
-            }
+            let persona = view(&persona);
+            with_page(state, |page, gui, root| {
+                page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
+            });
         }
         MyInfoAction::Server(text) => {
             write(state, &|record| record.set_server(&text));
@@ -276,9 +283,10 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             // (0x00778710) through 0x77A9F0 with no name.
             let default = super::persona::load(state, "");
             let texts = super::persona::profile_texts(state, "", &default);
-            if let Some(page) = page_mut(state) {
-                page.refresh(&view(&default), texts);
-            }
+            let default = view(&default);
+            with_page(state, |page, gui, root| {
+                page.refresh(gui, root, &default, texts)
+            });
         }
         MyInfoAction::Close(control) => App::leave_shell_dialog(
             state,
@@ -321,21 +329,19 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     }
     for event in leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up }) {
-        let Some(page) = page_mut(state) else {
-            return;
-        };
         // CBN_SELCHANGE, a box's BS_AUTOCHECKBOX flip, a released button.
-        let action = match event {
+        let action = with_page(state, |page, gui, root| match event {
             PageEvent::Picked(id, row) => usize::try_from(row)
                 .ok()
                 .and_then(|row| page.select(id, row)),
-            PageEvent::Toggled(id, _) => page.toggle(id),
-            PageEvent::Activated(id) => page.activate(id),
+            PageEvent::Toggled(id, checked) => WolMyInfoPage::toggle(id, checked),
+            PageEvent::Activated(id) => page.activate(gui, root, id),
             _ => None,
-        };
-        if let Some(action) = action {
-            apply(state, action);
+        });
+        match action {
+            Some(Some(action)) => apply(state, action),
+            Some(None) => {}
+            None => return,
         }
     }
-    present(state);
 }

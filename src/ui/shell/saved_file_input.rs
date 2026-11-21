@@ -2,7 +2,6 @@
 //! `vera20k-gui` widgets. Persistence, prompt purpose, audio and font
 //! measurement remain app-owned.
 
-use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::saved_seed_browser::{
     ACTION, BACK, BROWSER_DIALOG, DELETE, EDIT, LIST, LOAD, NO, PROMPT_DIALOG, YES,
@@ -216,19 +215,10 @@ pub fn update<I: Clone + PartialEq>(
     sync(browser, layout, extent);
     browser.ui.poll();
     browser.ui.drain_events();
-    let (Some(rect), Some(node)) = (layout.name_edit, browser.node(EDIT)) else {
-        return;
-    };
-    let text = crate::ui::skirmish_shell::player_name_edit_text_rect(
-        layout.scale.base_rect(rect),
-        ShellScale::RETAIL,
-    );
-    let mut edit = browser.edit();
-    edit.scroll_to_caret((text.w - 2).max(0) as u32, measure);
-    let _ = browser
-        .ui
-        .gui_mut()
-        .set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+    if let (Some(rect), Some(node)) = (layout.name_edit, browser.node(EDIT)) {
+        let available = crate::ui::skirmish_shell::framed_edit_text_width(rect, layout.scale);
+        page::scroll_edit(browser.ui.gui_mut(), node, available, measure);
+    }
 }
 
 #[cfg(all(test, tests_ui))]

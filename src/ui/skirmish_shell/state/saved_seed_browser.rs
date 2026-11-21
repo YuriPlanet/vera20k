@@ -9,7 +9,6 @@ use super::super::layout::{RectPx, SavedSeedMode};
 use crate::map::rmg::{SeedDescription, saved_seeds::SavedSeed};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::list::ListScrollPart;
 use crate::ui::shell::page;
 use crate::util::native_file_name::NativeFileName;
 use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
@@ -151,26 +150,35 @@ impl SavedSeedBrowserState<NativeFileName> {
     }
 }
 
-/// The browser's widgets in hit order (the edit and list before the column).
-/// Load's carry their status help (`0x006040B0`).
+/// The browser's widgets in hit order (the edit and list before the column),
+/// the buttons with their captions, the edit framed in its rect. Load's
+/// carry their status help (`0x006040B0`).
 fn spec(mode: SavedSeedMode) -> NodeSpec {
     use crate::ui::shell::saved_games::{LOAD_LIST_HELP_KEY, LOAD_SAVED_GAME_PAGE as PAGE};
     let help = |node: NodeSpec, key| match mode {
         SavedSeedMode::Load => node.tooltip(key),
         _ => node,
     };
-    let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
+    let button = |(id, key): (u16, &str)| {
+        let caption = Value::Text(key.to_owned());
+        NodeSpec::new(NodeKind::Button)
+            .id(id.into())
+            .with(Prop::Label, caption)
+    };
     let list = NodeSpec::new(NodeKind::List).id(LIST.into());
     let limit = Value::Int(SAVED_SEED_DESCRIPTION_MAX_UNITS as i32);
+    let inset = Value::Rect(super::super::layout::FRAMED_EDIT_TEXT_INSET);
     let edit = NodeSpec::new(NodeKind::Edit)
         .id(EDIT.into())
-        .with(Prop::MaxLen, limit);
+        .with(Prop::MaxLen, limit)
+        .with(Prop::TextInset, inset);
+    let action = button((ACTION, mode.action_label().0));
     NodeSpec::new(NodeKind::Dialog)
         .child(edit)
         .child(help(list, LOAD_LIST_HELP_KEY))
-        .child(help(button(ACTION), PAGE.stacked[0].tooltip_key))
-        .children([LOAD, DELETE].map(button))
-        .child(help(button(BACK), PAGE.back.tooltip_key))
+        .child(help(action, PAGE.stacked[0].tooltip_key))
+        .children([(LOAD, "GUI:Load"), (DELETE, "GUI:Delete")].map(button))
+        .child(help(button((BACK, "GUI:Back")), PAGE.back.tooltip_key))
 }
 
 /// The dialog control `id` lives in.
@@ -210,11 +218,6 @@ impl<I> SavedSeedBrowserState<I> {
             .set_prop(BROWSER_DIALOG, LIST, Prop::Selected, selected);
         self.ui
             .set_prop(BROWSER_DIALOG, LIST, Prop::Top, Value::Int(top as i32));
-    }
-
-    /// The arrow the list's scrollbar paints pushed.
-    pub fn list_pressed(&self) -> Option<ListScrollPart> {
-        self.ui.gui().list_view(self.node(LIST)?)?.pressed
     }
 
     /// Whether button `id` holds the press (a box's buttons, or the

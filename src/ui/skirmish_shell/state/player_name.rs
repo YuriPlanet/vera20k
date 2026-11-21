@@ -18,243 +18,16 @@ use super::{
 };
 
 pub const PLAYER_NAME_DEFAULT: &str = "Player";
+/// The name box `0x6A0`'s `EM_LIMITTEXT`: bytes in the ANSI code page.
 pub const PLAYER_NAME_EDIT_LIMIT_BYTES: usize = 19;
-pub const PLAYER_NAME_CARET_MARGIN_PX: i32 = 5;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlayerNameEditState {
-    pub text: String,
-    pub focused: bool,
-    pub selection: Option<(usize, usize)>,
-    pub caret: usize,
-    pub scroll_x: i32,
-}
-
-impl Default for PlayerNameEditState {
-    fn default() -> Self {
-        Self::with_name(PLAYER_NAME_DEFAULT)
-    }
-}
-
-impl PlayerNameEditState {
-    /// Seed the ANSI edit from the persistent player profile. `WM_SETTEXT` is
-    /// programmatic and is not truncated by the edit's later `EM_LIMITTEXT`.
-    pub fn with_name(name: &str) -> Self {
-        let text: String = crate::util::native_string::acp_round_trip(name)
-            .chars()
-            .filter(|ch| !matches!(*ch, '\r' | '\n'))
-            .collect();
-        let caret = text.chars().count();
-        Self {
-            text,
-            focused: false,
-            selection: None,
-            caret,
-            scroll_x: 0,
-        }
-    }
-}
-
-impl PlayerNameEditState {
-    fn char_len(&self) -> usize {
-        self.text.chars().count()
-    }
-
-    fn clamp_position(&self, position: usize) -> usize {
-        position.min(self.char_len())
-    }
-
-    fn byte_index(&self, char_index: usize) -> usize {
-        if char_index == 0 {
-            return 0;
-        }
-        self.text
-            .char_indices()
-            .nth(char_index)
-            .map(|(idx, _)| idx)
-            .unwrap_or(self.text.len())
-    }
-
-    fn normalized_selection(&self) -> Option<(usize, usize)> {
-        let (start, end) = self.selection?;
-        let start = self.clamp_position(start);
-        let end = self.clamp_position(end);
-        if start == end {
-            None
-        } else if start < end {
-            Some((start, end))
-        } else {
-            Some((end, start))
-        }
-    }
-
-    fn delete_range(&mut self, start: usize, end: usize) {
-        let start_byte = self.byte_index(start);
-        let end_byte = self.byte_index(end);
-        self.text.replace_range(start_byte..end_byte, "");
-        self.caret = start;
-        self.selection = None;
-    }
-
-    fn delete_selection(&mut self) -> bool {
-        let Some((start, end)) = self.normalized_selection() else {
-            return false;
-        };
-        self.delete_range(start, end);
-        true
-    }
-
-    fn clamp_state(&mut self) {
-        let len = self.char_len();
-        self.caret = self.caret.min(len);
-        self.selection = self.selection.and_then(|(start, end)| {
-            let start = start.min(len);
-            let end = end.min(len);
-            (start != end).then_some((start, end))
-        });
-        self.scroll_x = self.scroll_x.max(0);
-    }
-
-    pub fn focus_select_all(&mut self) -> bool {
-        let changed = !self.focused
-            || self.selection != Some((0, self.char_len()))
-            || self.caret != self.char_len();
-        self.focused = true;
-        let len = self.char_len();
-        self.selection = (len > 0).then_some((0, len));
-        self.caret = len;
-        self.scroll_x = 0;
-        changed
-    }
-
-    pub fn blur(&mut self) -> bool {
-        let changed = self.focused || self.selection.is_some();
-        self.focused = false;
-        self.selection = None;
-        self.clamp_state();
-        changed
-    }
-
-    pub fn insert_text(&mut self, text: &str) -> bool {
-        let filtered: String = crate::util::native_string::acp_round_trip(text)
-            .chars()
-            .filter(|ch| !ch.is_control())
-            .collect();
-        if filtered.is_empty() {
-            return false;
-        }
-
-        let deleted_selection = self.delete_selection();
-        let capacity = PLAYER_NAME_EDIT_LIMIT_BYTES
-            .saturating_sub(crate::util::native_string::acp_encode(&self.text).len());
-        if capacity == 0 {
-            return deleted_selection;
-        }
-        let mut remaining = capacity;
-        let mut inserted = String::new();
-        for character in filtered.chars() {
-            let encoded_len = crate::util::native_string::acp_encode(&character.to_string()).len();
-            if encoded_len > remaining {
-                break;
-            }
-            remaining -= encoded_len;
-            inserted.push(character);
-        }
-        if inserted.is_empty() {
-            return deleted_selection;
-        }
-
-        let byte = self.byte_index(self.caret);
-        self.text.insert_str(byte, &inserted);
-        self.caret += inserted.chars().count();
-        self.selection = None;
-        self.clamp_state();
-        true
-    }
-
-    pub fn backspace(&mut self) -> bool {
-        if self.delete_selection() {
-            self.clamp_state();
-            return true;
-        }
-        if self.caret == 0 {
-            return false;
-        }
-        let end = self.caret;
-        self.delete_range(end - 1, end);
-        self.clamp_state();
-        true
-    }
-
-    pub fn delete(&mut self) -> bool {
-        if self.delete_selection() {
-            self.clamp_state();
-            return true;
-        }
-        let len = self.char_len();
-        if self.caret >= len {
-            return false;
-        }
-        self.delete_range(self.caret, self.caret + 1);
-        self.clamp_state();
-        true
-    }
-
-    pub fn move_left(&mut self) -> bool {
-        let old = (self.caret, self.selection);
-        self.selection = None;
-        self.caret = self.caret.saturating_sub(1);
-        old != (self.caret, self.selection)
-    }
-
-    pub fn move_right(&mut self) -> bool {
-        let old = (self.caret, self.selection);
-        self.selection = None;
-        self.caret = (self.caret + 1).min(self.char_len());
-        old != (self.caret, self.selection)
-    }
-
-    pub fn move_home(&mut self) -> bool {
-        let old = (self.caret, self.selection);
-        self.selection = None;
-        self.caret = 0;
-        old != (self.caret, self.selection)
-    }
-
-    pub fn move_end(&mut self) -> bool {
-        let old = (self.caret, self.selection);
-        self.selection = None;
-        self.caret = self.char_len();
-        old != (self.caret, self.selection)
-    }
-
-    pub fn caret_prefix(&self) -> &str {
-        &self.text[..self.byte_index(self.caret)]
-    }
-
-    /// Keeps the caret `caret_prefix_width` px in shown in `visible_width`
-    /// px, [`PLAYER_NAME_CARET_MARGIN_PX`] from either edge; whether the
-    /// scroll moved.
-    pub fn scroll_to_caret(&mut self, visible_width: i32, caret_prefix_width: u32) -> bool {
-        let visible_width = visible_width.max(0);
-        let caret_x = caret_prefix_width as i32;
-        let old = self.scroll_x;
-        let mut scroll = old.max(0);
-        if visible_width <= PLAYER_NAME_CARET_MARGIN_PX * 2 {
-            scroll = caret_x;
-        } else {
-            let right_limit = scroll + visible_width - PLAYER_NAME_CARET_MARGIN_PX;
-            if caret_x > right_limit {
-                scroll = caret_x - visible_width + PLAYER_NAME_CARET_MARGIN_PX;
-            }
-            let left_limit = scroll + PLAYER_NAME_CARET_MARGIN_PX;
-            if caret_x < left_limit {
-                scroll = (caret_x - PLAYER_NAME_CARET_MARGIN_PX).max(0);
-            }
-        }
-        self.scroll_x = scroll.max(0);
-        self.scroll_x != old
-    }
+/// The name the ANSI edit shows for the profile's: `WM_SETTEXT` is
+/// programmatic, so the later `EM_LIMITTEXT` does not cut it.
+pub fn player_name_from_profile(name: &str) -> String {
+    crate::util::native_string::acp_round_trip(name)
+        .chars()
+        .filter(|ch| !matches!(*ch, '\r' | '\n'))
+        .collect()
 }
 
 /// One visible country row's Ares presentation.
@@ -365,7 +138,8 @@ pub struct SkirmishShellState {
     pub(crate) lobby_colors: crate::rules::skirmish_colors::SkirmishColorMode,
     pub selected_map_idx: usize,
     pub selected_mode: SkirmishModeSelection,
-    pub player_name_edit: PlayerNameEditState,
+    /// The name box `0x6A0`'s text; the page's edit types into it.
+    pub player_name: String,
     pub player_country: LaunchCountry,
     pub player_country_random: bool,
     pub player_color_index: usize,
@@ -473,7 +247,7 @@ impl Default for SkirmishShellState {
             lobby_colors: Default::default(),
             selected_map_idx: 0,
             selected_mode: 1.into(),
-            player_name_edit: PlayerNameEditState::default(),
+            player_name: PLAYER_NAME_DEFAULT.to_owned(),
             player_country: LaunchCountry::default(),
             player_country_random: false,
             player_color_index: 0,

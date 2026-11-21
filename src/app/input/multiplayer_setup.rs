@@ -35,30 +35,29 @@ pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i
 }
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
-    let dialog = crate::app::shell_network_setup::dialog(state);
+    match crate::app::shell_network_setup::view(state) {
+        Some(view) => layout_of(state, &view),
+        None => page_layout(state),
+    }
+}
+
+/// The room's layout for `view`: VERA's roster placed with its team bar,
+/// or the rows of a native roster of several pages moved up for Previous
+/// and Next.
+pub(crate) fn layout_of(state: &AppState, view: &SetupView) -> MultiplayerSetupLayout {
     let mut layout = page_layout(state);
-    if dialog.modern {
-        if let Some(listing) = crate::app::shell_network_setup::view::room_listing(state) {
-            layout.arrange_roster(&listing.places);
-            layout.fit_team_bar(
-                dialog,
-                listing.grouped,
-                crate::app::shell_network_setup::view::room_size_shown(state),
-            );
-        }
-    } else if state
-        .match_state
-        .session
-        .network_setup_capacity()
-        .is_some_and(|rows| rows > dialog.rows_per_page() as i32)
-    {
+    if view.dialog.modern {
+        layout.arrange_roster(&view.places);
+        let shown = |id| view.trackbars.iter().any(|bar| bar.id == id && bar.visible);
+        layout.fit_team_bar(view.dialog, shown(TEAM_COUNT), shown(ROOM_SIZE));
+    } else if view.pages.len() > 1 {
         layout.arrange_extended_rows();
     }
     layout
 }
 
 pub(crate) fn update_geometry(state: &mut AppState) {
-    let layout = layout(state);
+    let layout = page_layout(state);
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
@@ -143,7 +142,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
             .frontend
             .multiplayer_setup
             .as_ref()
-            .is_some_and(|ui| ui.open_box.is_none() && ui.map_offer.is_none())
+            .is_some_and(|ui| !ui.game_options && ui.map_offer.is_none())
 }
 
 /// The chat NewEdit while it takes keys, for the input method
@@ -163,8 +162,8 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .frontend
         .multiplayer_setup
         .as_ref()
-        .filter(|ui| routed && ui.open_box.is_none() && ui.map_offer.is_none())
-        .map(|_| layout(state).chat)
+        .filter(|ui| routed && !ui.game_options && ui.map_offer.is_none())
+        .map(|_| page_layout(state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -207,12 +206,12 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             Some(KeyCode::Escape) => Some(SetupAction::MapOffer { download: false }),
             _ => None,
         }
-    } else if ui.open_box.is_some() {
+    } else if ui.game_options {
         matches!(
             code,
             Some(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
         )
-        .then_some(SetupAction::OpenBox(None))
+        .then_some(SetupAction::GameOptions(false))
     } else {
         ui.chat.type_key(code, text).map(SetupAction::Chat)
     };
@@ -225,7 +224,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// `activate`, input routed to the room makes its page the active dialog.
 fn synced(state: &mut AppState, activate: bool) -> Option<(SetupView, MultiplayerSetupLayout)> {
     let view = crate::app::shell_network_setup::view(state)?;
-    let layout = layout(state);
+    let layout = layout_of(state, &view);
     let ui = state.frontend.multiplayer_setup.as_ref()?;
     sync(
         &mut state.frontend.shell_controller,

@@ -202,6 +202,8 @@ pub enum Value {
 | `MaxHeight` | Int | Dialog | 消息框的最大高度（屏幕像素，默认屏幕高度的 80%） |
 | `Password` | Bool | Edit | 显示为星号 |
 | `MaxLen` | Int | Edit | |
+| `MaxBytes` | Int | Edit | 文本在宿主代码页中的字节上限（`Gui::set_byte_len`） |
+| `SelectOnFocus`、`AllSelected` | Bool | Edit | 每次按下都全选；全选时输入替换全文，退格/删除清空，移动光标取消 |
 | `History`、`FadeMs`、`MaxRows` | Int | ChatLog | 历史上限（默认 200）、淘汰淡出时长（默认 800 毫秒）、同时可见行数（默认 8）（§5.4） |
 | `Title` | Text | Dialog | 对话框标题（标题栏，消息框与页面共用） |
 | `Rect` | Rect | Custom | 宿主每帧设置的矩形数据，作为回调的第三个参数（§12.6） |

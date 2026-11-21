@@ -9,19 +9,20 @@
 use crate::app::AppState;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout};
+use crate::ui::movies_credits_shell;
 use crate::ui::shell::geom::{ScaledRects, ShellScale, fit_window};
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::saved_games;
 use crate::ui::skirmish_shell::{
-    ChooseMapModalLayout, RandomMapSetupLayout, SavedSeedLayout, SavedSeedMode, SkirmishShellLayout,
+    self as skirmish, ChooseMapModalLayout, RandomMapSetupLayout, SavedSeedLayout, SavedSeedMode,
+    SkirmishShellLayout,
 };
 
 /// The window pixel space the shell paints and hit-tests in. The GPU surface
 /// size, not the monitor's: a resized window repaints at the new size.
 pub(crate) fn shell_screen_size(state: &AppState) -> (u32, u32) {
-    (
-        state.renderer.gpu.config.width,
-        state.renderer.gpu.config.height,
-    )
+    let config = &state.renderer.gpu.config;
+    (config.width, config.height)
 }
 
 /// Whether the shell family fits the live window instead of painting gamemd's
@@ -134,9 +135,7 @@ pub(crate) fn menu_page_layout(state: &AppState, spec: &MenuPageSpec) -> MenuPag
 /// page has no room for it under its options, so there a longer list takes
 /// the scaled 800x600 page every other window size already gets.
 pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
-    use crate::ui::skirmish_shell::{
-        SKIRMISH_ROW_COUNT, compute_layout_for_rows, selected_player_rows,
-    };
+    use skirmish::{SKIRMISH_ROW_COUNT, compute_layout_for_rows, selected_player_rows};
     let (width, height) = (state.render_width(), state.render_height());
     let rows = selected_player_rows(
         &state.frontend.skirmish_shell_state,
@@ -155,30 +154,24 @@ pub(crate) fn skirmish_layout(state: &AppState) -> SkirmishShellLayout {
 
 /// Choose Map `0x6B`, which replaces `0x102` while it is open.
 pub(crate) fn choose_map_layout(state: &AppState) -> ChooseMapModalLayout {
-    pick_render(
-        state,
-        crate::ui::skirmish_shell::compute_choose_map_modal_layout,
-    )
+    pick_render(state, skirmish::compute_choose_map_modal_layout)
 }
 
 /// Random-map setup `0x105`, which replaces `0x6B` while it is open.
 pub(crate) fn random_map_setup_layout(state: &AppState) -> RandomMapSetupLayout {
-    pick_render(
-        state,
-        crate::ui::skirmish_shell::compute_random_map_setup_layout,
-    )
+    pick_render(state, skirmish::compute_random_map_setup_layout)
 }
 
 /// The saved-seed browser (Load / Save / Delete), which covers `0x105`.
 pub(crate) fn saved_seed_layout(state: &AppState, mode: SavedSeedMode) -> SavedSeedLayout {
     pick_render(state, |w, h| {
-        crate::ui::skirmish_shell::compute_saved_seed_layout(mode, w, h)
+        skirmish::compute_saved_seed_layout(mode, w, h)
     })
 }
 
 /// VERA's Skirmish Setups page, on the Save browser's rects.
 pub(crate) fn setups_layout(state: &AppState) -> SavedSeedLayout {
-    pick_render(state, crate::ui::skirmish_shell::compute_setups_layout)
+    pick_render(state, skirmish::compute_setups_layout)
 }
 
 /// Campaign selection `0x94`, the page behind Single Player's New Campaign.
@@ -187,23 +180,13 @@ pub(crate) fn campaign_layout(state: &AppState) -> crate::ui::campaign_shell::Ca
 }
 
 /// Single Player's Load Saved Game `0xB7`.
-pub(crate) fn load_saved_game_layout(
-    state: &AppState,
-) -> crate::ui::shell::saved_games::MainMenuSavedGameLayout {
-    pick(
-        state,
-        crate::ui::shell::saved_games::main_menu_saved_game_layout,
-    )
+pub(crate) fn load_saved_game_layout(state: &AppState) -> saved_games::MainMenuSavedGameLayout {
+    pick(state, saved_games::main_menu_saved_game_layout)
 }
 
 /// Movie list `0x129`, the page behind Movies & Credits' Play Movies.
-pub(crate) fn movie_list_layout(
-    state: &AppState,
-) -> crate::ui::movies_credits_shell::MovieListLayout {
-    pick(
-        state,
-        crate::ui::movies_credits_shell::compute_movie_list_layout,
-    )
+pub(crate) fn movie_list_layout(state: &AppState) -> movies_credits_shell::MovieListLayout {
+    pick(state, movies_credits_shell::compute_movie_list_layout)
 }
 
 /// VERA's Mods page, behind the Mods button of Options.

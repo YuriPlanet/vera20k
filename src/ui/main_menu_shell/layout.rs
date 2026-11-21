@@ -1,20 +1,16 @@
 //! Dialog 0xE2 shell layout recovered from gamemd.exe.
 
 use super::state::{MAIN_MENU_DIALOG, MainMenuControlId};
-use crate::ui::shell::descriptor::{
-    AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, HEADING_ANCHOR,
-    MONITOR_ANCHOR, RepositionPolicy,
-};
+use crate::ui::shell::descriptor::{AnchorRule, HEADING_ANCHOR, MONITOR_ANCHOR};
 use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
 pub use crate::ui::shell::geom::{RIGHT_PANEL_TILE_H, RIGHT_PANEL_WIDTH};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 pub use crate::ui::shell::geom::{SHELL_BASE_H, SHELL_BASE_W};
 use crate::ui::shell::geom::{ShellScale, dlu_rect, lower_strip_rect, right_panel_rects};
-use crate::ui::shell::layout::{LaidOutControl, layout_pass};
+use crate::ui::shell::layout::Placer;
 use crate::ui::shell::menu_page::{
     MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
-use crate::ui::shell::warning_monitor::WARNING_MONITOR_CONTROL;
 
 pub const RA2TS_L_W: i32 = 632;
 pub const RA2TS_L_H: i32 = 570;
@@ -143,61 +139,6 @@ pub const MAIN_MENU_PAGE: MenuPageSpec = MenuPageSpec {
         .returning(6),
 };
 
-/// A 0xE2 owner-draw button control descriptor. The anchor consumes only the
-/// DLU top; the x/w/h carry the 162x37 template client rect the SDBTNANM cell
-/// replaces.
-fn button_ctrl(button: &MenuPageButtonSpec, anchor: AnchorRule) -> ControlDescriptor {
-    let rect = RectPx::new(425, button.dlu_top, 108, 23);
-    ControlDescriptor::new(button.id, ControlKind::Button, rect, anchor)
-        .labelled(button.csf_key, button.tooltip_key)
-}
-
-/// Dialog 0xE2 descriptor: the six owner-draw buttons (five stacked + Exit) plus
-/// the 0x694 heading and the 0x71C warning monitor. The bottom-anchored
-/// version/tooltip statics keep their bespoke shell helpers for now (no verified
-/// resource id; one-of-a-kind anchors), so they are computed outside this table.
-fn dialog_descriptor() -> DialogDescriptor {
-    let snap = AnchorRule::OwnerDrawButtonSnap {
-        cell_w: BUTTON_CELL_W,
-    };
-    let bottom_row = AnchorRule::OwnerDrawButtonBottomRow {
-        cell_w: BUTTON_CELL_W,
-    };
-    let buttons = MAIN_MENU_PAGE
-        .stacked
-        .iter()
-        .map(|button| button_ctrl(button, snap));
-    let stat = |id, rect, anchor| ControlDescriptor::new(id, ControlKind::Static, rect, anchor);
-    DialogDescriptor {
-        id: MAIN_MENU_DIALOG,
-        bg_kind: BgKind::RightPanelShell,
-        slide_eligible: true,
-        reposition_policy: RepositionPolicy::IncludeSetReanchor,
-        controls: buttons
-            .chain([
-                button_ctrl(&MAIN_MENU_PAGE.back, bottom_row),
-                // 0x694 heading: runtime +1w/+1h, right-anchor, then +7y/+1h.
-                stat(0x0694, RectPx::new(425, 1, 108, 10), HEADING_ANCHOR),
-                // 0x71C SDWRNANM warning monitor (kind 4).
-                stat(
-                    WARNING_MONITOR_CONTROL,
-                    RectPx::new(447, 29, 61, 33),
-                    MONITOR_ANCHOR,
-                ),
-            ])
-            .collect(),
-    }
-}
-
-/// Look up a laid-out control's pixel rect by resource id. The id set is a
-/// compile-time-constant table, so a miss is a programming error.
-fn rect_for(laid: &[LaidOutControl], id: u16) -> RectPx {
-    laid.iter()
-        .find(|c| c.id == id)
-        .unwrap_or_else(|| panic!("0xE2 descriptor missing control id {id:#06x}"))
-        .rect
-}
-
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     let screen_w = screen_w as i32;
     let screen_h = screen_h as i32;
@@ -212,21 +153,27 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     let version_line = version_line_rect(screen_w, right_panel);
     let tooltip_line = tooltip_line_rect(screen_w, screen_h);
 
-    // Owner-draw buttons + the 0x694 heading + 0x71C monitor static are laid out
-    // by the shared shell pass (contract C7: DLU->pixel once, then include-set
-    // re-anchor). The bottom-anchored version/tooltip statics keep their bespoke
-    // helpers above.
-    let descriptor = dialog_descriptor();
-    let laid = layout_pass(&descriptor, screen_w, screen_h);
-    let buttons = descriptor
-        .controls
+    // Owner-draw buttons + the 0x694 heading + 0x71C monitor static: DLU->pixel
+    // once, then the include-set re-anchor (contract C7). The owner-draw
+    // buttons read only their DLU top; the bottom-anchored version/tooltip
+    // statics keep their bespoke helpers above.
+    let placer = Placer::new(screen_w, screen_h);
+    let button = |button: &MenuPageButtonSpec, rule| MainMenuButtonRect {
+        id: MainMenuControlId::from_resource_id(button.id)
+            .expect("0xE2 buttons are main-menu controls"),
+        rect: placer.at(rule, 425, button.dlu_top, 108, 23),
+    };
+    let snap = AnchorRule::OwnerDrawButtonSnap {
+        cell_w: BUTTON_CELL_W,
+    };
+    let bottom_row = AnchorRule::OwnerDrawButtonBottomRow {
+        cell_w: BUTTON_CELL_W,
+    };
+    let buttons = MAIN_MENU_PAGE
+        .stacked
         .iter()
-        .filter(|control| control.kind == ControlKind::Button)
-        .map(|control| MainMenuButtonRect {
-            id: MainMenuControlId::from_resource_id(control.id)
-                .expect("0xE2 descriptor buttons are main-menu controls"),
-            rect: rect_for(&laid, control.id),
-        })
+        .map(|b| button(b, snap))
+        .chain([button(&MAIN_MENU_PAGE.back, bottom_row)])
         .collect();
 
     MainMenuShellLayout {
@@ -234,10 +181,11 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
         screen: RectPx::new(0, 0, screen_w, screen_h),
         movie_base,
         movie: RectPx::new(movie_x, movie_y, movie_w, movie_h),
-        title: rect_for(&laid, 0x0694),
+        // 0x694 heading: runtime +1w/+1h, right-anchor, then +7y/+1h.
+        title: placer.at(HEADING_ANCHOR, 425, 1, 108, 10),
         version_line,
         tooltip_line,
-        warning_monitor: rect_for(&laid, WARNING_MONITOR_CONTROL),
+        warning_monitor: placer.at(MONITOR_ANCHOR, 447, 29, 61, 33),
         buttons,
         right_panel,
         lower_strip,

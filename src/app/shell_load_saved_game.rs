@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use winit::keyboard::KeyCode;
 
 use super::{App, AppState};
+use crate::app::frontend::shell_layout::load_saved_game_layout;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
@@ -23,9 +24,8 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         // The error message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
-        let rows = super::shell_saved_seeds::saved_browser_rows(
-            &crate::app::frontend::shell_layout::load_saved_game_layout(state).browser,
-        );
+        let rows =
+            super::shell_saved_seeds::saved_browser_rows(&load_saved_game_layout(state).browser);
         let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows);
         state.frontend.load_saved_game = Some(browser);
         // The status help is the cursor's from the first frame.
@@ -43,7 +43,7 @@ impl App {
 
     /// One pointer message on the page (`down`: `None` moves).
     fn load_saved_game_pointer(state: &mut AppState, down: Option<bool>) {
-        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
+        let layout = load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -68,11 +68,7 @@ impl App {
 
     /// VERA's Esc menu (`app::shell_menu`): the error box keeps Esc.
     pub(super) fn load_saved_game_leaves_escape(state: &AppState) -> bool {
-        state
-            .frontend
-            .load_saved_game
-            .as_ref()
-            .is_some_and(|browser| browser.prompt.is_none())
+        (state.frontend.load_saved_game.as_ref()).is_some_and(|browser| browser.prompt.is_none())
     }
 
     /// Enter and Escape reach the proc as IDOK/IDCANCEL, which it ignores;
@@ -86,7 +82,7 @@ impl App {
 
     /// Scrollbar arrow repeat (`0x0061C690`), each frame the page shows.
     pub(super) fn update_load_saved_game_scroll(state: &mut AppState) {
-        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
+        let layout = load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -103,11 +99,12 @@ impl App {
         let affirmative = state.csf_label("TXT_OK", "OK");
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
             let purpose = SavedSeedPromptPurpose::Error;
+            let negative = None;
             browser.show_prompt(SavedSeedPrompt {
                 purpose,
                 body,
                 affirmative,
-                negative: None,
+                negative,
             });
         }
     }
@@ -128,11 +125,11 @@ impl App {
                     }
                     Self::load_saved_game_pointer(state, None);
                 }
-                BrowserInputResult::Outcome(SavedSeedOutcome::Close) => Self::leave_shell_dialog(
-                    state,
-                    crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame,
-                    App::commit_load_saved_game_back,
-                ),
+                BrowserInputResult::Outcome(SavedSeedOutcome::Close) => {
+                    let slide =
+                        crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame;
+                    Self::leave_shell_dialog(state, slide, App::commit_load_saved_game_back)
+                }
                 BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
                     let browser = state.frontend.load_saved_game.as_ref();
                     let row = browser.and_then(|browser| browser.selected_entry());
@@ -157,12 +154,11 @@ impl App {
         path: &std::path::Path,
         result: Result<(), crate::app::persistence::PreparedLoadError>,
     ) {
-        match result {
-            Ok(()) => {
-                state.frontend.load_saved_game = None;
-                return;
-            }
-            Err(error) => log::warn!("Load Saved Game: {}: {error}", path.display()),
+        if let Err(error) = result {
+            log::warn!("Load Saved Game: {}: {error}", path.display());
+        } else {
+            state.frontend.load_saved_game = None;
+            return;
         }
         let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
         Self::show_load_saved_game_error(state, body);
@@ -171,12 +167,7 @@ impl App {
     /// Status help of the control under the cursor (`0x006040B0`): the list,
     /// Load or Back, enabled or not.
     pub(crate) fn load_saved_game_status_key(state: &AppState) -> Option<String> {
-        state
-            .frontend
-            .load_saved_game
-            .as_ref()?
-            .hovered_help()
-            .map(str::to_owned)
+        (state.frontend.load_saved_game.as_ref()?.hovered_help()).map(str::to_owned)
     }
 
     /// The description a new save of the running match gets by default.
