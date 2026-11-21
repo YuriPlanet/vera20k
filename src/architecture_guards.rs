@@ -2046,6 +2046,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              `pub(super)` reaches only that module, whose passes fill each family",
         ),
         (
+            "rules/native_processing/processed_type.rs",
+            "read_member",
+            "private to the `rules::native_processing` module, whose parts are separate files: \
+             `pub(super)` reaches only that module, whose passes fill each family",
+        ),
+        (
             "rules/ruleset/lookup.rs",
             "warhead_mut",
             "private to the `rules::ruleset` module, whose parts are separate files: \
