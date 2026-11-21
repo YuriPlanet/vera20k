@@ -158,7 +158,7 @@ pub(crate) fn ares_country_index_of_name<'a>(
 ) -> Option<crate::rules::ruleset::CountryIdx> {
     ares_type_index_of_name(incoming, countries).map(|index| {
         crate::rules::ruleset::CountryIdx(
-            u16::try_from(index).expect("[Countries] exceeds u16 identity space"),
+            u16::try_from(index).expect("COUNTRY_LIMIT keeps the Country registry within u16"),
         )
     })
 }

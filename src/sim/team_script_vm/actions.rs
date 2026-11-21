@@ -2290,7 +2290,9 @@ impl Simulation {
                 |terrain| {
                     let cells = NativeCellQuery::canonical(terrain);
                     crate::sim::cell_rect::retained_cell_is_in_playfield(
-                        cell.target_kind().cell_identity(terrain).unwrap(),
+                        cell.target_kind()
+                            .cell_identity(terrain)
+                            .expect("a Cell target has a Cell identity"),
                         playfield_bounds,
                         &cells,
                     )

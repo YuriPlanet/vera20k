@@ -2227,7 +2227,10 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         LanPayload::GameQuery => {
             if state.match_state.session.network_setup().is_some() {
                 let game_name = active_game_name(state);
-                if game_name.as_deref() == Some(message.name().as_str()) {
+                if let Some(game_name) = game_name
+                    .as_deref()
+                    .filter(|&game_name| game_name == message.name())
+                {
                     let local = state
                         .match_state
                         .session
@@ -2237,9 +2240,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     let fields = crate::net::lan_messages::LanParticipantDetails {
                         country: local.slot.country_shell_value(local.is_observer()),
                         color: local.slot.color_shell_value(),
-                        game_name_hash: crate::net::lan_messages::game_name_hash(
-                            game_name.as_deref().unwrap(),
-                        ),
+                        game_name_hash: crate::net::lan_messages::game_name_hash(game_name),
                         field_0x53: u32::from(local.raw_slot_index.unwrap_or(0)),
                         field_0x57: u32::from(local.is_observer()),
                     };

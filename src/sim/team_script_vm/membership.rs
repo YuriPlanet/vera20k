@@ -358,7 +358,11 @@ impl Simulation {
         );
         // gamemd.exe Add_Member6EA500 stores Get_Group6F1870 at6EA57C,
         // after linking and before Tag inheritance. Remove_Member retains it.
-        let group = vm.team_group(vm.teams.get(&team_id).unwrap());
+        let group = vm.team_group(
+            vm.teams
+                .get(&team_id)
+                .expect("the member was linked to this Team just above"),
+        );
         if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
             entity.assign_object_group(group);
         }

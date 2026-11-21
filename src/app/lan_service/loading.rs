@@ -66,7 +66,7 @@ impl<'a> LoadingNetworkService<'a> {
         self.pump(rows, now)?;
         self.service
             .as_deref_mut()
-            .unwrap()
+            .expect("the service was present at the top")
             .defer_loading_drain(now);
         // The browser cannot block its event loop: the loading pump calls
         // `resume` on later turns in place of these 20 ms waits (69B05E).
@@ -74,7 +74,7 @@ impl<'a> LoadingNetworkService<'a> {
         while !self
             .service
             .as_deref_mut()
-            .unwrap()
+            .expect("the service was present at the top")
             .finish_loading_drain(loading_bucket())
         {
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -98,7 +98,7 @@ impl<'a> LoadingNetworkService<'a> {
         Ok(self
             .service
             .as_deref_mut()
-            .unwrap()
+            .expect("the drain check found the service")
             .finish_loading_drain(now))
     }
 

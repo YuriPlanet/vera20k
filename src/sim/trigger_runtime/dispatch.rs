@@ -757,7 +757,7 @@ impl Simulation {
         let repeat = self.trigger_runtime.definitions.tag_types[tag.type_index].repeat;
         self.trigger_runtime.tags[index]
             .as_mut()
-            .unwrap()
+            .expect("the Tag was read live just above")
             .dispatch_guard = true;
         let mut result = false;
         let mut detach_attachment = false;
@@ -797,7 +797,13 @@ impl Simulation {
                     detach_all = true;
                 }
                 1 => {
-                    if self.trigger_runtime.tag(index).unwrap().refs == 1 {
+                    if self
+                        .trigger_runtime
+                        .tag(index)
+                        .expect("the walk read this Tag's chain just above")
+                        .refs
+                        == 1
+                    {
                         self.spring_live_trigger(
                             trigger,
                             input,
@@ -843,7 +849,7 @@ impl Simulation {
         }
         self.trigger_runtime.tags[index]
             .as_mut()
-            .unwrap()
+            .expect("the Tag was checked live just above")
             .dispatch_guard = false;
         let object = input.actor;
         let cell = input.cell;
@@ -946,7 +952,10 @@ impl Simulation {
                     .and_then(|tag| tag.triggers.get(position))
                 {
                     position += 1;
-                    let typ = trigger_runtime.trigger(live).unwrap().type_index;
+                    let typ = trigger_runtime
+                        .trigger(live)
+                        .expect("a live Tag chains only live Triggers")
+                        .type_index;
                     if trigger_runtime.definitions.trigger_types[typ]
                         .events
                         .iter()

@@ -51,7 +51,11 @@ impl Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         live_index: usize,
     ) -> bool {
-        let type_index = self.trigger_runtime.trigger(live_index).unwrap().type_index;
+        let type_index = self
+            .trigger_runtime
+            .trigger(live_index)
+            .expect("callers pass a live Trigger")
+            .type_index;
         // The definition is read in place: every predicate below reads
         // through `&self`, and the one write (the entered-House arm's
         // retained Event+54) follows its last read of the condition.
@@ -436,7 +440,7 @@ impl Simulation {
             13 | 51 => self
                 .trigger_runtime
                 .trigger(live_index)
-                .unwrap()
+                .expect("callers pass a live Trigger")
                 .timer
                 .expired(self.session.binary_frame() as i32),
             //71EC83/71F284 routes these discrete events through71EC9A:
@@ -506,7 +510,13 @@ impl Simulation {
                 .len();
             for ordinal in 0..count {
                 let bit = 1u32.wrapping_shl(ordinal as u32);
-                let completed = self.trigger_runtime.trigger(index).unwrap().completed & bit != 0;
+                let completed = self
+                    .trigger_runtime
+                    .trigger(index)
+                    .expect("the Trigger was read live at the top of this check")
+                    .completed
+                    & bit
+                    != 0;
                 if !completed {
                     #[cfg(any(test, feature = "dev-overlays"))]
                     let before = persistence;
@@ -565,7 +575,7 @@ impl Simulation {
                     {
                         self.trigger_runtime.triggers[index]
                             .as_mut()
-                            .unwrap()
+                            .expect("the Trigger was read live at the top of this check")
                             .completed |= bit;
                     }
                 }
@@ -577,7 +587,7 @@ impl Simulation {
                 {
                     self.trigger_runtime.triggers[index]
                         .as_mut()
-                        .unwrap()
+                        .expect("the Trigger was read live at the top of this check")
                         .retained_house = Some(house);
                 }
             }
