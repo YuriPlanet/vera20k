@@ -84,6 +84,21 @@
   从 7 涨到 56，是因为钱袋长期停在「车价 600」和「一兵 200」之间，而那一档
   正是设计好的 `a_soldier_would_reset_the_saving` 要放行步兵的档位。
   编制层不是漏洞，步兵过多的军队要从别处解释。
+- **拳头瞄准打不动的目标（已排除，但留下一处未解释的矛盾）**：在 `advance` 里加过
+  临时诊断（`AUTOPLAY_TRACE_CANNOT`）实测 seed 24301 一局：179 次 `Engage::Cannot`，
+  其中 172 次的 `obs.health(target)` 是 `None`、`obs.enemy_entities()` 也说没有，
+  但同一个 obs 同一帧里 `brain.census.enemies` 里确实有这个 id
+  （`in_census=true / live=false / hp=None`），目标类型集中在
+  GAROBO / GAPILL / NASAM / ATESLA。`census.refresh` 每次调用都从
+  `obs.enemy_entities()` 重建（`src/sim/strategy/assist/census.rs:690` 清空、
+  `:840` 重填），同一帧两个答案相反，这一点还没有解释。另有一次 `target:` 采样显示
+  26 个采样点里 24 个 `structure=0`（拳头当时在搜索分支，目标列表里只有占位 id）。
+  两种改法都试了：(a) 建 `structures` 时按 `obs.health` 过滤——53 个 `hp=None`
+  一个都没少；(b) 记下打不动的目标，达到 `ADVANCE_ORDERS_PER_FRAME` 次拒绝且
+  `push_stalled` 为真时丢掉它两分钟的 `hopeless` 表——不加 stall 门槛时 seed 24301
+  从 `won at 35276` 掉成 timeout（army 86 → 77），加上门槛后三局与基线逐字节相同，
+  说明这个规则在这三局里从不触发。两种都未保留，代码已还原，工作区干净。
+  留下的结论：seed 24301 尾段 `idle=71 / fighters=86` 不是这些 `Cannot` 造成的。
 - **推进目标来回跳**：`target=` 在 seed 10 的尾段里 27 个采样点盯着 3105、
   14 个盯着 7017，整局只出现过 4 个不同目标；seed 24301 也只有 9 个，
   且单个目标能连盯 19 个采样点。目标承诺是有效的，拳头没有被拖着跑。
