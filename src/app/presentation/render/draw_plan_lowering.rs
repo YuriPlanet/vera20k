@@ -620,7 +620,9 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
         }
         match entry.sprites {
             ParentSprites::Building(span) => {
-                // A building's pieces carry their own index as local id.
+                // A building's pieces carry their own index as local id. This
+                // list stays one Vec per building: `TacticalDrawPlan` owns it
+                // and stable-sorts it by piece kind.
                 let planned = sprites.building_pieces[span.range()]
                     .iter()
                     .enumerate()
