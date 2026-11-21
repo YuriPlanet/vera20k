@@ -598,6 +598,8 @@ pub enum SnapshotRestoreError {
         registry: &'static str,
         identity: u64,
     },
+    #[error("this save is damaged and cannot be loaded: {reason}")]
+    InvalidTeamState { reason: &'static str },
     #[error("restored trigger runtime is inconsistent: {reason}")]
     InvalidTriggerRuntime { reason: String },
     #[error(

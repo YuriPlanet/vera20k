@@ -134,6 +134,9 @@ impl Simulation {
             .map_err(SnapshotRestoreError::InvalidRadiationSiteOrder)?;
         self.validate_planning_references()
             .map_err(|reason| SnapshotRestoreError::InvalidPlanningReferences { reason })?;
+        self.team_script_vm
+            .validate_restored_task_forces()
+            .map_err(|reason| SnapshotRestoreError::InvalidTeamState { reason })?;
         if let Some(owner) = self.session.current_house()
             && !self.houses.contains_key(&owner)
         {
