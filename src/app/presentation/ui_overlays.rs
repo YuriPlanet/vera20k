@@ -2666,13 +2666,10 @@ fn scale_pip_rows(
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
-    // Original RA2 never draws occupant pips on garrisoned buildings (the
-    // whole person-frames arm is a YR addition); keep blood/other pips intact.
-    if !crate::util::ra2_launch::enabled()
-        && building
-        && object.show_occupant_pips
-        && object.max_number_occupants > 0
-    {
+    // Both RA2 and YR draw occupant pips here: hiding them in -ra2 made
+    // garrisons invisible to both sides, which hurts playability more than
+    // any native fidelity gain. Revisit only if balance actually demands it.
+    if building && object.show_occupant_pips && object.max_number_occupants > 0 {
         let occupants = entity.passenger_role().occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
@@ -3827,10 +3824,11 @@ mod tests {
         assert_eq!(self_heal_pip(Unit, false, 0, 1), Some(SelfHealPip::Units));
     }
 
-    /// Original RA2 does not draw occupant pips on garrisoned buildings; YR
-    /// does. The RA2 launch profile must skip only that pip row.
+    /// Occupant pips stay visible in both profiles. Hiding them under -ra2
+    /// made garrisons impossible to read for either side, so the RA2 launch
+    /// profile must draw the same pip rows as YR.
     #[test]
-    fn ra2_skips_garrison_occupant_pips_but_keeps_other_pips() {
+    fn ra2_shows_garrison_occupant_pips_like_yr() {
         // This test lives in the main crate; its ra2_launch flag is a
         // separate process-global from vera20k-core's tests. Serialize within
         // this crate only.
@@ -3866,11 +3864,11 @@ mod tests {
 
         crate::util::ra2_launch::set(true);
         let ra2 = scale_pip_rows(&sim, entity, &rules);
-        assert!(
-            ra2.iter().all(|p| !yr.iter().any(|y| y.frame == p.frame && y.offset_pixels == p.offset_pixels)) || ra2.len() < yr.len(),
-            "RA2 must not draw the occupant pip rows YR draws"
+        assert_eq!(
+            ra2.len(),
+            yr.len(),
+            "RA2 must draw the same occupant pip rows as YR"
         );
-        assert!(ra2.len() < yr.len(), "RA2 has fewer pip rows (no garrison row)");
 
         crate::util::ra2_launch::set(before);
     }
