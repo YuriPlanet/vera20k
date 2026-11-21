@@ -679,7 +679,7 @@ impl Simulation {
                 if outcome == movement::FootPathOutcome::Resume {
                     pending_movement.reenter_mover(
                         sim,
-                        movement::movement_tick::MoverReentry::FootPath(Box::new(request)),
+                        movement::movement_tick::MoverReentry::FootPath(request),
                         rules,
                     );
                 }

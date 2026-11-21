@@ -316,6 +316,8 @@ impl Simulation {
         rules: &RuleSet,
         type_id: InternedId,
     ) -> AnimConstructorInput {
+        // The set of types that affect play is keyed by name: one probe with
+        // the name uppercased on the stack, no allocation.
         if self.effect_anims_presented()
             && rules
                 .art()
@@ -764,6 +766,13 @@ impl Simulation {
         debug_assert!(previous.is_none());
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
+            // A type whose constructor draws nothing needs no stream: the
+            // local copy below would be thrown away unread.
+            AnimConstructorInput::Local | AnimConstructorInput::Presentation
+                if !constructor_draws(config) =>
+            {
+                AnimConstructorDraws::default()
+            }
             AnimConstructorInput::Runtime
             | AnimConstructorInput::AssignedIdentity(_)
             | AnimConstructorInput::Local
@@ -1129,7 +1138,7 @@ pub(super) fn effective_bounds(config: &AnimTypeRuntimeConfig) -> Option<(i32, i
 /// the `RandomRate=` pick (`0x004221F5`; none when the clamped bounds are
 /// equal, as for every stock debris chunk), then the `Bouncer=` arm's launch
 /// (`0x004224D9..0x00422648`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnimConstructorDraws {
     /// Present when a producer has already crossed Anim42203D. Admission must
     /// retain that constructor identity rather than consume the cursor again.
@@ -1212,6 +1221,13 @@ pub(crate) fn anim_constructor_draws(
         random_rate,
         bounce,
     })
+}
+
+/// Whether [`anim_constructor_draws`] takes any draw for `config`: only
+/// `RandomRate=`, `IsMeteor=` and `Bouncer=` draw. Without them it returns
+/// [`AnimConstructorDraws::default`] and leaves the stream as it was.
+pub(super) fn constructor_draws(config: &AnimTypeRuntimeConfig) -> bool {
+    config.random_rate_logic_frames.is_some() || config.is_meteor || config.bouncer
 }
 
 pub(super) fn anim_random_rate(

@@ -149,6 +149,8 @@ impl HudFacts {
                 .is_some_and(|viewer| entity.shows_production_to(viewer)),
         });
         let more = HudMore {
+            // Owned rows, as the frame outlives this tick; an object with no
+            // pip rows gets an empty list, which allocates nothing.
             scale_pips: scale_pip_rows(sim, entity, rules),
             controller: entity.seldom.mind_control.controller(),
             capture_links: if entity.capture_manager.is_some() {
@@ -162,6 +164,8 @@ impl HudFacts {
                     .is_some_and(|viewer| sim.bomb_seen_by(id, viewer)),
                 clock_frame: sim.bomb_clock_frame(id, rules, 0),
                 clock: sim.bomb_clock(id, rules),
+                // Owned, as the frame outlives this tick; only a bombed object
+                // holds any.
                 images: sim.bomb_images(id, rules).to_vec(),
             }),
             #[cfg(feature = "phobos")]
@@ -197,12 +201,9 @@ impl HudFacts {
             // Convenience Help's rows: captured only while it is on, and only
             // for the observer's and its allies' objects, which alone draw them.
             info: if at.status_rows
-                && at.observer.is_some_and(|viewer| {
-                    crate::map::houses::is_allied_with(
-                        sim.house_alliances().as_map(),
-                        viewer,
-                        sim.interner().resolve(entity.owner()),
-                    )
+                && at.observer_id.is_some_and(|viewer| {
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), viewer, entity.owner())
                 }) {
                 StatusInfo::capture(entity, object, rules, at.binary_frame)
             } else {
@@ -213,6 +214,8 @@ impl HudFacts {
             get_coords: crate::sim::movement::ground_pose::object_get_coords(entity, terrain),
             location,
             structure,
+            // Boxed so a record without extras, most of them, stays small;
+            // only one with extras allocates.
             more: (!more.is_empty()).then(|| Box::new(more)),
         }
     }

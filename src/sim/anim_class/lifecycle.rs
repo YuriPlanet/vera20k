@@ -283,6 +283,8 @@ impl Simulation {
             .into_iter()
             .flatten()
         };
+        // Most effect anims name none of these, and for them neither list
+        // allocates; only a type with a chain pays for walking it.
         let mut pending: Vec<&str> = children(config).collect();
         let mut seen: Vec<&str> = Vec::new();
         while let Some(name) = pending.pop() {

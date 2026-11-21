@@ -454,7 +454,13 @@ impl Simulation {
                 // and passengers board in their class PerCellProcess.
             }
             FrameStep::LocalAnims => {
-                for id in self.substrate.anims.local_ids() {
+                // A visit can make and end local anims. The walk visits those
+                // that stood when it began, as a copy of the list would; an
+                // ended one's visit did nothing.
+                let end = self.substrate.anims.local_id_end();
+                let mut cursor = None;
+                while let Some(id) = self.substrate.anims.next_local_id(cursor, end) {
+                    cursor = Some(id);
                     // No expiry reaches a presentation anim, which nothing
                     // lists: it ends with its owner's UnInit instead
                     // (`AnimConstructorInput::Presentation`).

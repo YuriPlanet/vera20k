@@ -505,15 +505,11 @@ impl Simulation {
         frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
-        let vm = &mut self.team_script_vm;
-        let Some(team) = vm.teams.get(&team_id) else {
+        if !self.team_script_vm.teams.contains_key(&team_id) {
             return true;
-        };
+        }
         // The walk reads a copy: a member's join or move can change the list.
-        // Taken from the VM's scratch and put back, so a walk reached from
-        // inside this one finds it empty and makes its own.
-        let mut members = std::mem::take(&mut vm.regroup_members);
-        members.extend_from_slice(&team.members);
+        let members = self.team_script_vm.copy_members(team_id);
         let mut regrouped = true;
         for &member in &members {
             let Some(zone) = self
@@ -524,17 +520,17 @@ impl Simulation {
             else {
                 break;
             };
-            let Some(entity) = self.substrate.entities.get(member.id) else {
+            let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
             if !entity.lifecycle.object_alive() {
                 continue;
             }
-            self.team_member_join_up(team_id, member.id, rules, frame_effects);
-            let Some(entity) = self.substrate.entities.get(member.id) else {
+            self.team_member_join_up(team_id, member, rules, frame_effects);
+            let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
-            let initiated = self.team_member_initiated(team_id, member.id);
+            let initiated = self.team_member_initiated(team_id, member);
             if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                 continue;
             }
@@ -546,20 +542,19 @@ impl Simulation {
                 if entity.navigation.nav_com().is_some() {
                     continue;
                 }
-                self.team_member_queue_mission(member.id, MissionType::Move, rules);
+                self.team_member_queue_mission(member, MissionType::Move, rules);
                 regrouped = false;
                 let cell = zone.and_then(|zone| self.team_target_cell_of_coord(zone));
-                self.team_member_set_destination(member.id, cell, rules, frame_effects);
+                self.team_member_set_destination(member, cell, rules, frame_effects);
             } else {
                 if mission == Some(MissionType::AreaGuard) {
                     continue;
                 }
-                self.team_member_queue_mission(member.id, MissionType::Guard, rules);
-                self.team_member_set_destination(member.id, None, rules, frame_effects);
+                self.team_member_queue_mission(member, MissionType::Guard, rules);
+                self.team_member_set_destination(member, None, rules, frame_effects);
             }
         }
-        members.clear();
-        self.team_script_vm.regroup_members = members;
+        self.team_script_vm.restore_member_ids(members);
         regrouped
     }
 

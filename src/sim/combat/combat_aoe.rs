@@ -586,6 +586,11 @@ impl AoECollector {
         // Each candidate's native Sqrt_Approx/ftol distance is compared to this
         // signed threshold; there is no exact-squared prefilter.
         let spread_leptons = cell_spread::splash_threshold_leptons(cell_spread);
+        // Each detonation's receivers are its own list: the commit walks it
+        // while a receiver's death detonates again and collects another, and
+        // the bullet path hands it on to its damage events. A run lasts one
+        // fire visit, so a buffer kept there would serve only those nested
+        // detonations.
         let mut result = AoEDamageResult::default();
         let exact_impact = layer_context
             .air_impact

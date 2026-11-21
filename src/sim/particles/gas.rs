@@ -409,8 +409,8 @@ fn damage_in_range(
         {
             continue;
         }
-        let members: Vec<_> = sim.cell_objects((rx, ry), MovementLayer::Ground).collect();
-        for member in members {
+        // The gathering only reads the world; the damage below runs on `items`.
+        for member in sim.cell_objects((rx, ry), MovementLayer::Ground) {
             let Some(at) = location(sim, member) else {
                 continue;
             };

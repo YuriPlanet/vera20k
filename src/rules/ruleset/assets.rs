@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::voxel_anim_type::VoxelAnimTypeId;
 #[cfg(any(test, feature = "test-support"))]
 use crate::rules::weapon_type::WeaponType;
@@ -572,7 +572,14 @@ impl RuleSet {
         &self,
         type_id: &str,
     ) -> Option<&crate::rules::shp_vehicle_sequence::UnitShpReadState> {
-        let object = self.object(type_id)?;
+        self.unit_shp_read_state_of(self.object(type_id)?)
+    }
+
+    /// [`Self::unit_shp_read_state`] for a type already in hand.
+    pub(crate) fn unit_shp_read_state_of(
+        &self,
+        object: &ObjectType,
+    ) -> Option<&crate::rules::shp_vehicle_sequence::UnitShpReadState> {
         self.unit_shp_read_states.get(&object.id)
     }
 
