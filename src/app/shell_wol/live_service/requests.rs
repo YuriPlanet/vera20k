@@ -30,11 +30,27 @@ pub(super) fn request_service(
             nickname,
             password,
             remember,
+            generated_guest,
             ..
         } => {
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
-            let credential =
-                sign_in_credential(settings_dir(state), service, &nickname, password, remember);
+            let credential = if generated_guest {
+                Some(http::Credential::GeneratedGuest)
+            } else {
+                sign_in_credential(settings_dir(state), service, &nickname, password, remember)
+            };
+            let Some(credential) = credential else {
+                super::apply_response(
+                    state,
+                    service,
+                    http::Response::SignInRefused {
+                        attempt: service.auth_attempt,
+                        message: tr("VERA:LobbySignInWithPassword"),
+                        bad_credential: false,
+                    },
+                );
+                return;
+            };
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             // What this game changes from the original game, which a room
             // names when its rules differ from the host's.

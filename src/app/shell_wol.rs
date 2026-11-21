@@ -969,7 +969,7 @@ impl App {
         };
         !visit.waiting()
             && match &visit.page {
-                WolPage::Login(login) => login.account.is_none(),
+                WolPage::Login(login) => !login.choosing_entry() && login.account.is_none(),
                 WolPage::Lobby => visit.lobby().is_some_and(|lobby| {
                     lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
                 }),

@@ -39,13 +39,12 @@ mod test_service;
 pub enum WolTarget {
     /// `0x10F` settled after a controlled server list, empty fields.
     LoginSteady,
-    /// The online login page, its counts set in place; nothing is read or
-    /// sent.
+    /// VERA Online's initial guest/account chooser; nothing is sent.
     ModernLoginPage,
     /// Its sign-in form with a username and password typed and Remember
     /// password ticked; nothing is sent.
     ModernLogin,
-    /// Its sign-in form with a username alone, a guest's; nothing is sent.
+    /// The account form with only a username typed: Sign In stays disabled.
     ModernUsername,
     /// Create Account's popup, filled in; nothing is sent.
     ModernCreateAccount,
@@ -1226,6 +1225,7 @@ impl WolCapture {
                 "remember_enabled": login.remember_enabled,
                 "remember_checked": login.remember_checked,
                 "focused": login.focused_control,
+                "entry": format!("{:?}", login.policy),
                 "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
             })),
         })

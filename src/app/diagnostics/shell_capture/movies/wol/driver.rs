@@ -47,7 +47,7 @@ impl WolCapture {
                     ),
                 );
                 self.event(frame, "0xE2 Internet");
-                // The normal online visit has no welcome: Internet signs in.
+                // Internet opens VERA's guest/account choice directly.
                 self.phase = match self.target {
                     target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
@@ -230,6 +230,7 @@ impl WolCapture {
                                         password: PASSWORD.into(),
                                         changed: false,
                                         remember: false,
+                                        generated_guest: false,
                                     }],
                             "AutoLogin did not connect the stored account to the persona's server: {requests:?}"
                         );
@@ -309,13 +310,21 @@ impl WolCapture {
                                 games_24h: 30,
                             },
                         ));
-                        let login = login_mut(state)?;
                         ensure!(
-                            login.policy == crate::ui::wol_login::LoginPolicy::Online
-                                && login.account.is_none(),
-                            "the online login page did not open on its own"
+                            login_mut(state)?.choosing_entry(),
+                            "the online entry chooser did not open"
                         );
-                        self.event(frame, "the online login page");
+                        let choice = layout.entry_choice().context("the two entry buttons")?;
+                        self.event(frame, "the online entry chooser");
+                        if target == WolTarget::ModernLoginPage {
+                            MoviesCapture::restore_neutral_pointer(state);
+                            self.settle();
+                            return Ok(());
+                        }
+                        // These are visual-only captures. Play as Guest joins
+                        // the live lobby immediately, so they use the account form.
+                        welcome_click(state, choice.account);
+                        let layout = crate::app::shell_wol::login_layout(state);
                         if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
                             let online = layout.online.context("the online sign-in form")?;
                             let typed: &[&str] = if target == WolTarget::ModernLogin {
@@ -337,12 +346,13 @@ impl WolCapture {
                             ensure!(
                                 login.online_name() == "Player"
                                     && login.button_enabled(crate::ui::wol_login::PLAY)
+                                        == (target == WolTarget::ModernLogin)
                                     && login.form.as_ref().and_then(|form| form.remember)
                                         == Some(target == WolTarget::ModernLogin),
-                                "the typed sign-in did not enable Play"
+                                "the sign-in form has the wrong submit or remember state"
                             );
                             self.event(frame, "the sign-in form filled in");
-                        } else if target != WolTarget::ModernLoginPage {
+                        } else {
                             self.account_popup(state, frame, target, &layout)?;
                         }
                         MoviesCapture::restore_neutral_pointer(state);
@@ -427,6 +437,7 @@ impl WolCapture {
                             password: PASSWORD.into(),
                             changed: true,
                             remember: false,
+                            generated_guest: false,
                         }],
                     "Login did not connect to the selected record"
                 );

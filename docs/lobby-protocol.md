@@ -940,12 +940,16 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page is its sign-in form: a username, which starts from the last
-name signed in, a password and Remember password. Play, or Enter, signs in: a username
-alone enters as a guest, and with its password as that account. Under the form the page
-shows the players online and the last 24 hours' games (`GET /v1/stats`, read each time
-the page opens), leaving out a count of none. Every other button opens a popup that
-starts from the form's username. Create Account asks for the name, email and password,
+Opening VERA Online offers **Play as Guest** and **Sign In and Play**. Guest entry
+immediately requests a session under a temporary name such as `Guest04219`, with no
+credentials. If the lobby says the name is in use or registered, the game tries up to
+three more names. It keeps the last account username for the next sign-in. The account
+path takes a username and password or the remembered sign-in for that username.
+The welcome dialog shows the current online player count from `GET /v1/stats` on
+entry and refreshes it once a minute while the chooser is open. It shows zero for an
+empty lobby and a dash while the count is unavailable. The account form also shows the last 24 hours'
+games, omits zero counts, and offers registration, recovery and deletion.
+Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
 code, then asks for it and a new password, and signs in. Delete Account accepts the
 username or registered email and asks for the current password. After success it
@@ -953,8 +957,8 @@ forgets that account's remembered sign-in. Older games send the username as befo
 A lobby rollback accepts deletion by username.
 
 A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
-sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
-with a masked password, and Play needs none.
+sign_in_token}` per lobby, readable only by its owner. The account form shows a masked
+password for the remembered username and can submit it without typing the password.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.
