@@ -620,7 +620,7 @@ pub(crate) fn wol_entry_choice_layout_on(
     let button = geom::child_window(0, 0, 99, 15);
     let gap = 16;
     let left = (dialog.w - 2 * button.w - gap) / 2;
-    let top = dialog.h - 22 - button.h;
+    let top = dialog.h - 34 - button.h;
     let middle = dialog.h / 2;
     let line = |y, h| child(20, y, dialog.w - 40, h);
     WolEntryChoiceLayout {
