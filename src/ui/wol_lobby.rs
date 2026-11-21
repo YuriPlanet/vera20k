@@ -1048,6 +1048,12 @@ impl WolLobbyState {
             CREATE => WolLobbyAction::Create,
             JOIN => WolLobbyAction::Join,
             BACK_TO_ROOM => WolLobbyAction::BackToRoom,
+            // VERA: Back steps back one page, so on the online page's chat
+            // it returns to the games; only from there does it leave.
+            BACK if self.modern && self.view == LobbyView::Chat => {
+                self.toggle_view();
+                WolLobbyAction::View
+            }
             BACK => WolLobbyAction::Back,
             REFRESH => WolLobbyAction::Refresh,
             SORT_ALPHA | SORT_PING | SORT_RESLOCK | SORT_PASSWORD | SORT_GAMETYPE => {
@@ -1322,6 +1328,17 @@ mod tests {
         );
         lobby.activate(VIEW);
         assert_eq!(lobby.view_caption(), crate::i18n::tr("VERA:LobbyChat"));
+    }
+
+    /// Back steps back one page: on the online page's chat it returns to
+    /// the games, and only from there does it leave the lobby.
+    #[test]
+    fn back_on_the_chat_page_returns_to_the_games() {
+        let mut lobby = WolLobbyState::new(false, true);
+        lobby.activate(VIEW);
+        assert_eq!(lobby.activate(BACK), Some(WolLobbyAction::View));
+        assert!(!lobby.shows_chat());
+        assert_eq!(lobby.activate(BACK), Some(WolLobbyAction::Back));
     }
 
     /// The modern Observe checkbox ends the games' heading row, flush with
