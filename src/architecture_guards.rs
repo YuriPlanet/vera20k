@@ -513,9 +513,6 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
-                // A received map's case-folded name check; a file it finds is
-                // kept only when it holds the same verified bytes.
-                "map/source.rs",
                 // Mod package staging: the game-root check asks whether any
                 // entry is an asset, parts are sorted by name before they
                 // merge, and copies land at their own names.
@@ -2346,6 +2343,11 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_nav_com_aux",
             "FootClass::Set_NavComAux (0x004D94A0) stores Foot+0x5A0; EventClass::Execute \
              calls it after Set_Destination (0x004C74BA)",
+        ),
+        (
+            "sim/movement/hover.rs",
+            "set_head",
+            "Hover's path head, stored by ProcessMovement when it accepts a tunnel exit (0x005150EE)",
         ),
         (
             "sim/movement/teleport_movement.rs",

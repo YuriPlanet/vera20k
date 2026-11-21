@@ -542,8 +542,8 @@ const PANIC_PINS: &[(&str, &str, usize, &str)] = &[
     (
         "relay-protocol/sequenced.rs",
         "index",
-        23,
-        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (`Ticket::parse` and the ordering decoder refuse larger), a certificate is MAC-checked over the length `parse` and `is_ordering_certificate_len` admitted, and rate steps index the paced-rate table below its length",
+        24,
+        "source indexes into the MAX_PEERS-sized tables are below MAX_PEERS (`Ticket::parse` and the ordering decoder refuse larger), a certificate is MAC-checked over the length `parse` and `is_ordering_certificate_len` admitted, rate steps index the paced-rate table below its length, and `FRAME_RATES[0]` reads the constant table's fastest rate",
     ),
     (
         "relay-protocol/sequenced/federation.rs",

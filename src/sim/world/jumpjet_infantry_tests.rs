@@ -1007,6 +1007,8 @@ fn rocketeer_crash_fixture(
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
+    // Infantry's walk-or-fly choice (0x005221D0) asks the movement zones.
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.session.set_binary_frame_for_test(1000);
     // Both Houses human: the native harness steps objects alone, so no
     // computer House update draws from the Scenario stream.
