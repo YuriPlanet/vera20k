@@ -197,11 +197,17 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
-    /// A `Cell`: the draw notes it while reading the app state through `&`.
+    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
+    /// chooses the cursor notes it there.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
     /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
-    /// `CursorFrame`). A `Cell` like `shown_cursor`: the shell and match draws
-    /// that show the cursor step it while they read the app state through `&`.
+    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
+    /// chosen, inside the shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
+    /// state by `&`: the sprite they build borrows the cursor's texture and
+    /// the rest of the frame's draw state from it until the frame is drawn.
+    /// Stepping it before the draw under `&mut` would choose the frame apart
+    /// from the targets and planning-node test that pick the sequence.
     software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
