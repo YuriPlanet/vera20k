@@ -56,6 +56,34 @@ pub use vera20k_relay_protocol::{
 pub mod test_support {
     //Client regressions exercise the same authenticated server/codec owner.
     pub use vera20k_relay_protocol::{MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key};
+
+    use std::net::{Ipv4Addr, UdpSocket};
+
+    /// Returns once every datagram this thread has already sent over loopback can be
+    /// read. macOS delivers them on a kernel thread after `send_to` has returned, so a
+    /// read straight after a send usually finds nothing yet. A step in a test's relay
+    /// loop counts as 16 ms of match time but takes microseconds, so when a busy CI
+    /// machine stalls that thread, a whole loop can pass before its packets land.
+    /// Delivery keeps its order: once a datagram sent now comes back, the earlier ones
+    /// have arrived.
+    pub fn settle_loopback() {
+        thread_local! {
+            static PROBE: UdpSocket = {
+                let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+                probe.connect(probe.local_addr().unwrap()).unwrap();
+                // A debug build on a loaded CI machine can stall for many seconds.
+                probe
+                    .set_read_timeout(Some(std::time::Duration::from_secs(120)))
+                    .unwrap();
+                probe
+            };
+        }
+        PROBE.with(|probe| {
+            probe.send(&[0]).unwrap();
+            // Only a wait: if the probe is ever lost, the step carries on without it.
+            let _ = probe.recv(&mut [0]);
+        });
+    }
 }
 
 use super::global::{

@@ -1,6 +1,7 @@
 use super::*;
 use crate::net::reliable::LanConnectionConfig;
 use crate::net::udp::UdpBindConfig;
+use crate::net::udp::test_support::settle_loopback;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::command::{CommandEnvelope, CommandRecord};
 use crate::sim::command_queue::{FrameChecksumState, FrameInfo};
@@ -17,29 +18,6 @@ use std::time::{Duration, Instant};
 /// debug build sharing a small CI machine with the rest of the suite runs many times
 /// slower, and only the wall clock bounds their loops.
 const STALL_LIMIT: Duration = Duration::from_secs(120);
-
-/// Returns once every datagram this thread has already sent over loopback can be
-/// read. macOS delivers them on a kernel thread after `send_to` has returned, so a
-/// read straight after a send usually finds nothing yet. A step in the relay loops
-/// below counts as 16 ms of match time but takes microseconds, so when a busy CI
-/// machine stalls that thread, a whole loop can pass before its packets land.
-/// Delivery keeps its order: once a datagram sent now comes back, the earlier ones
-/// have arrived.
-fn settle_loopback() {
-    thread_local! {
-        static PROBE: UdpSocket = {
-            let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-            probe.connect(probe.local_addr().unwrap()).unwrap();
-            probe.set_read_timeout(Some(STALL_LIMIT)).unwrap();
-            probe
-        };
-    }
-    PROBE.with(|probe| {
-        probe.send(&[0]).unwrap();
-        // Only a wait: if the probe is ever lost, the step carries on without it.
-        let _ = probe.recv(&mut [0]);
-    });
-}
 
 fn transport() -> LanUdpTransport {
     LanUdpTransport::bind(

@@ -897,7 +897,7 @@ mod tests {
         use crate::net::lan_messages::extended_setup::campaign::Record;
         use crate::net::reliable::{Delivery, LanConnectionConfig, LanConnections, RetryTiming};
         use crate::net::udp::test_support::{
-            MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key,
+            MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key, settle_loopback,
         };
         use crate::net::udp::{
             LanUdpTransport, OrderingCertificate, RelayTicket, UdpBindConfig, relay_peer_endpoint,
@@ -966,7 +966,9 @@ mod tests {
             .unwrap();
             wire.set_ordering_certificate(certificate.to_vec()).unwrap();
         }
+        // Each pump reads what the games sent and leaves its replies readable.
         let mut pump_relay = |tick: u32, lose_guest_reply: bool| {
+            settle_loopback();
             let mut buffer = [0; MAX_DATAGRAM + 1];
             while let Ok((length, SocketAddr::V4(source))) = socket.recv_from(&mut buffer) {
                 for output in relay
@@ -978,6 +980,7 @@ mod tests {
                     }
                 }
             }
+            settle_loopback();
         };
         let mut tick = 0;
         loop {
