@@ -385,7 +385,13 @@ pub(super) fn deploy_yard_maker(
             // neighbour's. `deploy_admits_at` answers about the cell the unit
             // would stand on, so the walk out is a ring search for the first
             // cell the deploy would land on.
-            match nearest_deploy_site(obs, rules, entity_id, yard, cell) {
+            let space = super::terrain::Space::read(
+                obs,
+                rules,
+                &brain.census.home_cells,
+                brain.census.base_cell,
+            );
+            match nearest_deploy_site(obs, rules, &space, entity_id, yard, cell) {
                 Some(target) => {
                     super::orders::issue(
                         brain,
@@ -399,6 +405,26 @@ pub(super) fn deploy_yard_maker(
                 None => {
                     let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
                     brain.site_attempts.insert(yard_id, next);
+                    // Walled in on every side: the counter alone is what left a
+                    // maker standing for a whole match. There is nowhere to
+                    // deploy here, so the maker goes back to the base it still
+                    // has — the same rally walk the retreat uses — and tries
+                    // again from ground the house actually holds.
+                    if let Some(home) = brain.census.base_cell
+                        && cell_distance(cell, home) > RETRIEVE_ARRIVED_CELLS
+                        && obs.destination(entity_id).is_none()
+                    {
+                        let target = super::census::rally_near(obs, home, &brain.census.home_cells)
+                            .unwrap_or(home);
+                        super::orders::issue(
+                            brain,
+                            out,
+                            rules,
+                            obs,
+                            entity_id,
+                            Goal::Move { cell: target },
+                        );
+                    }
                 }
             }
         }
@@ -412,12 +438,29 @@ pub(super) fn deploy_yard_maker(
 fn nearest_deploy_site(
     obs: &Observation<'_>,
     rules: &RuleSet,
+    space: &super::terrain::Space,
     entity_id: u64,
     yard: &ObjectType,
     from: (u16, u16),
 ) -> Option<(u16, u16)> {
-    (1..=DEPLOY_SITE_RINGS).find_map(|ring| {
-        let mut best: Option<(u16, u16)> = None;
+    let fits = |cell: (u16, u16)| obs.deploy_admits_at(rules, entity_id, yard, cell);
+    // Ground the house may build on first, any cell the deploy physically fits
+    // on second. `deploy_admits_at` answers whether the footprint is clear, not
+    // whether the ground is worth standing on: taking its answer alone walked a
+    // maker straight into the enemy's own base, which is the wishlist's
+    // "冲进敌人家里". The second pass is what keeps a maker that has nowhere
+    // good left from standing still forever.
+    rings(from)
+        .filter(|cell| fits(*cell) && space.ground_at(*cell).buildable())
+        .next()
+        .or_else(|| rings(from).filter(|cell| fits(*cell)).next())
+}
+
+/// Cells by rings outwards from `from`, bounded by [`DEPLOY_SITE_RINGS`], in the
+/// one order that makes the answer the same every frame.
+fn rings(from: (u16, u16)) -> impl Iterator<Item = (u16, u16)> {
+    (1..=DEPLOY_SITE_RINGS).flat_map(move |ring| {
+        let mut cells = Vec::new();
         for dy in -ring..=ring {
             for dx in -ring..=ring {
                 if dx.abs().max(dy.abs()) != ring {
@@ -427,18 +470,11 @@ fn nearest_deploy_site(
                 if cell.0 < 0 || cell.1 < 0 {
                     continue;
                 }
-                let cell = (cell.0 as u16, cell.1 as u16);
-                if !obs.deploy_admits_at(rules, entity_id, yard, cell) {
-                    continue;
-                }
-                // Fixed ring order, nearest id, so the answer is the same every
-                // frame.
-                if best.is_none_or(|current| cell < current) {
-                    best = Some(cell);
-                }
+                cells.push((cell.0 as u16, cell.1 as u16));
             }
         }
-        best
+        cells.sort_unstable();
+        cells
     })
 }
 
@@ -1055,6 +1091,61 @@ mod tests {
         assert!(
             !super::yard_committed(&brain, obs.tick() + super::YARD_COMMIT_FRAMES, maker),
             "a term that has run out no longer holds the yard"
+        );
+    }
+
+    /// A maker with two cells that both take the deploy walks to the one the
+    /// house may build on, not the nearer one the enemy covers.
+    ///
+    /// `deploy_admits_at` answers whether the footprint is clear, not whether
+    /// the ground is worth standing on, so taking its answer alone walked the
+    /// maker into the enemy's own base — the wishlist's "冲进敌人家里".
+    #[test]
+    fn a_maker_walks_to_buildable_ground_over_a_nearer_enemy_cell() {
+        let Some((mut sim, rules, owner)) = arena(0xA17) else {
+            return;
+        };
+        let maker = sim
+            .spawn_object("AMCV", "Americans", 20, 20, 255, &rules)
+            .expect("an MCV");
+        let yard = rules.object("GACNST").expect("the yard");
+        let origin = crate::sim::world::deploy_origin((20, 20), yard);
+        sim.spawn_object(
+            "E1",
+            "Russians",
+            origin.0.max(0) as u16,
+            origin.1.max(0) as u16,
+            255,
+            &rules,
+        )
+        .expect("a hostile on the footprint");
+        // An enemy building ten cells west: close enough that the inner rings
+        // read `Enemy`, far enough that the outer rings do not.
+        sim.spawn_object("GACNST", "Russians", 10, 10, 255, &rules)
+            .expect("an enemy building");
+
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+        assert!(
+            !obs.deploy_site_admits(&rules, maker, yard),
+            "the maker's own cell is obstructed, so the site search runs"
+        );
+        let space = super::super::terrain::Space::read(
+            &obs,
+            &rules,
+            &brain.census.home_cells,
+            brain.census.base_cell,
+        );
+        let cell = super::nearest_deploy_site(&obs, &rules, &space, maker, yard, (20, 20))
+            .expect("a cell that takes the deploy");
+        assert!(
+            space.ground_at(cell).buildable(),
+            "the maker is sent to ground the house may build on, got {cell:?}"
         );
     }
 
