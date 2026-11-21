@@ -4,10 +4,11 @@
 //! an operation budget, and reaches the game only through [`SimHost`]. It
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
 //! `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find`,
-//! `action` and the four `trigger_*` imports, delivers `on_events` batches
-//! ([`triggers`]) and reads the `vera.vars`, `vera.actions` and
-//! `vera.delivery` sections ([`sections`]); the other `vera:sim` imports, the
-//! client world and the browser runtime come later.
+//! `action`, the four `trigger_*` imports, `rules_get`, `rules_set` and
+//! `order`, calls `on_rules`, delivers `on_events` batches ([`triggers`]) and
+//! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
+//! ([`sections`]); the other `vera:sim` imports, the client world and the
+//! browser runtime come later.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -80,6 +81,15 @@ pub const IMPORTS: &[(&str, &str)] = &[
     ("trigger_remove", "(t: i64) -> status"),
     ("trigger_bind", "(t: i64, ref: i64) -> status"),
     ("trigger_unbind", "(t: i64, ref: i64) -> status"),
+    (
+        "rules_get",
+        "(sec: ptr, sec_len: i32, key: ptr, key_len: i32, out: ptr, cap: i32, len_out: ptr) -> status",
+    ),
+    (
+        "rules_set",
+        "(sec: ptr, sec_len: i32, key: ptr, key_len: i32, val: ptr, val_len: i32) -> status",
+    ),
+    ("order", "(house: i64, ptr, len: i32) -> status"),
 ];
 
 /// Operations charged per value `get_many` reads and per reference `find`
@@ -92,6 +102,8 @@ pub const SCAN_COST: u64 = 2;
 pub const NAME_TECHNO_TYPE: i32 = 0;
 pub const NAME_WEAPON: i32 = 1;
 pub const NAME_WARHEAD: i32 = 2;
+pub const NAME_SUPER_WEAPON: i32 = 7;
+pub const NAME_OVERLAY: i32 = 9;
 pub const NAME_COUNTRY: i32 = 11;
 pub const NAME_TEAM_TYPE: i32 = 12;
 pub const NAME_VARIABLE: i32 = 15;
@@ -109,6 +121,7 @@ pub const TABLE_SCOPE: i32 = 4;
 /// Search scopes (appendix 8.2) and their count.
 pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
+pub const SCOPE_CELLS: i32 = 2;
 pub const SCOPE_MODIFIERS: i32 = 7;
 pub const SCOPES: i32 = 9;
 
@@ -463,6 +476,54 @@ impl ActionParams {
     }
 }
 
+/// `Order` (RFC appendix "Fixed layouts"): a 24-byte header, then `count`
+/// unit handles. Input to `order` (RFC 6g).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Order {
+    /// `Command` (appendix 8.3).
+    pub kind: i32,
+    /// Object or cell reference, 0 for none.
+    pub target: i64,
+    /// Type reference where the command table lists one, otherwise 0.
+    pub value: i64,
+    pub units: Vec<i64>,
+}
+
+impl Order {
+    pub const HEADER: usize = 24;
+    /// Unit entries per order (open question 7).
+    pub const MAX_UNITS: usize = 1024;
+
+    /// Reads the layout. Bytes that do not hold exactly the header and its
+    /// unit entries are an invalid argument; the command table is the
+    /// host's to check.
+    pub fn parse(bytes: &[u8]) -> Result<Self, Invalid> {
+        let invalid = |why: String| Err(Invalid(format!("Order: {why}")));
+        let Some(header) = bytes.get(..Self::HEADER) else {
+            return invalid(format!("{} bytes, header is {}", bytes.len(), Self::HEADER));
+        };
+        let count = le_i32(header, 4);
+        let Some(count) = usize::try_from(count)
+            .ok()
+            .filter(|n| *n <= Self::MAX_UNITS)
+        else {
+            return invalid(format!("{count} units"));
+        };
+        if bytes.len() != Self::HEADER + count * 8 {
+            return invalid(format!("{} bytes for {count} units", bytes.len()));
+        }
+        Ok(Self {
+            kind: le_i32(header, 0),
+            target: le_i64(header, 8),
+            value: le_i64(header, 16),
+            units: bytes[Self::HEADER..]
+                .chunks_exact(8)
+                .map(|unit| le_i64(unit, 0))
+                .collect(),
+        })
+    }
+}
+
 /// What a simulation module may do to the game. The engine implements it over
 /// its state owners; every call happens synchronously inside a module call.
 pub trait SimHost {
@@ -532,6 +593,23 @@ pub trait SimHost {
     fn trigger_unbind(&mut self, _trigger: i64, _reference: i64) -> Result<Status, Invalid> {
         Ok(Status::Unsupported)
     }
+    /// The raw text of `[section] key` in the merged rules, `None` for a
+    /// missing key, with the call's status.
+    fn rules_get(
+        &mut self,
+        _section: &str,
+        _key: &str,
+    ) -> Result<(Option<String>, Status), Invalid> {
+        Ok((None, Status::Unsupported))
+    }
+    /// Writes `[section] key=value` as INI text (RFC 8).
+    fn rules_set(&mut self, _section: &str, _key: &str, _value: &str) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
+    /// Queues `order` for computer house `house` (RFC 6g).
+    fn order(&mut self, _house: i64, _order: &Order) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
 }
 
 /// Size and budget limits for one module (RFC section 15.2, open question 7).
@@ -576,19 +654,22 @@ pub enum Export {
     Init,
     ScenarioStart,
     Frame,
+    /// `on_rules`, at the module's rules layer (RFC section 8).
+    Rules,
     /// `on_events(ptr, count)`, called through `SimModule::deliver`.
     Events,
 }
 
 impl Export {
     /// The exports of signature `() -> ()`, which `SimModule::call` takes.
-    pub const ALL: [Self; 3] = [Self::Init, Self::ScenarioStart, Self::Frame];
+    pub const ALL: [Self; 4] = [Self::Init, Self::ScenarioStart, Self::Frame, Self::Rules];
 
     pub const fn name(self) -> &'static str {
         match self {
             Self::Init => "vera_init",
             Self::ScenarioStart => "on_scenario_start",
             Self::Frame => "on_frame",
+            Self::Rules => "on_rules",
             Self::Events => "on_events",
         }
     }

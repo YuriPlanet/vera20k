@@ -265,6 +265,22 @@ fn find_pages_by_sort_key_and_a_zero_capacity_query_scans_nothing() {
 }
 
 #[test]
+fn an_order_holds_exactly_its_header_and_units() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&0i32.to_le_bytes());
+    bytes.extend_from_slice(&1i32.to_le_bytes());
+    bytes.extend_from_slice(&7i64.to_le_bytes());
+    bytes.extend_from_slice(&0i64.to_le_bytes());
+    bytes.extend_from_slice(&42i64.to_le_bytes());
+    let order = crate::Order::parse(&bytes).expect("one unit");
+    assert_eq!((order.kind, order.target, order.units), (0, 7, vec![42]));
+    // A count the bytes do not hold, and a negative count, are invalid.
+    assert!(crate::Order::parse(&bytes[..crate::Order::HEADER]).is_err());
+    bytes[4..8].copy_from_slice(&(-1i32).to_le_bytes());
+    assert!(crate::Order::parse(&bytes).is_err());
+}
+
+#[test]
 fn property_names_are_unique_ignoring_case() {
     for (i, name) in crate::PROPERTIES.iter().enumerate() {
         assert_eq!(crate::property_id(name), Some(i as i32), "{name}");

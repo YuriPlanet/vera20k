@@ -362,6 +362,8 @@ impl Simulation {
                 rules,
                 rng: &mut SimRng::new(0),
                 source,
+                orders: &mut Vec::new(),
+                rules_ini: None,
             }),
         };
         self.ext_modules.slots = slots;

@@ -284,6 +284,8 @@ fn a_trigger_removed_before_the_module_phase_delivers_nothing() {
         rules: &runtime.resources.rules,
         rng: &mut rng,
         source: ModuleSource::Map,
+        orders: &mut Vec::new(),
+        rules_ini: None,
     };
     assert_eq!(
         host.remove_trigger(handle),

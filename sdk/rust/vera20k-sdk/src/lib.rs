@@ -28,10 +28,10 @@ pub use triggers::{
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, ActionDef, Category, Cell, Event, EventRecord, FIXED_ONE, Find, FireEvent, House,
-        KilledEvent, Modifier, ModifierOp, NameKind, Op, Outcome, Prop, Ref, Status,
-        TakeDamageEvent, Target, Techno, TimerEvent, Trigger, TriggerRef, TypeRef, Var, Waypoint,
-        fixed, frame, log, lookup, random,
+        Action, ActionDef, Category, Cell, Command, Event, EventRecord, FIXED_ONE, Find, FireEvent,
+        Global, House, KilledEvent, Modifier, ModifierOp, NameKind, Op, Order, Outcome, Prop, Ref,
+        Rules, Status, TakeDamageEvent, Target, Techno, TimerEvent, Trigger, TriggerRef, TypeRef,
+        Var, Waypoint, fixed, frame, log, lookup, random,
     };
 }
 
@@ -123,6 +123,12 @@ impl TypeRef {
     /// TechnoType `name`'s type reference; resolve once, at initialization.
     pub fn techno_type(name: &str) -> Result<Self> {
         lookup(NameKind::TechnoType, name).map(|id| Self::new(NameKind::TechnoType, id))
+    }
+
+    /// SuperWeaponType `name`'s type reference, for
+    /// [`Order::launch_super_weapon`].
+    pub fn super_weapon(name: &str) -> Result<Self> {
+        lookup(NameKind::SuperWeapon, name).map(|id| Self::new(NameKind::SuperWeapon, id))
     }
 }
 
@@ -876,6 +882,230 @@ impl Action {
     }
 }
 
+// ------------------------------------------------------------------ Orders
+
+/// Player commands an [`Order`] carries (appendix 8.3 `Command`).
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Command {
+    Move = 0,
+    MoveToObject = 1,
+    Stop = 2,
+    Attack = 3,
+    AttackMove = 4,
+    Guard = 5,
+    DeployMcv = 6,
+    UndeployBuilding = 7,
+    SetRally = 8,
+    QueueProduction = 9,
+    SuspendProduction = 10,
+    CancelProductionByType = 11,
+    PlaceReadyBuilding = 12,
+    SellBuilding = 13,
+    ToggleRepair = 14,
+    EjectBunker = 15,
+    UnloadPassengers = 16,
+    CaptureBuilding = 17,
+    PlantC4 = 18,
+    LaunchSuperWeapon = 19,
+    ToggleInfantryDeploy = 20,
+    ForceAttackCell = 21,
+    SellWallAtCell = 22,
+    Scatter = 23,
+    TogglePrimaryFactory = 24,
+    Enter = 25,
+}
+
+/// Most units one [`Order`] sent through [`House::order`] carries.
+pub const ORDER_UNITS: usize = 64;
+
+/// A player command for a computer house (RFC 6g), built with the
+/// constructors below and sent with [`House::order`].
+#[derive(Clone, Copy, Debug)]
+pub struct Order<'a> {
+    pub command: Command,
+    pub target: i64,
+    pub value: i64,
+    pub units: &'a [Techno],
+}
+
+impl<'a> Order<'a> {
+    /// Any command, with its target and value as the command table lists.
+    pub const fn new(command: Command, target: i64, value: i64, units: &'a [Techno]) -> Self {
+        Self {
+            command,
+            target,
+            value,
+            units,
+        }
+    }
+
+    pub const fn move_to(units: &'a [Techno], cell: Cell) -> Self {
+        Self::new(Command::Move, cell.0, 0, units)
+    }
+
+    pub const fn move_to_object(units: &'a [Techno], target: Techno) -> Self {
+        Self::new(Command::MoveToObject, target.0, 0, units)
+    }
+
+    pub const fn stop(units: &'a [Techno]) -> Self {
+        Self::new(Command::Stop, 0, 0, units)
+    }
+
+    pub const fn attack(units: &'a [Techno], target: Techno) -> Self {
+        Self::new(Command::Attack, target.0, 0, units)
+    }
+
+    pub const fn attack_move(units: &'a [Techno], cell: Cell) -> Self {
+        Self::new(Command::AttackMove, cell.0, 0, units)
+    }
+
+    /// Guard `target`, or the units' own place with `NO_HANDLE`.
+    pub const fn guard(units: &'a [Techno], target: Techno) -> Self {
+        Self::new(Command::Guard, target.0, 0, units)
+    }
+
+    pub const fn deploy_mcv(units: &'a [Techno]) -> Self {
+        Self::new(Command::DeployMcv, 0, 0, units)
+    }
+
+    pub const fn set_rally(factories: &'a [Techno], cell: Cell) -> Self {
+        Self::new(Command::SetRally, cell.0, 0, factories)
+    }
+
+    pub const fn queue_production(ty: TypeRef) -> Self {
+        Self::new(Command::QueueProduction, 0, ty.0, &[])
+    }
+
+    pub const fn cancel_production(ty: TypeRef) -> Self {
+        Self::new(Command::CancelProductionByType, 0, ty.0, &[])
+    }
+
+    pub const fn place_ready_building(ty: TypeRef, cell: Cell) -> Self {
+        Self::new(Command::PlaceReadyBuilding, cell.0, ty.0, &[])
+    }
+
+    pub const fn sell(buildings: &'a [Techno]) -> Self {
+        Self::new(Command::SellBuilding, 0, 0, buildings)
+    }
+
+    pub const fn launch_super_weapon(ty: TypeRef, cell: Cell) -> Self {
+        Self::new(Command::LaunchSuperWeapon, cell.0, ty.0, &[])
+    }
+}
+
+impl House {
+    /// Queues `order` for this computer house; it runs next frame, checked
+    /// like its player's command. `Err(Refused)` for a player's house or a
+    /// command-table violation, or more than [`ORDER_UNITS`] units.
+    pub fn order(self, order: &Order) -> Result<()> {
+        let count = order.units.len();
+        if count > ORDER_UNITS {
+            return Err(Status::Refused);
+        }
+        // The `Order` layout as i64 words: kind and count, target, value,
+        // then the unit handles.
+        let mut words = [0i64; 3 + ORDER_UNITS];
+        words[0] = (order.command as i32 as u32 as i64) | ((count as i64) << 32);
+        words[1] = order.target;
+        words[2] = order.value;
+        for (word, unit) in words[3..].iter_mut().zip(order.units) {
+            *word = unit.0;
+        }
+        let len = (3 + count) * 8;
+        check(unsafe { sys::order(self.0, words.as_ptr().cast(), len as i32) })
+    }
+}
+
+// ------------------------------------------------------------------- Rules
+
+/// Rules text (RFC 8): any key in `on_rules`, an allowlisted key in a match.
+pub struct Rules;
+
+impl Rules {
+    /// The raw text of `[section] key` in the merged rules, written into
+    /// `buf`. `Err(NotFound)` for a missing key, `Err(Refused)` when `buf`
+    /// is too small.
+    pub fn get<'b>(section: &str, key: &str, buf: &'b mut [u8]) -> Result<&'b str> {
+        let mut len = 0;
+        check(unsafe {
+            sys::rules_get(
+                section.as_ptr(),
+                section.len() as i32,
+                key.as_ptr(),
+                key.len() as i32,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
+                &mut len,
+            )
+        })?;
+        let bytes = buf.get(..len as usize).ok_or(Status::Refused)?;
+        core::str::from_utf8(bytes).map_err(|_| Status::Unsupported)
+    }
+
+    /// Writes `[section] key=value` as INI text: any key in `on_rules`;
+    /// during a match only allowlisted keys, otherwise `Err(Refused)`.
+    pub fn set(section: &str, key: &str, value: &str) -> Result<()> {
+        check(unsafe {
+            sys::rules_set(
+                section.as_ptr(),
+                section.len() as i32,
+                key.as_ptr(),
+                key.len() as i32,
+                value.as_ptr(),
+                value.len() as i32,
+            )
+        })
+    }
+}
+
+/// The global rules reference (kind 4, appendix 7.8).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Global;
+
+impl Ref for Global {
+    fn raw(self) -> i64 {
+        4 << KIND_SHIFT
+    }
+}
+
+// ------------------------------------------------------------------- Cells
+
+impl Cell {
+    /// `LandType` (appendix 8.3 enum 12).
+    pub fn land_type(self) -> Result<i64> {
+        get(self, Prop::LandType)
+    }
+
+    /// The cell's height level.
+    pub fn height(self) -> Result<i64> {
+        get(self, Prop::Height)
+    }
+
+    /// The overlay type, or `NO_HANDLE` without one.
+    pub fn overlay(self) -> Result<TypeRef> {
+        get(self, Prop::Overlay).map(TypeRef)
+    }
+
+    /// The cell's ore and gem value in credits.
+    pub fn ore(self) -> Result<i64> {
+        get(self, Prop::Ore)
+    }
+
+    /// The waypoint number at this cell, or -1.
+    pub fn waypoint(self) -> Result<i64> {
+        get(self, Prop::Waypoint)
+    }
+}
+
+impl Find {
+    /// Cells, by cell index (y, then x); narrow with [`Find::near`] or
+    /// [`Find::within`].
+    pub fn cells() -> Self {
+        Self::scope(2)
+    }
+}
+
 // ----------------------------------------------------------------- Exports
 
 /// Exports `on_scenario_start`, calling `$f`.
@@ -904,6 +1134,18 @@ macro_rules! on_frame {
     ($f:path) => {
         #[unsafe(no_mangle)]
         pub extern "C" fn on_frame() {
+            $f()
+        }
+    };
+}
+
+/// Exports `on_rules`, calling `$f` once at the module's rules layer, where
+/// [`Rules::set`] writes any key before the rules are processed.
+#[macro_export]
+macro_rules! on_rules {
+    ($f:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn on_rules() {
             $f()
         }
     };

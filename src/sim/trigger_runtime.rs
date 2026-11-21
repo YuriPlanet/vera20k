@@ -1130,6 +1130,11 @@ impl TriggerRuntime {
         }
     }
 
+    /// The tag attached to a cell, as its tag-storage index.
+    pub(crate) fn cell_tag(&self, cell: NativeCellIdentity) -> Option<usize> {
+        self.cell_tags.get(&cell).copied()
+    }
+
     /// A global trigger variable's current value. Out-of-range indices read
     /// clear, never panic.
     pub fn global_variable_is_set(&self, index: u32) -> bool {

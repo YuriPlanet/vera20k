@@ -727,6 +727,11 @@ impl Simulation {
                 return Ok(FrameTailResult::Interrupted(reason));
             }
         };
+        // Wasm modules' house orders follow the player commands in the same
+        // step (RFC 0001 section 6g). Without modules this does nothing.
+        if failure.is_none() && pass != Some(NetworkQueuePass::SkipDispatch) {
+            frame.spawned_entities |= self.run_ext_module_orders(rules, effects);
+        }
         frame
             .commands
             .extend(std::mem::take(&mut self.frame_command_admissions));

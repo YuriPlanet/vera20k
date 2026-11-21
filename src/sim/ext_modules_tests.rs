@@ -3,6 +3,7 @@
 
 use super::{ACTION_ADD_MONEY, ModuleSource, house_ref};
 use crate::headless_scenario::HeadlessScenario;
+use crate::rules::ini_parser::IniFile;
 
 const MAP: &str = "XMP03T4.MAP";
 const SEED: u32 = 0x1269;
@@ -10,6 +11,26 @@ const SEED: u32 = 0x1269;
 fn scenario() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(crate::headless_scenario::load(&retail, MAP, SEED).expect("retail scenario loads"))
+}
+
+/// The Battle on [`MAP`] against one computer house.
+fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
+    crate::headless_scenario::battle_session(
+        MAP,
+        &[(
+            crate::skirmish_launch::LaunchCountry::Russia,
+            crate::skirmish_launch::AiDifficulty::Easy,
+        )],
+    )
+}
+
+/// [`scenario`] against one computer house.
+fn scenario_with_computer() -> Option<HeadlessScenario> {
+    let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
+    Some(
+        crate::headless_scenario::load_session(&retail, MAP, SEED, session_with_computer())
+            .expect("retail scenario loads"),
+    )
 }
 
 fn neutral_index(scene: &HeadlessScenario) -> usize {
@@ -223,6 +244,286 @@ fn a_rust_built_module_runs() {
         log.iter().any(|l| l == "minimal-rules: paid 100"),
         "{log:?}"
     );
+}
+
+/// Spawns a Grizzly for the first computer house beside its base.
+/// Returns (house index, tank, its cell).
+fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
+    spawn_for_computer(scene, "MTNK")
+}
+
+/// Spawns `type_name` for the first computer house beside its base.
+fn spawn_for_computer(scene: &mut HeadlessScenario, type_name: &str) -> (usize, u64, (u16, u16)) {
+    let rules = &scene.runtime.resources.rules;
+    let sim = &mut scene.runtime.simulation;
+    let (index, house) = sim
+        .houses
+        .order()
+        .iter()
+        .copied()
+        .enumerate()
+        .find(|(_, id)| {
+            let state = &sim.houses[id];
+            !state.is_human() && !state.is_defeated() && state.base_center().is_some()
+        })
+        .expect("the battle has a computer house");
+    let (bx, by) = sim.houses[&house].base_center().expect("a base centre");
+    let owner = sim.interner.resolve(house).to_string();
+    for n in 0..400 {
+        let (Ok(rx), Ok(ry)) = (
+            u16::try_from(i32::from(bx) + n % 20 - 10),
+            u16::try_from(i32::from(by) + n / 20 - 10),
+        ) else {
+            continue;
+        };
+        let walkable = sim
+            .path_grid()
+            .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
+        let empty = sim.occupancy().get(rx, ry).is_none_or(|cell| {
+            cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
+        });
+        if !walkable || !empty {
+            continue;
+        }
+        let z = sim.terrain_cell_level(rx, ry).unwrap_or(0);
+        if let Some(id) = sim.spawn_object_at_height(type_name, owner.as_str(), rx, ry, 0, z, rules)
+        {
+            return (index, id, (rx, ry));
+        }
+    }
+    panic!("no free cell beside the computer base");
+}
+
+fn cell_of(scene: &HeadlessScenario, id: u64) -> (u16, u16) {
+    let entity = scene.sim().entities().get(id).expect("the unit lives");
+    (entity.position.rx(), entity.position.ry())
+}
+
+/// An order moves a computer house's tank in the command step after it was
+/// issued; the same order for the player's house is refused.
+#[test]
+fn an_order_moves_a_computer_tank_and_a_players_house_is_refused() {
+    let Some(mut plain) = scenario_with_computer() else {
+        return;
+    };
+    let mut ordered = scenario_with_computer().expect("second load");
+    let (house, tank, (x, y)) = computer_tank(&mut plain);
+    assert_eq!(computer_tank(&mut ordered), (house, tank, (x, y)));
+    let human = {
+        let sim = ordered.sim();
+        let order = sim.houses.order();
+        order
+            .iter()
+            .position(|id| sim.houses[id].is_human())
+            .expect("the battle has a player")
+    };
+    let goal = (x + 6, y);
+    let target = super::cell_ref(goal.0, goal.1);
+    let (computer, player) = (house_ref(house), house_ref(human));
+    // Order at 64: Move (0), 1 unit, the goal cell, no value, the tank.
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "order" (func $order (param i64 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    (i32.store (i32.const 64) (i32.const 0))
+    (i32.store (i32.const 68) (i32.const 1))
+    (i64.store (i32.const 72) (i64.const {target}))
+    (i64.store (i32.const 88) (i64.const {tank}))
+    (i32.store (i32.const 0) (call $order (i64.const {computer}) (i32.const 64) (i32.const 32)))
+    (i32.store (i32.const 4) (call $order (i64.const {player}) (i32.const 64) (i32.const 32)))))"#
+    ))
+    .expect("test module parses");
+    ordered
+        .runtime
+        .simulation
+        .install_ext_module(&ordered.runtime.resources.rules, ModuleSource::Map, &module)
+        .expect("module installs");
+    let distance = |(cx, cy): (u16, u16)| goal.0.abs_diff(cx) + goal.1.abs_diff(cy);
+    for _ in 0..60 {
+        plain.tick();
+        ordered.tick();
+    }
+    let memory = ordered.sim().ext_modules.slots[0].module.memory();
+    let status = |at: usize| i32::from_le_bytes(memory[at..at + 4].try_into().expect("4 bytes"));
+    assert_eq!(status(0), vera20k_wasm_ext::Status::Ok as i32);
+    assert_eq!(status(4), vera20k_wasm_ext::Status::Refused as i32);
+    assert!(ordered.sim().ext_modules.slots[0].orders.is_empty());
+    assert!(
+        distance(cell_of(&ordered, tank)) < distance(cell_of(&plain, tank)),
+        "ordered {:?}, plain {:?}, goal {goal:?}",
+        cell_of(&ordered, tank),
+        cell_of(&plain, tank)
+    );
+}
+
+/// The mod module's `on_rules` doubles the GI's `Strength` before the rules
+/// are processed: a GI built in the match has the new health, `rules_get`
+/// saw the old text, and `rules_set` during the match is refused.
+#[test]
+fn on_rules_changes_a_type_the_match_uses() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let module = wat::parse_str(
+        r#"(module
+  (import "vera:sim@1.0" "rules_get" (func $get (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "rules_set" (func $set (param i32 i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 0) "E1")
+  (data (i32.const 8) "Strength")
+  (data (i32.const 24) "250")
+  (func (export "on_rules")
+    (i32.store (i32.const 100) (call $get (i32.const 0) (i32.const 2) (i32.const 8) (i32.const 8)
+      (i32.const 128) (i32.const 16) (i32.const 120)))
+    (i32.store (i32.const 104) (call $set (i32.const 0) (i32.const 2) (i32.const 8) (i32.const 8)
+      (i32.const 24) (i32.const 3))))
+  (func (export "on_frame")
+    (i32.store (i32.const 108) (call $set (i32.const 0) (i32.const 2) (i32.const 8) (i32.const 8)
+      (i32.const 24) (i32.const 3)))))"#,
+    )
+    .expect("test module parses");
+    let mut scene = crate::headless_scenario::load_with_mod_module(
+        &retail,
+        MAP,
+        SEED,
+        session_with_computer(),
+        &module,
+    )
+    .expect("scenario loads with the module");
+    let rules = &scene.runtime.resources.rules;
+    assert_eq!(rules.object("E1").expect("E1").strength, 250);
+    let (_, gi, _) = spawn_for_computer(&mut scene, "E1");
+    scene.tick();
+    let memory = scene.sim().ext_modules.slots[0].module.memory();
+    let i32_at = |at: usize| i32::from_le_bytes(memory[at..at + 4].try_into().expect("4 bytes"));
+    assert_eq!((i32_at(100), i32_at(104), i32_at(108)), (0, 0, 3));
+    let old = &memory[128..128 + i32_at(120) as usize];
+    assert_eq!(std::str::from_utf8(old).map(str::trim), Ok("125"));
+    let gi = scene.sim().entities().get(gi).expect("the GI lives");
+    assert_eq!(gi.health.current(), 250);
+}
+
+/// A mod's `[VeraWasm] MapWasm=no` refuses a map's module, and a map's
+/// `VeraMinVersion` above this build refuses the map.
+#[test]
+fn a_mod_can_refuse_map_modules_and_a_map_can_need_a_newer_game() {
+    let module = wat::parse_str("(module)").expect("test module parses");
+    let mut map = format!(
+        "[VeraWasm]\nApi=1.0\nRulesSize={}\n[VeraWasmRulesPack]\n",
+        module.len()
+    );
+    for (key, value) in crate::map::ext_module_pack::pack_lines(&module) {
+        map.push_str(&format!("{key}={value}\n"));
+    }
+    let map = IniFile::from_str(&map);
+    let stock = IniFile::from_str("[General]\n");
+    let refusing = IniFile::from_str("[VeraWasm]\nMapWasm=no\n");
+    let allowed = super::PreparedExtModules::load(&stock, None, &map).expect("stock allows it");
+    assert_eq!(allowed.modules.len(), 1);
+    let refused = super::PreparedExtModules::load(&refusing, None, &map)
+        .err()
+        .expect("the mod refuses map modules");
+    assert!(refused.contains("MapWasm=no"), "{refused}");
+    let newer = IniFile::from_str("[Basic]\nVeraMinVersion=999.0\n");
+    let refused = super::PreparedExtModules::load(&stock, None, &newer)
+        .err()
+        .expect("the map needs a newer game");
+    assert!(refused.contains("999.0"), "{refused}");
+}
+
+/// `get` reads a cell's land type and height, and `find` over cells counts
+/// a 2 by 2 rectangle.
+#[test]
+fn a_module_reads_cells() {
+    let Some(mut scene) = scenario() else { return };
+    let (x, y) = cell_of(
+        &scene,
+        scene
+            .sim()
+            .entities()
+            .iter_sorted()
+            .next()
+            .expect("an object")
+            .0,
+    );
+    let terrain = scene.sim().resolved_terrain().expect("terrain");
+    let cell = terrain.cell(x, y).expect("the object's cell");
+    let expected = (i64::from(cell.land_type), i64::from(cell.level));
+    let rect = (0..2)
+        .flat_map(|dy| (0..2).map(move |dx| (x + dx, y + dy)))
+        .filter(|&(cx, cy)| terrain.cell(cx, cy).is_some())
+        .count() as i32;
+    let reference = super::cell_ref(x, y);
+    let prop = |name| vera20k_wasm_ext::property_id(name).expect("known property");
+    let (land, height) = (prop("LandType"), prop("Height"));
+    // Query at 256: Cells (2), Rect (2), the cell, width 2, height 2.
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "get" (func $get (param i64 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "find" (func $find (param i32 i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    (drop (call $get (i64.const {reference}) (i32.const {land}) (i32.const 0)))
+    (drop (call $get (i64.const {reference}) (i32.const {height}) (i32.const 8)))
+    (i32.store (i32.const 256) (i32.const 2))
+    (i32.store (i32.const 260) (i32.const 2))
+    (i64.store (i32.const 264) (i64.const {reference}))
+    (i32.store (i32.const 272) (i32.const 2))
+    (i32.store (i32.const 276) (i32.const 2))
+    (i32.store (i32.const 16) (call $find (i32.const 256) (i32.const 64) (i32.const 512) (i32.const 8) (i32.const 32)))))"#
+    ))
+    .expect("test module parses");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &module)
+        .expect("module installs");
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let memory = scene.sim().ext_modules.slots[0].module.memory();
+    let i64_at = |at: usize| i64::from_le_bytes(memory[at..at + 8].try_into().expect("8 bytes"));
+    let i32_at = |at: usize| i32::from_le_bytes(memory[at..at + 4].try_into().expect("4 bytes"));
+    assert_eq!((i64_at(0), i64_at(8)), expected);
+    assert_eq!((i32_at(16), i32_at(32)), (0, rect));
+    assert_eq!(i64_at(512), reference);
+}
+
+/// Runs the `sdk/examples/orders-rules` module when
+/// `VERA20K_TEST_ORDERS_WASM` names its build.
+#[test]
+fn a_rust_built_orders_module_runs() {
+    let Some(path) = std::env::var_os("VERA20K_TEST_ORDERS_WASM") else {
+        return;
+    };
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("module file reads");
+    let mut scene = crate::headless_scenario::load_with_mod_module(
+        &retail,
+        MAP,
+        SEED,
+        session_with_computer(),
+        &bytes,
+    )
+    .expect("scenario loads with the module");
+    let strength = scene
+        .runtime
+        .resources
+        .rules
+        .object("E1")
+        .expect("E1")
+        .strength;
+    assert_eq!(strength, 250);
+    for _ in 0..30 {
+        scene.tick();
+    }
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    for line in ["orders-rules: doubled E1 Strength", "orders-rules: ordered"] {
+        assert!(log.iter().any(|l| l == line), "{line}: {log:?}");
+    }
 }
 
 /// A save carries each module's memory, globals and stream; the loaded match
@@ -748,6 +1049,44 @@ fn declared_variables_keep_their_scopes_defaults_and_saves() {
     let reason = status[0].1.as_deref().expect("the mod module stopped");
     assert!(reason.contains("scope"), "{reason}");
     assert_eq!(status[1].1, None);
+}
+
+/// A module with `on_rules` runs `vera_init` once, at its rules layer, and
+/// resolves its declared variable there with the ID the match uses.
+#[test]
+fn a_rules_stage_module_initializes_once_with_its_variables() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let section = vars_section(&[("Wave", 0, 0, 7)]);
+    let module = wat::parse_str(format!(
+        r#"(module
+  {section}
+  (import "vera:sim@1.0" "lookup" (func $lookup (param i32 i32 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "var_get" (func $var_get (param i64 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 400) "Wave")
+  (func (export "vera_init")
+    (i32.store (i32.const 16) (i32.add (i32.load (i32.const 16)) (i32.const 1)))
+    (drop (call $lookup (i32.const 15) (i32.const 400) (i32.const 4) (i32.const 0))))
+  (func (export "on_rules"))
+  (func (export "on_scenario_start")
+    (drop (call $var_get (i64.const 0) (i32.load (i32.const 0)) (i32.const 8)))))"#
+    ))
+    .expect("test module parses");
+    let mut scene = crate::headless_scenario::load_with_mod_module(
+        &retail,
+        MAP,
+        SEED,
+        session_with_computer(),
+        &module,
+    )
+    .expect("scenario loads with the module");
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    assert_eq!(mem_i32(&scene, 0, 0), 1000);
+    assert_eq!(mem_i64(&scene, 0, 8), 7);
+    assert_eq!(mem_i32(&scene, 0, 16), 1, "vera_init ran once");
 }
 
 #[test]

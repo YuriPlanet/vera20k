@@ -1328,6 +1328,36 @@ impl Simulation {
             .expect("component command dispatch must succeed")
     }
 
+    /// Wasm modules' house orders (RFC 0001 section 6g), after the frame's
+    /// player commands: each order is the player commands its house's player
+    /// would send, spread as a player's group order is and executed by the
+    /// same receiver. Returns whether one spawned an object.
+    pub(super) fn run_ext_module_orders(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        if self.ext_modules.is_empty() {
+            return false;
+        }
+        let mut spawned = false;
+        for mut order in crate::sim::ext_modules::take_due_orders(self, rules) {
+            self.adjust_staged_megamission_destinations(&mut order, rules, None);
+            for command in &order {
+                spawned |= self
+                    .apply_one_due_command(
+                        None,
+                        command,
+                        rules,
+                        Some(rules.overlay_registry()),
+                        frame_effects,
+                    )
+                    .1;
+            }
+        }
+        spawned
+    }
+
     /// How Execute_DoList scans this session's DoList.
     pub(super) fn command_dispatch_mode(&self) -> CommandDispatchMode {
         if self.session.execution_topology().command_queue_route()

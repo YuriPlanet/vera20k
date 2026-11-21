@@ -21,10 +21,18 @@
 //! - runtime triggers and `on_events` delivery ([`triggers`]);
 //! - names of weapons, warheads, TeamTypes and action kinds;
 //! - the `action` import ([`actions`]): atomic actions and stock trigger
-//!   actions through their owners, for direct calls and trigger actions.
+//!   actions through their owners, for direct calls and trigger actions;
+//! - cell and global properties and `find` over cells ([`cells`]);
+//! - house orders for computer houses ([`orders`]);
+//! - `rules_get`, and `rules_set` and `on_rules` while the rules are
+//!   processed ([`rules`]).
 //!
 //! Modules come from the selected mod's folder and the map's
-//! `[VeraWasmRulesPack]` ([`Simulation::install_scenario_ext_modules`]).
+//! `[VeraWasmRulesPack]`, under the mod's `[VeraWasm]` policy
+//! ([`PreparedExtModules`]). A module that exports `on_rules` runs
+//! `vera_init` and `on_rules` while the rules are processed; the others run
+//! `vera_init` when they join the simulation
+//! ([`Simulation::install_scenario_ext_modules`]).
 //! Saves carry each module's bytes, memory pages that are not all zero,
 //! mutable globals, random stream and status. A load puts them back
 //! ([`Simulation::restore_ext_modules`]) without running module code. The
@@ -51,21 +59,27 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROPERTY, NAME_TEAM_TYPE, NAME_TECHNO_TYPE,
-    NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS,
-    SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE,
-    property_name,
+    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROPERTY, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
+    NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS,
+    SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION,
+    TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
+mod cells;
 pub(crate) mod modifiers;
+mod orders;
+mod rules;
 pub(crate) mod vars;
 
 pub use actions::{ActionContext, run_action};
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
+pub(crate) use orders::take_due_orders;
+pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
 use vars::{FIRST_DECLARED_VAR, VarStore, VarValues};
 
 use crate::map::entities::EntityCategory;
+use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::{CountryIdx, RuleSet};
 use crate::sim::game_entity::GameEntity;
@@ -116,6 +130,11 @@ struct Slot {
     disabled: Option<String>,
     /// Operations used by the latest `on_frame`.
     last_frame_ops: u64,
+    /// Operations per `on_frame` call: [`FRAME_BUDGET`], or the mod's
+    /// `[VeraWasm]` budget for this source.
+    frame_budget: u64,
+    /// Orders waiting for the next command step ([`orders`]).
+    orders: Vec<orders::PendingOrder>,
 }
 
 impl ModuleSource {
@@ -137,6 +156,14 @@ struct SavedSlot {
     started: bool,
     disabled: Option<String>,
     last_frame_ops: u64,
+    #[serde(default = "default_frame_budget")]
+    frame_budget: u64,
+    #[serde(default)]
+    orders: Vec<orders::PendingOrder>,
+}
+
+const fn default_frame_budget() -> u64 {
+    FRAME_BUDGET
 }
 
 /// The loaded simulation modules, in run order, and the modifiers and
@@ -156,6 +183,12 @@ pub struct ExtModules {
     /// they raise reach no module trigger (no chain triggers yet). False
     /// between frames; not saved.
     firing: bool,
+    /// The merged rules text `rules_get` reads during the match; `None`
+    /// without modules.
+    rules_ini: Option<IniFile>,
+    /// The mod's `[VeraWasm] MapUI=`, kept for client modules (phase 2).
+    /// Not saved: a loaded match reads the default.
+    map_ui: MapUi,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -165,6 +198,8 @@ struct SavedExtModules {
     slots: Vec<SavedSlot>,
     modifiers: ModifierStore,
     vars: VarValues,
+    #[serde(default)]
+    rules_ini: Option<IniFile>,
 }
 
 impl serde::Serialize for ExtModules {
@@ -180,12 +215,15 @@ impl serde::Serialize for ExtModules {
                 started: slot.started,
                 disabled: slot.disabled.clone(),
                 last_frame_ops: slot.last_frame_ops,
+                frame_budget: slot.frame_budget,
+                orders: slot.orders.clone(),
             })
             .collect();
         SavedExtModules {
             slots,
             modifiers: self.modifiers.clone(),
             vars: self.vars.values.clone(),
+            rules_ini: self.rules_ini.clone(),
         }
         .serialize(serializer)
     }
@@ -197,6 +235,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
         let mut modules = Self {
             pending: saved.slots,
             modifiers: saved.modifiers,
+            rules_ini: saved.rules_ini,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -227,6 +266,11 @@ impl ExtModules {
     /// Operations used by each module's latest `on_frame`.
     pub fn last_frame_ops(&self) -> Vec<u64> {
         self.slots.iter().map(|s| s.last_frame_ops).collect()
+    }
+
+    /// How map modules may show interface under the selected mod.
+    pub fn map_ui(&self) -> MapUi {
+        self.map_ui
     }
 
     pub fn take_log(&mut self) -> Vec<String> {
@@ -287,6 +331,7 @@ impl ExtModules {
             slot.rng.hash_state(hasher);
             slot.module.globals().hash(hasher);
             slot.module.memory().hash(hasher);
+            slot.orders.hash(hasher);
         }
         self.modifiers.hash(hasher);
         self.vars.values.hash(hasher);
@@ -297,6 +342,8 @@ impl ExtModules {
 const REF_KIND_SHIFT: u32 = 48;
 const REF_TYPE: i64 = 1;
 const REF_CELL: i64 = 2;
+const REF_WAYPOINT: i64 = 3;
+const REF_GLOBAL: i64 = 4;
 /// References are below 2^53.
 const REF_LIMIT: i64 = 1 << 53;
 
@@ -323,8 +370,10 @@ enum Ref {
         x: u16,
         y: u16,
     },
-    /// A waypoint or the global rules reference: valid, not read yet.
-    Other,
+    /// A waypoint number.
+    Waypoint(i32),
+    /// The global rules reference (kind 4, payload 0).
+    Global,
 }
 
 /// Decodes a reference; `None` for 0. Client kinds (5, 6) and unknown kinds
@@ -348,7 +397,11 @@ fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
             x: (payload >> 16) as u16,
             y: payload as u16,
         },
-        3 | 4 => Ref::Other,
+        REF_WAYPOINT => match i32::try_from(payload) {
+            Ok(number) => Ref::Waypoint(number),
+            Err(_) => return Err(Invalid(format!("{reference:#x} is not a waypoint"))),
+        },
+        REF_GLOBAL if payload == 0 => Ref::Global,
         _ => {
             return Err(Invalid(format!(
                 "{reference:#x} is not a simulation reference"
@@ -377,6 +430,116 @@ struct Host<'a, 'f> {
     frame_effects: &'a mut FrameEffects<'f>,
     rng: &'a mut SimRng,
     source: ModuleSource,
+    /// The calling module's queued orders.
+    orders: &'a mut Vec<orders::PendingOrder>,
+    /// The merged rules text (`rules_get`).
+    rules_ini: Option<&'a IniFile>,
+}
+
+/// `has_kind`, the same in every call (the rules stage included).
+fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
+    match table {
+        vera20k_wasm_ext::triggers::TABLE_EVENT => triggers::RAISED_EVENTS.contains(&id),
+        TABLE_ACTION => actions::has_action(id, rules),
+        TABLE_PROPERTY => property_name(id)
+            .is_some_and(|name| READABLE.contains(&name) || Stat::from_property(name).is_some()),
+        TABLE_NAME_KIND => matches!(
+            id,
+            NAME_TECHNO_TYPE
+                | NAME_WEAPON
+                | NAME_WARHEAD
+                | NAME_SUPER_WEAPON
+                | NAME_COUNTRY
+                | NAME_TEAM_TYPE
+                | NAME_VARIABLE
+                | NAME_PROPERTY
+                | NAME_ACTION_KIND
+        ),
+        TABLE_SCOPE => matches!(
+            id,
+            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS
+        ),
+        _ => false,
+    }
+}
+
+/// `lookup` of the name kinds the rules answer; `None` for other kinds.
+fn rules_name_id(rules: &RuleSet, kind: i32, name: &str) -> Option<Option<i32>> {
+    Some(match kind {
+        NAME_TECHNO_TYPE => rules.type_handle(name).map(|h| h.0 as i32),
+        NAME_COUNTRY => rules.country_index(name).map(|c| i32::from(c.0)),
+        NAME_WEAPON => rules.weapon_index(name).map(|i| i as i32),
+        NAME_WARHEAD => rules.warhead_index(name).map(|i| i as i32),
+        NAME_SUPER_WEAPON => rules
+            .super_weapon_index(name)
+            .and_then(|i| i32::try_from(i).ok()),
+        _ => return None,
+    })
+}
+
+/// `name_of` of the name kinds the rules answer; `None` for other kinds.
+fn rules_id_name(rules: &RuleSet, kind: i32, id: i32) -> Option<Option<&str>> {
+    Some(match kind {
+        NAME_TECHNO_TYPE => techno_type(rules, id).map(|object| object.id.as_str()),
+        NAME_COUNTRY => u16::try_from(id)
+            .ok()
+            .and_then(|id| rules.country_name(CountryIdx(id))),
+        NAME_WEAPON => u32::try_from(id)
+            .ok()
+            .and_then(|id| rules.weapon_at(id))
+            .map(|weapon| weapon.id.as_str()),
+        NAME_WARHEAD => u32::try_from(id)
+            .ok()
+            .and_then(|id| rules.warhead_at(id))
+            .map(|warhead| warhead.id.as_str()),
+        NAME_SUPER_WEAPON => usize::try_from(id)
+            .ok()
+            .and_then(|i| rules.super_weapon_order.get(i))
+            .map(String::as_str),
+        _ => return None,
+    })
+}
+
+/// The `name_of` answer for a name: an ID without one is invalid.
+fn name_answer(name: Option<&str>, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
+    name.map(|name| (name.to_owned(), Status::Ok))
+        .ok_or_else(|| Invalid(format!("name kind {kind} has no ID {id}")))
+}
+
+/// `name_of(Variable, id)`. The Red Alert 2 variables have numbers, not
+/// names.
+fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> {
+    if id < FIRST_DECLARED_VAR {
+        return Ok((String::new(), Status::NotFound));
+    }
+    name_answer(vars.name(id), NAME_VARIABLE, id)
+}
+
+/// TechnoType `id`: an index into the rules' type registry.
+fn techno_type(rules: &RuleSet, id: i32) -> Option<&crate::rules::object_type::ObjectType> {
+    let id = usize::try_from(id).ok()?;
+    rules.all_objects().nth(id)
+}
+
+/// A type's property (appendix 7.7). A wildcard or unknown ID is invalid.
+fn type_property(
+    rules: &RuleSet,
+    kind: i32,
+    id: u32,
+    name: &str,
+) -> Result<(i64, Status), Invalid> {
+    if kind != NAME_TECHNO_TYPE {
+        return Ok((0, Status::Unsupported));
+    }
+    let object = i32::try_from(id)
+        .ok()
+        .and_then(|id| techno_type(rules, id))
+        .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
+    Ok(match name {
+        "Strength" => (i64::from(object.strength), Status::Ok),
+        "Cost" => (i64::from(object.cost), Status::Ok),
+        _ => (0, Status::Unsupported),
+    })
 }
 
 impl SimHost for Host<'_, '_> {
@@ -394,70 +557,36 @@ impl SimHost for Host<'_, '_> {
     }
 
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
-        match table {
-            vera20k_wasm_ext::triggers::TABLE_EVENT => triggers::RAISED_EVENTS.contains(&id),
-            TABLE_ACTION => actions::has_action(id, self.rules),
-            TABLE_PROPERTY => property_name(id).is_some_and(|name| {
-                READABLE.contains(&name) || Stat::from_property(name).is_some()
-            }),
-            TABLE_NAME_KIND => matches!(
-                id,
-                NAME_TECHNO_TYPE
-                    | NAME_WEAPON
-                    | NAME_WARHEAD
-                    | NAME_COUNTRY
-                    | NAME_TEAM_TYPE
-                    | NAME_VARIABLE
-                    | NAME_PROPERTY
-                    | NAME_ACTION_KIND
-            ),
-            TABLE_SCOPE => matches!(id, SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_MODIFIERS),
-            _ => false,
-        }
+        has_kind(self.rules, table, id)
     }
 
     fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
         let id = match kind {
-            NAME_TECHNO_TYPE => self.rules.type_handle(name).map(|h| h.0 as i32),
-            NAME_COUNTRY => self.rules.country_index(name).map(|c| i32::from(c.0)),
-            NAME_WEAPON => self.rules.weapon_index(name).map(|i| i as i32),
-            NAME_WARHEAD => self.rules.warhead_index(name).map(|i| i as i32),
             NAME_TEAM_TYPE => self
                 .sim
                 .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
                 .map(|index| index as i32),
             NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
-            _ => return Ok((-1, Status::Unsupported)),
+            _ => match rules_name_id(self.rules, kind, name) {
+                Some(id) => id,
+                None => return Ok((-1, Status::Unsupported)),
+            },
         };
         Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
     }
 
     fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
         let name = match kind {
-            NAME_TECHNO_TYPE => self.techno_type(id).map(|object| object.id.as_str()),
-            NAME_COUNTRY => u16::try_from(id)
-                .ok()
-                .and_then(|id| self.rules.country_name(CountryIdx(id))),
-            // The Red Alert 2 variables have numbers, not names.
-            NAME_VARIABLE if id < FIRST_DECLARED_VAR => {
-                return Ok((String::new(), Status::NotFound));
-            }
-            NAME_VARIABLE => self.sim.ext_modules.vars.name(id),
-            NAME_WEAPON => u32::try_from(id)
-                .ok()
-                .and_then(|id| self.rules.weapon_at(id))
-                .map(|weapon| weapon.id.as_str()),
-            NAME_WARHEAD => u32::try_from(id)
-                .ok()
-                .and_then(|id| self.rules.warhead_at(id))
-                .map(|warhead| warhead.id.as_str()),
+            NAME_VARIABLE => return variable_name(&self.sim.ext_modules.vars, id),
             NAME_TEAM_TYPE => usize::try_from(id)
                 .ok()
                 .and_then(|id| self.sim.stock_team_type_name(id)),
-            _ => return Ok((String::new(), Status::Unsupported)),
+            _ => match rules_id_name(self.rules, kind, id) {
+                Some(name) => name,
+                None => return Ok((String::new(), Status::Unsupported)),
+            },
         };
-        name.map(|name| (name.to_owned(), Status::Ok))
-            .ok_or_else(|| Invalid(format!("name kind {kind} has no ID {id}")))
+        name_answer(name, kind, id)
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
@@ -572,6 +701,7 @@ impl SimHost for Host<'_, '_> {
         match query.scope {
             SCOPE_OBJECTS => self.find_objects(query, cap),
             SCOPE_HOUSES => self.find_houses(query, cap),
+            SCOPE_CELLS => self.find_cells(query, cap),
             SCOPE_MODIFIERS => self.find_modifiers(query, cap),
             _ => Ok((FindPage::default(), Status::Unsupported)),
         }
@@ -620,6 +750,23 @@ impl SimHost for Host<'_, '_> {
     fn trigger_unbind(&mut self, trigger: i64, reference: i64) -> Result<Status, Invalid> {
         self.bind_trigger(trigger, reference, false)
     }
+
+    fn rules_get(&mut self, section: &str, key: &str) -> Result<(Option<String>, Status), Invalid> {
+        Ok(match self.rules_ini {
+            Some(ini) => (rules::raw_rules_value(ini, section, key), Status::Ok),
+            None => (None, Status::Unsupported),
+        })
+    }
+
+    /// During a match only allowlisted keys are writable (RFC 8, open
+    /// question 11); the allowlist is empty.
+    fn rules_set(&mut self, _section: &str, _key: &str, _value: &str) -> Result<Status, Invalid> {
+        Ok(Status::Refused)
+    }
+
+    fn order(&mut self, house: i64, order: &Order) -> Result<Status, Invalid> {
+        self.queue_order(house, order)
+    }
 }
 
 /// The properties [`Host::get`] reads (others answer `Unsupported`).
@@ -642,6 +789,16 @@ const READABLE: &[&str] = &[
     "IsDefeated",
     "IsHuman",
     "Rank",
+    "Cost",
+    "LandType",
+    "Height",
+    "Overlay",
+    "Ore",
+    "Waypoint",
+    "CellTag",
+    "Frame",
+    "PlayerCount",
+    "GameSpeed",
 ];
 
 /// Appendix 7.2's modifiable properties: `PROPERTIES` from the first to the
@@ -680,8 +837,13 @@ impl Host<'_, '_> {
                 },
             },
             Ref::House(index) => self.house_property(index, name),
-            Ref::Type { kind, id } => self.type_property(kind, id, name)?,
-            Ref::Cell { .. } | Ref::Other => (0, Status::Unsupported),
+            Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
+            Ref::Cell { x, y } => self.cell_property(x, y, name),
+            Ref::Waypoint(number) => match self.waypoint_cell(number) {
+                Some((x, y)) => self.cell_property(x, y, name),
+                None => (0, Status::NotFound),
+            },
+            Ref::Global => self.global_property(name),
         })
     }
 
@@ -703,8 +865,7 @@ impl Host<'_, '_> {
 
     /// TechnoType `id`: an index into the rules' type registry.
     fn techno_type(&self, id: i32) -> Option<&crate::rules::object_type::ObjectType> {
-        let id = usize::try_from(id).ok()?;
-        self.rules.all_objects().nth(id)
+        techno_type(self.rules, id)
     }
 
     /// An object's property (appendix 7.1).
@@ -776,21 +937,6 @@ impl Host<'_, '_> {
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
-    }
-
-    /// A type's property (appendix 7.7). A wildcard or unknown ID is invalid.
-    fn type_property(&self, kind: i32, id: u32, name: &str) -> Result<(i64, Status), Invalid> {
-        if kind != NAME_TECHNO_TYPE {
-            return Ok((0, Status::Unsupported));
-        }
-        let object = i32::try_from(id)
-            .ok()
-            .and_then(|id| self.techno_type(id))
-            .ok_or_else(|| Invalid(format!("no TechnoType {id}")))?;
-        Ok(match name {
-            "Strength" => (i64::from(object.strength), Status::Ok),
-            _ => (0, Status::Unsupported),
-        })
     }
 
     /// Whether `candidate` passes every clause; `None` when a clause needs
@@ -946,8 +1092,13 @@ impl Host<'_, '_> {
         if !entity.lifecycle.cell_marked() || entity.lifecycle.in_limbo() {
             return Ok(Status::Refused);
         }
-        self.sim
-            .change_owner_with_rules(id, house, self.rules, self.overlay_registry, self.frame_effects);
+        self.sim.change_owner_with_rules(
+            id,
+            house,
+            self.rules,
+            self.overlay_registry,
+            self.frame_effects,
+        );
         Ok(Status::Ok)
     }
 
@@ -1075,6 +1226,18 @@ impl Simulation {
         bytes: &[u8],
     ) -> Result<(), String> {
         let module = SimModule::load(bytes, source.limits()).map_err(|e| e.to_string())?;
+        let position = self.insert_ext_slot(source, module, FRAME_BUDGET);
+        self.init_ext_slot(rules, position)
+    }
+
+    /// Puts a loaded module in its run-order slot and takes its variable
+    /// declarations; returns the slot index.
+    fn insert_ext_slot(
+        &mut self,
+        source: ModuleSource,
+        module: SimModule,
+        frame_budget: u64,
+    ) -> usize {
         // The module's own stream (RFC section 4): from the scenario seed and
         // the slot, so module draws never move a native stream.
         let rng = SimRng::new(self.session.seed() ^ (0x5645_5241_0000_0000 | source as u64));
@@ -1091,9 +1254,16 @@ impl Simulation {
                 started: false,
                 disabled: None,
                 last_frame_ops: 0,
+                frame_budget,
+                orders: Vec::new(),
             },
         );
         self.ext_modules.declare_vars();
+        position
+    }
+
+    /// Runs a new slot's `vera_init`; a fault removes the slot.
+    fn init_ext_slot(&mut self, rules: &RuleSet, position: usize) -> Result<(), String> {
         let result = self.call_ext_module(
             rules,
             Some(rules.overlay_registry()),
@@ -1112,24 +1282,52 @@ impl Simulation {
         }
     }
 
-    /// Loads a scenario's modules (RFC section 2): the selected mod's
-    /// `rules.wasm`, read by the caller, then the one the map embeds. An
-    /// error names the module; the match must not start.
+    /// Takes over a scenario's modules (RFC section 2), the selected mod's
+    /// `rules.wasm` then the one the map embeds ([`PreparedExtModules`]).
+    /// Those that ran `vera_init` and `on_rules` while `rules` were
+    /// processed keep their state; the others run `vera_init` now, once
+    /// every module's variables are declared. `rules_ini` is the merged
+    /// rules text `rules_get` reads. An error names the module; the match
+    /// must not start.
     pub fn install_scenario_ext_modules(
         &mut self,
         rules: &RuleSet,
-        mod_module: Option<&[u8]>,
-        map: &crate::rules::ini_parser::IniFile,
+        prepared: PreparedExtModules,
+        rules_ini: IniFile,
     ) -> Result<(), String> {
-        if let Some(bytes) = mod_module {
-            self.install_ext_module(rules, ModuleSource::Mod, bytes)
-                .map_err(|e| format!("the mod's rules.wasm: {e}"))?;
+        if let Some(source) = prepared.missed_rules_stage() {
+            return Err(format!(
+                "the {source:?} module exports on_rules, which this way of loading cannot run"
+            ));
         }
-        let embedded = crate::map::ext_module_pack::rules_module(map)
-            .map_err(|e| format!("the map's rules module: {e}"))?;
-        if let Some(bytes) = embedded {
-            self.install_ext_module(rules, ModuleSource::Map, &bytes)
-                .map_err(|e| format!("the map's rules module: {e}"))?;
+        let PreparedExtModules {
+            policy,
+            modules,
+            log,
+        } = prepared;
+        self.ext_modules.log.extend(log);
+        self.ext_modules.map_ui = policy.map_ui;
+        if modules.is_empty() {
+            return Ok(());
+        }
+        self.ext_modules.rules_ini = Some(rules_ini);
+        let mut uninitialized = Vec::new();
+        for prepared in modules {
+            let source = prepared.source;
+            self.insert_ext_slot(source, prepared.module, policy.budget_of(source));
+            if !prepared.initialized {
+                uninitialized.push(source);
+            }
+        }
+        for source in uninitialized {
+            let position = self
+                .ext_modules
+                .slots
+                .iter()
+                .position(|slot| slot.source == source)
+                .ok_or_else(|| format!("the {source:?} module was not installed"))?;
+            self.init_ext_slot(rules, position)
+                .map_err(|e| format!("the {source:?} module: {e}"))?;
         }
         Ok(())
     }
@@ -1147,6 +1345,8 @@ impl Simulation {
                 started: saved.started,
                 disabled: saved.disabled,
                 last_frame_ops: saved.last_frame_ops,
+                frame_budget: saved.frame_budget,
+                orders: saved.orders,
             });
         }
         self.ext_modules.declare_vars();
@@ -1208,12 +1408,21 @@ impl Simulation {
                     continue;
                 }
             }
-            if let Err(fault) = self.deliver_ext_module_events(rules, overlay_registry, frame_effects, index) {
+            if let Err(fault) =
+                self.deliver_ext_module_events(rules, overlay_registry, frame_effects, index)
+            {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
-            match self.call_ext_module(rules, overlay_registry, frame_effects, index, Export::Frame, FRAME_BUDGET)
-            {
+            let budget = self.ext_modules.slots[index].frame_budget;
+            match self.call_ext_module(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+                Export::Frame,
+                budget,
+            ) {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
             }
@@ -1230,9 +1439,13 @@ impl Simulation {
         export: Export,
         budget: u64,
     ) -> Result<u64, Fault> {
-        self.with_ext_module(rules, overlay_registry, frame_effects, index, |module, host| {
-            module.call(export, budget, host)
-        })
+        self.with_ext_module(
+            rules,
+            overlay_registry,
+            frame_effects,
+            index,
+            |module, host| module.call(export, budget, host),
+        )
     }
 
     /// Runs `f` on module `index` and its host. The slot list is set aside
@@ -1248,6 +1461,7 @@ impl Simulation {
         f: impl FnOnce(&mut SimModule, &mut Host<'_, '_>) -> R,
     ) -> R {
         let mut slots = std::mem::take(&mut self.ext_modules.slots);
+        let rules_ini = self.ext_modules.rules_ini.take();
         let slot = &mut slots[index];
         let mut host = Host {
             sim: self,
@@ -1256,9 +1470,12 @@ impl Simulation {
             frame_effects,
             rng: &mut slot.rng,
             source: slot.source,
+            orders: &mut slot.orders,
+            rules_ini: rules_ini.as_ref(),
         };
         let result = f(&mut slot.module, &mut host);
         self.ext_modules.slots = slots;
+        self.ext_modules.rules_ini = rules_ini;
         result
     }
 
@@ -1273,7 +1490,9 @@ impl Simulation {
         log::warn!(target: "ext_module", "{reason}");
         self.ext_modules.log.push(reason.clone());
         slot.disabled = Some(reason.clone());
-        // Its triggers and queued records go with it.
+        // Its queued orders, triggers and queued records go with it (RFC
+        // section 3).
+        slot.orders.clear();
         let source = slot.source;
         self.trigger_runtime
             .module_triggers_mut()

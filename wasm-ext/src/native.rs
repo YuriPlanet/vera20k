@@ -20,7 +20,7 @@ use crate::sections::{Delivery, Sections};
 use crate::triggers::{NAME_MODULE_ACTION, TriggerDef};
 use crate::{
     ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits,
-    LoadError, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query,
+    LoadError, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, PAGE_BYTES, Query,
     SCAN_COST, SIM_IMPORT_MODULE, SimHost, Status, VarDecl, action_kind_id, action_kind_name,
     property_id, property_name,
 };
@@ -93,7 +93,7 @@ pub struct SimModule {
     bytes: Vec<u8>,
     store: Store<Ctx>,
     memory: Option<Memory>,
-    exports: [Option<TypedFunc<(), ()>>; 3],
+    exports: [Option<TypedFunc<(), ()>>; 4],
     on_events: Option<TypedFunc<(i32, i32), ()>>,
     /// `vera.delivery`, checked against memory at load.
     delivery: Option<Delivery>,
@@ -139,7 +139,7 @@ impl SimModule {
             .instantiate(&mut store, &module)
             .map_err(|e| LoadError::Invalid(format!("{e:#}")))?;
         let memory = instance.get_memory(&mut store, "memory");
-        let mut exports = [None, None, None];
+        let mut exports = [None, None, None, None];
         for (slot, export) in exports.iter_mut().zip(Export::ALL) {
             *slot = typed_export(&instance, &mut store, export)?;
         }
@@ -931,7 +931,94 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
     ));
+    wire(linker.func_wrap(
+        m,
+        "rules_get",
+        |mut caller: Caller<'_, Ctx>,
+         sec: i32,
+         sec_len: i32,
+         key: i32,
+         key_len: i32,
+         out: i32,
+         cap: i32,
+         len_out: i32|
+         -> wasmtime::Result<i32> {
+            let checked = (|| {
+                let cap = count_arg(cap, "capacity")?;
+                let section = read_str(&mut caller, sec, sec_len)?;
+                let key = read_str(&mut caller, key, key_len)?;
+                Ok((section, key, cap))
+            })();
+            let (section, key, cap) = checked.map_err(|e| fail(&mut caller, e))?;
+            let cost = (section.len() + key.len()) as u64;
+            let result = enter(&mut caller, cost)?.rules_get(&section, &key);
+            let (value, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let (value, status) = match (value, status) {
+                (Some(value), Status::Ok) => (value, Status::Ok),
+                (None, Status::Ok) => (String::new(), Status::NotFound),
+                (_, status) => (String::new(), status),
+            };
+            charge(&mut caller, value.len() as u64)?;
+            // A value longer than `cap` reports its length and writes nothing;
+            // a missing key reports -1.
+            if value.len() <= cap {
+                write_bytes(&mut caller, out, value.as_bytes())
+                    .map_err(|e| fail(&mut caller, e))?;
+            }
+            let len = if status == Status::NotFound {
+                -1
+            } else {
+                value.len() as i32
+            };
+            write_bytes(&mut caller, len_out, &len.to_le_bytes())
+                .map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "rules_set",
+        |mut caller: Caller<'_, Ctx>,
+         sec: i32,
+         sec_len: i32,
+         key: i32,
+         key_len: i32,
+         val: i32,
+         val_len: i32|
+         -> wasmtime::Result<i32> {
+            let checked = (|| {
+                Ok((
+                    read_str(&mut caller, sec, sec_len)?,
+                    read_str(&mut caller, key, key_len)?,
+                    read_str(&mut caller, val, val_len)?,
+                ))
+            })();
+            let (section, key, value) = checked.map_err(|e| fail(&mut caller, e))?;
+            let cost = (section.len() + key.len() + value.len()) as u64;
+            let result = enter(&mut caller, cost)?.rules_set(&section, &key, &value);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "order",
+        |mut caller: Caller<'_, Ctx>, house: i64, ptr: i32, len: i32| -> wasmtime::Result<i32> {
+            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
+            let order = Order::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
+            // Charged per order and per unit entry (RFC 6g).
+            let cost = (order.units.len() as u64).saturating_mul(ENTRY_COST);
+            let result = enter(&mut caller, cost)?.order(house, &order);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
     linker
+}
+
+/// A section, key or value name: UTF-8 text in module memory. Text that is
+/// not UTF-8 is an invalid argument.
+fn read_str(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> Result<String, Invalid> {
+    String::from_utf8(read_bytes(caller, ptr, len)?)
+        .map_err(|_| Invalid(format!("text at {ptr}+{len} is not UTF-8")))
 }
 
 /// Triggers are unavailable in `vera_init` (appendix 1.1, "all").

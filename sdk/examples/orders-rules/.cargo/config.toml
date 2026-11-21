@@ -1,0 +1,11 @@
+[build]
+target = "wasm32-unknown-unknown"
+
+# The engine accepts the Wasm MVP plus mutable globals, sign extension,
+# non-trapping float-to-int, bulk memory and multi-value (RFC 0001 section 3).
+# Recent rustc enables reference types by default, so start from the MVP.
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "target-cpu=mvp",
+    "-C", "target-feature=+mutable-globals,+sign-ext,+nontrapping-fptoint,+bulk-memory,+multivalue",
+]

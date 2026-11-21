@@ -93,8 +93,6 @@ use crate::sim::intern::InternedId;
 use crate::sim::trigger_runtime::{StockActionCall, StockReference, StockReferenceKind};
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
-use super::{REF_KIND_SHIFT, REF_LIMIT};
-
 /// Atomic action IDs (appendix 5.3 order from 1000; open question 5).
 pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
 pub const REMOVE: i32 = 1004;
@@ -122,8 +120,6 @@ const ATOMIC: [i32; 11] = [
     LOG,
 ];
 
-/// Reference kind 3: a waypoint number.
-const REF_WAYPOINT: i64 = 3;
 /// `Mission` "none" for `CreateObject`: keep the constructor's mission.
 const MISSION_DEFAULT: i32 = 255;
 
@@ -210,25 +206,13 @@ enum Target {
 }
 
 fn decode(reference: i64) -> Act<Target> {
-    if reference == 0 {
-        return Ok(Target::None);
-    }
-    if reference >> REF_KIND_SHIFT == REF_WAYPOINT {
-        let number = reference & ((1 << REF_KIND_SHIFT) - 1);
-        return match i32::try_from(number) {
-            Ok(number) => Ok(Target::Waypoint(number)),
-            Err(_) => invalid(format!("{reference:#x} is not a waypoint")),
-        };
-    }
-    if !(0..REF_LIMIT).contains(&reference) {
-        return invalid(format!("{reference:#x} is not a reference"));
-    }
     Ok(match super::decode_ref(reference)? {
         None => Target::None,
         Some(super::Ref::Object(id)) => Target::Object(id),
         Some(super::Ref::House(index)) => Target::House(index),
         Some(super::Ref::Cell { x, y }) => Target::Cell(x, y),
-        Some(super::Ref::Type { .. } | super::Ref::Other) => Target::Other,
+        Some(super::Ref::Waypoint(number)) => Target::Waypoint(number),
+        Some(super::Ref::Type { .. } | super::Ref::Global) => Target::Other,
     })
 }
 
