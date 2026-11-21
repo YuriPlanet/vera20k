@@ -760,6 +760,8 @@ fn apply_round_options(
     options: &CooperativeRoundOptions,
     difficulty: i32,
 ) -> anyhow::Result<bool> {
+    // Validated on a copy, committed on success: a refused change leaves the
+    // session as it was.
     let mut candidate = launch.clone();
     let mut changed = options.difficulty != difficulty;
     for (row, choices) in &options.humans {
@@ -823,7 +825,8 @@ mod tests {
             .unwrap();
         session.set_network_start_seed(SEED).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED, None).unwrap() else {
+        let LoadingStartup::Network(startup) = session.freeze_network_start(SEED, None).unwrap()
+        else {
             panic!("network start");
         };
         (session, startup)
