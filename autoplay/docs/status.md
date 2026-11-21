@@ -706,6 +706,31 @@ push 这一帧发出 0 个命令。`obs.is_deployed` 覆盖步兵的 Doing 27..3
 等于把已经形成的防御拆掉去换机动性，19 和 31337 的敌方存量因此涨到 50 和 77。
 **deployed 不能碰**这条要记住。
 
+### 两个可达性答案不一样：目标按「有人能到」选，命令按「你能到」收（本轮定位，31337 退步的嫌疑）
+
+`AUTOPLAY_TRACE_REFUSE=1 AUTOPLAY_TRACE_PUSH=1`，Death.mmx seed 31337 手动跑到 34000：
+
+```
+refuse probe: unit=9163 target=9105 hostile=true engage=true hurt=true in_bounds=(181, 133)
+push trace: tick=33999 fighters=28 moving=1 near=0 spread=8385 fist=(118,97) target=9105 at (181, 133) enemies=35
+census: ... fighters=45 idle=17 unclaimed=17 push=push target=9105 ... pts=5793/1800 enemy_structures=38
+```
+
+拒绝的三个条件全为真（hostile/engage/hurt），命令还是被拒了：因为 `orders::issue` 还有一道
+`src/sim/strategy/assist/orders/common.rs:127` 的 `reachable(rules, obs, unit, cell)`——
+`Goal::Attack` 不带格子（`goal_cell` 是 None，跳过这道检查），`Goal::AttackMove` 带格子（必须过）。
+而 `reachable_target`（src/sim/strategy/assist/advance.rs:1582）问的是**「有没有任何一个 fighter 能到」**，
+所以只要有一个单位在目标附近，这个目标就算「可达」，接着 44 个走不过去的单位逐个被 `issue` 拒掉。
+
+这解释了 31337 的形态：部队被地图切成两半（离散度 91 格），一个单位在敌人家里，其余在家门口待着，
+目标始终有效、命令始终被拒。也解释了 `e42c08a8d`（非敌对目标改发 AttackMove）为什么只在 31337 上大幅变差：
+它把一批本来走 `Goal::Attack`（不过可达性检查、交给引擎 hunt）的单位换成了带格子的 AttackMove，
+于是那些走不过去的单位从「引擎自己想办法」变成「被 issue 直接拒掉」。
+
+试过并否决的修法：把 `reachable_target` 返回 None 的分支改成「去搜索」（走到未探索的地方），
+六局与基线逐字节一致（target/autoplay-results/unreachable.jsonl）——因为只要有一个单位能到，None 就永远不触发。
+真正的修法要动的是**「可达」按谁算**：按拳头质心算，或者按「能到的那批人」算，而不是按任意一个单位算。
+
 ## 5. 结构（改代码前必读）
 
 ```
