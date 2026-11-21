@@ -267,10 +267,11 @@ impl MissionLeafState {
         }
     }
 
-    /// Write only values accepted by the verified 42-entry Doing table.
+    /// Write only values accepted by the verified 42-entry Doing table, plus
+    /// Firestorm's Struggle that VERA appends as action 42.
     pub fn set_infantry_doing_verified(&mut self, doing: i32) -> Result<(), InvalidInfantryDoing> {
         let leaf = self.expect_infantry_mut();
-        if doing != -1 && !(0..=41).contains(&doing) {
+        if doing != -1 && !(0..=crate::rules::infantry_sequence::DO_STRUGGLE).contains(&doing) {
             return Err(InvalidInfantryDoing(doing));
         }
         leaf.doing = doing;
@@ -579,7 +580,7 @@ mod tests {
 
     #[test]
     fn mission_leaf_invalid_doing_does_not_mutate() {
-        for invalid in [i32::MIN, -2, 42, i32::MAX] {
+        for invalid in [i32::MIN, -2, 43, i32::MAX] {
             let mut leaf = MissionLeafState::infantry_raw_for_test(7, 5);
             let before = leaf;
             assert_eq!(

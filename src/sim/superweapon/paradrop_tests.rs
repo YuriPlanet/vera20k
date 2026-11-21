@@ -1457,3 +1457,13 @@ fn ares_country_types_without_counts_send_nothing() {
         "no side fallback after a false resolver"
     );
 }
+
+/// A passenger count past VERA's own bound boards only the bound: the loop
+/// that constructs them stops there instead of running a mod's huge count.
+#[test]
+fn a_huge_passenger_count_boards_only_the_bound() {
+    let limit = super::PARADROP_PASSENGER_LIMIT;
+    let (rules, mut sim, _) = paradrop_world(retail_list_rules(1024));
+    let plane = plane_at(&mut sim, &rules, TARGET, limit + 1);
+    assert_eq!(cargo(&sim, plane).len(), limit as usize);
+}

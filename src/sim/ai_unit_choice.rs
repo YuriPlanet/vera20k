@@ -476,10 +476,7 @@ fn is_recruitable(
     entity.owner() == owner
         && entity.is_active()
         && !entity.lifecycle.in_limbo()
-        && sim
-            .team_script_vm
-            .team_for_member(entity.stable_id())
-            .is_none()
+        && sim.team_script_vm.team_of(entity.stable_id()).is_none()
         && crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
         && entity.seldom.base_defense_response.recruitable_a()
 }

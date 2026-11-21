@@ -104,6 +104,10 @@ fn prepare_saved(
 
 #[test]
 fn wallet_survives_prepared_load_and_active_cancellation() {
+    crate::test_fixture::on_game_stack(wallet_survives_prepared_load_and_active_cancellation_body);
+}
+
+fn wallet_survives_prepared_load_and_active_cancellation_body() {
     let rules = factory_rules();
     let mut saved = load_fixture_simulation(true);
     saved.intern_rule_type_ids(&rules);
@@ -239,7 +243,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &runtime.resources.rules,
         "Americans",
         crate::sim::production::ProductionCancellation::Type {
-            type_id: "PARENT",
+            type_id: "PARENT".into(),
             naval: false
         },
         false,
@@ -684,6 +688,15 @@ fn factory_restore_rejects_inconsistent_roots() {
                 source_registry: "FactoryRegistry",
                 ..
             })) if label == "missing-entity" => {}
+            // The snapshot's saved-id walk refuses an id past the
+            // save's name table before the factory checks run.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownSavedId(_)))
+                if matches!(label, "idle-owner-index" | "tail-type-index") => {}
+            // The held object's owner is checked by the entity walk.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownInternedId {
+                field: "owner",
+                ..
+            })) if label == "unknown-held-owner" => {}
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }

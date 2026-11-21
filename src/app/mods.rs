@@ -132,9 +132,9 @@ pub(crate) struct Mods {
     /// The folder config.toml asks for, as written there, whatever this run
     /// plays: a switch, a missing folder or a start that died can differ.
     kept: Option<String>,
-    /// The Mods page while it is open (`App::open_mods_page`): what `Mods`
-    /// held when it opened, and the row picked.
-    pub(crate) page: Option<crate::ui::shell::list::ListBoxState<Listed>>,
+    /// The Mods page's rows while it is open (`App::open_mods_page`): what
+    /// `Mods` held when it opened. Its list holds the row picked.
+    pub(crate) page: Option<Vec<Listed>>,
     /// The page's Check Files, from its button to its last box.
     pub(crate) files_check: Option<crate::app::mod_files::PageCheck>,
 }
@@ -151,8 +151,9 @@ impl Mods {
         &mut self,
         base: &IniRootConfig,
         setting: AresSetting,
-    ) -> (ResourceConfig, AresSetting) {
-        match resources_for(self.active.as_ref(), base, setting) {
+        kratos: crate::util::kratos_launch::KratosSetting,
+    ) -> (ResourceConfig, AresSetting, crate::util::kratos_launch::KratosSetting) {
+        match resources_for(self.active.as_ref(), base, setting, kratos) {
             Ok(selected) => selected,
             Err(error) => {
                 self.notice = Some(format!("{error}\n\nThis start uses the original game."));
@@ -160,7 +161,7 @@ impl Mods {
                 if let Some(record) = self.record.take() {
                     record.clear();
                 }
-                (ResourceConfig::from_ini(base.clone()), setting)
+                (ResourceConfig::from_ini(base.clone()), setting, kratos)
             }
         }
     }
@@ -208,32 +209,34 @@ impl Mods {
         }
     }
 
-    /// The Mods page's selected row, when Use This Mod has something to do:
-    /// nothing this version cannot play, and not the row that this run plays
-    /// and the next start would pick anyway. The row in use still counts
-    /// while config.toml asks for another, so No mod takes back a choice
-    /// that could not be loaded.
-    pub(crate) fn switch_to(&self) -> Option<&Listed> {
-        let page = self.page.as_ref()?;
-        let row = page.rows.get(page.selected?)?;
+    /// The Mods page's `selected` row, when Use This Mod has something to
+    /// do: nothing this version cannot play, and not the row that this run
+    /// plays and the next start would pick anyway. The row in use still
+    /// counts while config.toml asks for another, so No mod takes back a
+    /// choice that could not be loaded.
+    pub(crate) fn switch_to(&self, selected: Option<usize>) -> Option<&Listed> {
+        let row = self.page.as_ref()?.get(selected?)?;
         let settled = self.in_use(row) && self.kept_is(row);
         (row.needs.is_none() && !settled).then_some(row)
     }
 
-    /// Whether the Mods page's selected row is a mod, which has files for
+    /// Whether the Mods page's `selected` row is a mod, which has files for
     /// Check Files to read; the original game's row has none.
-    pub(crate) fn picked_is_mod(&self) -> bool {
+    pub(crate) fn picked_is_mod(&self, selected: Option<usize>) -> bool {
         self.page
             .as_ref()
-            .and_then(|page| page.rows.get(page.selected?))
+            .and_then(|page| page.get(selected?))
             .is_some_and(|row| row.folder.is_some())
     }
 
     /// That mod: the name its row shows, and its folder while it is still
     /// in `Mods`.
-    pub(crate) fn picked_mod(&self, paths: &PathsConfig) -> Option<(String, Option<PathBuf>)> {
-        let page = self.page.as_ref()?;
-        let row = page.rows.get(page.selected?)?;
+    pub(crate) fn picked_mod(
+        &self,
+        paths: &PathsConfig,
+        selected: Option<usize>,
+    ) -> Option<(String, Option<PathBuf>)> {
+        let row = self.page.as_ref()?.get(selected?)?;
         let dir = find_folder(&paths.mods_dir(), row.folder.as_deref()?).map(|(_, dir)| dir);
         Some((row.title().into_owned(), dir))
     }
@@ -353,7 +356,15 @@ pub(crate) fn resources_for(
     active: Option<&ActiveMod>,
     base: &IniRootConfig,
     setting: AresSetting,
-) -> Result<(ResourceConfig, AresSetting), String> {
+    kratos: crate::util::kratos_launch::KratosSetting,
+) -> Result<
+    (
+        ResourceConfig,
+        AresSetting,
+        crate::util::kratos_launch::KratosSetting,
+    ),
+    String,
+> {
     let resources = match active {
         Some(active) => {
             crate::assets::asset_manager::mod_resources(&active.dir, &active.definition, base)
@@ -367,7 +378,13 @@ pub(crate) fn resources_for(
             Some(active) => format!("{}: {error}", active.title),
             None => error,
         })?;
-    Ok((resources, setting))
+    let kratos = resources
+        .effective_kratos(kratos)
+        .map_err(|error| match active {
+            Some(active) => format!("{}: {error}", active.title),
+            None => error,
+        })?;
+    Ok((resources, setting, kratos))
 }
 
 /// One line of the Mods screen: a folder in `Mods`, or the original game.
@@ -682,17 +699,21 @@ fn on_leaving(error_card: bool) -> Verdict {
 /// Loading is over ([`after_loading`]); `external_launch` is `-SPAWN` or a
 /// replay. A mod that did not load stays on record, and the player is told
 /// what to do.
-pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
-    let mods = &state.frontend.mods;
+pub(crate) fn finish_start(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    process_assets: &crate::app::process_assets::ProcessAssets,
+    external_launch: bool,
+) {
+    let mods = &frontend.mods;
     let Some(active) = mods.active.as_ref().filter(|_| mods.record.is_some()) else {
         return;
     };
-    let error_card = state.frontend.main_menu_shell_error.is_some();
+    let error_card = frontend.main_menu_shell_error.is_some();
     let straight_to_match =
-        external_launch || state.frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
-    let rules_loaded = state.process_assets.has_native_rules();
+        external_launch || frontend.screen != crate::ui::game_screen::GameScreen::MainMenu;
+    let rules_loaded = process_assets.has_native_rules();
     match after_loading(error_card, rules_loaded, straight_to_match) {
-        Verdict::Passed => started(state),
+        Verdict::Passed => started(frontend),
         Verdict::Open => {}
         Verdict::Failed => {
             log::warn!(
@@ -701,25 +722,25 @@ pub(crate) fn finish_start(state: &mut AppState, external_launch: bool) {
             );
             // The error card says it for itself (`App::render_shell_error`).
             if !error_card {
-                state.frontend.mods.notice = Some(start_failed_text(&active.title));
+                frontend.mods.notice = Some(start_failed_text(&active.title));
             }
             // Let go of the file and leave its name in it.
-            state.frontend.mods.record = None;
+            frontend.mods.record = None;
         }
     }
 }
 
 /// The start with a mod has passed: its record goes.
-fn started(state: &mut AppState) {
-    if let Some(record) = state.frontend.mods.record.take() {
+fn started(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if let Some(record) = frontend.mods.record.take() {
         record.clear();
     }
 }
 
 /// The game is left in the ordinary way ([`on_leaving`]).
-pub(crate) fn left(state: &mut AppState) {
-    if on_leaving(state.frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
-        started(state);
+pub(crate) fn left(frontend: &mut crate::app::frontend::state::FrontendState) {
+    if on_leaving(frontend.main_menu_shell_error.is_some()) == Verdict::Passed {
+        started(frontend);
     }
 }
 
@@ -746,14 +767,21 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if now < due {
         return Some(due);
     }
-    started(state);
+    started(&mut state.frontend);
     let mods = &mut state.frontend.mods;
     let text = match (mods.notice.take(), mods.rules_file_notice.take()) {
         (Some(first), Some(second)) => Some(format!("{first}\n\n{second}")),
         (first, second) => first.or(second),
     };
     if let Some(text) = text {
-        crate::app::App::open_shell_notice(state, text);
+        crate::app::App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            text,
+        );
     }
     None
 }
@@ -959,40 +987,36 @@ mod tests {
 
         // Use This Mod changes to the picked row, unless this version cannot
         // play it, or this run plays it and config.toml asks for it too.
-        let page = |selected| {
-            Some(crate::ui::shell::list::ListBoxState::new(
-                listed.clone(),
-                selected,
-            ))
-        };
         let told = ModSwitch::Use("WINTER WAR".into());
         let mut run = begin(&paths, Some(&told), true);
-        run.page = page(Some(3));
-        assert!(run.in_use(&listed[3]) && run.switch_to().is_none());
-        run.page = page(Some(2));
-        assert!(run.switch_to().is_none(), "needs a later version");
-        run.page = page(None);
-        assert!(run.switch_to().is_none());
-        run.page = page(Some(0));
-        assert_eq!(run.switch_to().map(|row| row.folder.as_deref()), Some(None));
-        run.page = page(Some(1));
-        assert_eq!(run.switch_to().map(|row| row.title()), Some("alpha".into()));
+        run.page = Some(listed.clone());
+        assert!(run.in_use(&listed[3]) && run.switch_to(Some(3)).is_none());
+        assert!(run.switch_to(Some(2)).is_none(), "needs a later version");
+        assert!(run.switch_to(None).is_none());
+        assert_eq!(
+            run.switch_to(Some(0)).map(|row| row.folder.as_deref()),
+            Some(None)
+        );
+        assert_eq!(
+            run.switch_to(Some(1)).map(|row| row.title()),
+            Some("alpha".into())
+        );
 
         // config.toml asks for Winter War and this run plays the original
         // (a switch, a missing folder, a start that died): No mod, though in
         // use, still takes the kept choice back.
         let mut original = begin(&paths, Some(&ModSwitch::NoMod), true);
-        original.page = page(Some(0));
+        original.page = Some(listed.clone());
         assert!(original.in_use(&listed[0]));
         assert_eq!(
-            original.switch_to().map(|row| row.folder.as_deref()),
+            original.switch_to(Some(0)).map(|row| row.folder.as_deref()),
             Some(None)
         );
         // Kept, there is nothing left for the button to do.
         original
             .keep_choice_in(&root.join("config.toml"), &paths, None)
             .unwrap();
-        assert!(original.switch_to().is_none());
+        assert!(original.switch_to(Some(0)).is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1084,7 +1108,11 @@ mod tests {
             crate::util::config::GameConfig::load_from(&root, &root.join("vera20k")).unwrap();
         config.paths.ra2_dir = retail.path().to_owned();
         let mut startup = begin(&config.paths, None, false);
-        let (selected, ares) = startup.select_resources(&config.ini, AresSetting::Auto);
+        let (selected, ares, _) = startup.select_resources(
+            &config.ini,
+            AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        );
         assert_eq!(ares, AresSetting::On);
         let (mut process, _, _) = crate::app::spawn_probe::load_process_sources(
             &config,
@@ -1092,6 +1120,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             launch_mod(&config.paths, None).unwrap(),
             AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -1155,6 +1184,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             launch_mod(&config.paths, None).unwrap(),
             AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -1189,7 +1219,11 @@ mod tests {
         )
         .unwrap();
         let mut selected = begin(&paths, None, false);
-        let (resources, setting) = selected.select_resources(&base, AresSetting::Off);
+        let (resources, setting, _) = selected.select_resources(
+            &base,
+            AresSetting::Off,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        );
         assert!(selected.active.is_none());
         assert!(
             selected
@@ -1202,8 +1236,13 @@ mod tests {
         assert_eq!(resources, ResourceConfig::from_ini(base.clone()));
         assert_eq!(setting, AresSetting::Off);
         let selected = launch_mod(&paths, None).unwrap();
-        let (resources, setting) =
-            resources_for(selected.as_ref(), &base, AresSetting::Auto).unwrap();
+        let (resources, setting, _) = resources_for(
+            selected.as_ref(),
+            &base,
+            AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        )
+        .unwrap();
         assert_eq!(setting, AresSetting::On);
         assert_eq!(
             resources.ini.sound, None,
@@ -1211,16 +1250,29 @@ mod tests {
         );
         let mut original = begin(&paths, Some(&ModSwitch::NoMod), true);
         assert_eq!(
-            original.select_resources(&base, AresSetting::Auto),
-            (ResourceConfig::from_ini(base.clone()), AresSetting::Auto)
+            original.select_resources(
+                &base,
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            ),
+            (
+                ResourceConfig::from_ini(base.clone()),
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            )
         );
         std::fs::write(&manifest, "[Mod]\nName=Metadata only\n").unwrap();
         let selected = launch_mod(&paths, None).unwrap();
         assert_eq!(
-            resources_for(selected.as_ref(), &base, AresSetting::Auto)
-                .unwrap()
-                .0
-                .ini,
+            resources_for(
+                selected.as_ref(),
+                &base,
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            )
+            .unwrap()
+            .0
+            .ini,
             base
         );
         std::fs::write(&manifest, "[Files]\nRules=../outside.ini\n").unwrap();
@@ -1259,6 +1311,7 @@ mod tests {
                 MediaArchiveMode::STOCK_DIGITAL,
                 launch_mod(&config.paths, None).unwrap(),
                 AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto,
                 false,
             )
             .unwrap()

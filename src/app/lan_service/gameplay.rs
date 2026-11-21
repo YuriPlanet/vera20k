@@ -36,11 +36,56 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         state.match_state.lan_service.is_some(),
         "LAN transport was not opened"
     );
+    // VERA: the rules digest leaves the original game's terrain files out. A
+    // match whose map names a tile the original game lacks read this game
+    // folder's, so its start names them (`ProcessAssets::match_terrain_digest`).
+    // Asked before the agreement, which loads a theater for a seed's map.
+    let terrain = state
+        .process_assets
+        .match_terrain_digest()
+        .map_err(anyhow::Error::msg)?;
     // VERA: the start every player's game certifies names its build and
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
-    let multiplayer = super::shell_network_setup::agreement::local(state)?;
-    super::shell_network_setup::agreement::log_rules_parts(state);
+    let mut multiplayer = super::shell_network_setup::agreement::local(
+        state.platform.game_config.as_ref(),
+        &state.match_state.session,
+        &mut state.process_assets,
+    )?;
+    // VERA: and whether Ares plays in the match as it loaded, which the
+    // room's digest leaves to the start (`agreement::start_rules`).
+    let rules = &state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
+        .resources
+        .rules;
+    multiplayer.rules_digest = super::shell_network_setup::agreement::start_rules(
+        multiplayer.rules_digest,
+        terrain.as_deref(),
+        rules,
+    );
+    // VERA: and what the simulation took from this game's picture and model
+    // files, which no room compares (`RuleSet::file_inputs_hash`): a
+    // building's unfolding or an animation's length that differs between two
+    // games would take their battles apart in mid-match.
+    let file_inputs = rules.file_inputs_hash();
+    // The refusal's box names three files; the log names them all.
+    let picture_files = super::shell_network_setup::agreement::match_picture_files(
+        &state.match_state.sim_runtime,
+        &state.process_assets,
+    );
+    if !picture_files.is_empty() {
+        log::info!(
+            "Game files that change what this start certifies of pictures and models: {}",
+            picture_files.join(", ")
+        );
+    }
+    super::shell_network_setup::agreement::log_rules_parts(
+        &state.match_state.session,
+        &state.process_assets,
+    );
     let sim = &state
         .match_state
         .sim_runtime
@@ -217,6 +262,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
             .frames_per_second(),
         rate,
         sim.state_hash(),
+        file_inputs,
         &multiplayer.version,
         &multiplayer.rules_digest,
     )?;
@@ -302,23 +348,25 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
 
 /// End private channels on leaving gameplay, retaining the LAN visit's same
 /// socket pair for BB. It is dropped only when that visit itself ends.
-pub(crate) fn return_transport(state: &mut AppState) {
-    if let Some(report) = crate::app::match_runtime::network_quality::close(state) {
-        crate::app::shell_wol::keep_network_report(state, &report);
+pub(crate) fn return_transport(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    if let Some(report) =
+        crate::app::match_runtime::network_quality::close(&mut match_state.network_quality)
+    {
+        crate::app::shell_wol::keep_network_report(frontend.wol.as_mut(), &report);
     }
-    let online = state.match_state.session_mode() == SessionMode::Wol;
-    let Some(live) = state.match_state.live_network.take() else {
+    let online = match_state.session_mode() == SessionMode::Wol;
+    let Some(live) = match_state.live_network.take() else {
         return;
     };
     if live.watching()
         && let Ok(endpoint) = live.primary_addr()
     {
-        state
-            .match_state
-            .session
-            .disconnect_network_watcher(endpoint);
+        match_state.session.disconnect_network_watcher(endpoint);
     }
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
         if online {
@@ -332,16 +380,15 @@ pub(crate) fn return_transport(state: &mut AppState) {
 }
 
 pub(super) fn send_bytes(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     destination: GlobalDestination,
     reliable: bool,
 ) -> bool {
-    if let Some(live) = state.match_state.live_network.as_mut() {
+    if let Some(live) = match_state.live_network.as_mut() {
         live.send_global(bytes, reliable, destination)
     } else {
-        state
-            .match_state
+        match_state
             .lan_service
             .as_mut()
             .is_some_and(|service| service.send(bytes, destination, reliable))
@@ -349,13 +396,13 @@ pub(super) fn send_bytes(
 }
 
 pub(super) fn send_sources(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     bytes: &[u8],
     sources: impl IntoIterator<Item = usize>,
 ) {
     for source in sources {
-        if let Some(endpoint) = state.match_state.session.network_endpoint(source) {
-            send_bytes(state, bytes, direct(endpoint), true);
+        if let Some(endpoint) = match_state.session.network_endpoint(source) {
+            send_bytes(match_state, bytes, direct(endpoint), true);
         }
     }
 }

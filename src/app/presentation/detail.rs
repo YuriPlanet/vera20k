@@ -112,6 +112,18 @@ impl DetailState {
         self.frame_rate
     }
 
+    /// YRpp `FPSCounter::GetAverageFrameRate`, as Ares' counter line
+    /// computes it (Ares.dll `1006BF2B..1006BF6E`): the published total
+    /// (ABCD48) over the sample count (ABCD4C), both unsigned, or 0 before
+    /// the first sample.
+    pub(crate) fn average_frame_rate(&self) -> f64 {
+        if self.sample_count == 0 {
+            0.0
+        } else {
+            f64::from(self.total_logic_visits) / f64::from(self.sample_count)
+        }
+    }
+
     /// Whether minimum + buffer wraps (signed INI values). Each
     /// [`Self::minimum_frame_rate`] query can then flip the latch, so two
     /// draws with the same inputs need not agree.

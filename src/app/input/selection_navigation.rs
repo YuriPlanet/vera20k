@@ -83,6 +83,10 @@ fn after_anchor(
 }
 
 pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectDirection) {
+    // Next/Previous Object (0x00536610/0x00536A80) first call
+    // SetTogglePowerMode(0) (0x00536617/0x00536A87), then SetWaypointMode,
+    // SetRepairMode(0) and SetSellMode(0).
+    crate::app::input::power_mode::disable(&mut state.match_state);
     let placement = state.armed_building_type().is_some();
     state
         .match_state
@@ -117,7 +121,13 @@ pub(super) fn execute_object_navigation(state: &mut AppState, direction: ObjectD
         },
         super::SelectionVoicePolicy::EveryAdded,
     );
-    crate::app::input::camera::center_view_on_selection(state);
+    crate::app::input::camera::center_view_on_selection(
+        &state.platform,
+        &mut state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
     state.platform.window.request_redraw();
     // No selected-action-line timer start, Scenario draw or Detach in this path.
 }
@@ -283,7 +293,10 @@ pub(super) fn execute_combatant_selection(state: &mut AppState) {
         .type_select
         .finish_combatant_selection(outcome, result.across_map);
     crate::app::input::messages::post_type_select_feedback(state, outcome.csf_key());
-    super::apply_selection_action_line_policy(state, super::SelectionActionLinePolicy::Preserve);
+    super::apply_selection_action_line_policy(
+        &mut state.match_state,
+        super::SelectionActionLinePolicy::Preserve,
+    );
 }
 
 #[derive(Debug, Default)]
@@ -522,7 +535,10 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         super::SelectionVoicePolicy::EveryAdded,
     );
     // The native direct Select calls do not start the mouse action-line timer.
-    super::apply_selection_action_line_policy(state, super::SelectionActionLinePolicy::Preserve);
+    super::apply_selection_action_line_policy(
+        &mut state.match_state,
+        super::SelectionActionLinePolicy::Preserve,
+    );
     let selected = super::selected_stable_ids_in_order(
         state
             .match_state
@@ -539,14 +555,11 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         entity_navigation_category(sim, rules, *id, kind)
             .is_some_and(|category| category != result.category)
     });
-    let label = localized(
-        state,
-        if mixed {
-            "MSG:Mixed"
-        } else {
-            category_key(kind, result.category)
-        },
-    );
+    let label = state.csf_text(if mixed {
+        "MSG:Mixed"
+    } else {
+        category_key(kind, result.category)
+    });
     // Native731E29 sums each object's Cost_Of for its own house
     // (`0x00731E2B..0x00731E42`).
     let worth = selected
@@ -563,9 +576,9 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         selected.len(),
         worth,
         &label,
-        &localized(state, "MSG:NavEmpty"),
-        &localized(state, "MSG:NoUnitsSel"),
-        &localized(state, "MSG:UnitsWorth"),
+        &state.csf_text("MSG:NavEmpty"),
+        &state.csf_text("MSG:NoUnitsSel"),
+        &state.csf_text("MSG:UnitsWorth"),
     );
     crate::app::input::messages::post_selection_navigation_text(state, &text);
     let input = &mut state.match_state.input;
@@ -575,14 +588,6 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     input
         .type_select
         .finish_category_navigation(kind, result.has_candidates);
-}
-
-fn localized(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned())
 }
 
 fn navigation_feedback(

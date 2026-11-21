@@ -26,9 +26,16 @@
 use std::cell::RefCell;
 
 use crate::app::AppState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform};
 use crate::render::bit_font::TextRaster;
 use crate::render::shell_text::{ScissorRect, TextRect};
+use crate::ui::game_screen::GameScreen;
 
 /// The window passes' camera and this frame's draws there.
 pub(crate) struct WindowUi {
@@ -82,11 +89,11 @@ impl WindowUi {
     /// camera at the window's pixels.
     pub(crate) fn begin_pass<'a>(
         &'a self,
-        state: &'a AppState,
+        renderer: &'a RendererState,
         encoder: &'a mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
     ) -> WindowPass<'a> {
-        let gpu = &state.renderer.gpu;
+        let gpu = &renderer.gpu;
         let window = (gpu.config.width, gpu.config.height);
         let camera = CameraUniform {
             screen_size: [window.0 as f32, window.1 as f32],
@@ -112,7 +119,7 @@ impl WindowUi {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &state.renderer.depth_view,
+                view: &renderer.depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Discard,
@@ -126,7 +133,7 @@ impl WindowUi {
         WindowPass {
             pass,
             ui: self,
-            batch: &state.renderer.batch_renderer,
+            batch: &renderer.batch_renderer,
             window,
         }
     }
@@ -136,12 +143,12 @@ impl WindowUi {
     /// this frame's text on it.
     pub(crate) fn draw_screenshot_text(
         &self,
-        state: &AppState,
+        renderer: &RendererState,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::Texture,
     ) {
         let view = target.create_view(&Default::default());
-        let mut pass = self.begin_pass(state, encoder, &view);
+        let mut pass = self.begin_pass(renderer, encoder, &view);
         for draw in self.drawn.borrow().iter() {
             pass.draw_group(&draw.texture, &draw.buffer, draw.count, draw.scissor);
         }
@@ -222,36 +229,45 @@ impl WindowPass<'_> {
 /// The zoom's raster: a frame pixel, in the UI camera's units (its camera
 /// included), at the window pixel the zoom pass shows it on. `None` outside
 /// a zoomed match.
-pub(crate) fn zoom_raster(state: &AppState) -> Option<TextRaster> {
-    let zoom = state.match_zoom_pass()?.geometry();
+pub(crate) fn zoom_raster(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    input: &MatchInputState,
+) -> Option<TextRaster> {
+    let zoom = renderer.match_zoom_pass(screen)?.geometry();
     Some(TextRaster {
         scale: zoom.scale(),
         origin: [zoom.origin.0 as f32, zoom.origin.1 as f32],
-        camera: [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        camera: [input.camera_x, input.camera_y],
     })
 }
 
 /// The raster the battlefield's screen-fixed text takes this frame: the
 /// zoom's, unless the in-match page or the Surrender box is open over it.
-pub(crate) fn battlefield_raster(state: &AppState) -> Option<TextRaster> {
+pub(crate) fn battlefield_raster(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_state: &MatchState,
+) -> Option<TextRaster> {
     use crate::ui::pause_menu::InGameMenuState;
     if matches!(
-        state.match_state.match_presentation.in_game_menu,
+        match_state.match_presentation.in_game_menu,
         InGameMenuState::Page | InGameMenuState::Surrender
     ) {
         return None;
     }
-    zoom_raster(state)
+    zoom_raster(renderer, screen, &match_state.input)
 }
 
 /// The raster for a dialog drawn over the battlefield at frame pixels with
 /// its camera at the origin: the in-match page, the Surrender box, and the
 /// software cursor over an active-game menu.
-pub(crate) fn dialog_raster(state: &AppState) -> Option<TextRaster> {
-    zoom_raster(state).map(|raster| TextRaster {
+pub(crate) fn dialog_raster(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    input: &MatchInputState,
+) -> Option<TextRaster> {
+    zoom_raster(renderer, screen, input).map(|raster| TextRaster {
         camera: [0.0; 2],
         ..raster
     })
@@ -261,18 +277,31 @@ pub(crate) fn dialog_raster(state: &AppState) -> Option<TextRaster> {
 /// (`sidebar`, copied into the frame at that size) or the frame's: a menu
 /// pixel at the window pixel it shows on. `None` outside a match, where
 /// menus paint at the window's size, or where that is the pixel itself.
-pub(crate) fn shell_raster(state: &AppState, sidebar: bool) -> Option<TextRaster> {
-    if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
+pub(crate) fn shell_raster(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
+    sidebar: bool,
+) -> Option<TextRaster> {
+    if *screen != crate::ui::game_screen::GameScreen::InGame {
         return None;
     }
     let ((left, top), scale) = if sidebar {
-        let frame = state.sidebar_frame();
+        let frame = crate::app::state::sidebar_frame(
+            platform,
+            persistence,
+            renderer,
+            screen,
+            &presentation.sidebar_layout_spec,
+        );
         (frame.layout_origin(), frame.scale())
     } else {
         ((0.0, 0.0), 1.0)
     };
-    let (zoom, origin) = state
-        .tactical_zoom()
+    let (zoom, origin) = renderer
+        .tactical_zoom(screen)
         .map_or((1.0, (0, 0)), |zoom| (zoom.scale(), zoom.origin));
     let raster = TextRaster {
         scale: scale * zoom,
@@ -304,7 +333,11 @@ pub(crate) fn draw_battlefield(
     view: &wgpu::TextureView,
     software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
-    let Some(zoom) = zoom_raster(state) else {
+    let Some(zoom) = zoom_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
+    ) else {
         return;
     };
     let renderer = &state.renderer;
@@ -316,26 +349,47 @@ pub(crate) fn draw_battlefield(
         .as_ref()
         .map(|overlay| overlay.white_texture());
     let atlas = renderer.bit_font.atlas();
-    let frame = frame_rect(state);
+    let frame = frame_rect(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.input,
+    );
     let layer = |pass: &mut WindowPass<'_>, texture: Option<&BatchTexture>, key, scissor| {
         if let (Some(texture), Some((buffer, count))) = (texture, pool.get(key)) {
             pass.draw(texture, buffer, count, scissor);
         }
     };
-    let mut pass = renderer.window_ui.begin_pass(state, encoder, view);
-    if battlefield_raster(state).is_some() {
+    let mut pass = renderer
+        .window_ui
+        .begin_pass(&state.renderer, encoder, view);
+    if battlefield_raster(&state.renderer, &state.frontend.screen, &state.match_state).is_some() {
         use crate::app::presentation::sidebar_surface::{self, ColumnText};
         // The sidebar column's text, where its copy would resample it, over
         // the window copy within the column; the timers keep to the
         // tactical view, so drawing them after it changes nothing.
-        if let ColumnText::Window(_) = sidebar_surface::column_text(state) {
+        if let ColumnText::Window(_) = sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        ) {
             let column = window_rect(zoom, state.sidebar_frame().column());
             for key in sidebar_surface::TEXT_LAYERS {
                 layer(&mut pass, Some(atlas), key, column);
             }
         }
         // The timers keep the tactical view's clip.
-        let tactical = window_rect(zoom, crate::app::input::camera::tactical_viewport_px(state));
+        let tactical = window_rect(
+            zoom,
+            crate::app::input::camera::tactical_viewport_px(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+            ),
+        );
         layer(&mut pass, white, "super_timer_fill", tactical);
         layer(&mut pass, Some(atlas), "super_timer_text", tactical);
         for (texture, key) in [
@@ -358,7 +412,10 @@ pub(crate) fn draw_battlefield(
     }
     if let (Some(texture), Some((buffer, count))) = (
         software_cursor.and_then(|draw| {
-            crate::app::presentation::ui_overlays::software_cursor_texture(state, draw)
+            crate::app::presentation::ui_overlays::software_cursor_texture(
+                &state.match_state.match_presentation,
+                draw,
+            )
         }),
         pool.get("software_cursor"),
     ) {
@@ -368,9 +425,18 @@ pub(crate) fn draw_battlefield(
 
 /// The frame's rect in the window, where a zoomed match shows it; the
 /// window itself without a zoom.
-pub(crate) fn frame_rect(state: &AppState) -> ScissorRect {
+pub(crate) fn frame_rect(
+    renderer: &RendererState,
+    screen: &GameScreen,
+    input: &MatchInputState,
+) -> ScissorRect {
     window_rect(
-        dialog_raster(state).unwrap_or(TextRaster::NATIVE),
-        (0, 0, state.render_width(), state.render_height()),
+        dialog_raster(renderer, screen, input).unwrap_or(TextRaster::NATIVE),
+        (
+            0,
+            0,
+            renderer.render_width(screen),
+            renderer.render_height(screen),
+        ),
     )
 }

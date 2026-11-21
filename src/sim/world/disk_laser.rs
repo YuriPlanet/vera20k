@@ -343,7 +343,7 @@ impl Simulation {
                     )
                 {
                     self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        report.to_owned(),
+                        rules.sound_name(report),
                         AnimWorldCoord {
                             x: first.x,
                             y: first.y,
@@ -405,7 +405,7 @@ impl Simulation {
                     && let Some(sound) = rules.general.disk_laser_charge_up()
                 {
                     self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound.to_owned(),
+                        rules.sound_name(sound),
                         AnimWorldCoord {
                             x: first.x,
                             y: first.y,

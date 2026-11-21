@@ -86,7 +86,14 @@ impl Simulation {
             return Some(target);
         }
         let mut claims = None;
-        if self.foot_land_zone_clear(id, target, rules) {
+        // The search asks the land zone about every candidate cell, and the
+        // live aircraft hold the same reservations throughout it: the search
+        // changes nothing, so the set it reads once answers them all.
+        let aircraft_claims = self
+            .resolved_terrain
+            .as_ref()
+            .map(|terrain| self.aircraft_nav_claims(id, terrain));
+        if self.foot_land_zone_clear(id, target, rules, aircraft_claims.as_ref()) {
             let coord = nav_target_coordinate(
                 target,
                 None,
@@ -119,7 +126,7 @@ impl Simulation {
                 let candidate = (x as i16, y as i16);
                 if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(candidate.0), i32::from(candidate.1)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ) {
                     continue;
@@ -129,7 +136,7 @@ impl Simulation {
                         t.native_cell_coord(t.native_cell_identity(candidate))
                     });
                     let cell = NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-                    if self.foot_land_zone_clear(id, cell, rules)
+                    if self.foot_land_zone_clear(id, cell, rules, aircraft_claims.as_ref())
                         && self.aircraft_cell_free_for_landing(
                             id,
                             candidate,
@@ -323,7 +330,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
         move_mission::MoveHost::assign_attack_cell(self);
         // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
         // destination setter.
-        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
+        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
             let target = self
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
@@ -344,7 +351,8 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn land_zone_clear(&mut self) -> bool {
         let nav = self.nav().expect("asked with a Cell NavCom");
-        self.sim.foot_land_zone_clear(self.id, nav, self.rules)
+        self.sim
+            .foot_land_zone_clear(self.id, nav, self.rules, None)
     }
 
     fn descending(&mut self) -> bool {

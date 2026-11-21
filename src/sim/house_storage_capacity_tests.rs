@@ -180,7 +180,7 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
         .spawn_object_limbo_at_height("CAP", "Americans", 18, 10, 0, 0, &rules)
         .unwrap();
     assert_eq!(sim.houses[&owner].tracking().storage_capacity(), -17);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "retained-capacity", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;

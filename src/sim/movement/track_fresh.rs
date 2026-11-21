@@ -39,10 +39,6 @@
 //!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
 //!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
 //!   none in play (the playfield keeps movers inside). Risk: none.
-//! - A train (`IsTrain=`, Type+C94, set by no retail type) extends its last
-//!   path word with Find_Path's append form (`0x4B3F07`), which keeps the
-//!   queue and appends at most 24 - prefix words (`0x4D3E82`). VERA's route
-//!   install replaces the queue, so a train takes the ordinary request.
 //!
 //! A tube word at the path head returns here (`0x4B3298`, and `0x4B2F45`
 //! after a found route); the Process_Track after it enters the tube
@@ -73,7 +69,7 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 use crate::util::direction::TUBE_STEP_DIRECTION;
-use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEVELS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
 /// Arguments 2 and 3 of `Process_Movement(&out, arg2, arg3)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,10 +184,11 @@ impl Simulation {
                 .expect("same Process_Movement owner");
             clear_track_head(actor);
             if mission == Some(MissionType::Move) {
-                return Ok(self.unit_enter_idle_mode(
+                return Ok(crate::sim::world::enter_idle_mode(
+                    self,
                     id,
                     call.rules,
-                    false,
+                    Some(call.rules.overlay_registry()),
                     &mut call.frame_effects,
                 ));
             }
@@ -386,19 +383,34 @@ impl Simulation {
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
-        let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
+        // The pair scopes the entry question to the candidate Cell. When that
+        // Cell is not the one the mark holds, nothing reads the unmarked
+        // state, so the pair's two Recalcs only round-trip
+        // (`foot_mark_query_scope`).
+        let code = if coord_cell(location) == cell {
+            self.foot_mark_remove(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            let code = self.track_can_enter(id, rules, cell, direction, height)?;
+            self.foot_mark_put(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            code
+        } else {
+            self.foot_mark_query_scope(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+                |sim| sim.track_can_enter(id, rules, cell, direction, height),
+            )?
+        };
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -594,7 +606,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(
+        self.assign_null_destination(
             id,
             rules,
             Some(rules.overlay_registry()),
@@ -617,8 +629,10 @@ impl Simulation {
         let rules = call.rules;
         //4B357F..4B35D6 / 4B3C84: within two levels the candidate's own level
         //and land speed row; otherwise the current height and Road (1).
-        let level = self.track_cell_level(cell)?;
-        let road = (height - level).abs() >= 2;
+        // An admitted fixed deck uses the Road row and retains its level for
+        // the second entry query, even when the ground is close to the deck.
+        let (level, fixed_deck) = self.track_cell_levels(cell)?;
+        let road = fixed_deck == Some(height) || (height - level).abs() >= 2;
         let height2 = if road { height } else { level };
         //4B3C8D..4B3E21: publish the target speed fraction.
         self.publish_fresh_speed(id, cell, road, rules);
@@ -645,8 +659,10 @@ impl Simulation {
                 location.z.wrapping_sub(destination.z),
             );
             if distance > 0x200 {
-                //Find_Path(cell(destination), IsTrain, 0); see the train residual.
-                let request = self.track_path_request(call, destination, 0)?;
+                // Drive 0x4B3EF8..0x4B3F37 / Ship 0x6A3547..0x6A3586: IsTrain
+                // supplies Find_Path's one-word prefix on this call only.
+                let mut request = self.track_path_request(call, destination, 0)?;
+                request.retain_head = self.track_object(id, rules)?.is_train;
                 let found = self.foot_find_path(
                     &request,
                     rules,
@@ -660,7 +676,7 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(
+                        self.assign_null_destination(
                             id,
                             rules,
                             Some(rules.overlay_registry()),
@@ -782,7 +798,7 @@ impl Simulation {
         let code = match forced_code {
             Some(code) => code,
             None => {
-                let code = self.track_can_enter(call, second_cell, second as u8, height2)?;
+                let code = self.track_can_enter(call.id, call.rules, second_cell, second as u8, height2)?;
                 let overlay = self.track_overlay(second_cell);
                 coerce_entry_code(
                     code,
@@ -966,7 +982,8 @@ impl Simulation {
     /// The live Unit+1AC answer for one candidate, arguments (cell, dir, h, 0, 1).
     fn track_can_enter(
         &self,
-        call: &mut FreshCall<'_>,
+        id: u64,
+        rules: &RuleSet,
         cell: (i16, i16),
         direction: u8,
         height: i32,
@@ -977,14 +994,14 @@ impl Simulation {
             .ok_or("Drive/Ship candidate query requires map cells")?;
         let native_cell = terrain.native_cell_identity(cell);
         self.foot_can_enter(
-            call.id,
+            id,
             native_cell,
             InfantryEntryArgs {
                 direction: i32::from(direction),
                 height,
                 previous_cell: None,
             },
-            call.rules,
+            rules,
         )
     }
 
@@ -1022,13 +1039,17 @@ impl Simulation {
     }
 
     /// Cell+11B of the candidate.
-    fn track_cell_level(&self, cell: (i16, i16)) -> Result<i32, String> {
+    fn track_cell_levels(&self, cell: (i16, i16)) -> Result<(i32, Option<i32>), String> {
         let terrain = self
             .resolved_terrain
             .as_ref()
             .ok_or("Drive/Ship accept arm requires map cells")?;
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        Ok(i32::from(cells.ground_fields(cells.lookup(cell)).0 as i8))
+        let cell = cells.lookup(cell);
+        Ok((
+            i32::from(cells.ground_fields(cell).0 as i8),
+            terrain.corrected_high_bridge_deck_at(cell).map(i32::from),
+        ))
     }
 
     /// 0x4B3C8D..0x4B3E21: publish the admitted candidate's target speed.
@@ -1057,6 +1078,7 @@ impl Simulation {
             strength,
             rules,
             terrain,
+            self.path_grid.as_deref(),
             &terrain_speed,
             (cell.0 as u16, cell.1 as u16),
             road,
@@ -1139,7 +1161,8 @@ impl Simulation {
     /// Scatter_Objects(Null, 1, 1, deck) on a refused `cell` (fresh
     /// 0x4B38B3..0x4B393A and 0x4B43D0..0x4B4437, the continuation's ally
     /// arm 0x4B2D68..0x4B2DC0): the deck list when the Cell is structural and
-    /// the Foot (Unit+9C) is more than two levels from the Cell's level.
+    /// the Foot (Unit+9C) is at or above a fixed deck, or (with no fixed deck)
+    /// more than two levels from the Cell's ground level.
     pub(super) fn scatter_blocked_track_cell(
         &mut self,
         id: u64,
@@ -1174,7 +1197,10 @@ impl Simulation {
         let level = i32::from(cells.ground_fields(native).0 as i8);
         let location = ground_pose::position_world_coord(&actor.position);
         let deck = cells.flags(native) & 0x100 != 0
-            && (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2;
+            && ground_pose::corrected_deck_z(terrain, native).map_or_else(
+                || (location.z / GROUND_LEVEL_HEIGHT_LEPTONS - level).abs() > 2,
+                |deck_z| location.z >= deck_z,
+            );
         self.scatter_cell_contacts(list_cell, deck, true, rules, registry, frame_effects)
     }
 
@@ -1249,9 +1275,10 @@ impl Simulation {
             let level = i32::from(cells.ground_fields(native).0 as i8);
             let location = ground_pose::position_world_coord(&actor.position);
             let here = cells.lookup_world(location.x, location.y);
-            actor.on_bridge()
-                || i32::from(cells.ground_fields(here).0 as i8)
-                    == level + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS
+            let deck_level = terrain
+                .corrected_high_bridge_deck_at(native)
+                .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from);
+            actor.on_bridge() || i32::from(cells.ground_fields(here).0 as i8) == deck_level
         };
         if !crusher {
             return Ok(());
@@ -1459,7 +1486,7 @@ impl crate::sim::world::ObjectSubstrate {
         }
     }
     /// Foot+5E0 = -1 on the live path word.
-    fn clear_path_head(&mut self, id: u64) {
+    pub(super) fn clear_path_head(&mut self, id: u64) {
         if let Some(actor) = self.entities.get_mut(id) {
             actor.clear_live_path_head();
         }
@@ -1514,6 +1541,89 @@ pub(super) fn fresh_heading_ready(body_facing: u16, direction: u8) -> bool {
 mod tests {
     use super::*;
     use crate::sim::mission::MissionId;
+
+    #[test]
+    fn train_extends_its_remaining_head_toward_the_original_destination() {
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=TRAIN\n[TRAIN]\nStrength=400\nSpeed=5\nSpeedType=Track\n\
+             MovementZone=Normal\nIsTrain=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let start = (15, 15);
+        let goal = (15, 21);
+        let id = sim
+            .spawn_object("TRAIN", "Americans", start.0, start.1, 64, &rules)
+            .unwrap();
+        let mut effects = FrameEffects::default();
+        assert!(sim.set_unit_destination(
+            id,
+            NavTargetRef::cell(goal.0, goal.1),
+            &rules,
+            true,
+            &mut effects
+        ));
+        let frame = sim.session.binary_frame();
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.body_facing.snap(0x4000, frame);
+        actor
+            .navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![2]); // east
+        sim.run_track_process_movement(
+            id,
+            TrackFamily::Drive,
+            ProcessMovementArgs::OUTER,
+            &rules,
+            &mut effects,
+        )
+        .unwrap();
+
+        let queue = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .navigation
+            .path_replay();
+        assert_eq!(
+            queue.directions().first(),
+            Some(&2),
+            "retain the unpaid east step"
+        );
+        assert_eq!(
+            queue.installed_cells(start).last(),
+            Some(&goal),
+            "search from the end of that step"
+        );
+    }
+
+    /// Unit73F865 supplies code 6 for a stationary ally. Find_Path4D3AA5
+    /// keeps that distant occupied destination only for the train.
+    #[test]
+    fn train_keeps_the_distant_cell_occupied_by_a_parked_ally() {
+        let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[VehicleTypes]\n0=ENGINE\n1=TRUCK\n\
+             [ENGINE]\nStrength=400\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             IsTrain=yes\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+             [TRUCK]\nStrength=400\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let destination = DriveCoord::cell(19, 15, 0);
+        sim.spawn_object("TRUCK", "Americans", 19, 15, 0, &rules)
+            .unwrap();
+        for (kind, y, keeps_goal) in [("ENGINE", 15, true), ("TRUCK", 16, false)] {
+            let mover = sim
+                .spawn_object(kind, "Americans", 15, y, 0, &rules)
+                .unwrap();
+            let answer = sim
+                .find_path_target_answer(mover, destination, &rules)
+                .unwrap();
+            assert_eq!(answer, Some(6), "{kind} encounters the stationary ally");
+            let redirect = sim
+                .find_path_redirect(mover, destination, answer.unwrap(), &rules)
+                .unwrap();
+            assert_eq!(redirect.is_none(), keeps_goal, "{kind}: {redirect:?}");
+        }
+    }
 
     #[test]
     fn terrain_blocker_response_preserves_object_target_and_move_archive() {

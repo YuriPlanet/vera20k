@@ -3,10 +3,15 @@
 //! for decoding, effective rules, map identity and retained loading sources.
 
 use crate::app::AppState;
+use crate::app::frontend::skirmish_session::MultiplayerShellRuntime;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::session::{MatchSession, NetworkMapMetadata};
+use crate::app::process_assets::ProcessAssets;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
 use crate::map::source::{
     LoadedMapIni, LoadedMapSource, LoadedTransferAsset, TransferContent, TransferResource,
 };
+use crate::util::config::GameConfig;
 use anyhow::{Result, anyhow, ensure};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -96,26 +101,21 @@ pub(crate) fn transfer_length(metadata: &NetworkMapMetadata) -> Result<usize> {
     Ok(total)
 }
 
-pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<GeneratedMapManifest>> {
-    if !generated_selection(&state.match_state.session) {
+pub(crate) fn host_generated_manifest(
+    game_config: Option<&GameConfig>,
+    runtime: &MultiplayerShellRuntime,
+    session: &MatchSession,
+) -> Result<Option<GeneratedMapManifest>> {
+    if !generated_selection(session) {
         return Ok(None);
     }
-    let capacity = state
-        .match_state
-        .session
+    let capacity = session
         .network_map_metadata()
         .ok_or_else(|| anyhow!("seed metadata missing"))?
         .player_capacity;
-    let text = state
-        .frontend
-        .multiplayer_shell_runtime
-        .start_staging()
-        .to_w_text();
+    let text = runtime.start_staging().to_w_text();
     checked_staging(&text, capacity)?;
-    let root = &state
-        .platform
-        .game_config
-        .as_ref()
+    let root = &game_config
         .ok_or_else(|| anyhow!("no asset directory"))?
         .paths
         .ra2_dir;
@@ -135,18 +135,17 @@ pub(crate) fn host_generated_manifest(state: &AppState) -> Result<Option<Generat
 }
 
 pub(crate) fn accept_generated_manifest(
-    state: &mut AppState,
+    runtime: &mut MultiplayerShellRuntime,
+    session: &mut MatchSession,
     previous: Option<&GeneratedMapManifest>,
     generated: Option<&GeneratedMapManifest>,
 ) -> Result<()> {
     ensure!(
-        generated_selection(&state.match_state.session) == generated.is_some(),
+        generated_selection(session) == generated.is_some(),
         "generated map manifest does not match selected map"
     );
     if let Some(manifest) = generated {
-        let capacity = state
-            .match_state
-            .session
+        let capacity = session
             .network_map_metadata()
             .ok_or_else(|| anyhow!("seed metadata missing"))?
             .player_capacity;
@@ -158,43 +157,32 @@ pub(crate) fn accept_generated_manifest(
             "invalid generated preview identity"
         );
         // Existing Scenario+11C0 owner, also read by commit_start's staging token.
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .stage_generated_starts(staging);
+        runtime.stage_generated_starts(staging);
     }
     if previous != generated {
-        state.match_state.session.clear_network_random_map_preview();
+        session.clear_network_random_map_preview();
     }
     Ok(())
 }
 
-pub(crate) fn staging_digest(state: &AppState) -> String {
-    if generated_selection(&state.match_state.session) {
-        crate::util::sha256::sha256_hex(
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .start_staging()
-                .to_w_text()
-                .as_bytes(),
-        )
+pub(crate) fn staging_digest(runtime: &MultiplayerShellRuntime, session: &MatchSession) -> String {
+    if generated_selection(session) {
+        crate::util::sha256::sha256_hex(runtime.start_staging().to_w_text().as_bytes())
     } else {
         String::new()
     }
 }
 
 pub(crate) fn local_transfer_source(
-    state: &mut AppState,
+    game_config: Option<&GameConfig>,
+    frontend: &mut FrontendState,
+    session: &MatchSession,
+    process_assets: &ProcessAssets,
     resource: TransferResource,
 ) -> Result<Option<LoadedMapSource>> {
-    let config = state
-        .platform
-        .game_config
-        .as_ref()
-        .ok_or_else(|| anyhow!("no asset directory"))?;
+    let config = game_config.ok_or_else(|| anyhow!("no asset directory"))?;
     if resource == TransferResource::Preview {
-        return if state.match_state.session.host() {
+        return if session.host() {
             Ok(Some(crate::map::source::transfer_file_source(
                 &crate::map::source::random_map_dir(&config.paths.ra2_dir)
                     .join(crate::map::skirmish_scenarios::RANDMAP_PREVIEW),
@@ -204,23 +192,18 @@ pub(crate) fn local_transfer_source(
             Ok(None)
         };
     }
-    let assets = state
-        .process_assets
+    let assets = process_assets
         .manager()
         .ok_or_else(|| anyhow!("assets missing"))?;
-    let file = state
-        .match_state
-        .session
+    let file = session
         .network_setup()
         .and_then(|setup| setup.selected_map_file.as_deref())
         .ok_or_else(|| anyhow!("selected map missing"))?;
-    let metadata = state
-        .match_state
-        .session
+    let metadata = session
         .network_map_metadata()
         .ok_or_else(|| anyhow!("map metadata missing"))?;
-    let ares = state.process_assets.reads_ares_way();
-    let loaded = state.frontend.scenario_catalog.verify_network_map_input(
+    let ares = process_assets.reads_ares_way();
+    let loaded = frontend.scenario_catalog.verify_network_map_input(
         file,
         metadata,
         &config.paths.ra2_dir,
@@ -229,7 +212,7 @@ pub(crate) fn local_transfer_source(
     );
     if resource == TransferResource::Map {
         if let Some(loaded) = &loaded {
-            install_authored_preview(state, loaded)?;
+            install_authored_preview(&mut frontend.network_setup_protocol, loaded)?;
         }
     }
     Ok(loaded.map(|loaded| loaded.source))
@@ -263,7 +246,13 @@ pub(crate) fn accept_transfer_asset(
                 .ok_or_else(|| anyhow!("seed selection ended"))?
                 .source_sha256
                 .clone();
-            super::accept_network_random_map_preview(state, &digest, loaded.source, image)?;
+            super::accept_network_random_map_preview(
+                &mut state.frontend.network_setup_protocol,
+                &mut state.match_state.session,
+                &digest,
+                loaded.source,
+                image,
+            )?;
         }
         TransferContent::Scenario(ini) => {
             ensure!(
@@ -318,7 +307,7 @@ pub(crate) fn accept_transfer_asset(
             let keep = (resource == TransferResource::Map && !expected.official)
                 .then(|| (file.to_owned(), expected.source_sha256.clone()));
             if resource == TransferResource::Map {
-                install_authored_preview(state, &loaded)?;
+                install_authored_preview(&mut state.frontend.network_setup_protocol, &loaded)?;
             }
             if let Some((file, digest)) = keep {
                 keep_for_choose_map(state, &file, &loaded.source, &digest);
@@ -363,14 +352,17 @@ fn keep_for_choose_map(
 /// preview, without adding a chooser record. Header metadata uses its existing
 /// reader; maps without a Header reuse the loading compositor's sole cell and
 /// playfield projection over the admitted MapFile.
-fn install_authored_preview(state: &mut AppState, loaded: &LoadedMapIni) -> Result<()> {
+fn install_authored_preview(
+    protocol: &mut Option<NetworkSetupProtocol>,
+    loaded: &LoadedMapIni,
+) -> Result<()> {
     let bounds = authored_preview_bounds(loaded)?;
     match crate::map::preview::decode_preview_image_from_ini(&loaded.ini) {
-        Ok(Some(image)) => super::service::install_received_preview_image(state, image)?,
+        Ok(Some(image)) => super::service::install_received_preview_image(protocol, image)?,
         Ok(None) => {}
         Err(error) => log::warn!("Received map preview did not decode: {error}"),
     }
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+    if let Some(protocol) = protocol.as_mut() {
         protocol.accept_preview_bounds(bounds);
     }
     Ok(())

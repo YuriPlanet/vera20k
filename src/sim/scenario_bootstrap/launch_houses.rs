@@ -76,6 +76,13 @@ impl NormalizedSkirmishSlot {
             .iter()
             .any(|controller| controller.human_index == human_index)
     }
+
+    /// The launch team this House was assigned on, read by the app's
+    /// presentation layer (e.g. the grouped superweapon timer panel) to group
+    /// by the real teams instead of the mutable alliance graph.
+    pub fn team(&self) -> LaunchTeam {
+        self.team
+    }
 }
 
 /// Sim-owned behavioral launch descriptor (F09).

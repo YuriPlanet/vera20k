@@ -7,7 +7,6 @@
 
 use super::{
     Palette, RenderedChromeEntry, SidebarChromeAssetIdentity, SidebarSideRoute, SidebarThemeRoute,
-    render_side_entry,
 };
 
 /// Backgrounds use a separate converter from both radar and generic column art.
@@ -71,9 +70,7 @@ pub(super) fn load(
     palette: &Palette,
 ) -> InGameShellArt<RenderedChromeEntry> {
     InGameShellArt {
-        panel_tile: render_side_entry(route, "SIDE2B.SHP", palette, 0),
-        buttons: std::array::from_fn(|frame| {
-            render_side_entry(route, "SIDEBTTN.SHP", palette, frame)
-        }),
+        panel_tile: route.render("SIDE2B.SHP", palette, 0),
+        buttons: std::array::from_fn(|frame| route.render("SIDEBTTN.SHP", palette, frame)),
     }
 }

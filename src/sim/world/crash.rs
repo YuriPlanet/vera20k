@@ -37,6 +37,7 @@ use crate::sim::movement::air_movement::current_fly_height;
 use crate::sim::rocking::RockingState;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::SimFixed;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
 use super::{Simulation, UninitContext};
@@ -658,15 +659,15 @@ impl Simulation {
         let object = interner.object_type(entity.type_ref(), rules);
         let sound = if water {
             object
-                .and_then(|object| object.impact_water_sound.clone())
-                .or_else(|| rules.general.impact_water_sound.clone())
+                .and_then(|object| object.impact_water_sound.as_deref())
+                .or(rules.general.impact_water_sound.as_deref())
         } else {
             object
-                .and_then(|object| object.impact_land_sound.clone())
-                .or_else(|| rules.general.impact_land_sound.clone())
+                .and_then(|object| object.impact_land_sound.as_deref())
+                .or(rules.general.impact_land_sound.as_deref())
         };
         if let Some(sound_id) = sound {
-            let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
+            let event = super::SimSoundEvent::voc_at(rules.sound_name(sound_id), &entity.position);
             sound_events.emit(event);
         }
     }
@@ -685,11 +686,12 @@ impl Simulation {
     ///
     /// Nothing on the Fly path lowers the latch; besides the constructor only
     /// the Jumpjet Descend touchdown clears it (`0x0054CA12`, a Magnetron drop
-    /// that lands).
+    /// that lands). `sound_events` is written only for an event
+    /// (`util::forked`).
     pub(crate) fn crash_edge_sounds(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         session: &ScenarioSession,
         houses: &Houses,
         id: u64,
@@ -708,18 +710,21 @@ impl Simulation {
             let entity = substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_crashing.clone());
-            let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
+            let voice = object.and_then(|object| object.voice_crashing.as_deref());
+            let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
             {
-                sound_events.emit(super::SimSoundEvent::voc_at(voice, &entity.position));
+                sound_events.emit(super::SimSoundEvent::voc_at(
+                    rules.sound_name(voice),
+                    &entity.position,
+                ));
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
                 sound_events.emit(super::SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             }
@@ -753,12 +758,16 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let red = matches!(
-            entity
-                .health
-                .compare_ratio(object.strength, rules.general.condition_red),
-            Less | Unordered
-        );
+        // Stock's `test ah,1` (`0x0041509A`) takes an unordered ratio (0/0)
+        // as red; Ares' `fcompi`/`jbe` (`0x10047BA6..0x10047BAA`) does not.
+        let red = match entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_red)
+        {
+            Less => true,
+            Unordered => !rules.ares(),
+            _ => false,
+        };
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }

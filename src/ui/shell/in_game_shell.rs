@@ -5,7 +5,9 @@
 //! exercised by tools/storage_oracle/in_game_shell_geometry.py; its nine stock
 //! cases cover Allied, Soviet and Yuri at 640x480, 800x600 and 1024x768.
 
-use super::geom::RectPx;
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::geom::{RectPx, ShellAlign};
 
 /// Canvas dimensions supplied by the active side's loaded art. SIDE2, rather
 /// than the separately painted SIDE2B, controls column repetition (0x0072FD96).
@@ -162,6 +164,25 @@ impl InGameShellLayout {
         self.background = RectPx::new(0, 0, self.credits.x, self.bottom_clip.y);
         self
     }
+}
+
+/// Every active-game dialog's right-panel title static and status line.
+pub const TITLE: u16 = 0x694;
+pub const FOOTER: u16 = 0x695;
+
+/// Title 0x694 (`PANEL_TITLE`) and status line 0x695 (unaligned) as a
+/// dialog's nodes: statics with no help, which the pointer passes by. A
+/// dialog without a title gives 0x694 no rect.
+pub fn panel_statics() -> [NodeSpec; 2] {
+    let text = |id: u16, align: ShellAlign| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(i32::from(align.0)))
+    };
+    [
+        text(TITLE, ShellAlign::PANEL_TITLE),
+        text(FOOTER, ShellAlign::NONE),
+    ]
 }
 
 /// An active-game dialog's title static 0x694: original 0x0060B1D0's active

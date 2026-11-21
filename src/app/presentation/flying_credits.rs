@@ -127,6 +127,11 @@ impl FlyingCredits {
         viewport: [u32; 4],
     ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
+        // The texts' built-in template (`health_templates`) may hide or move them.
+        use crate::app::presentation::health_templates::{Mark, family, shifted};
+        let Some(offset) = family(Mark::FlyingCredits) else {
+            return out;
+        };
         for record in &self.live {
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
                 record.coord.x,
@@ -136,8 +141,7 @@ impl FlyingCredits {
             // The world attachment is already composited through wheel zoom
             // before Tactical's text pass. Keep glyph size/rise in frame pixels
             // while placing the anchor on the same zoomed map point.
-            let x = (x - camera[0]) * zoom;
-            let y = (y - camera[1]) * zoom;
+            let (x, y) = shifted(((x - camera[0]) * zoom, (y - camera[1]) * zoom), offset);
             let [left, top, width, height] = viewport.map(|side| side as f32);
             if x >= left && y >= top && x < left + width && y < top + height {
                 let rise = (record.life - 70).min(0);

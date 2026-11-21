@@ -500,16 +500,16 @@ mod tests {
     // Supplied Overlay-only scenes still execute the sole production drain.
     fn drain_fixture(lifecycle: &mut LoadObjectLifecycle, queue: &mut DeferredDeleteQueue) {
         let mut sim = Simulation::new();
-        sim.load_objects = std::mem::take(lifecycle);
-        sim.substrate.pending_delete = std::mem::take(queue);
+        *sim.load_objects = std::mem::take(lifecycle);
+        *sim.substrate.pending_delete = std::mem::take(queue);
         sim.process_pending_delete_with(
             crate::rules::ruleset::RuleSet::empty_for_test(),
             &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
-        *lifecycle = sim.load_objects;
-        *queue = sim.substrate.pending_delete;
+        *lifecycle = sim.load_objects.into_inner();
+        *queue = sim.substrate.pending_delete.into_inner();
     }
 
     fn construct(

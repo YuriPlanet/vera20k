@@ -406,7 +406,11 @@ fn assert_paid_deso_lifecycle(profile_path: &'static str) {
         if let Some(output) = output {
             frames += 1;
             assert!(output.tick.frame_committed);
-            assert_eq!(scene.sim().session.total_sim_ms(), frames * 22);
+            assert_eq!(
+                scene.sim().session.total_sim_ms(),
+                frames * 1000 / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND),
+                "frame {frames}"
+            );
         }
         if let Some(phase) = phase {
             phases.push(phase.to_owned());

@@ -340,8 +340,8 @@ pub(crate) fn enter_idle_mode_for(
     id: u64,
     rules: &RuleSet,
     frame_effects: &mut FrameEffects<'_>,
-) {
-    enter_idle_mode_with(sim, id, rules, frame_effects, true);
+) -> bool {
+    enter_idle_mode_with(sim, id, rules, frame_effects, true)
 }
 
 /// Mission_Attack state 10's Enter_Idle_Mode (`0x00418CFA`): the state clears
@@ -366,19 +366,19 @@ fn enter_idle_mode_with(
     rules: &RuleSet,
     frame_effects: &mut FrameEffects<'_>,
     planning_arrival: bool,
-) {
+) -> bool {
     #[cfg(any(test, feature = "test-support"))]
     if RECORDED_CALLS
         .with(|calls| calls.get().map(|n| calls.set(Some(n + 1))))
         .is_some()
     {
-        return;
+        return false;
     }
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
+        return false;
     };
     let Some(object) = sim.entity_object_type(entity, rules) else {
-        return;
+        return false;
     };
     let landing = super::landing_base::landing_base(
         entity,
@@ -428,7 +428,7 @@ fn enter_idle_mode_with(
             frame_effects: frame_effects.reborrow(),
             planning_arrival,
         },
-    );
+    )
 }
 
 struct WorldIdle<'a> {
@@ -506,14 +506,14 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn team(&mut self) -> bool {
-        self.sim.team_script_vm.team_for_member(self.id).is_some()
+        self.sim.team_script_vm.team_of(self.id).is_some()
     }
 
     fn team_entered_map(&mut self) -> bool {
-        let (team, _) = self
+        let team = self
             .sim
             .team_script_vm
-            .team_for_member(self.id)
+            .team_of(self.id)
             .expect("asked of a team member");
         self.sim.team_has_entered_map(team)
     }

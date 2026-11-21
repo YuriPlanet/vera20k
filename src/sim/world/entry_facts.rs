@@ -329,7 +329,7 @@ impl CellFacts {
             deck: raw.occupant_at(key, MovementLayer::Bridge),
             in_playfield: crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
             ),
             overlay: sim.cell_overlay(cell),
@@ -444,67 +444,93 @@ impl PlainCell {
     }
 }
 
-/// What Can_Enter_Cell reads of one blocker in a cell's object list, at one
-/// frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct BlockerFacts {
-    pub(super) owner: InternedId,
-    pub(super) type_ref: InternedId,
-    /// Its crush inputs, with its category and Iron Curtain.
-    pub(super) crush: CrushTarget,
-    /// Its world coordinate, its cell's x and its body facing.
-    pub(super) position: DriveCoord,
-    pub(super) rx: u16,
-    pub(super) facing: u16,
-    /// `motion_query::is_moving`, and whether it has a NavCom or turns.
-    pub(super) moving: Option<bool>,
-    pub(super) nav_com: bool,
-    pub(super) rotating: bool,
-    pub(super) warped_out: bool,
-    pub(super) fully_cloaked: bool,
-    pub(super) disguised: bool,
-    pub(super) open_gate: bool,
-    pub(super) bunker_occupied: bool,
-    pub(super) foot_occupation: bool,
-    pub(super) occupant_slot_a4: bool,
+/// One blocker in a cell's object list as Can_Enter_Cell reads it: a path
+/// search's kept [`BlockerFacts`], or the entity itself at a frame. An ask
+/// outside a search reads each fact only where its branch tests it, with the
+/// read [`BlockerFacts::of`] makes, so it answers as the copy would
+/// (VERA-only; every read is of the blocker's own record and stamps no
+/// Dummy).
+#[derive(Clone, Copy)]
+pub(super) enum Blocker<'a> {
+    Kept(BlockerFacts),
+    Live(&'a GameEntity, u32),
 }
 
-impl BlockerFacts {
-    /// VERA-only: a per-batch read-only copy of each blocker's category,
-    /// owner, type, cloak, crush target, motion, facing and position, with
-    /// its warp, disguise, gate, bunker, occupation and track-slot bits, for
-    /// classify_foot_entry (Infantry `0x0051BF90` / Unit `0x0073F0A0`); the
-    /// entity records are the source of truth, rebuilt every batch. An ask
-    /// outside a batch reads it fresh.
-    pub(super) fn of(b: &GameEntity, frame: u32) -> Self {
-        Self {
-            owner: b.owner(),
-            type_ref: b.type_ref(),
-            crush: CrushTarget::from_entity(b, frame),
-            position: crate::sim::movement::ground_pose::position_world_coord(&b.position),
-            rx: b.position.rx(),
-            facing: b.body_facing_current(frame),
-            moving: crate::sim::movement::motion_query::is_moving(b),
-            nav_com: b.navigation.nav_com().is_some(),
-            rotating: b.body_facing.is_rotating(frame),
-            warped_out: b.is_warped_out(),
-            fully_cloaked: b.cloak.as_ref().is_some_and(|s| s.is_fully_cloaked()),
-            disguised: b.seldom.disguise.as_ref().is_some_and(|s| s.is_disguised()),
-            open_gate: b.is_open_gate(),
-            bunker_occupied: b.bunker.occupant().is_some(),
-            foot_occupation: b.foot_occupation_enabled(),
-            occupant_slot_a4: crate::sim::movement::drive_track::occupant_slot_a4_answers_true(b),
-        }
-    }
-
+impl Blocker<'_> {
     pub(super) fn category(&self) -> EntityCategory {
-        self.crush.category
+        match *self {
+            Self::Kept(facts) => facts.crush.category,
+            Self::Live(b, _) => b.category(),
+        }
     }
 
     /// Iron Curtain or Force Shield at that frame.
     pub(super) fn invulnerable(&self) -> bool {
-        self.crush.iron_curtained
+        self.crush().iron_curtained
     }
+}
+
+/// [`BlockerFacts`] and the [`Blocker`] read of each of its facts, from one
+/// list of each fact's read of the blocker `$b` at frame `$frame`.
+macro_rules! blocker_facts {
+    (|$b:ident, $frame:ident| $($(#[$doc:meta])* $fact:ident: $ty:ty = $read:expr,)*) => {
+        /// What Can_Enter_Cell reads of one blocker in a cell's object list,
+        /// at one frame.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(super) struct BlockerFacts {
+            $($(#[$doc])* pub(super) $fact: $ty,)*
+        }
+
+        impl BlockerFacts {
+            /// VERA-only: a per-batch read-only copy of each blocker's
+            /// category, owner, type, cloak, crush target, motion, facing and
+            /// position, with its warp, disguise, gate, bunker, occupation and
+            /// track-slot bits, for classify_foot_entry (Infantry
+            /// `0x0051BF90` / Unit `0x0073F0A0`); the entity records are the
+            /// source of truth, rebuilt every batch. An ask outside a batch
+            /// reads them fresh ([`Blocker::Live`]).
+            pub(super) fn of($b: &GameEntity, $frame: u32) -> Self {
+                Self { $($fact: $read,)* }
+            }
+        }
+
+        impl Blocker<'_> {
+            $(
+                // A read may leave the frame unused, and a fact only the
+                // copy's comparison reads (its type) has no live asker.
+                #[allow(dead_code, unused_variables)]
+                pub(super) fn $fact(&self) -> $ty {
+                    match *self {
+                        Self::Kept(facts) => facts.$fact,
+                        Self::Live($b, $frame) => $read,
+                    }
+                }
+            )*
+        }
+    };
+}
+
+blocker_facts! { |b, frame|
+    owner: InternedId = b.owner(),
+    type_ref: InternedId = b.type_ref(),
+    /// Its crush inputs, with its category and Iron Curtain.
+    crush: CrushTarget = CrushTarget::from_entity(b, frame),
+    /// Its world coordinate, its cell's x and its body facing.
+    position: DriveCoord = crate::sim::movement::ground_pose::position_world_coord(&b.position),
+    rx: u16 = b.position.rx(),
+    facing: u16 = b.body_facing_current(frame),
+    /// `motion_query::is_moving`, and whether it has a NavCom or turns.
+    moving: Option<bool> = crate::sim::movement::motion_query::is_moving(b),
+    nav_com: bool = b.navigation.nav_com().is_some(),
+    rotating: bool = b.body_facing.is_rotating(frame),
+    warped_out: bool = b.is_warped_out(),
+    fully_cloaked: bool = b.cloak.as_ref().is_some_and(|s| s.is_fully_cloaked()),
+    disguised: bool = b.seldom.disguise.as_ref().is_some_and(|s| s.is_disguised()),
+    open_gate: bool = b.is_open_gate(),
+    bunker_occupied: bool = b.bunker.occupant().is_some(),
+    foot_occupation: bool = b.foot_occupation_enabled(),
+    occupant_slot_a4: bool =
+        crate::sim::movement::drive_track::occupant_slot_a4_answers_true(b),
 }
 
 #[cfg(any(test, feature = "test-support"))]

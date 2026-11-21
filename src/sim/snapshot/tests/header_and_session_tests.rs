@@ -15,8 +15,8 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
         .with_allows_manual_alliances(false);
     sim.install_session_admission(mode, None, policy);
     let map = sim.session.map_name().to_owned();
-    sim.scenario_rng = serde_json::from_value(serde_json::json!({
-        "disabled": 0, "index_a": 0, "index_b": 0, "state": []
+    *sim.scenario_rng = serde_json::from_value(serde_json::json!({
+        "disabled": 0, "index_a": 250, "index_b": 0, "state": vec![0u32; 250]
     }))
     .unwrap();
     let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
@@ -24,6 +24,33 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
         GameSnapshot::load_validated(&bytes, 1, 2, &map),
         Err(SnapshotError::InvalidRandomCursor)
     ));
+}
+
+/// A save whose Scenario RNG table is short is refused while it is read,
+/// with the table's length in the message.
+#[test]
+fn snapshot_refuses_a_short_rng_table() {
+    let mut sim = Simulation::new();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0xC0FF_EE11);
+    let map = sim.session.map_name().to_owned();
+    let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
+    // The table's wire form is a length and then the words, as a Vec's.
+    let saved = save_codec::serialize(&sim.scenario_rng).unwrap();
+    let at = bytes
+        .windows(saved.len())
+        .position(|window| window == saved)
+        .expect("the Scenario RNG is saved");
+    let short = save_codec::serialize(&(0u8, 0i32, 0i32, vec![0u32; 3])).unwrap();
+    let mut damaged = bytes[..at].to_vec();
+    damaged.extend_from_slice(&short);
+    damaged.extend_from_slice(&bytes[at + saved.len()..]);
+    let error = GameSnapshot::load_validated(&damaged, 1, 2, &map)
+        .err()
+        .expect("a short table is refused");
+    assert!(
+        error.to_string().contains("holds 3 words, not 250"),
+        "{error}"
+    );
 }
 
 /// Prove snapshot round-trip preserves all authoritative state.
@@ -47,8 +74,8 @@ fn round_trip_preserves_state_hash() {
     // Native in-scenario load restarts Scenario RNG from Seed0. Put both
     // source/reference branches on that cursor before testing unrelated
     // snapshot persistence and continued deterministic execution.
-    sim_a.scenario_rng = crate::sim::rng::SimRng::new(0);
-    sim_b.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim_a.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim_b.scenario_rng = crate::sim::rng::SimRng::new(0);
 
     // Snapshot sim_a at tick 50.
     let hash_at_50 = sim_a.state_hash();
@@ -465,7 +492,7 @@ fn custom_player_file_resumes_live_navigation_and_fallback_cell() {
     live.resolve_type_handles(rules);
     let template = flat_terrain(16, 16);
     live.install_resolved_terrain_for_new_map(flat_terrain(16, 16));
-    live.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *live.overlay_grid = Some(OverlayGrid::new(16, 16));
     let bounds = PlayfieldBounds {
         base: 8,
         off_fc: -1_000,
@@ -827,12 +854,16 @@ fn validated_load_requires_exact_content_and_session_metadata() {
 
 /// Every saved type traces to one description, and its id can never equal
 /// a counter from the hand-kept scheme.
+// Unoptimized, the trace's frames hold about 1.9 MiB of whole snapshots and
+// worlds, which leaves a body on libtest's 2 MiB thread next to nothing.
 #[test]
 fn snapshot_layout_describes_every_saved_type() {
-    let description =
-        save_codec::layout::describe::<GameSnapshot>().unwrap_or_else(|error| panic!("{error}"));
-    assert!(description.starts_with("GameSnapshot\n"));
-    assert!(description.contains("\nSimulation struct{"));
-    assert_ne!(super::snapshot_layout() & 0x8000_0000, 0);
-    assert_eq!(super::snapshot_layout(), super::snapshot_layout());
+    crate::test_fixture::on_game_stack(|| {
+        let description = save_codec::layout::describe::<GameSnapshot>()
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert!(description.starts_with("GameSnapshot\n"));
+        assert!(description.contains("\nSimulation struct{"));
+        assert_ne!(super::snapshot_layout() & 0x8000_0000, 0);
+        assert_eq!(super::snapshot_layout(), super::snapshot_layout());
+    });
 }

@@ -97,20 +97,20 @@ impl Simulation {
             SnapshotProcessState::Live(live) => {
                 if !retain_continuation {
                     self.session.record_random_seed(live.session.seed());
-                    self.mapgen_rng = live.mapgen_rng.clone();
+                    *self.mapgen_rng = (*live.mapgen_rng).clone();
                     self.substrate
                         .raw_cell_occupation
                         .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
                 }
-                self.main_rng = live.main_rng.clone();
+                *self.main_rng = (*live.main_rng).clone();
                 self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
             }
             SnapshotProcessState::Cold(main) => {
                 if !retain_continuation {
                     self.session.record_random_seed(0);
-                    self.mapgen_rng = SimRng::new(0);
+                    *self.mapgen_rng = SimRng::new(0);
                 }
-                self.main_rng = main.checkpoint();
+                *self.main_rng = main.checkpoint();
             }
         }
     }
@@ -149,14 +149,14 @@ impl Simulation {
         {
             return Err("replay startup House is absent from the constructed world".into());
         }
-        self.session = session;
+        *self.session = session;
         // ScenarioSession.started is process state, deliberately serde-skipped.
         // Retain the fresh loader's StartScenario683E75 publication: Tag6E4F60
         // consumes it when adjusting the active trigger traversal cursors.
         self.session.publish_started();
-        self.scenario_rng = scenario;
-        self.main_rng = main;
-        self.mapgen_rng = mapgen;
+        *self.scenario_rng = scenario;
+        *self.main_rng = main;
+        *self.mapgen_rng = mapgen;
         Ok(())
     }
 
@@ -167,8 +167,8 @@ impl Simulation {
     /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
     pub fn initialize_random_number_system(&mut self, seed: u32) {
         self.session.record_random_seed(u64::from(seed));
-        self.scenario_rng = SimRng::new(u64::from(seed));
-        self.main_rng = SimRng::new(u64::from(seed));
+        *self.scenario_rng = SimRng::new(u64::from(seed));
+        *self.main_rng = SimRng::new(u64::from(seed));
     }
 
     /// Apply the successful load's native MapClass Resize reconstruction to
@@ -204,7 +204,7 @@ impl Simulation {
     /// Adopt the process-global CellClass identity already bound to a load's
     /// resolved grid, before that grid is cloned into Simulation.
     pub fn bind_shared_cell_dummy(&mut self, shared_cell_dummy: SharedCellDummy) {
-        self.shared_cell_dummy = shared_cell_dummy.clone();
+        *self.shared_cell_dummy = shared_cell_dummy.clone();
         if let Some(terrain) = self.resolved_terrain.as_mut() {
             terrain.bind_shared_cell_dummy(shared_cell_dummy);
         }
@@ -345,11 +345,11 @@ impl Simulation {
     }
 
     pub fn playfield_bounds(&self) -> Option<crate::sim::cell_rect::PlayfieldBounds> {
-        self.playfield_bounds
+        *self.playfield_bounds
     }
 
     pub fn playfield_size_height(&self) -> Option<i32> {
-        self.playfield_size_height
+        *self.playfield_size_height
     }
 
     /// Advances on every frame step and every debug-trainer write. Between
@@ -358,17 +358,17 @@ impl Simulation {
     /// production, power or superweapon state; a presentation cache of values
     /// derived from those holds while this and the rules serial are unchanged.
     pub fn revision(&self) -> u64 {
-        self.revision
+        *self.revision
     }
 
     /// Mark a write that a presentation cache keyed on [`Self::revision`]
     /// must see.
     pub(crate) fn note_revision(&mut self) {
-        self.revision = self.revision.wrapping_add(1);
+        *self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn playfield_revision(&self) -> u64 {
-        self.playfield_revision
+        *self.playfield_revision
     }
 
     pub fn bridge_explosions(&self) -> &[InternedId] {
@@ -418,7 +418,7 @@ impl Simulation {
         &mut self,
         general: &crate::rules::ruleset::GeneralRules,
     ) {
-        self.terrain_speed_config = terrain_speed::TerrainSpeedConfig::from_general(
+        *self.terrain_speed_config = terrain_speed::TerrainSpeedConfig::from_general(
             general.tracked_uphill,
             general.tracked_downhill,
             general.wheeled_uphill,
@@ -429,18 +429,18 @@ impl Simulation {
     /// The authored `Full_Init`'s `InitCellAttributes(0)` value-only total,
     /// recorded once by the authored map install.
     pub(crate) fn record_authored_tiberium_value_total(&mut self, total: i32) {
-        self.authored_tiberium_value_total = Some(total);
+        *self.authored_tiberium_value_total = Some(total);
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn authored_tiberium_value_total(&self) -> Option<i32> {
-        self.authored_tiberium_value_total
+        *self.authored_tiberium_value_total
     }
 
     /// A mission or production step placed new objects this frame; the frame
     /// tail folds it into the tick's `spawned_entities`.
     pub(crate) fn note_mission_spawned_entities(&mut self) {
-        self.mission_spawned_entities = true;
+        *self.mission_spawned_entities = true;
     }
 
     /// Every Techno+324 Wave link, by owner.
@@ -456,11 +456,11 @@ impl Simulation {
     }
 
     pub fn input_delay_ticks(&self) -> u64 {
-        self.input_delay_ticks
+        *self.input_delay_ticks
     }
 
     pub fn quit_requested(&self) -> bool {
-        self.quit_requested
+        *self.quit_requested
     }
 
     pub fn base_reservations(&self) -> &crate::sim::cell_rect::CellReservationGrid {
@@ -510,7 +510,7 @@ impl Simulation {
             // match seed is the one value every peer, rejoiner and watcher
             // already holds. Truncated to 32 bits as for Scenario/Main, it gives
             // MapGen their seeded state, from which it advances on its own.
-            self.mapgen_rng = SimRng::new(self.session.seed());
+            *self.mapgen_rng = SimRng::new(self.session.seed());
         }
         self.session.install_admission(mode, class, rule_policy);
     }
@@ -608,19 +608,19 @@ impl Simulation {
     /// Install the bridge record vector a load builds from the map grid's
     /// CellClass state, or its rebuild after a crate `OverlayClass::Mark` batch.
     pub(crate) fn install_bridge_runtime(&mut self, bridges: BridgeRuntimeState) {
-        self.bridge_state = Some(bridges);
+        *self.bridge_state = Some(bridges);
     }
 
     /// Install the map's `[Smudge]` grid and mark the cells it seeded dirty.
     pub(crate) fn install_smudge_grid(&mut self, smudges: SmudgeGrid) {
-        self.smudge_grid = Some(smudges);
+        *self.smudge_grid = Some(smudges);
         Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
     }
 
     /// Install the native unique-id cursor a scenario prefix plan staged,
     /// before terrain Fill constructs the first map object.
     pub(crate) fn install_native_unique_id_cursor(&mut self, cursor: NativeUniqueIdCursor) {
-        self.native_unique_ids = Some(cursor);
+        *self.native_unique_ids = Some(cursor);
     }
 
     // Client-crate fixtures for operations that take their owners.
@@ -873,12 +873,12 @@ impl Simulation {
         &mut self,
         bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
     ) {
-        self.playfield_bounds = bounds;
+        *self.playfield_bounds = bounds;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_playfield_size_height_for_test(&mut self, height: Option<i32>) {
-        self.playfield_size_height = height;
+        *self.playfield_size_height = height;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -891,22 +891,22 @@ impl Simulation {
         &mut self,
         handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
     ) {
-        self.rule_handles = handles;
+        *self.rule_handles = handles;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_quit_requested_for_test(&mut self, requested: bool) {
-        self.quit_requested = requested;
+        *self.quit_requested = requested;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_connection_lost_for_test(&mut self, lost: bool) {
-        self.connection_lost = lost;
+        *self.connection_lost = lost;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_terrain_speed_config_for_test(&mut self, config: terrain_speed::TerrainSpeedConfig) {
-        self.terrain_speed_config = config;
+        *self.terrain_speed_config = config;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1021,12 +1021,13 @@ impl Simulation {
         self.houses.configure_cell_grid(grid);
         self.terrain_objects.configure_cell_grid(grid);
         self.bind_shared_cell_dummy(resolved_terrain.shared_cell_dummy());
-        self.real_cell_bridge_flags_0x1180 =
+        *self.real_cell_bridge_flags_0x1180 =
             resolved_terrain.capture_real_cell_bridge_flags_0x1180();
         self.dynamic_terrain_cells.clear();
-        self.resolved_terrain = Some(resolved_terrain);
+        self.ice_cracks.clear();
+        *self.resolved_terrain = Some(resolved_terrain);
         // A fresh grid restarts its mutation epoch; drop any plane keyed on the old one.
-        self.movement_pass_cache = Default::default();
+        *self.movement_pass_cache = Default::default();
     }
 
     /// Apply one live runtime setter and update only the allocated real-cell
@@ -1041,7 +1042,7 @@ impl Simulation {
             return;
         };
         if !terrain.bridge_flag_authority_matches_shape(&self.real_cell_bridge_flags_0x1180) {
-            self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
+            *self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
         }
         let updates = self
             .resolved_terrain
@@ -1085,7 +1086,7 @@ impl Simulation {
         self.resolved_terrain
             .as_ref()
             .map(ResolvedTerrainGrid::shared_cell_dummy)
-            .unwrap_or_else(|| self.shared_cell_dummy.clone())
+            .unwrap_or_else(|| (*self.shared_cell_dummy).clone())
     }
 
     /// Install the Scenario cursor advanced by the pre-IsoMapPack Fill pass.
@@ -1095,14 +1096,14 @@ impl Simulation {
         &mut self,
         scenario_rng: SimRng,
     ) {
-        self.scenario_rng = scenario_rng;
+        *self.scenario_rng = scenario_rng;
     }
 
     /// Install the Main cursor advanced by one-time terrain variant-table
     /// generation. Called only by sim's opaque bootstrap owner; Scenario
     /// remains independently owned by the Fill pass.
     pub(in crate::sim) fn install_variant_advanced_main_rng(&mut self, main_rng: SimRng) {
-        self.main_rng = main_rng;
+        *self.main_rng = main_rng;
     }
 
     /// Bind a successful fresh or saved scenario to the retained process Main
@@ -1118,12 +1119,12 @@ impl Simulation {
     pub fn install_fresh_process_main(&mut self, process: &MainRng) {
         // Two streams from one cursor is the intent: from here the app and
         // the simulation each draw their own.
-        process.install(self.main_rng.clone());
+        process.install((*self.main_rng).clone());
     }
 
     /// Install the process MapGen cursor prepared by the bootstrap owner.
     pub(in crate::sim) fn install_generated_mapgen_rng(&mut self, mapgen_rng: SimRng) {
-        self.mapgen_rng = mapgen_rng;
+        *self.mapgen_rng = mapgen_rng;
     }
 
     /// Publish a completed RMG run into the resident process cursor. Original

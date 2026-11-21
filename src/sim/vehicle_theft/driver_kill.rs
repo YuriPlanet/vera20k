@@ -368,18 +368,19 @@ impl Simulation {
             .entities
             .get(target)
             .and_then(|actor| self.entity_object_type(actor, rules))
-            .map(|kind| kind.driver_rules().operator().clone())
-            .unwrap_or_default();
-        let passengers = self
-            .substrate
-            .entities
-            .get(target)
-            .and_then(|actor| actor.passenger_role().cargo())
-            .map(|cargo| cargo.passengers().to_vec())
-            .unwrap_or_default();
+            .map(|kind| kind.driver_rules().operator());
+        let passengers = || {
+            self.substrate
+                .entities
+                .get(target)
+                .and_then(|actor| actor.passenger_role().cargo())
+                .map_or(&[][..], |cargo| cargo.passengers())
+        };
         match operator {
             //1004572C..10045756: _ANY_ removes ONE operator, the head.
-            crate::rules::ares_driver::OperatorRequirement::Any if !passengers.is_empty() => {
+            Some(crate::rules::ares_driver::OperatorRequirement::Any)
+                if !passengers().is_empty() =>
+            {
                 let _ = depart_cargo_head(
                     self,
                     rules,
@@ -396,10 +397,11 @@ impl Simulation {
                     context.effects(),
                 );
             }
-            crate::rules::ares_driver::OperatorRequirement::Types(types) => {
-                for passenger in passengers {
-                    if self
-                        .substrate
+            Some(crate::rules::ares_driver::OperatorRequirement::Types(types)) => {
+                //100457D0 falls through to100457D6 after the first
+                //matching operator; only nonmatches advance the list.
+                let matched = passengers().iter().copied().find(|&passenger| {
+                    self.substrate
                         .entities
                         .get(passenger)
                         .and_then(|actor| self.entity_object_type(actor, rules))
@@ -409,18 +411,10 @@ impl Simulation {
                                     && required.id.eq_ignore_ascii_case(&kind.id)
                             })
                         })
-                    {
-                        self.remove_cargo_passenger(
-                            target,
-                            Some(passenger),
-                            rules,
-                            context.effects(),
-                        );
-                        self.record_kill_and_uninit(passenger, invoker, context.reborrow());
-                        //100457D0 falls through to100457D6 after the first
-                        //matching operator; only nonmatches advance the list.
-                        break;
-                    }
+                });
+                if let Some(passenger) = matched {
+                    self.remove_cargo_passenger(target, Some(passenger), rules, context.effects());
+                    self.record_kill_and_uninit(passenger, invoker, context.reborrow());
                 }
             }
             _ => {}

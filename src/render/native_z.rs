@@ -229,7 +229,7 @@ pub const Z_GRADIENT_ZSHAPE_FLAG: u32 = 0x100;
 pub const Z_GRADIENT_ZSHAPE_CLIP_FLAG: u32 = 0x200;
 
 /// Unit final-composite split (`0x0073B140`, Unit vtable +0x55C).
-/// Only the voxel sprite shader consumes this bit. All body parts retain
+/// It rides with [`Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG`]. All body parts retain
 /// one native composite rectangle; its last 16 rows use gradient 2/FootZ,
 /// while preceding rows use gradient 0/FootZ-5. Shadows do not carry it.
 pub const Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG: u32 = 0x400;
@@ -238,10 +238,20 @@ pub const Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG: u32 = 0x400;
 /// (`0x0073B140` and TechnoClass::Render `0x00706ED0`, both via `0x004AF2A0`),
 /// which clips its destination rectangle to the tactical view before seeding
 /// (`0x00437461`, then `0x004374BB..0x004375A7` read the clipped rectangle).
-/// A bottom-seeded walk then depends on the clipped bottom row. Only the
-/// voxel sprite shader consumes this bit; an SHP frame carries
+/// A bottom-seeded walk then depends on the clipped bottom row. A turreted
+/// SHP Unit's body and turret reach the screen through the same composite
+/// (`0x0073C7AC..0x0073CDF9`), so the SHP shader takes this bit too, but
+/// only without [`Z_GRADIENT_LINEAR_SHAPE_FLAG`], whose channel bits share
+/// it ([`unit_composite`]). A frame drawn straight to the screen carries
 /// [`Z_GRADIENT_RAW_FRAME_FLAG`] instead.
 pub const Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG: u32 = 0x1000;
+
+/// Whether a packed gradient is a Unit final composite's
+/// ([`pack_voxel_z_gradient`]), whose blit `fx_params.w` clips to the view.
+pub const fn unit_composite(packed_gradient: u32) -> bool {
+    packed_gradient & (Z_GRADIENT_LINEAR_SHAPE_FLAG | Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG)
+        == Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG
+}
 
 /// A raw SHP frame (format bit 0x02 clear). CC_Draw_Shape hands it to
 /// Bit_Blit (`0x004AF126 -> 0x004373B0`), which clips the rectangle to the
@@ -293,8 +303,8 @@ pub fn pack_overlay_z_gradient(gradient: ZGradient, slope: u8, stride: u16) -> u
         | (u32::from(stride) << 16)
 }
 
-/// A voxel body's final composite: clipped to the view, and split when
-/// `bridge_split`.
+/// A Unit body's final composite (`0x0073B140`), voxel or turreted SHP:
+/// clipped to the view, and split when `bridge_split`.
 pub const fn pack_voxel_z_gradient(gradient: ZGradient, bridge_split: bool) -> u32 {
     gradient as u32
         | Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG

@@ -239,7 +239,7 @@ fn original_shared_wave_geometry_in_all_octants_elevation_and_converged_xy() {
                 let rejected =
                     Wave::new(wave_type, coord(&input["source"]), coord(&input["target"]));
                 assert!(
-                    !rejected.constructor_distance_is_live(),
+                    !rejected.constructor_distance_is_live(false),
                     "original ctor rejects zero XY"
                 );
                 continue;
@@ -448,4 +448,16 @@ fn original_update_reverses_only_a_unit_target() {
     };
     let terminal = wave.initialize(context, Some(&terrain));
     assert_state(&wave, &row["after"], !terminal);
+}
+
+/// `75EA59`: `(46_341, 46_341)` wraps the native square to 9,266, so the
+/// constructor reads 96 leptons and rejects the wave; the true square is
+/// 65,536 and the wave is live.
+#[test]
+fn vera_only_wave_construction_uses_the_true_square() {
+    let source = ProjectileCoord::new(0, 0, 0);
+    let target = ProjectileCoord::new(46_341, 46_341, 0);
+    let wave = Wave::new(3, source, target);
+    assert!(!wave.constructor_distance_is_live(false));
+    assert!(wave.constructor_distance_is_live(true));
 }

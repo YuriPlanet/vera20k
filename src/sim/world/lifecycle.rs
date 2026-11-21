@@ -63,7 +63,7 @@ impl BuildingLight {
     pub(crate) const fn light(self) -> Option<u64> {
         self.light
     }
-    pub(super) fn attach(&mut self, id: u64) {
+    pub(super) fn attach(&mut self, id: u64, _: crate::sim::game_entity::NameNote) {
         self.light = Some(id);
     }
     pub(super) fn take(&mut self) -> Option<u64> {
@@ -549,14 +549,14 @@ impl Simulation {
         &mut self,
         operation: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.object_placement_scope_depth = self.object_placement_scope_depth.wrapping_add(1);
+        *self.object_placement_scope_depth = self.object_placement_scope_depth.wrapping_add(1);
         let result = operation(self);
-        self.object_placement_scope_depth = self.object_placement_scope_depth.wrapping_sub(1);
+        *self.object_placement_scope_depth = self.object_placement_scope_depth.wrapping_sub(1);
         result
     }
 
     pub(crate) fn object_placement_scope_active(&self) -> bool {
-        self.object_placement_scope_depth != 0
+        *self.object_placement_scope_depth != 0
     }
 
     /// Crate validation4A18F0 saves A8E7AC, clears it at4A190B, and
@@ -567,9 +567,9 @@ impl Simulation {
         &mut self,
         operation: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let prior = std::mem::take(&mut self.object_placement_scope_depth);
+        let prior = std::mem::take(&mut *self.object_placement_scope_depth);
         let result = operation(self);
-        self.object_placement_scope_depth = prior;
+        *self.object_placement_scope_depth = prior;
         result
     }
 
@@ -581,14 +581,14 @@ impl Simulation {
     /// ([`Self::spawn_object`]), whose buildings stand like a map's. Native's
     /// other readers of the byte keep the clear byte's answer.
     pub(crate) fn with_buildup_bypass<R>(&mut self, operation: impl FnOnce(&mut Self) -> R) -> R {
-        let saved = std::mem::replace(&mut self.buildup_bypass, true);
+        let saved = std::mem::replace(&mut *self.buildup_bypass, true);
         let result = operation(self);
-        self.buildup_bypass = saved;
+        *self.buildup_bypass = saved;
         result
     }
 
     pub(crate) fn buildup_bypass_active(&self) -> bool {
-        self.buildup_bypass
+        *self.buildup_bypass
     }
 }
 

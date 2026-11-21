@@ -35,11 +35,11 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
     overlays.cell_mut_for_test(2, 1).overlay_id = Some(0xCD);
 
     let mut sim = Simulation::new();
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
         &terrain, true, 10,
     ));
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(overlays);
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(overlays);
     let mut building = make_test_entity("GAREFN", EntityCategory::Structure);
     building.cell_x = 8;
     building.cell_y = 8;
@@ -197,7 +197,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         // The player has seen the building: the campaign scan gate needs +0x41B.
         crate::sim::arena_fixture::discover(&mut sim, 2);
         sim.add_entity_occupancy(2);
-        sim.fog = crate::sim::vision::FogState::new(3, 1);
+        *sim.fog = crate::sim::vision::FogState::new(3, 1);
         crate::sim::vision::reveal_radius(&mut sim.fog, owner, 0, 0, 3);
         sim.set_logic_order_for_test(vec![1]);
         sim.mission_queue_exact(
@@ -208,7 +208,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             &crate::sim::mission::authority::LiveReadyInputProvider { rules: &rules },
         )
         .expect("queue remains pending through TubeMovement");
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
 
         sim.advance_tick(&[], Some(&rules), Some(&path), None, 67);
 
@@ -322,7 +322,7 @@ fn gsi_04_10_in_tick_refresh_updates_the_tail_path_before_consumers() {
     use crate::sim::terrain_object::{mark_terrain_occupation, unmark_terrain_occupation};
 
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(gsi_04_10_clear_terrain(2, 1));
+    *sim.resolved_terrain = Some(gsi_04_10_clear_terrain(2, 1));
     let tree = gsi_04_10_terrain_object(&mut sim, 1, (0, 0), 7);
     mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
     let mut input_path_grid = PathGrid::from_resolved_terrain_with_bridges(
@@ -333,7 +333,7 @@ fn gsi_04_10_in_tick_refresh_updates_the_tail_path_before_consumers() {
     assert!(!input_path_grid.is_walkable(0, 0));
 
     unmark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
-    sim.path_grid = Some(Arc::new(input_path_grid));
+    *sim.path_grid = Some(Arc::new(input_path_grid));
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     sim.finish_terrain_navigation_changes(&rules, &[(0, 0)]);
     let phase_six_consumer_grid = sim.path_grid_snapshot().expect("tail grid");
@@ -355,7 +355,7 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     use crate::sim::terrain_object::{mark_terrain_occupation, unmark_terrain_occupation};
 
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(gsi_04_10_clear_terrain(1, 1));
+    *sim.resolved_terrain = Some(gsi_04_10_clear_terrain(1, 1));
     let tree = gsi_04_10_terrain_object(&mut sim, 1, (0, 0), 0);
     mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
     assert_eq!(

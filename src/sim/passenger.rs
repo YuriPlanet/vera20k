@@ -480,14 +480,18 @@ impl Simulation {
     /// TechnoClass::ClearAllInOpenTransport @ 0x007104C0: clear only each
     /// Cargo member's +82 byte; do not detach +11C or pop its cargo link.
     pub(crate) fn clear_all_in_open_transport(&mut self, transport_id: u64) {
-        let passengers = self
-            .substrate
-            .entities
-            .get(transport_id)
-            .and_then(|transport| transport.passenger_role().cargo())
-            .map(|cargo| cargo.passengers().to_vec())
-            .unwrap_or_default();
-        for id in passengers {
+        // Each write is the passenger's own link, never the transport's
+        // cargo, so the walk reads the list in place.
+        for index in 0.. {
+            let Some(id) = self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|transport| transport.passenger_role().cargo())
+                .and_then(|cargo| cargo.passengers().get(index).copied())
+            else {
+                break;
+            };
             if let Some(passenger) = self.substrate.entities.get_mut(id)
                 && let Some(link) = passenger.passenger_role().carrier_link()
             {
@@ -535,12 +539,12 @@ impl Simulation {
             && let Some(transport) = self.substrate.entities.get(carrier)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
-                .and_then(|object| object.enter_transport_sound.clone())
+                .and_then(|object| object.enter_transport_sound.as_deref())
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&transport.position);
             self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 coordinate,
                 flags: 0,
             });
@@ -1338,7 +1342,7 @@ pub(crate) fn board_passenger(
     // `0x0051A2EF..0x0051A30A`: Foot's GetCoords (`+0x48`) before Limbo,
     // played with `VocClass::PlayAt @ 0x007509E0` once the add commits.
     let bio_reactor_entry_sound = absorber_entry
-        .then(|| rules.general.enter_bio_reactor_sound.clone())
+        .then(|| rules.general.enter_bio_reactor_sound.as_deref())
         .flatten()
         .and_then(|sound_id| {
             sim.substrate.entities.get(pax_id).map(|passenger| {
@@ -1489,7 +1493,7 @@ pub(crate) fn board_passenger(
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            sound_id,
+            rules.sound_name(sound_id),
             crate::sim::anim_class::AnimWorldCoord {
                 x: coordinate.x,
                 y: coordinate.y,
@@ -1680,11 +1684,11 @@ impl Simulation {
             && let Some(transport) = self.substrate.entities.get(transport_id)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
-                .and_then(|kind| kind.leave_transport_sound.clone())
+                .and_then(|kind| kind.leave_transport_sound.as_deref())
         {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::VocAtCoord {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     coordinate: crate::sim::movement::ground_pose::position_world_coord(
                         &transport.position,
                     ),
@@ -1984,9 +1988,10 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
         if sim.house_is_human_player(current_owner) {
             //4582A9: centred Voc750920, pan0x2000/volume1/no handle. The
             //configured sound plays even if the following radar event fails.
-            if let Some(sound_id) = rules.general.building_abandoned_sound.clone() {
-                sim.sound_events
-                    .emit(SimSoundEvent::VocCentered { sound_id });
+            if let Some(sound_id) = rules.general.building_abandoned_sound.as_deref() {
+                sim.sound_events.emit(SimSoundEvent::VocCentered {
+                    sound_id: rules.sound_name(sound_id),
+                });
             }
             let building = sim.substrate.entities.get(building_id).unwrap();
             sim.sound_events.emit(SimSoundEvent::StructureAbandoned {

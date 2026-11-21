@@ -140,7 +140,7 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             .set_preferred_super_weapon_target(wide(cell(&input["initial_other_preferred"])));
         sim.session
             .set_binary_frame_for_test(int(&control["frame"]) as u32);
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         // These are the five admitted MapClass predicate inputs in the
         // generator, not a terrain-height fit to a captured target.
         sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
@@ -163,10 +163,10 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             )
             .unwrap();
         }
-        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
-        sim.scenario_rng =
+        *sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
-        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+        *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
         assert_eq!(rng_hashes(&sim), control["rng_before"]);
         for row in control["rows"].as_array().unwrap() {
             let stage = row["stage"].as_str().unwrap();
@@ -531,7 +531,7 @@ fn the_try_fire_arms_match_native() {
         );
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let rally = cell(&row["rally"]);
@@ -548,7 +548,7 @@ fn the_try_fire_arms_match_native() {
             .expect("the rally object stands");
         }
         if flag(&row["storm"]) {
-            sim.lightning_storm = LightningStorm::raging_for_test(enemy, (3, 3));
+            *sim.lightning_storm = LightningStorm::raging_for_test(enemy, (3, 3));
         }
         let mut ids = Vec::new();
         for (index, kind) in kinds.iter().enumerate() {
@@ -676,7 +676,7 @@ fn the_genetic_mutator_target_matches_native() {
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         // Each listed object and its cell, in arrival order; the cells that
@@ -902,7 +902,7 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+    *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.set_playfield_bounds_for_test(Some(test_playfield_bounds()));
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
     Some((rules, sim, americans, russians))
@@ -958,6 +958,7 @@ fn retail_walk_reads_each_object() {
             &sim.houses[&americans],
             Some(russians),
             sim.substrate.entities.get(id).unwrap(),
+            RallyLadder::BestRally,
         )
     };
     // The 4x4 yard's centre cell.
@@ -1184,11 +1185,11 @@ fn the_psychic_dominator_target_matches_native() {
             .entry(COMPUTER.to_ascii_uppercase())
             .or_default()
             .insert(ALLY.to_ascii_uppercase());
-        sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
+        *sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.set_playfield_bounds_for_test(Some(playfield(&oracle)));
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
         let status = u8::try_from(int(&row["psydom"])).unwrap();
-        sim.psychic_dominator = PsychicDominatorState::for_test(
+        *sim.psychic_dominator = PsychicDominatorState::for_test(
             status,
             (0, 0),
             (status != 0).then_some(computer),

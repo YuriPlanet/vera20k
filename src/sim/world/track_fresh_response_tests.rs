@@ -99,7 +99,7 @@ fn unit(
     sim.houses.register(house);
     // Map load wires the four [General] slope keys into the live config.
     let general = &rules.general;
-    sim.terrain_speed_config =
+    *sim.terrain_speed_config =
         crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
             general.tracked_uphill,
             general.tracked_downhill,
@@ -640,7 +640,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })

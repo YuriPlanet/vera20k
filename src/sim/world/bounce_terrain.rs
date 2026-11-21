@@ -41,6 +41,16 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
         cell.bridge_flags_0x1180() & 0x100 != 0
     }
 
+    fn selected_fixed_deck_z(&self, selected: &Self::Cell) -> Option<i32> {
+        let CellRef::Real(cell) = selected else {
+            return None;
+        };
+        let terrain = self.sim.resolved_terrain.as_ref()?;
+        let idx = terrain.native_fixed_cell_index(cell.rx as i16, cell.ry as i16)?;
+        let identity = crate::map::cell_index::NativeCellIdentity::Real(idx);
+        crate::sim::movement::ground_pose::corrected_deck_z(terrain, identity)
+    }
+
     fn cell_height_level(&self, coord: IVec3) -> i32 {
         match self.select_cell(coord) {
             CellRef::Real(cell) => i32::from(cell.level as i8),

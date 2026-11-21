@@ -648,19 +648,19 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 /// Spawn order fixes stable ids: 1 = the crossing tank, 2 = a far-away Soviet
 /// rifleman that exists only so neither house is defeated at once.
 fn seed_bridge_scenario(sim: &mut Simulation, rules: &RuleSet) {
-    sim.resolved_terrain = Some(bridge_resolved_terrain(&bridge_grid(), rules));
+    *sim.resolved_terrain = Some(bridge_resolved_terrain(&bridge_grid(), rules));
     // Storage dimensions are independent of the isometric Map Size diamond.
     // This narrow synthetic playfield retains the original route and distant
     // actor while supplying the mandatory mode-one constructor input.
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds::from_raw_local_size(
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds::from_raw_local_size(
         16,
         64,
         [2, 2, 12, 56],
     ));
     // A Drive Process searches: the bridge records, zones and Map Size a map
     // load installs.
-    sim.playfield_size_height = Some(64);
-    sim.bridge_state = Some(
+    *sim.playfield_size_height = Some(64);
+    *sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain_with_map_size(
             sim.resolved_terrain.as_ref().unwrap(),
             true,
@@ -683,7 +683,7 @@ fn seed_bridge_scenario(sim: &mut Simulation, rules: &RuleSet) {
         assert!(
             crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                 (i32::from(rx), i32::from(ry)),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 sim.resolved_terrain.as_ref(),
             ),
             "fixture actor/route cell ({rx},{ry}) must be in the native playfield"

@@ -26,8 +26,8 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
         let mut grid = crate::sim::overlay_grid::OverlayGrid::new(12, 12);
         grid.place_overlay(5, 5, 2, initial_wall_data);
         let _ = grid.take_dirty_cells();
-        sim.overlay_grid = Some(grid);
-        sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
+        *sim.overlay_grid = Some(grid);
+        *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(12, 12));
 
         let projectile_id = sim.substrate.allocate_stable_id();
         let impact = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0);
@@ -189,7 +189,7 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
         overlays.place_overlay(5, 5, 0, 0);
         overlays.place_overlay(12, 5, 0, 0);
         let _ = overlays.take_dirty_cells();
-        sim.overlay_grid = Some(overlays);
+        *sim.overlay_grid = Some(overlays);
         let origin = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 208 + old_height);
         let mut shot = gsi_05_04_guided_projectile(
             crate::sim::combat::RAD_NO_ATTACKER,

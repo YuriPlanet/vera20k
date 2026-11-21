@@ -66,11 +66,11 @@ fn fire_admission_preserves_flat_projectile_layer_through_save_and_retirement() 
         assert_eq!(fire.projectile_spawns.len(), 1);
         assert_eq!(fire.projectile_spawns[0].flat, flat);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = interner;
+        *sim.interner = interner;
         // Preserve the real firer and target identities across the save.
         assert_eq!(sim.substrate.allocate_stable_id(), 1);
         assert_eq!(sim.substrate.allocate_stable_id(), 2);
-        sim.substrate.entities = entities;
+        *sim.substrate.entities = entities;
         let id = sim.substrate.allocate_stable_id();
         sim.admit_projectile(id, fire.projectile_spawns[0]);
         let layer = if flat {
@@ -918,6 +918,7 @@ fn gsi_08_06_point_blank_shot_clamps_the_launch_speed_to_half_the_distance() {
         crate::sim::projectile::launch::fireat_launch_distance(
             spawn.origin,
             spawn.initial_target_position,
+            false,
         ),
     );
     assert!(

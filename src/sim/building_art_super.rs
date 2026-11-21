@@ -353,7 +353,7 @@ mod tests {
         let owner = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(owner, 1, None, true, 0, 10));
-        sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
+        *sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let id = sim
             .spawn_object_at_height("SUPERB", "Russians", 5, 5, 0, 0, &rules)

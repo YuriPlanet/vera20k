@@ -201,7 +201,7 @@ fn a_computer_owned_tethered_arrival_plays_the_second_comment() {
         .sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules)),
             _ => None,
         })
         .collect();

@@ -154,11 +154,11 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let mut sim = Simulation::new();
     sim.session.set_binary_frame_for_test(200);
     sim.session.game_options_mut_for_test().game_speed = integer(&row["game_speed"]);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     let building = case["building"].as_str().unwrap();
     let id = sim.substrate.allocate_stable_id();

@@ -473,6 +473,15 @@ fn sequenced_pair() -> SequencedPair {
 /// `offset` makes the second game's start agreement differ from the first's;
 /// `journal` is the directory the relay keeps its journal in.
 fn sequenced_pair_with(offset: u64, journal: Option<&std::path::Path>) -> SequencedPair {
+    sequenced_pair_paced(offset, journal, Default::default())
+}
+
+/// [`sequenced_pair_with`] under a certificate with `pacing`.
+fn sequenced_pair_paced(
+    offset: u64,
+    journal: Option<&std::path::Path>,
+    pacing: crate::net::udp::CertificatePacing,
+) -> SequencedPair {
     use crate::net::udp::{
         OrderingCertificate, RelayTicket, relay_peer_endpoint,
         test_support::{RelayServer, SecretKey, derive_packet_key},
@@ -502,7 +511,7 @@ fn sequenced_pair_with(offset: u64, journal: Option<&std::path::Path>) -> Sequen
         sources_mask: 3,
         tick_hz: 30,
         expires: 86_500,
-        pacing: Default::default(),
+        pacing,
         ordered_alone: false,
     }
     .sign(&key)
@@ -517,6 +526,7 @@ fn sequenced_pair_with(offset: u64, journal: Option<&std::path::Path>) -> Sequen
             30,
             NonZeroU32::new(1).unwrap(),
             world_hash.wrapping_add(u64::from(source) * offset),
+            0,
             "",
             "",
         )
@@ -612,6 +622,51 @@ fn sequenced_agreement_mismatch_names_itself_in_the_match_report() {
             .iter()
             .all(|boundary| !counters(boundary).started)
     );
+}
+
+/// Under continuous pacing the same slow client slows the match to a whole
+/// rate under what it ran, not to the Game Speed row below it: both clients
+/// read the marker and pace at it, and the slow one catches up.
+///
+/// A step lowers the rate by at most a quarter, so 30 reaches 18 in two
+/// steps (30, 23, 18), and the slow client then drains what it fell behind by
+/// in the first one at the three frames a second it has to spare.
+#[test]
+fn continuous_pacing_slows_both_clients_to_a_whole_rate() {
+    use crate::net::live_commands::MatchSpeedChange;
+    use crate::net::udp::CertificatePacing;
+
+    let (mut worlds, rules, _, boundaries, mut relay) =
+        sequenced_pair_paced(0, None, CertificatePacing::Continuous);
+    let mut now_ms = 16_000;
+    let mut changes = [Vec::new(), Vec::new()];
+    for step in 0..2400 {
+        now_ms += 16;
+        service_pair(&mut worlds, &boundaries, now_ms);
+        relay.pass(now_ms, |_| true);
+        for (index, (world, boundary)) in worlds.iter_mut().zip(&boundaries).enumerate() {
+            if index == 0 || step % 3 == 0 {
+                production_frame(world, &rules, boundary);
+            }
+        }
+        for (seen, boundary) in changes.iter_mut().zip(&boundaries) {
+            seen.extend(boundary.live.borrow_mut().take_speed_changes());
+        }
+    }
+    // 21 a second: nine tenths of it, where rows went to 15.
+    for (seen, boundary) in changes.iter().zip(&boundaries) {
+        let rate = boundary.live.borrow().relay_frames_per_second().unwrap();
+        assert!((16..=20).contains(&rate), "paced at {rate}");
+        assert!(
+            (1..=2).contains(&seen.len())
+                && seen.iter().all(|change| *change == MatchSpeedChange::SlowedBy(1)),
+            "speed changes {seen:?}"
+        );
+    }
+    let [fast, slow] = worlds
+        .each_ref()
+        .map(|world| world.session().binary_frame());
+    assert!(fast - slow <= 2, "the slow client is {} frames behind", fast - slow);
 }
 
 /// A client that runs fewer frames than the relay seals slows the match to a

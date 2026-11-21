@@ -54,9 +54,9 @@ fn fixture(family: TrackFamily, budget: i32) -> (Simulation, TrackInvocation, i3
             )
         }
     }
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     (
         sim,
@@ -189,7 +189,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
             }
             building.seldom.radio_contacts.remove(101);
             sim.substrate.entities.insert(building);
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let mover = sim.substrate.entities.get_mut(1).unwrap();
             let destination = head(mover, family);
             mover
@@ -435,7 +435,7 @@ fn crossing_mark_state_and_open_topped_cargo_are_visible_before_paid_continuatio
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nOpenTopped=yes\n",
     ))
     .unwrap();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let mut cargo = PassengerCargo::new(2, 1.0);
     cargo.board_forced_chain(&[(2, 1.0)]);
     sim.substrate
@@ -661,17 +661,17 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                 })
                 .collect(),
         );
-        sim.path_grid = Some(std::sync::Arc::new(
+        *sim.path_grid = Some(std::sync::Arc::new(
             crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
         ));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         // Supplied Passive=true exercises the admitted native arm; this is
         // not an assertion that stock MTNK can accept an in-call chain.
         let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nPassive=yes\n",
         ))
         .unwrap();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let selected = drive_track::select_drive_track(32, 64, false).unwrap();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         if family == TrackFamily::Ship {
@@ -818,10 +818,138 @@ fn apply_one_marks_handoff_and_full_head_without_foot_enable() {
 }
 
 #[test]
+fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+    let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+    let mut terrain = test_grid(32, 32, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = match (x, y) {
+            (10, 8) => 5,
+            (10, 9) => 0,
+            (10, 10) => 9,
+            _ => 4,
+        };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 8), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    // A terrain write beneath the live span leaves its level-nine deck intact.
+    let anchor = terrain.native_cell_identity((10, 8));
+    terrain.write_native_cell_level(anchor, 4);
+    let target = terrain.native_cell_identity((10, 9));
+    let approach = terrain.native_cell_identity((10, 10));
+    terrain.write_native_cell_level(approach, 4);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+    assert!(
+        !crate::sim::movement::infantry_entry::adjust_height_and_list(
+            &cells,
+            target,
+            0,
+            Some(approach),
+            &mut 4,
+            &mut false,
+        ),
+        "the old ground + 4 height cannot enter the nine-level deck"
+    );
+    terrain.write_native_cell_level(approach, 9);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
+    let (mut height, mut on_bridge) = (9, false);
+    assert!(
+        crate::sim::movement::infantry_entry::adjust_height_and_list(
+            &cells,
+            target,
+            0,
+            None,
+            &mut height,
+            &mut on_bridge,
+        )
+    );
+    assert!(on_bridge);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    sim.track_place(
+        1,
+        DriveCoord::cell(10, 9, 0),
+        (10, 10),
+        true,
+        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut |_, _, _| {},
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(1).unwrap();
+    assert!(tank.on_bridge());
+    assert_eq!(position_world_coord(&tank.position).z, 936);
+    assert_eq!(
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(10, 9)
+            .unwrap()
+            .level,
+        0
+    );
+}
+
+/// The terminal point skips the bridge predicate but still enters its cell:
+/// over a dip it stores the fixed deck's level, as a crossing between cells
+/// does, not the dip's ground plus four.
+#[test]
+fn a_terminal_point_over_a_dip_stores_the_decks_level() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+    let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+    // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+    let mut terrain = test_grid(32, 32, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 8), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    assert_eq!(terrain.corrected_high_bridge_deck_level((10, 9)), Some(9));
+    *sim.path_grid = Some(std::sync::Arc::new(
+        crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
+    ));
+    sim.install_resolved_terrain_for_new_map(terrain);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_on_bridge(true);
+    sim.track_place(
+        1,
+        DriveCoord::cell(10, 9, 0),
+        (10, 10),
+        true,
+        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut |_, _, _| {},
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let tank = sim.substrate.entities.get(1).unwrap();
+    assert!(tank.on_bridge());
+    assert_eq!(tank.position.z(), 9);
+}
+
+#[test]
 fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
     let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
     if sim.path_grid.is_none() {
-        sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
+        *sim.path_grid = Some(std::sync::Arc::new(crate::sim::pathfinding::PathGrid::new(
             32, 32,
         )));
     }
@@ -839,7 +967,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
                 let mut grid = crate::sim::pathfinding::PathGrid::new(32, 32);
                 grid.set_cell_for_test(10, 10, 4, false, false);
                 grid.set_cell_for_test(10, 9, 0, true, false);
-                sim.path_grid = Some(std::sync::Arc::new(grid));
+                *sim.path_grid = Some(std::sync::Arc::new(grid));
                 sim.substrate
                     .entities
                     .get_mut(id)
@@ -1183,7 +1311,7 @@ fn per_cell_partner_fixture(
     producer.lifecycle.set_cell_marked_for_test(true);
     producer.mission.apply_test_fixture(guard);
     sim.substrate.entities.insert(producer);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     assert_eq!(
         transmit(
@@ -1600,7 +1728,7 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
         .type_facts
         .set_foundation_for_test("5x3".into());
     producer.position.put_location(DriveCoord::cell(6, 9, 0));
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     let unit = sim.substrate.entities.get_mut(1).unwrap();
     unit.mission.apply_test_fixture(MissionTestFixture {
@@ -1780,7 +1908,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
                     .type_facts
                     .set_foundation_for_test("1x2".into());
                 producer.position.put_location(DriveCoord::cell(10, 9, 0));
-                sim.substrate.occupancy =
+                *sim.substrate.occupancy =
                     crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
             }
             let unit = sim.substrate.entities.get_mut(1).unwrap();
@@ -2103,7 +2231,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         sim.session.set_map_width_for_test(16);
         sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
-        sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
+        *sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
         sim.install_resolved_terrain_for_new_map(terrain);
         let owner = sim.intern("Russians");
         sim.houses
@@ -2264,9 +2392,9 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         house
             .economy_mut()
             .set_spent_for_test(integer(&before["spent"]));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         assert!(sim.track_survives(tank), "{context}: admitted live Unit");
         let building = sim.substrate.entities.get(depot).unwrap();
         let center =
@@ -2385,7 +2513,7 @@ fn idle_base_fixture(category: EntityCategory) -> Simulation {
         _ => panic!("the idle base fixture supplies only Foot categories"),
     };
     let mut actor = GameEntity::test_default_of_category(1, type_id, "Americans", 10, 10, category);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     // Original fixture end=none, +687=0 and no planning/Archive work. No
     // active controller or class tail is supplied by this comparison.
     actor.locomotor = None;
@@ -2579,7 +2707,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
         let mut sim = idle_base_fixture(category);
         // The production deserializer resets Scenario RNG; isolate this byte
         // by normalizing that independent load behavior before whole hashes.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let clear_hash = sim.state_hash();
         assert_eq!(
             sim.substrate
@@ -2648,7 +2776,7 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
             .type_facts
             .set_foundation_for_test("5x3".into());
         producer.position.put_location(DriveCoord::cell(6, 9, 0));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         let order = NavTargetRef::cell(14, 14);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
@@ -2709,7 +2837,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let refinery = sim.substrate.entities.get_mut(2).unwrap();
         refinery.position.put_location(DriveCoord::cell(12, 12, 0));
-        sim.substrate.occupancy =
+        *sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
         unit.navigation.set_nav_com_for_test(None);
@@ -3158,7 +3286,7 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
                 }
             }
         }
-        sim.overlay_grid = Some(grid);
+        *sim.overlay_grid = Some(grid);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         let loco = entity.locomotor.as_mut().unwrap();
         assert!(loco.store_drive_straight(straight));
@@ -3266,7 +3394,7 @@ fn drive_crush_fixture(
             }
         }
     }
-    sim.overlay_grid = Some(overlays);
+    *sim.overlay_grid = Some(overlays);
     let actor = sim.substrate.entities.get_mut(1).unwrap();
     actor.health = crate::sim::combat::Health::new(300);
     actor
@@ -3457,6 +3585,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             300,
             &rules,
             sim.resolved_terrain.as_ref().unwrap(),
+            sim.path_grid.as_deref(),
             &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             (20, 10),
             false,
@@ -3475,8 +3604,8 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
 fn crush_slowdown_is_foot_owned_saved_and_hashed() {
     use crate::sim::snapshot::GameSnapshot;
     let mut sim = Simulation::new();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate
         .entities
         .insert(GameEntity::test_default(1, "BFRT", "Americans", 10, 10));
@@ -3667,10 +3796,10 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
                 entity.lifecycle.set_cell_marked_for_test(true);
                 sim.substrate.entities.insert(entity);
             }
-            sim.substrate.occupancy =
+            *sim.substrate.occupancy =
                 crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         }
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.interner.bind_types(&rules);
         let mut crossed = None;
         sim.run_track_points_observed(invocation, budget, Some(&rules), None, &mut |sim, id, e| {
@@ -3692,4 +3821,215 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
     assert_ne!(entered, (10, 10));
     assert_eq!(run(false, Some(entered)), (entered, false, true, 20));
     assert_eq!(run(true, Some(entered)), (entered, true, true, 0));
+}
+
+/// A Drive calls SetSpeedFraction on linked Units even when its accelerating
+/// prefix kept the same applied value (4B11DF -> 4B1218). There is no IsTrain
+/// gate on this speed hand-off. The equal non-accelerating arm skips it.
+#[test]
+fn accelerating_drive_hands_its_applied_speed_to_linked_units() {
+    let rules = RuleSet::empty_for_test();
+    for accelerates in [false, true] {
+        let (mut sim, invocation, _) = fixture(TrackFamily::Drive, 0);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.mover_facts.set_drive_accelerates_for_test(accelerates);
+        let fraction = SimFixed::lit("0.375");
+        head.foot_speed.set_speed_fraction(fraction);
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_target_fraction(TrackFamily::Drive, fraction);
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        sim.substrate.entities.insert(car);
+        sim.run_track_process(invocation, rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let car = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            car.foot_speed.applied_fraction(),
+            if accelerates {
+                fraction
+            } else {
+                SimFixed::ZERO
+            }
+        );
+    }
+}
+
+/// Stop_Moving 4AFE0C..4AFE89 checks the engine's committed head before it
+/// dispatches the car's active locomotor Stop. The car keeps its own head.
+#[test]
+fn train_stop_reaches_the_linked_car_only_with_a_committed_head() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[MTNK]\nIsTrain=yes\n"),
+    ) else {
+        return;
+    };
+    let dest = DriveCoord::cell(10, 7, 0);
+    let car_head = DriveCoord::cell(10, 10, 0);
+    for committed in [false, true] {
+        let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+        sim.interner.bind_types(&retail.rules);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_head(TrackFamily::Drive, committed.then_some(dest));
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        let loco = super::super::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Drive,
+        );
+        let loco = car.locomotor.insert(loco);
+        loco.ensure_installed_track_state();
+        loco.store_track_head(TrackFamily::Drive, Some(car_head));
+        loco.store_track_destination(TrackFamily::Drive, Some(dest));
+        sim.substrate.entities.insert(car);
+        sim.locomotor_stop_moving(1, &retail.rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let loco = sim
+            .substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            loco.track_destination(TrackFamily::Drive),
+            (!committed).then_some(dest)
+        );
+        assert_eq!(loco.track_head(TrackFamily::Drive), Some(car_head));
+    }
+}
+
+/// Drive / Ship vt+0x484 tests AL before going on (0x004B2A31 / 0x006A2081).
+/// Foot consumes a queued cell but the human infantry deployment refuses it.
+/// Infantry's Guard tail (0x0051CC6D -> 0x0051CDA4) then returns false.
+#[test]
+fn track_waypoint_returns_the_infantry_guard_result() {
+    let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    );
+    let house = sim.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
+    let id = sim
+        .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(MissionType::Guard),
+        0,
+    );
+    actor.mission_leaf.set_foot_idle_entry_latch(0);
+    actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+    actor
+        .navigation
+        .push_nav_queue_for_test(crate::sim::components::NavTargetRef::cell(17, 15));
+    let result =
+        sim.stop_or_take_next_waypoint(id, &rules, &mut crate::sim::world::FrameEffects::default());
+    let actor = sim.entities().get(id).unwrap();
+    assert!(actor.navigation.nav_queue().is_empty());
+    assert_eq!(actor.navigation.nav_com(), None);
+    assert!(!result);
+}
+
+/// Infantry Per_Cell_Process (0x0051A8C0) commences the queued mission on
+/// arrival even when Sticky forbids Ready_To_Commence in the Unit receiver.
+#[test]
+fn drive_arrival_commences_the_infantrys_queued_mission() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId};
+
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[InfantryTypes]\n0=MTNK\n[MTNK]\nStrength=100\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    )).unwrap();
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.set_category_for_test(EntityCategory::Infantry);
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Sticky),
+        queued: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    let loco = actor.locomotor.as_mut().unwrap();
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    assert!(loco.store_track_progress(TrackFamily::Drive, track));
+    assert!(!sim.mission_ready_to_commence(1, &rules));
+
+    sim.run_track_points_observed(
+        invocation,
+        budget,
+        Some(&rules),
+        None,
+        &mut |sim, id, event| {
+            if event == TrackWorldEvent::PerCell {
+                assert_eq!(
+                    sim.entities().get(id).unwrap().mission.current().known(),
+                    Some(MissionType::Attack)
+                );
+            }
+        },
+    );
+    assert_eq!(
+        sim.entities().get(1).unwrap().mission.current().known(),
+        Some(MissionType::Attack)
+    );
+}
+
+/// Terminal Get_Mission (Drive 0x004B2259 / Ship 0x006A1898) falls back
+/// to the queued mission if Ready_To_Commence kept the current slot empty.
+#[test]
+fn terminal_idle_checks_a_move_that_is_still_queued() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::miner::{Miner, MinerConfig, MinerKind};
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
+
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 0);
+    miner.set_unload_active_for_test(true);
+    actor.miner = Some(Box::new(miner));
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::NONE,
+        queued: MissionId::from_known(MissionType::Move),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    let note = actor.note_names();
+    actor
+        .navigation
+        .publish_nav_com(Some(NavTargetRef::cell(10, 9)), note);
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(10, 9, 0)));
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    loco.store_track_progress(TrackFamily::Drive, track);
+
+    let mut entered_idle = false;
+    sim.run_track_points_observed(invocation, budget, None, None, &mut |sim, id, event| {
+        if event == TrackWorldEvent::PerCell {
+            let mission = &sim.entities().get(id).unwrap().mission;
+            assert_eq!(mission.current(), MissionId::NONE);
+            assert_eq!(mission.effective().known(), Some(MissionType::Move));
+        }
+        entered_idle |= event == TrackWorldEvent::Arrival;
+    });
+    assert!(entered_idle);
 }

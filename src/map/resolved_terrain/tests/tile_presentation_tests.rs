@@ -162,8 +162,8 @@ fn projectile_level_uses_loaded_theater_interval_through_runtime() {
         assert_eq!(grid.cell(3, 3).unwrap().final_tile_index, tile);
         let mut sim = Simulation::new();
         sim.install_playfield_from_map_header(&map.header);
-        grid.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
-        sim.resolved_terrain = Some(grid);
+        grid.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
+        *sim.resolved_terrain = Some(grid);
         let key = sim.interner.intern("TEST");
         sim.admit_projectile(
             100,

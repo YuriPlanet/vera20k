@@ -51,7 +51,7 @@ impl MindScene {
         // A loaded match always has an overlay grid, and a Spark particle's
         // collision query reads it: without one the overload's sparks are
         // refused and retired before they can be counted.
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
         // The arena's open LocalSize retains native Size width20 independently
         // of its rectangular terrain. Supply Size height64 for this larger
         // scene: Bullet In_Bounds568300 must admit the cardinal encounter and
@@ -69,7 +69,7 @@ impl MindScene {
         // Production scenario construction allocates the whole map's fog
         // domain before Reveal/ChangeOwner. The arena supplies terrain only;
         // per-owner mark helpers must not grow mismatched partial domains.
-        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        *sim.fog = crate::sim::vision::FogState::new(64, 64);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         sim.resolve_rule_animation_lists(&rules);
@@ -101,8 +101,8 @@ impl MindScene {
         sim.fog.mark_visible_for_owner(enemy, 32, 32);
         for &id in &targets {
             let actor = sim.entities().get(id).unwrap();
-            sim.fog
-                .mark_visible_for_owner(owner, actor.position.rx(), actor.position.ry());
+            let (rx, ry) = (actor.position.rx(), actor.position.ry());
+            sim.fog.mark_visible_for_owner(owner, rx, ry);
             // The human owner sends the computer tanks' Guard too: the DoList skips computer
             // Houses' events (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and
             // actor (0x004C71F6..0x004C721F).
@@ -359,12 +359,12 @@ impl MindScene {
         let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
-        loaded.main_rng = self.sim.main_rng.clone();
-        loaded.scenario_rng = self.sim.scenario_rng.clone();
-        loaded.mapgen_rng = self.sim.mapgen_rng.clone();
+        *loaded.main_rng = (*self.sim.main_rng).clone();
+        *loaded.scenario_rng = (*self.sim.scenario_rng).clone();
+        *loaded.mapgen_rng = (*self.sim.mapgen_rng).clone();
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
-            self.sim.resolved_terrain.clone().unwrap(),
+            (*self.sim.resolved_terrain).clone().unwrap(),
             *self.sim.terrain_speed_config(),
             &self.rules,
         );

@@ -44,7 +44,7 @@ fn a_railgun_shot_strikes_the_line_and_holds_its_particle_system() {
     );
 
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x7A11_6A00);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);
@@ -280,7 +280,7 @@ fn a_detached_railgun_never_holds_its_particle_system() {
     };
     let rules = &patched.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x7A11_6A01);
-    sim.fog = FogState::new(32, 32);
+    *sim.fog = FogState::new(32, 32);
     let owner = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(owner));
     sim.intern_rule_type_ids(rules);

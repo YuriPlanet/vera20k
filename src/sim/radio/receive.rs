@@ -352,8 +352,16 @@ pub(crate) fn can_load(
         }
     }
     // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
-    // anyone the gates above admit.
-    if building_type.grinding {
+    // anyone the gates above admit, vehicles included. Original RA2 has no
+    // Grinding= field: refund-on-entry is hardcoded on the Cloning vats and
+    // is an infantry-only behavior there. On the RA2 profile a `Cloning=`
+    // building therefore takes only an admitted infantryman; a vehicle is
+    // not a vat customer and must be refused (issue: tanks were recycled).
+    if building_type.grinding
+        || (rules.ra2()
+            && building_type.cloning
+            && unit.category() == EntityCategory::Infantry)
+    {
         return CanLoad::Answer(RadioResponse::Roger);
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
@@ -378,12 +386,33 @@ pub(crate) fn can_load(
     //building Ammo must be nonzero. Techno's constructor starts it at0,
     //and Building43FE98 explicitly excludes hospitals from auto-refill.
     if building_type.hospital && unit.category() == EntityCategory::Infantry {
+        // Original RA2 leaves Hospital Ammo=0 in rules.ini (the "healing
+        // count" field is commented out) and treats that as unlimited healing;
+        // only captives/mind-controlled are refused. On the RA2 profile drop
+        // the Ammo==0 refusal. YR keeps the finite-count contract unchanged.
         let refused = unit
             .capture_manager
             .as_ref()
             .is_some_and(|manager| manager.has_any())
             || unit.seldom.mind_control.is_mind_controlled()
-            || building.ammo().map_or(0, |ammo| ammo.current()) == 0;
+            || (!rules.ra2() && building.ammo().map_or(0, |ammo| ammo.current()) == 0);
+        return CanLoad::Answer(if refused {
+            RadioResponse::Negatory
+        } else {
+            RadioResponse::Roger
+        });
+    }
+    // An Armory takes an infantry trainee while it still has promotions.
+    // Native reads the absolute value of Ammo, so the constructor's -1 still
+    // admits exactly one soldier. Captives and mind-controlled infantry are
+    // refused just as they are at the Hospital.
+    if building_type.armory() && unit.category() == EntityCategory::Infantry {
+        let refused = unit
+            .capture_manager
+            .as_ref()
+            .is_some_and(|manager| manager.has_any())
+            || unit.seldom.mind_control.is_mind_controlled()
+            || crate::sim::docking::armory::promotions_remaining(building) <= 0;
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
         } else {
@@ -532,10 +561,20 @@ fn building_docking(
     };
     // UnitRepair43C814..849 asks the existing contact whether its
     // signed Health/Strength is full before any HELLO or movement probe.
+    // Firestorm 2.0's depot asks it message 0x20 (`BuildingClass::
+    // Receive_Message` `0x00426B4A..0x00426B79`), which no Firestorm
+    // receiver answers, so it never refuses there. A contact with Tiberian
+    // Sun limpets is not asked (`sim::limpet`): the depot's RepairTick takes
+    // them off whatever its health.
     let unit_repair = object.unit_repair;
     let bunker = object.bunker;
     if unit_repair
         && building.seldom.radio_contacts.contains(from)
+        && !sim
+            .substrate
+            .entities
+            .get(from)
+            .is_some_and(|contact| contact.foot_speed.limpeted())
         && transmit(
             sim,
             building_id,
@@ -817,8 +856,9 @@ fn building_dock_now(
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
     // their own mission; the radio contacts retain the admitted sender.
     // Hospital43C746 also queues Repair/Sleep; cargo arrival is owned by
-    // Infantry PerCell51A21F. Armory remains a separate training mechanism.
-    if object.unit_repair || object.unit_reload || object.hospital {
+    // Infantry PerCell51A21F. An Armory uses this same service contact;
+    // its MissionRepair arm promotes the trainee instead of healing it.
+    if object.unit_repair || object.unit_reload || object.hospital || object.armory() {
         // Building43C7B5..C7DC: service request and the occupant's Sleep
         // queue. The Building mission owns the admitted pad contact.
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {
@@ -2173,6 +2213,10 @@ fn techno_repair_tick(
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
+    // Firestorm 2.0 `TechnoClass::Receive_Message` RADIO_REPAIR
+    // (`0x0062ABE1`) takes every Tiberian Sun limpet off before its health
+    // test (`sim::limpet`).
+    sim.clear_limpets(techno, rules, effects);
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
     };
@@ -2457,7 +2501,8 @@ fn radio_hello(
     let Some(this) = substrate.entities.get_mut(receiver) else {
         return RadioResponse::None;
     };
-    match this.seldom.radio_contacts.insert(from) {
+    let note = this.note_names();
+    match this.seldom.radio_contacts.admit(from, note) {
         Some(_) => RadioResponse::Roger,
         None => RadioResponse::Negatory,
     }

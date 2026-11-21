@@ -16,6 +16,7 @@ MakeInfantryOwner=victim     ; now also for the InfDeath table, virus, mutate an
 
 [GlobalControls]
 AllowBypassBuildLimit=no,no,yes  ; also lets a hard AI team ignore BuildLimit
+AllowParallelAIQueues=no         ; a computer house builds in one factory per category at a time
 ```
 
 ## AI base plans, teams and production
@@ -32,6 +33,30 @@ compares TechLevels signed (HouseExt::GetTypeToProduce 100216A0, hooks
 0x4FEA60, 0x4FEEE0, 0x4FF210). Anger against a `MultiplayPassive` house is
 ignored outside campaigns (10023FB0, 0x504796). A construction yard's queue
 update also refreshes the defense strip (10025100, 0x509140).
+
+A player's finished building waits for a powered factory. Its cameo shows
+Ready only while its `FindFactory(1, 1)` finds one, and otherwise draws as
+still building (100251D0, 0x6A9822). The structure and defense tab hotkeys
+ask `FindFactory(0, 1)` (10025150, 10025130; 0x535DB6, 0x535E76), so they
+place nothing without one. A cameo click asks
+`HouseExt::FindFactory(owner, type, 0, 1, 0, 1)` (10025170, 0x6AB312).
+When only factories without power or deactivated fit, the click ends with no
+abandon and no EVA. When none fits at all, it gives the stock abandon and
+"unable to comply".
+
+With `AllowParallelAIQueues=no` a computer house starts production in one
+factory building per category (buildings, infantry, vehicles, ships,
+aircraft) at a time: the first to try claims the house's slot, even when too
+poor to start, and any other waits (10024E00, 0x4502F4). The slot frees when
+a unit, infantryman or aircraft exits (0x444119, 0x444131, 0x443CCA), when a
+factory abandons its product (0x4CA07A), or when the building is removed
+(Ares' `AnnounceInvalidPointer`, 0x7258D0). A placed structure keeps the
+building slot: the building exit's hook (0x44531F) is never reached, since
+the exit sets the house's building choice to -1 at its start (0x444F3F) and
+the compare before the hook (0x44531B) then fails. The key defaults to yes, which
+keeps stock parallel production. It is the same gate Phobos' forbids read
+([phobos-parallel-ai-queues.md](phobos-parallel-ai-queues.md)), so the two
+never act in one game and share the house's slots (`sim::ai_base_building`).
 
 ## Buildings
 
@@ -79,24 +104,16 @@ cites each hook.
 
 - The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
   itself is ported in `sim::ares_tiberium_storage`.
-- An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
-  Update hook starts it one frame longer. The payout and
-  `ProduceCashDisplay` are ported in `sim::credit_income`.
-- Ares serial AI queues (`AllowParallelAIQueues=no`, 0x4502F4, 0x4CA07A and
-  the four KickOutUnit hooks); the default changes nothing.
 - Doggie (0x51F628, 0x518CB3, 0x51ABD7,
   0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
   retail data.
 - Presentation and input: `Message.SilosNeeded`
-  (0x4F8C23), the ready-building and hotkey factory lookups (0x6A9822,
-  0x6AB312, 0x535DB6, 0x535E76), the Money SW tooltip (0x6A932B),
+  (0x4F8C23), the Money SW tooltip (0x6A932B),
   the observer strip (0x6AA0CA, 0x6AA164),
-  the amphibious water sound (0x51D799), an Ivan entering an allied
-  Grinder (0x51EB48) and the bullet anim's MakeInfantryOwner outside Phobos
-  (0x469C4E).
-- GarrisonedIn (0x51DF38, 0x51DFFD, 0x518434) and map-house `Degrades=`
-  (0x50114D).
+  the amphibious water sound (0x51D799) and the bullet anim's
+  MakeInfantryOwner outside Phobos (0x469C4E).
+- GarrisonedIn (0x51DF38, 0x51DFFD, 0x518434).
 
 ## Hook table
 
@@ -111,7 +128,7 @@ DLL removed are not listed.
 | `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | ported earlier |
 | `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | ported: `credit_income::produce_cash_step` |
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
-| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported in part: the upgrade's factory plans (`building_upgrades`); residual: the upgrade's cash timer is not started at Put (`delay`), so the Update hook starts it (`delay + 1`) |
+| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported: the upgrade's cash timer starts at Put for its `ProduceCashDelay` (`credit_income::ares_produce_cash_on_put`), then the factory plans of the upgrade being put, by its own type and Country, not the host's (`try_install_building_upgrade`) |
 | `440C08` | BuildingClass_Put_AIBaseNormal | `10014460` | ported earlier |
 | `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | ported: a damage-killed building runs `building_death_announcement` after DestructionEffects ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `444D26` | BuildingClass_KickOutUnit_ArmoryExitBug | `10014100` | ported: an Armory's exit takes the Hospital post (`production_queue::ExitProducer`) |
@@ -221,18 +238,18 @@ DLL removed are not listed.
 
 | Hook | Name | Ares.dll | Disposition |
 |---|---|---|---|
-| `443CCA` | BuildingClass_KickOutUnit_AircraftType | `10024D60` | residual: serial AI queue bookkeeping |
-| `444119` | BuildingClass_KickOutUnit_UnitType | `10024DC0` | residual: serial AI queue bookkeeping |
-| `444131` | BuildingClass_KickOutUnit_InfantryType | `10024DA0` | residual: serial AI queue bookkeeping |
-| `44531F` | BuildingClass_KickOutUnit_BuildingType | `10024D80` | residual: serial AI queue bookkeeping |
-| `4502F4` | BuildingClass_Update_Factory | `10024E00` | residual: Ares serial AI queues (`AllowParallelAIQueues=no`); with the default the hook does nothing (`phobos_parallel_ai_queues`) |
-| `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | residual: serial AI queue bookkeeping (as 0x4502F4) |
+| `443CCA` | BuildingClass_KickOutUnit_AircraftType | `10024D60` | ported: frees the aircraft slot (`production_queue::exit_produced_object`) |
+| `444119` | BuildingClass_KickOutUnit_UnitType | `10024DC0` | ported: frees the vehicle or ship slot by the Unit's own `Naval=` (same) |
+| `444131` | BuildingClass_KickOutUnit_InfantryType | `10024DA0` | ported: frees the infantry slot (same) |
+| `44531F` | BuildingClass_KickOutUnit_BuildingType | `10024D80` | not applicable: unreachable, the exit sets the choice the 0x44531B compare reads to -1 at 0x444F3F |
+| `4502F4` | BuildingClass_Update_Factory | `10024E00` | ported: serial AI queues under `AllowParallelAIQueues=no` (`factory_ai::parallel_start_allowed`, `RuleSet::serial_ai_queues_act`) |
+| `4CA07A` | FactoryClass_AbandonProduction | `10024EE0` | ported: any factory's abandoned product frees its slot (`factory_lifecycle::settle_abandoned`) |
 | `509140` | HouseClass_Update_Factories_Queues | `10025100` | ported: the BuildingType update also refreshes the Combat (defense) queue (`update_factory_queue`); the sidebar redraw flag is presentation |
 | `50B370` | HouseClass_ShouldDisableCameo | `10024F80` | ported: replaces CheckBuildLimit for every caller (BuildLimitRemaining less the queue, the held object counted once, the AirportBound limit going on to BuildLimit, a usable factory) |
-| `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | residual: structure-tab hotkey asks a powered factory (input) |
-| `535E76` | SetDefenseTabCommandClass_Execute_Power | `10025130` | residual: defense-tab hotkey asks a powered factory (input) |
-| `6A9822` | StripClass_Draw_Power | `100251D0` | residual: a ready building shows ready only with a factory to place from (sidebar) |
-| `6AB312` | SidebarClass_ProcessCameoClick_Power | `10025170` | residual: cameo click factory lookup through HouseExt::FindFactory (input) |
+| `535DB6` | SetStructureTabCommandClass_Execute_Power | `10025150` | ported: the structure-tab hotkey asks a powered factory (`dispatch::ready_tab_factory`) |
+| `535E76` | SetDefenseTabCommandClass_Execute_Power | `10025130` | ported: the defense-tab hotkey asks a powered factory (`dispatch::ready_tab_factory`) |
+| `6A9822` | StripClass_Draw_Power | `100251D0` | ported: a finished building shows Ready only while `FindFactory(1, 1)` finds a powered factory (`SidebarProjectionState::factory_statuses`) |
+| `6AB312` | SidebarClass_ProcessCameoClick_Power | `10025170` | ported: the cameo click asks `HouseExt::FindFactory(owner, type, 0, 1, 0, 1)` and ends silently with only unpowered factories (`dispatch::ready_cameo_factory`, `production::ares_object_factory`) |
 
 ### House/Hooks.Academy.cpp
 
@@ -261,7 +278,7 @@ DLL removed are not listed.
 |---|---|---|---|
 | `4F6532` | HouseClass_CTOR | `100230E0` | not applicable: HouseExt allocation; Ares house state lives in `HouseState` |
 | `4F7371` | HouseClass_DTOR | `10023100` | not applicable: HouseExt release |
-| `50114D` | HouseClass_InitFromINI | `10023140` | residual: a map house section's `Degrades=` (ares-building-types.md) |
+| `50114D` | HouseClass_InitFromINI | `10023140` | ported: a map house section's `Degrades=` (`HouseState::read_ares_degrades`), overriding the country's in the degrade update |
 | `503040` | HouseClass_SaveLoad_Prefix | `10023230` | not applicable: ExtMap stream prefix; VERA serializes `HouseState` |
 | `504069` | HouseClass_Load_Suffix | `10023160` | not applicable: ExtMap load suffix |
 | `504080` | HouseClass_SaveLoad_Prefix | `10023230` | not applicable: ExtMap stream prefix |
@@ -327,7 +344,7 @@ DLL removed are not listed.
 | `51E5BB` | InfantryClass_GetActionOnObject_MultiEngineerA | `10025540` | ported earlier |
 | `51E5E1` | InfantryClass_GetActionOnObject_MultiEngineerB | `10025550` | ported earlier |
 | `51E635` | InfantryClass_GetActionOnObject_EngineerOverFriendlyBuilding | `10025420` | ported earlier |
-| `51EB48` | InfantryClass_GetActionOnObject_IvanGrinder | `100254B0` | residual: an Ivan enters an allied Grinder without Ctrl (input; VERA answers IvanBomb) |
+| `51EB48` | InfantryClass_GetActionOnObject_IvanGrinder | `100254B0` | ported: a Crazy Ivan over an allied Grinder answers Grind (mission Eaten) unless the force-fire key is down (`context_order::ares_ivan_grinds`) |
 | `5201CC` | InfantryClass_UpdatePanic_ProneWater | `100256F0` | ported: no panic prone on Beach/Water (`infantry_fear_turn`) |
 
 ### Infantry/Hooks.Doggie.cpp

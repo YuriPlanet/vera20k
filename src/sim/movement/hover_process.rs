@@ -30,13 +30,6 @@
 //!   no player sees.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
-//! - Hover's own tube entry (0x0051503B..0x005152CE: Mark(UP) 0x0051508B, the
-//!   raw receiver 0x005150B9, the exit Cell's centre as head, the path shift)
-//!   is not ported, so an explicit map tube word (direction 8) takes the
-//!   invalid-tube arm. Walk, Drive and Ship enter tubes
-//!   (`Simulation::walk_tube_head`, `Simulation::track_tube_head`). Trigger: a
-//!   Hover route through a map `[Tubes]` tube.
-//!   Frequency: no retail YR map is known to author one.
 //! - Crates (0x00481A00 at 0x005153E9) run through `Simulation::pickup_crate_at`,
 //!   as in Drive; a host called without the OverlayType table answers as a
 //!   cell without a crate.
@@ -132,12 +125,12 @@ pub(crate) fn hover_move_to(
     let z = terrain.map_or(coord.z, |terrain| {
         let cells = NativeCellQuery::canonical(terrain);
         let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
-        let structural = cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x100 != 0;
-        ground.wrapping_add(if structural {
-            BRIDGE_DECK_HEIGHT_LEPTONS
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & 0x100 != 0 {
+            ground_pose::deck_surface_z(&cells, cell, ground)
         } else {
-            0
-        })
+            ground
+        }
     });
     hover.destination = Some(DriveCoord { z, ..coord });
     if !airborne {
@@ -225,7 +218,7 @@ impl Simulation {
                 hover.head = None;
             }
         }
-        self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
         self.substrate.hover_halt(id);
     }
 
@@ -297,45 +290,6 @@ impl Simulation {
                 ares,
             );
         }
-    }
-
-    /// Hover ILocomotion+9C, `Mark_All_Occupation_Bits` at5171C0: mode0
-    /// asks the existing Head_To projection (514D10), then linked Foot+F4.
-    /// Mode1 does nothing; neither mode changes the retained head. Foot Limbo
-    /// calls this after Stop_Driver (4DB324), and Chrono Warp shares the slot.
-    /// Steam gamemd executable controls:
-    /// tools/spatial_oracle/locomotor_force_track.hover_mark_all.{json,meta.json}.
-    /// Ledger: no RNG draws, timer writes or detaches in this body/Unit744210.
-    pub(crate) fn hover_mark_all_occupation_bits(
-        substrate: &mut ObjectSubstrate,
-        path_grid: &Option<Arc<PathGrid>>,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
-        id: u64,
-        put: bool,
-        ares: bool,
-    ) {
-        if put {
-            return;
-        }
-        let Some(entity) = substrate.entities.get(id) else {
-            return;
-        };
-        if runtime(entity).is_none() {
-            return;
-        }
-        let coord = super::super::foot_coordinate::head_or_current(
-            super::super::foot_coordinate::stored_head(entity),
-            super::super::foot_coordinate::current_coordinate(entity),
-        );
-        Self::object_raw_receiver_at(
-            substrate,
-            path_grid,
-            resolved_terrain,
-            id,
-            coord,
-            false,
-            ares,
-        );
     }
 
     /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
@@ -543,11 +497,11 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.low_bridge_tube_state.is_some())
+                .is_some_and(|e| e.active_tube().is_some())
             {
                 return Ok(Arrival::Return);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             self.substrate.hover_halt(id);
         } else if code != 0 {
             //514982..5149EA.
@@ -632,18 +586,16 @@ impl Simulation {
             let entered = cells.lookup_world(x, y);
             let structural = cells.flags(entered) & 0x100 != 0;
             let height = super::super::air_movement::current_fly_height(entity, Some(terrain));
-            let on_bridge =
-                if !entity.on_bridge() && structural && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
-                    true
-                } else if entity.on_bridge() && !structural {
-                    false
-                } else {
-                    entity.on_bridge()
-                };
+            let reaches_deck = ground_pose::corrected_deck_z(terrain, entered)
+                .map_or(height >= BRIDGE_DECK_HEIGHT_LEPTONS, |deck| next.z >= deck);
+            let on_bridge = structural && (entity.on_bridge() || reaches_deck);
             let level = cells.ground_fields(entered).0;
+            let deck = terrain.corrected_high_bridge_deck_at(entered);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.on_bridge.store(on_bridge);
-                entity.position.store_cell_level(level, on_bridge);
+                entity
+                    .position
+                    .store_cell_level_on_deck(level, on_bridge, deck);
             }
         }
         self.foot_mark_put(id, rules, registry, effects);
@@ -897,7 +849,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         if path_word(entity, 0).is_some() {
@@ -1028,7 +980,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(true);
         }
         self.scatter_blocked_track_cell(
@@ -1057,7 +1009,7 @@ impl Simulation {
             .foot_path_zone_precheck(id, destination, rules)
             .map_err(|cause| self.hover_error(id, cause))?
         {
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1074,7 +1026,7 @@ impl Simulation {
             ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1092,7 +1044,7 @@ impl Simulation {
             }
         } else {
             //5167D5..51681B: give up, with the retained scold sound.
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1194,10 +1146,16 @@ impl Simulation {
             return Ok(0);
         };
         if direction == crate::util::direction::TUBE_STEP_DIRECTION {
-            //5152D1..51532E: the invalid-tube arm (module residual): the
-            //drop, then one more null destination.
-            self.hover_drop_track(id, rules, effects);
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            if self
+                .enter_walk_or_hover_tube(id, rules, registry, effects)
+                .map_err(|cause| self.hover_error(id, cause))?
+                != crate::sim::movement::tube_movement::TubeEntry::Entered
+            {
+                // 5152D1..51532E: no valid tube. Drop the track, then send
+                // the second null destination through the Foot's class setter.
+                self.hover_drop_track(id, rules, effects);
+                self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            }
             return Ok(7);
         }
         let location = ground_pose::position_world_coord(&entity.position);
@@ -1397,7 +1355,7 @@ impl Simulation {
                     if let Some(entity) = self.substrate.entities.get_mut(id) {
                         hover_stop_moving(entity);
                     }
-                    self.set_unit_null_destination(
+                    self.assign_null_destination(
                         id,
                         rules,
                         Some(rules.overlay_registry()),
@@ -1464,6 +1422,74 @@ enum Arrival {
 #[cfg(all(test, tests_sim_movement))]
 mod tests {
     use super::*;
+
+    /// Hover::Path_And_Arrival stops at 51657C and sends NULL at 5166D7 through
+    /// Foot+480. Human Infantry in deploy Doing 27 refuses at 51AA7E.
+    #[test]
+    fn hover_arrival_obeys_the_infantry_destination_receiver() {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let house = sim.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                house, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let destination = crate::sim::components::NavTargetRef::cell(15, 15);
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        let at = ground_pose::position_world_coord(&actor.position);
+        let note = actor.note_names();
+        actor.navigation.publish_nav_com(Some(destination), note);
+        actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+        runtime_mut(actor).unwrap().destination = Some(at);
+        sim.hover_path_and_arrival(id, 0, &rules, Some(&registry), &mut FrameEffects::default())
+            .unwrap();
+        let actor = sim.entities().get(id).unwrap();
+        assert_eq!(actor.navigation.nav_com(), Some(destination));
+        assert!(runtime(actor).unwrap().destination.is_none());
+    }
+
+    /// A Hover Foot that steps into a cell under a fixed high-bridge deck
+    /// stores that deck as its level (`0x005148DF..0x00514973` sets the
+    /// bridge byte from the new cell), not the dip's ground plus four.
+    #[test]
+    fn hover_cell_entry_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            ),
+        );
+        sim.substrate.entities.insert(entity);
+
+        // Facing 0 at a cell's speed steps north out of (10, 10), at the
+        // deck's height.
+        sim.hover_step(1, 9 * 104, 256, &rules, None, &mut FrameEffects::default());
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
+    }
 
     #[test]
     fn production_hover_spin_exit_water_gate_matches_native() {

@@ -207,7 +207,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
-    sim.scenario_rng = SimRng::new(seed);
+    *sim.scenario_rng = SimRng::new(seed);
     sim.sound_events.clear_for_test();
     (s, passengers)
 }
@@ -332,7 +332,7 @@ fn replay_crew_row(row: &Value) {
             } => {
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(&rules))
                     .map(|(index, _)| *index)?;
                 assert_eq!(*audible_to, Some([owner, owner]), "{context}: the owner's");
                 Some(json!([
@@ -667,7 +667,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             sim.attach_object_trigger_tag(1, Some("SALE_KEEP_TAG"));
             assert!(sim.object_has_trigger_tag(1), "{name}: actual attachment");
         }
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let cursors = |sim: &crate::sim::world::Simulation| {
             let view = sim.scenario_rng.logical_view();
             json!([view.index_a, view.index_b])

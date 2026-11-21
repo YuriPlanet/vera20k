@@ -908,11 +908,7 @@ impl ReplayStartup {
             "replay launch map differs from its world"
         );
         anyhow::ensure!(
-            matches!(
-                source,
-                crate::map::source::LoadedMapSource::Loose { .. }
-                    | crate::map::source::LoadedMapSource::Mix { .. }
-            ),
+            source.is_authored(),
             "generated/legacy maps lack authored replay startup"
         );
         let (map_payload_len, map_sha256) = source

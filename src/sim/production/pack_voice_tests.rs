@@ -54,7 +54,7 @@ fn retail_slave_miner_selling_stage_queues_its_pack_voice_before_deploy_sound() 
         sell_stage_zero(&mut sim, &rules, 1, &mut FrameEffects::empty());
         let cues: Vec<_> = sim.sound_events.iter().filter_map(|event| match event {
             SimSoundEvent::UnitVoiceRequested { owner: 1, sound_id } =>
-                Some(json!({"kind":"QueueVoice", "sound":sound_id})),
+                Some(json!({"kind":"QueueVoice", "sound":sound_id.name_in(&rules)})),
             SimSoundEvent::EntityDeployed { deploy_sound_id, .. } =>
                 Some(json!({"kind":"positional_PlayAt_boundary", "sound":sim.interner.resolve(*deploy_sound_id)})),
             _ => None,

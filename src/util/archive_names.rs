@@ -25,6 +25,21 @@ impl Default for ArchiveNames {
 }
 
 impl ArchiveNames {
+    /// Original Red Alert 2 (non-md) archive names. Yuri's Revenge shipped a
+    /// parallel `md` archive family alongside the RA2 originals and mounted
+    /// the md member first, so its data won. Original RA2 has only the base
+    /// names. `-ra2` selects this set so the whole resource stack — maps,
+    /// multiplayer, theme and movies — reads the base archives.
+    pub fn ra2() -> Self {
+        Self {
+            expansion_prefix: "expand".into(),
+            map_prefix: "maps".into(),
+            multiplayer: "multi.mix".into(),
+            theme: "theme.mix".into(),
+            movie_prefix: "movies".into(),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for (field, prefix) in [
             ("expansion_prefix", &self.expansion_prefix),
@@ -86,5 +101,25 @@ mod tests {
         assert!(names.validate().is_err());
         names.multiplayer = "custom.MIX".into();
         assert!(names.validate().is_ok());
+    }
+
+    #[test]
+    fn ra2_archive_names_are_all_non_md_and_valid() {
+        let names = ArchiveNames::ra2();
+        assert!(names.validate().is_ok());
+        assert_eq!(names.expansion_prefix, "expand");
+        assert_eq!(names.map_prefix, "maps");
+        assert_eq!(names.multiplayer, "multi.mix");
+        assert_eq!(names.theme, "theme.mix");
+        assert_eq!(names.movie_prefix, "movies");
+        for value in [
+            &names.expansion_prefix,
+            &names.map_prefix,
+            &names.multiplayer,
+            &names.theme,
+            &names.movie_prefix,
+        ] {
+            assert!(!value.contains("md"), "RA2 name contains md: {value}");
+        }
     }
 }

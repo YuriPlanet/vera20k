@@ -24,7 +24,10 @@ pub(crate) const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 
 /// Fixed deterministic simulation rate — re-exported from util::fixed_math.
 pub(crate) const SIM_TICK_HZ: u32 = crate::util::fixed_math::SIM_TICK_HZ;
-/// Integer tick duration used by deterministic step execution.
+/// Integer tick duration used by deterministic step execution. It paces the
+/// client's frames; the simulated clock itself counts native logic frames
+/// (`ScenarioSession::total_sim_ms`), so a step of 22 ms does not make a
+/// simulation second shorter than one stepped at 66 ms.
 pub(crate) const SIM_TICK_MS: u32 = 1000 / SIM_TICK_HZ;
 
 /// Next right-click order mode selected via hotkey.
@@ -322,12 +325,17 @@ pub(crate) enum CursorFeedbackKind {
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// Tunnel entrance (35) uses the Enter row and the radar drops its action.
+    EnterTunnel,
     /// Grind (11) shares Enter's cursor but is excluded by the radar keep table.
     Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
     NoEnter,
     /// Tote cursor (action 0x11): a Carryall over a Unit it may lift.
     Tote,
+    /// Heal (action 0x1B): a healer infantryman over a damaged ally without
+    /// Ares, whose arm sets its own cursor.
+    Heal,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,
@@ -351,6 +359,9 @@ pub(crate) enum CursorFeedbackKind {
     /// A bomb carrier's own Detonate (action 0x37, cursor row 52, the
     /// Demolish frames; `0x004AB5CD`).
     Detonate,
+    /// Power mode (Ares' TogglePower command): `true` = an own building the
+    /// click switches off or on (action 0x21), `false` = NoTogglePower (0x22).
+    TogglePower(bool),
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
     /// under the cursor (wrench), `false` = no eligible target (no-repair).
     RepairMode(bool),

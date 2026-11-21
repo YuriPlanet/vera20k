@@ -23,7 +23,9 @@ struct Hooks {
 
 static HOOK: OnceLock<Hooks> = OnceLock::new();
 /// Outer `Some` means an answer has arrived; the inner one is the choice
-/// (`None` = the player cancelled).
+/// (`None` = the player cancelled). Process-wide behind a lock because the
+/// platform delivers it from its own callback ([`deliver`]), which holds no
+/// game state, to the dialog in the event loop.
 static PICKED: Mutex<Option<Option<String>>> = Mutex::new(None);
 
 /// Install the platform hook. The first install wins.

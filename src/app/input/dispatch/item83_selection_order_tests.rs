@@ -191,7 +191,9 @@ fn item83_voice_policy_emits_every_tap_voice_in_candidate_order_only() {
                 )
             })
             .map(|event| match event {
-                GameSoundEvent::UnitSelected { sound_id, .. } => sound_id,
+                GameSoundEvent::UnitSelected { sound_id, .. } => {
+                    sound_id.name_in(&rules).to_string()
+                }
                 other => panic!("unexpected selection event: {other:?}"),
             })
             .collect::<Vec<_>>()

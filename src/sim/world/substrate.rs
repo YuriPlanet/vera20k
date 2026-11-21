@@ -24,6 +24,7 @@ use crate::sim::occupancy::{
 };
 use crate::sim::particles::ParticleSystemStore;
 use crate::sim::voxel_anim::VoxelAnimStore;
+use crate::util::forked::Forked;
 
 /// One retained identity in original AbstractClass deferred queue B0F698.
 /// Tag/Trigger ordinals belong to their own registries; Object/Overlay stable
@@ -438,80 +439,81 @@ impl ObjectKind {
 }
 
 /// Owns the active-object order and the substrate's monotonic counters. Field
-/// paths are `Simulation.substrate.*`.
+/// paths are `Simulation.substrate.*`. Each field is a [`Forked`] value, like
+/// the world's own (`fork.rs`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectSubstrate {
     /// Monotonic per-instance id source shared by every object store.
-    pub(crate) next_stable_object_id: StableIdCursor,
+    pub(crate) next_stable_object_id: Forked<StableIdCursor>,
     /// Monotonic source for the independently ordered AirTracker. Cell lists
     /// keep their own insertion order. See `EnterOrderCounter`.
-    pub(crate) next_air_tracker_order: EnterOrderCounter,
+    pub(crate) next_air_tracker_order: Forked<EnterOrderCounter>,
     /// LogicClass active-object vector — the authority on AI visitation order.
     /// Tail-append on reveal, compacting-remove on conceal. Serialized verbatim.
     #[serde(default)]
-    pub(crate) logic: LogicVector,
+    pub(crate) logic: Forked<LogicVector>,
     /// Independent persistent DisplayClass layers, including the Ground vector
     /// read by crate effects. Never reconstructed from Logic or storage order.
-    pub(crate) display: super::display_layers::DisplayLayers,
+    pub(crate) display: Forked<super::display_layers::DisplayLayers>,
     /// Actual CellClass-style memberships/order, preserved across save/restore.
     /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
     /// from current locomotor phase or terrain cannot recover those histories.
-    pub(crate) occupancy: OccupancyGrid,
+    pub(crate) occupancy: Forked<OccupancyGrid>,
     /// Authoritative raw CellClass occupation bytes. These destructive
     /// OR/AND-not bytes are serialized verbatim and are never rebuilt from
     /// entity lists.
     #[serde(default)]
-    pub(crate) raw_cell_occupation: RawCellOccupationGrid,
+    pub(crate) raw_cell_occupation: Forked<RawCellOccupationGrid>,
     /// Separate authoritative building hidden-object counters. Serialized
     /// verbatim because RemoveOccupy's enter-only cancellation is not
     /// reconstructible from the currently placed entity set.
     #[serde(default)]
-    pub(crate) hidden_occupation: HiddenOccupationGrid,
+    pub(crate) hidden_occupation: Forked<HiddenOccupationGrid>,
     /// Authoritative CellClass `+0xE0` AltObject slots — the one airborne
     /// object each cell holds. Serialized verbatim: a hovering Jumpjet's claim
     /// is not reconstructible from its position or locomotor phase.
     #[serde(default)]
-    pub(crate) air_slots: AirSlotGrid,
+    pub(crate) air_slots: Forked<AirSlotGrid>,
     /// Authoritative CellClass `+0xDC` per-house Building base reservations,
     /// including the single shared dummy CellClass mask.
     #[serde(default)]
-    pub(crate) base_reservations: CellReservationGrid,
+    pub(crate) base_reservations: Forked<CellReservationGrid>,
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
-    pub(in crate::sim) entities: EntityStore,
+    pub(in crate::sim) entities: Forked<EntityStore>,
     /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
     #[cfg(feature = "phobos")]
     #[serde(skip)]
-    pub(crate) phobos_limbo_control: crate::sim::house_tracking::PhobosLimboControl,
+    pub(crate) phobos_limbo_control: Forked<crate::sim::house_tracking::PhobosLimboControl>,
     /// Separate AnimClass registry sharing the global object ID namespace and
     /// LogicVector with entities.
     #[serde(default)]
-    pub(crate) anims: AnimStore,
+    pub(crate) anims: Forked<AnimStore>,
     /// `VoxelAnimClass` registry — the flying VXL debris a death throws. Shares
     /// the global object-ID namespace and the LogicVector with entities and
     /// anims, exactly as native's `VoxelAnimClass::Constructor` does through
     /// `AbstractClass::Create_ID` and `ObjectClass::Unlimbo`.
     #[serde(default)]
-    pub(crate) voxel_anims: VoxelAnimStore,
+    pub(crate) voxel_anims: Forked<VoxelAnimStore>,
     #[serde(default)]
-    pub(crate) spotlights: super::spotlight::SpotlightStore,
+    pub(crate) spotlights: Forked<super::spotlight::SpotlightStore>,
     /// ParticleSystemClass registry. Systems share the global object-ID
     /// namespace and LogicVector; individual particles remain container-owned.
     #[serde(default)]
-    pub(crate) particle_systems: ParticleSystemStore,
+    pub(crate) particle_systems: Forked<ParticleSystemStore>,
     /// Deferred-delete queue (the native `PendingDeleteList`). Ordered tickets may
     /// survive a Rust snapshot boundary: between enqueue and the ordinary late
     /// drain an entity remains resolvable in storage while its independent
     /// lifecycle facts describe dead/limbo/cell/logic state. Serialized verbatim;
     /// the state hash folds queue identities in insertion order.
     #[serde(default)]
-    pub(crate) pending_delete: DeferredDeleteQueue,
+    pub(crate) pending_delete: Forked<DeferredDeleteQueue>,
     /// Buildings whose Temporal online latch changed since the last factory
     /// sweep, in order, for the Ares factory queue refresh
     /// (`Simulation::ares_refresh_temporal_factories`). Empty in a game
     /// without Ares.
     #[serde(default)]
-    ares_temporal_factory_refresh: Vec<u64>,
+    ares_temporal_factory_refresh: Forked<Vec<u64>>,
 }
 
 impl ObjectSubstrate {
@@ -528,7 +530,7 @@ impl ObjectSubstrate {
 
     /// The factory sweep takes the queued buildings and leaves none.
     pub(crate) fn take_ares_temporal_factory_refresh(&mut self) -> Vec<u64> {
-        std::mem::take(&mut self.ares_temporal_factory_refresh)
+        std::mem::take(&mut *self.ares_temporal_factory_refresh)
     }
 }
 
@@ -537,24 +539,24 @@ impl ObjectSubstrate {
     /// sentinel), matching the pre-consolidation `Simulation::new` initializers.
     pub(crate) fn new() -> Self {
         Self {
-            next_stable_object_id: StableIdCursor::new(),
-            next_air_tracker_order: EnterOrderCounter::new(),
-            logic: LogicVector::new(),
+            next_stable_object_id: Forked::new(StableIdCursor::new()),
+            next_air_tracker_order: Forked::new(EnterOrderCounter::new()),
+            logic: Forked::new(LogicVector::new()),
             display: Default::default(),
-            occupancy: OccupancyGrid::new(),
-            raw_cell_occupation: RawCellOccupationGrid::new(),
-            hidden_occupation: HiddenOccupationGrid::new(),
-            air_slots: AirSlotGrid::default(),
-            base_reservations: CellReservationGrid::new(),
-            entities: EntityStore::new(),
+            occupancy: Forked::new(OccupancyGrid::new()),
+            raw_cell_occupation: Forked::new(RawCellOccupationGrid::new()),
+            hidden_occupation: Forked::new(HiddenOccupationGrid::new()),
+            air_slots: Forked::new(AirSlotGrid::default()),
+            base_reservations: Forked::new(CellReservationGrid::new()),
+            entities: Forked::new(EntityStore::new()),
             #[cfg(feature = "phobos")]
             phobos_limbo_control: Default::default(),
-            anims: AnimStore::default(),
-            voxel_anims: VoxelAnimStore::default(),
+            anims: Forked::new(AnimStore::default()),
+            voxel_anims: Forked::new(VoxelAnimStore::default()),
             spotlights: Default::default(),
-            particle_systems: ParticleSystemStore::default(),
-            pending_delete: DeferredDeleteQueue::default(),
-            ares_temporal_factory_refresh: Vec::new(),
+            particle_systems: Forked::new(ParticleSystemStore::default()),
+            pending_delete: Forked::new(DeferredDeleteQueue::default()),
+            ares_temporal_factory_refresh: Forked::new(Vec::new()),
         }
     }
 }
@@ -715,4 +717,26 @@ impl Default for ObjectSubstrate {
     fn default() -> Self {
         Self::new()
     }
+}
+
+super::fork::fork_helpers! {
+    ObjectSubstrate, "substrate.":
+    next_stable_object_id,
+    next_air_tracker_order,
+    logic,
+    display,
+    occupancy,
+    raw_cell_occupation,
+    hidden_occupation,
+    air_slots,
+    base_reservations,
+    entities,
+    #[cfg(feature = "phobos")]
+    phobos_limbo_control,
+    anims,
+    voxel_anims,
+    spotlights,
+    particle_systems,
+    pending_delete,
+    ares_temporal_factory_refresh,
 }

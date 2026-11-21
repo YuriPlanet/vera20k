@@ -187,7 +187,10 @@ impl Simulation {
                 .is_some_and(|live_tag| live_tag.triggers.contains(&live))
         });
         let tag = tag.map(|tag| {
-            let tag_type = runtime.tag(tag).unwrap().type_index;
+            let tag_type = runtime
+                .tag(tag)
+                .expect("the Tag was found live just above")
+                .type_index;
             (tag, runtime.definitions.tag_types[tag_type].id.clone())
         });
         let record = TriggerSpringRecord {
@@ -267,14 +270,15 @@ impl Simulation {
         result: bool,
         persist: bool,
     ) {
-        let Some(trace) = self.trigger_runtime.trace.as_mut() else {
+        let runtime = &mut *self.trigger_runtime;
+        let Some(trace) = runtime.trace.as_mut() else {
             return;
         };
-        let type_index = self.trigger_runtime.triggers[trigger]
+        let type_index = runtime.triggers[trigger]
             .as_ref()
-            .unwrap()
+            .expect("callers trace a live Trigger")
             .type_index;
-        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal]
+        let kind = runtime.definitions.trigger_types[type_index].events[ordinal]
             .condition
             .kind;
         if REPLAYED_EVENT_KINDS.contains(&kind)
@@ -328,7 +332,11 @@ impl Simulation {
             globals: runtime.globals_set.iter().copied().collect(),
             locals: runtime.locals_set.iter().copied().collect(),
         };
-        let trace = self.trigger_runtime.trace.as_mut().unwrap();
+        let trace = self
+            .trigger_runtime
+            .trace
+            .as_mut()
+            .expect("recording was switched on at the top");
         trace.next_seq = 1;
         trace.frame = self.session.binary_frame();
         trace.events.push(init);
@@ -392,7 +400,7 @@ impl TriggerRuntime {
     /// A live Tag as trace records show it.
     #[cfg(any(test, feature = "dev-overlays"))]
     pub(super) fn trace_tag(&self, tag: usize) -> TraceTag {
-        let live = self.tag(tag).unwrap();
+        let live = self.tag(tag).expect("callers trace a live Tag");
         TraceTag {
             tag,
             tag_type: self.definitions.tag_types[live.type_index].id.clone(),
@@ -401,7 +409,9 @@ impl TriggerRuntime {
                 .triggers
                 .iter()
                 .map(|&trigger| {
-                    let live = self.trigger(trigger).unwrap();
+                    let live = self
+                        .trigger(trigger)
+                        .expect("a live Tag chains only live Triggers");
                     let id = self.definitions.trigger_types[live.type_index].id.clone();
                     (trigger, id, live.enabled)
                 })
@@ -412,7 +422,7 @@ impl TriggerRuntime {
     /// Record a Tag's attachment count after it changed.
     #[cfg(any(test, feature = "dev-overlays"))]
     pub(super) fn trace_refs(&mut self, tag: usize) {
-        let refs = self.tag(tag).unwrap().refs;
+        let refs = self.tag(tag).expect("callers trace a live Tag").refs;
         if let Some(trace) = self.trace.as_mut() {
             let seq = trace.next_seq();
             let parent = trace.parents.last().copied();

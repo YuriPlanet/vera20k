@@ -128,7 +128,7 @@ english.GameCheckRequiredHeading=Required files - must be fixed:
 english.GameCheckOptionalHeading=Optional content - installation can continue:
 english.GameCheckFailed=Setup could not check this folder. Choose another folder or try again.%n%1
 english.GameCheckNoFolder=No game folder was selected.
-english.ConfigNotWritten=Setup could not write %1.
+english.FileNotWritten=Setup could not write %1.
 english.ReadyFiles=Files to install / replace:
 english.ReadyChanges=Other changes:
 english.ReadyConfigNew=Create config.toml with the selected game folder.
@@ -176,7 +176,7 @@ chinesesimplified.GameCheckRequiredHeading=必需文件 - 必须修复：
 chinesesimplified.GameCheckOptionalHeading=可选内容 - 可以继续安装：
 chinesesimplified.GameCheckFailed=安装程序无法检查此文件夹。请选择其他文件夹或重试。%n%1
 chinesesimplified.GameCheckNoFolder=尚未选择游戏文件夹。
-chinesesimplified.ConfigNotWritten=安装程序无法写入 %1。
+chinesesimplified.FileNotWritten=安装程序无法写入 %1。
 chinesesimplified.ReadyFiles=将安装或替换的文件：
 chinesesimplified.ReadyChanges=其他更改：
 chinesesimplified.ReadyConfigNew=创建 config.toml，记录所选游戏文件夹。
@@ -198,6 +198,10 @@ Source: "LICENSE-DXC.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; Every language but English and the fonts behind them. Deleting a language's
 ; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
+Source: "Terrain\vera_ice.mix"; DestDir: "{app}\Terrain"; Flags: ignoreversion
+Source: "Terrain\vera_ice_tiles.ini"; DestDir: "{app}\Terrain"; Flags: ignoreversion
+; The player's map folder can already contain an edited copy.
+Source: "Maps\Arctic_Circle_16_Ice_Passages.map"; DestDir: "{app}\Maps"; Flags: onlyifdoesntexist uninsneveruninstall; Check: NeedsArcticMap
 
 [Dirs]
 ; Where a player puts their mods, one folder each. The game makes it too, for
@@ -230,6 +234,9 @@ Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProg
 Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Flags: nowait skipifnotsilent; Check: IsGameUpdate
 
 [Code]
+const
+  ArcticMapReceipt = '{app}\Maps\.Arctic_Circle_16_Ice_Passages.installed';
+
 type
   TGameSource = (gsManual, gsDetected, gsSteam, gsEAApp);
   TGameInstallation = record
@@ -869,7 +876,7 @@ var
   ConfigInfo: String;
 begin
   { Use the standard Ready memo and retain Inno Setup's normal sections.
-    Keep the filenames below aligned with the seven packaged [Files] entries. }
+    Keep the filenames below aligned with the packaged [Files] entries. }
   Result := '';
   AppendReadySection(Result, MemoUserInfoInfo, NewLine);
   AppendReadySection(Result, MemoDirInfo, NewLine);
@@ -878,7 +885,9 @@ begin
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
     Space + 'vera20k.exe, dxcompiler.dll, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages', NewLine);
+    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages' + NewLine +
+    Space + 'Maps\Arctic_Circle_16_Ice_Passages.map' + NewLine +
+    Space + 'Terrain\vera_ice.mix, Terrain\vera_ice_tiles.ini', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else
@@ -963,7 +972,7 @@ begin
   if FileExists(ConfigPath) then
   begin
     if not LoadStringsFromFile(ConfigPath, Lines) then
-      RaiseException(FmtMessage(CustomMessage('ConfigNotWritten'), [ConfigPath]));
+      RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ConfigPath]));
     SetPathsKey(Lines, 'ra2_dir', Folder);
   end
   else
@@ -974,11 +983,23 @@ begin
     SetPathsKey(Lines, 'settings_dir', '.');
   end;
   if not SaveStringsToUTF8FileWithoutBOM(ConfigPath, Lines, False) then
-    RaiseException(FmtMessage(CustomMessage('ConfigNotWritten'), [ConfigPath]));
+    RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ConfigPath]));
+end;
+
+{ The game uses the same receipt to preserve a player's deletion after launch. }
+function NeedsArcticMap(): Boolean;
+begin
+  Result := not FileExists(ExpandConstant(ArcticMapReceipt));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and not IsGameUpdate() then
-    WriteConfig();
+  if CurStep = ssPostInstall then
+  begin
+    if NeedsArcticMap() and FileExists(ExpandConstant('{app}\Maps\Arctic_Circle_16_Ice_Passages.map')) then
+      if not SaveStringToFile(ExpandConstant(ArcticMapReceipt), '', False) then
+        RaiseException(FmtMessage(CustomMessage('FileNotWritten'), [ExpandConstant(ArcticMapReceipt)]));
+    if not IsGameUpdate() then
+      WriteConfig();
+  end;
 end;

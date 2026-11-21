@@ -350,7 +350,7 @@ fn scene(input: &Value) -> Scene {
     }
     // The oracle seeds the Scenario stream 31 and draws nothing before the
     // block.
-    sim.scenario_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     sim.substrate.pending_delete.clear_for_test();
     Scene {
         sim,

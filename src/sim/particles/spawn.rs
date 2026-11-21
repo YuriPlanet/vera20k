@@ -44,12 +44,18 @@ impl AttachedParticleSystem {
     }
 
     /// The native producer stores the constructor result, including NULL.
-    pub(crate) fn bind(&mut self, system: Option<u64>) {
+    pub(crate) fn bind(&mut self, system: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.system = system;
     }
 
     pub(crate) fn forget(&mut self) {
         self.system = None;
+    }
+
+    /// Install a fixture's system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        self.bind(system, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -79,6 +85,7 @@ impl DamageSmoke {
     /// Install a fixture's system.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.system = system;
     }
 }
@@ -143,16 +150,21 @@ impl Simulation {
         {
             return;
         }
-        // 6FAD51..6FADA1 retains Spark entries in authored list order.
-        let systems: Vec<_> = object
-            .damage_particle_systems
-            .iter()
-            .filter_map(|name| rules.ps_type_id_by_name(name))
-            .filter(|&type_id| {
-                rules.particle_system_type(type_id).behaves_like == ParticleSystemBehavesLike::Spark
-            })
-            .collect();
-        if systems.is_empty() {
+        // 6FAD51..6FADA1 retains Spark entries in authored list order. They
+        // are counted here and walked again for the one the roll picks: most
+        // rolls refuse, so no list is built for them.
+        let spark_systems = || {
+            object
+                .damage_particle_systems
+                .iter()
+                .filter_map(|name| rules.ps_type_id_by_name(name))
+                .filter(|&type_id| {
+                    rules.particle_system_type(type_id).behaves_like
+                        == ParticleSystemBehavesLike::Spark
+                })
+        };
+        let count = spark_systems().count();
+        if count == 0 {
             return;
         }
         let threshold = if below(rules.general.condition_red) {
@@ -177,21 +189,19 @@ impl Simulation {
         }
         let selected = self
             .scenario_rng
-            .next_range_u32_inclusive(0, systems.len() as u32 - 1);
+            .next_range_u32_inclusive(0, count as u32 - 1);
+        // The roll stays below the count of the same list; both draws are made.
+        let Some(selected) = spark_systems().nth(selected as usize) else {
+            return;
+        };
         // 6FAEBC..6FAED1: supplied target NULL, owner=this, zero fifth
         // Coord (B0EA90 initialized by6F2A50), owner House NULL. Native
         // constructor target/owner derivation remains centralized below.
-        let system = self.spawn_particle_system(
-            systems[selected as usize],
-            coords,
-            None,
-            Some(id),
-            IVec3::ZERO,
-            None,
-            rules,
-        );
+        let system =
+            self.spawn_particle_system(selected, coords, None, Some(id), IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.seldom.spark_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.seldom.spark_particle_system.bind(system, note);
         }
     }
 
@@ -390,6 +400,13 @@ impl Simulation {
         );
         self.substrate.particle_systems.insert(sys);
         self.reveal_particle_system(stable_id);
+        // A system at 0,0,0 gets no glow even where VERA reveals it
+        // (`unlimbo_alpha_shape`).
+        self.unlimbo_alpha_shape(
+            stable_id,
+            crate::sim::world::ObjectKind::ParticleSystem,
+            rules,
+        );
         Some(stable_id)
     }
 
@@ -549,6 +566,8 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            // A name the pointer-expiry index reads.
+            let _ = entity.note_names();
             entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
@@ -588,7 +607,8 @@ impl Simulation {
         let system =
             self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.natural_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.building.natural_particle_system.bind(system, note);
         }
     }
 
@@ -664,7 +684,11 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.destroy_smoke_particle_system.bind(system);
+            let note = entity.note_names();
+            entity
+                .building
+                .destroy_smoke_particle_system
+                .bind(system, note);
         }
     }
 }
@@ -759,8 +783,7 @@ pub(super) fn spawn_particle(
     let Some(pt_id) = pst.holds_what else {
         return false;
     };
-    let pt = rules.particle_type(pt_id);
-    let particle = Particle::new(pt_id, coords, target_coords, pt, sim);
+    let particle = Particle::new(pt_id, coords, target_coords, rules, sim);
     sys.particles.push(particle);
     true
 }
@@ -900,6 +923,42 @@ mod tests {
         assert!(!draws("PLAIN"));
     }
 
+    /// 6FAD51..6FAE40: only the Spark entries of `DamageParticleSystems=`
+    /// count, in authored order, and the admitted roll indexes them.
+    #[test]
+    fn a_damaged_vehicle_picks_among_its_spark_systems_only() {
+        use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nConditionRedSparkingProbability=1.0\n\
+             [VehicleTypes]\n0=SPARKY\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\n\
+             DamageParticleSystems=Smk,Missing,SparkA,SparkB\n\
+             [Particles]\n0=Spk\n1=Puff\n[ParticleSystems]\n0=Smk\n1=SparkA\n2=SparkB\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+             [Smk]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+             [SparkA]\nBehavesLike=Spark\nHoldsWhat=Spk\n\
+             [SparkB]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default(id, "SPARKY", "A", 3, 3);
+        entity.set_type_ref_for_test(sim.interner.intern("SPARKY"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(20);
+        sim.substrate.entities.insert(entity);
+        let mut expected = sim.scenario_rng.clone();
+        let roll = expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        assert!(roll < rules.general.condition_red_spark_threshold);
+        let pick = ["SparkA", "SparkB"][expected.next_range_u32_inclusive(0, 1) as usize];
+        sim.update_damage_spark_after_ai(id, &rules);
+        let system = sim.substrate.entities.get(id).unwrap();
+        let system = system.seldom.spark_particle_system.system().unwrap();
+        let system = sim.substrate.particle_systems.get(system).unwrap();
+        assert_eq!(Some(system.type_id()), rules.ps_type_id_by_name(pick));
+    }
+
     /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
     /// `ColorList` and a start colour, a Fire type as much as a Spark one.
     #[test]
@@ -918,7 +977,7 @@ mod tests {
             kind,
             IVec3::new(256, 256, 0),
             IVec3::new(512, 256, 0),
-            rules.particle_type(kind),
+            &rules,
             &mut sim,
         );
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -957,7 +1016,7 @@ mod tests {
             let mut cell = test_flat_cell(entity.position.rx(), entity.position.ry());
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.slope_type = input["slope"].as_u64().unwrap() as u8;
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
             assert_eq!(
                 Simulation::damage_particle_owner_height(&sim.resolved_terrain, &entity),
                 row["output"]["height"].as_i64().unwrap() as i32

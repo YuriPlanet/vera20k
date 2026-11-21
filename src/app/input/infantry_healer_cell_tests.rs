@@ -40,6 +40,7 @@ fn retail_healing_infantry_ctrl_cell_guards_the_clicked_post() {
         selected: &selected,
         modifier: OrderModifier::ForceFire,
         force_move_key: false,
+        force_fire_key: true,
         order_mode: OrderMode::AttackMove,
         planning: false,
         mouse_over: true,

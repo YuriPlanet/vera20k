@@ -15,7 +15,7 @@ use crate::rules::overlay_types::TiberiumImageError;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bounce::BounceState;
 use crate::sim::components::AnimClassSpawnDescriptor;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::occupancy::{RawCellKey, infantry_raw_occupation_mask};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
@@ -82,7 +82,7 @@ impl Simulation {
             SimFixed::from_num(location.x & 0xff),
             SimFixed::from_num(location.y & 0xff),
         );
-        let (key, ground_z, live_structural_bridge) = match resolved_terrain.as_ref() {
+        let (key, deck_z, live_structural_bridge) = match resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
                 let cell = cells.lookup_world(location.x, location.y);
@@ -100,7 +100,7 @@ impl Simulation {
                 let live_structural_bridge = cells.flags(cell) & 0x100 != 0;
                 (
                     RawCellKey::from_native(terrain, cell),
-                    ground_z,
+                    crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, ground_z),
                     live_structural_bridge,
                 )
             }
@@ -109,7 +109,11 @@ impl Simulation {
                 else {
                     return;
                 };
-                (RawCellKey::Real(rx, ry), 0, false)
+                (
+                    RawCellKey::Real(rx, ry),
+                    crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS,
+                    false,
+                )
             }
         };
         apply_anim_raw_occupation(
@@ -117,7 +121,7 @@ impl Simulation {
             key,
             mask,
             location.z,
-            ground_z,
+            deck_z,
             live_structural_bridge,
             operation,
         );
@@ -316,6 +320,8 @@ impl Simulation {
         rules: &RuleSet,
         type_id: InternedId,
     ) -> AnimConstructorInput {
+        // The set of types that affect play is keyed by name: one probe with
+        // the name uppercased on the stack, no allocation.
         if self.effect_anims_presented()
             && rules
                 .art()
@@ -458,8 +464,9 @@ impl Simulation {
         ) else {
             return false;
         };
-        if cells.flags(cells.lookup_world(centre.x, centre.y)) & 0x100 != 0 {
-            z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+        let target = cells.lookup_world(centre.x, centre.y);
+        if cells.flags(target) & 0x100 != 0 {
+            z = crate::sim::movement::ground_pose::deck_surface_z(&cells, target, z);
         }
         let world_coord = AnimWorldCoord {
             x: centre.x,
@@ -780,6 +787,13 @@ impl Simulation {
         debug_assert!(previous.is_none());
         let draws = match constructor {
             AnimConstructorInput::Preconsumed(draws) => draws,
+            // A type whose constructor draws nothing needs no stream: the
+            // local copy below would be thrown away unread.
+            AnimConstructorInput::Local | AnimConstructorInput::Presentation
+                if !constructor_draws(config) =>
+            {
+                AnimConstructorDraws::default()
+            }
             AnimConstructorInput::Runtime
             | AnimConstructorInput::AssignedIdentity(_)
             | AnimConstructorInput::Local
@@ -1086,16 +1100,17 @@ impl Simulation {
     /// bound constructs nothing. This optional-effect boundary also reports
     /// and refuses an invalid Tiberium Image reached during the child's Start;
     /// the core constructor and the live Anim visitor return that error.
-    pub(crate) fn spawn_named_anim(
+    pub(crate) fn spawn_named_anim<'k>(
         &mut self,
         rules: &RuleSet,
-        type_name: &str,
+        type_name: impl Into<InternKey<'k>>,
         coord: AnimWorldCoord,
         delay: u16,
         draw_flags: u32,
         z_adjust: i32,
     ) -> bool {
-        let type_id = self.interner.intern(type_name);
+        let type_name = type_name.into();
+        let type_id = self.interner.intern_key(type_name);
         let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             delay,
@@ -1109,12 +1124,16 @@ impl Simulation {
             Ok(_) => true,
             Err(AnimSpawnError::Tiberium(error)) => {
                 log::warn!(
-                    "optional animation [{type_name}] refused an invalid Tiberium Image start: {error}"
+                    "optional animation [{}] refused an invalid Tiberium Image start: {error}",
+                    self.interner.key_name(type_name)
                 );
                 false
             }
             Err(error) => {
-                log::debug!("anim [{type_name}] did not construct: {error}");
+                log::debug!(
+                    "anim [{}] did not construct: {error}",
+                    self.interner.key_name(type_name)
+                );
                 false
             }
         }
@@ -1145,7 +1164,7 @@ pub(super) fn effective_bounds(config: &AnimTypeRuntimeConfig) -> Option<(i32, i
 /// the `RandomRate=` pick (`0x004221F5`; none when the clamped bounds are
 /// equal, as for every stock debris chunk), then the `Bouncer=` arm's launch
 /// (`0x004224D9..0x00422648`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AnimConstructorDraws {
     /// Present when a producer has already crossed Anim42203D. Admission must
     /// retain that constructor identity rather than consume the cursor again.
@@ -1228,6 +1247,13 @@ pub(crate) fn anim_constructor_draws(
         random_rate,
         bounce,
     })
+}
+
+/// Whether [`anim_constructor_draws`] takes any draw for `config`: only
+/// `RandomRate=`, `IsMeteor=` and `Bouncer=` draw. Without them it returns
+/// [`AnimConstructorDraws::default`] and leaves the stream as it was.
+pub(super) fn constructor_draws(config: &AnimTypeRuntimeConfig) -> bool {
+    config.random_rate_logic_frames.is_some() || config.is_meteor || config.bouncer
 }
 
 pub(super) fn anim_random_rate(

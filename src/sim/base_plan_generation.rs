@@ -15,6 +15,15 @@ use crate::sim::house_state::HouseDifficulty;
 use crate::sim::rng::SimRng;
 use crate::sim::world::TypeTechLevels;
 
+/// VERA's bound on the nodes one count inserts into a base plan: the extra
+/// refineries (`AIExtraRefineries=`/`AISlaveMinerNumber=`), Ares'
+/// `AIBuildCounts=`/`AIExtraCounts=` copies and the base defenses
+/// (`*BaseDefenseCounts=`). Each insertion draws once and shifts the list, so
+/// a count near `i32::MAX` hangs the AI's base planning; the bound applies
+/// only to these loops, and retail counts are far below it (every count
+/// below it draws as before).
+const BASE_PLAN_INSERT_LIMIT: i32 = 256;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecalcPreflightError {
     UnknownCountry,
@@ -223,7 +232,7 @@ pub(crate) fn recalc_base_plan(
             .take(priority.len().saturating_sub(1))
             .position(|candidate| candidate.base_plan_type_index == refinery.base_plan_type_index)
     {
-        for _ in 0..duplicate_count.max(0) {
+        for _ in 0..duplicate_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
             let insert_after = scenario_rng.next_range_u32_inclusive(
                 refinery_index as u32,
                 priority.len().wrapping_sub(1) as u32,
@@ -251,7 +260,7 @@ pub(crate) fn recalc_base_plan(
                     .ai_extra_copies(difficulty.table_index(), |low, high| {
                         scenario_rng.next_range_i32_inclusive(low, high)
                     });
-                for _ in 0..copies {
+                for _ in 0..copies.min(BASE_PLAN_INSERT_LIMIT) {
                     let at = scenario_rng
                         .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
                         as usize;
@@ -309,7 +318,7 @@ pub(crate) fn recalc_base_plan(
             defense_count = defense_count.wrapping_sub(1);
         }
     }
-    for _ in 0..defense_count.max(0) {
+    for _ in 0..defense_count.clamp(0, BASE_PLAN_INSERT_LIMIT) {
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
             as usize;
@@ -530,6 +539,30 @@ mod tests {
             .iter()
             .map(|node| node.type_or_control)
             .collect()
+    }
+
+    /// A defense count past VERA's bound inserts only the bound: one more
+    /// than the bound plans the same nodes as the bound itself.
+    #[test]
+    fn a_huge_base_defense_count_inserts_only_the_bound() {
+        let defenses = |count: i32| {
+            let counts = format!("{count},{count},{count}");
+            let rules = planner_rules(
+                "HARV",
+                "Americans,Russians,YuriCountry",
+                "0,0,0",
+                "1,1,1",
+                &counts,
+                "0,0,0",
+                "0,0,0",
+                "",
+                "",
+            );
+            let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 7);
+            values(&plan).iter().filter(|&&value| value == -1).count()
+        };
+        let limit = BASE_PLAN_INSERT_LIMIT;
+        assert_eq!(defenses(limit + 1), limit as usize);
     }
 
     #[test]

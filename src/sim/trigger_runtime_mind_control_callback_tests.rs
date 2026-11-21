@@ -294,7 +294,7 @@ fn mind_control_sound_keeps_pre_capture_house_and_original_raw_location() {
                 sub_x,
                 sub_y,
                 world_z_leptons,
-            } if sound_id == "CallbackCaptureSound" => Some((
+            } if sound_id.name_in(&rules) == "CallbackCaptureSound" => Some((
                 *audible_to,
                 crate::util::lepton::absolute_lepton_axis(*rx, *sub_x),
                 crate::util::lepton::absolute_lepton_axis(*ry, *sub_y),

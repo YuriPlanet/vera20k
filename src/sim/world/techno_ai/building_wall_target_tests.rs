@@ -38,7 +38,7 @@ impl WallScene {
         terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
         sim.install_resolved_terrain_for_new_map(terrain);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
-        sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.intern(name);
             sim.houses

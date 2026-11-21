@@ -23,6 +23,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
+use crate::util::forked::Forked;
 
 /// The promotion detector of `TechnoClass::AI_Update @ 0x006FA054..0x006FA145`,
 /// run once per live-object visit for every category (the common body is
@@ -38,11 +39,13 @@ use crate::sim::world::SimSoundEvent;
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 /// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
+/// The interner and the sound channel are written only by a promotion
+/// (`util::forked`).
 fn veterancy_promotion_step(
-    interner: &mut StringInterner,
+    interner: &mut Forked<StringInterner>,
     substrate: &mut ObjectSubstrate,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sound_events: &mut FrameChannel<SimSoundEvent>,
+    sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
     id: u64,
     rules: &RuleSet,
 ) {
@@ -426,6 +429,10 @@ pub(super) fn mission_counter_step(
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
     sim.substrate.entities.count_mission_ai_visit(id);
+    // Ares' `ObjectClass_Update_AlphaLight` hooks ObjectClass::AI's entry.
+    if rules.ares() {
+        sim.update_alpha_shape(id, crate::sim::world::substrate::ObjectKind::Entity, rules);
+    }
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
     sim.object_ai_sounds(id, rules, &mut ctx.effects);
@@ -724,11 +731,12 @@ pub(super) fn berserk_step(
 ///
 /// Next, UpdateAirstrikeTint70E920 (call6F9EB6) steps a marked building,
 /// consuming its jitter draw after the Iron draw on the same Scenario stream.
+/// The stream is written only by a stepped tint (`util::forked`).
 ///
 /// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
 pub(super) fn iron_tint_step(
     session: &ScenarioSession,
-    scenario_rng: &mut SimRng,
+    scenario_rng: &mut Forked<SimRng>,
     substrate: &mut ObjectSubstrate,
     id: u64,
 ) {
@@ -891,7 +899,7 @@ pub(super) fn target_reach_step(
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
-    ) || sim.team_script_vm.team_for_member(id).is_some()
+    ) || sim.team_script_vm.team_of(id).is_some()
         || entity.navigation.nav_com().is_some()
     {
         return;

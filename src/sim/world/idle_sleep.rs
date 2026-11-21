@@ -184,17 +184,7 @@ impl Simulation {
         // the sound prefix (`FootClass::AI`'s edge sounds) and the commit
         // that publishes pending overlay Recalcs and smudge dirt.
         effects.flush_sound(self, rules);
-        if self
-            .overlay_grid
-            .as_ref()
-            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
-            || self
-                .smudge_grid
-                .as_ref()
-                .is_some_and(|grid| grid.has_dirty())
-        {
-            let _ = self.commit_no_fire(rules, effects);
-        }
+        let _ = self.commit_no_fire(rules, effects);
         SleepVisit::Counted
     }
 
@@ -529,7 +519,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && !entity.is_warped_out()
         && !entity.is_warping_in()
         // The tube tests return before the AI counter.
-        && entity.low_bridge_tube_state.is_none()
+        && entity.active_tube().is_none()
         && entity.drain.is_idle()
         && !entity.veterancy.rank_changed()
         && !crate::sim::rocking::updates(entity)

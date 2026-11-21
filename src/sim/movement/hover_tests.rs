@@ -427,7 +427,7 @@ fn power_off_matches_original_execution() {
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
         let seed = row["seed"].as_u64().unwrap();
-        sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
         assert!(
             crate::sim::world::Simulation::hover_power_off(
                 &mut sim.scenario_rng,

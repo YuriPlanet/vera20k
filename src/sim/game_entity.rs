@@ -89,6 +89,67 @@ pub(crate) struct ObjectGroupCopy {
     local_control_group: Option<i32>,
 }
 
+/// Leave to store an object's id in a field `Simulation::entity_expiry_holds`
+/// reads (sim-scale; results unchanged). Only [`GameEntity::note_names`]
+/// makes one, and it notes its entity, so the pointer-expiry index re-reads
+/// the entities that may have come to name an object and no others
+/// ([`EntityStore::take_unread_names`]). Every writer outside a field's own
+/// module that can store such an id takes one, from the entity it writes;
+/// the module's own stores note their entity. A clear needs none: the index
+/// asks each entity it finds before it answers. A move between two of one
+/// entity's fields names nothing new and needs none either.
+///
+/// [`EntityStore::take_unread_names`]: crate::sim::entity_store::EntityStore::take_unread_names
+#[derive(Clone, Copy)]
+pub(crate) struct NameNote(());
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Test builds: how many notes fixtures took ([`NameNote::fixture`]).
+    static FIXTURE_NAMES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl NameNote {
+    /// Test builds: a note for a fixture's write, which holds only the
+    /// field and cannot note its entity. The pointer-expiry index re-reads
+    /// every entity at its next refresh ([`Self::fixture_notes`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn fixture() -> Self {
+        FIXTURE_NAMES.with(|count| count.set(count.get() + 1));
+        Self(())
+    }
+
+    /// Test builds: how many fixture notes this thread has taken.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn fixture_notes() -> u64 {
+        FIXTURE_NAMES.with(std::cell::Cell::get)
+    }
+}
+
+/// [`GameEntity::names_unread`]: set while the pointer-expiry index has not
+/// read the entity since its names may have changed. A new, copied or
+/// loaded entity is unread.
+struct NamesUnread(bool);
+
+/// Transient: no two entities differ by it in a debug print.
+impl std::fmt::Debug for NamesUnread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NamesUnread")
+    }
+}
+
+impl Default for NamesUnread {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+impl Clone for NamesUnread {
+    fn clone(&self) -> Self {
+        Self(true)
+    }
+}
+
 /// Every game object (unit, infantry, building, aircraft) is one `GameEntity`.
 /// Core fields are always present; optional subsystems use `Option<T>`. A
 /// mechanism's own state is a record its module defines and alone writes
@@ -326,10 +387,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
@@ -462,6 +522,13 @@ pub struct GameEntity {
     /// [`SpatialThreat`]: crate::sim::house_threat::SpatialThreat
     #[serde(default)]
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
+    /// VERA-only: the entity may name other objects in the fields
+    /// `Simulation::entity_expiry_holds` reads than when the pointer-expiry
+    /// index last read it ([`NameNote`]). Here, not in `Seldom`: the index
+    /// asks it of every entity handed out between two expiries. Transient:
+    /// never saved, compared or hashed.
+    #[serde(skip)]
+    names_unread: NamesUnread,
     /// The state this object's turn does not read each step, stored apart.
     pub seldom: Box<Seldom>,
 }
@@ -695,9 +762,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the
@@ -990,6 +1056,24 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
+    /// Tiberian Sun's limpets (Firestorm TechnoClass+0x214/+0x218), a
+    /// [`Limpets`] that `sim::limpet` owns. Nothing unless a `LimpetFactor=`
+    /// warhead hit the object; [`FootSpeedState::limpeted`] spares the speed
+    /// query this read otherwise.
+    ///
+    /// [`Limpets`]: crate::sim::limpet::Limpets
+    /// [`FootSpeedState::limpeted`]: crate::sim::components::FootSpeedState::limpeted
+    #[serde(default)]
+    pub(crate) limpets: crate::sim::limpet::Limpets,
+    /// Tiberian Sun's web timer (Firestorm InfantryClass+0x370), a
+    /// [`WebTimer`] that `sim::infantry` owns. Nothing unless a `Webby=`
+    /// warhead webbed the man; a byte in his [`InfantryRuntime`] spares
+    /// every other object this read.
+    ///
+    /// [`WebTimer`]: crate::sim::infantry::WebTimer
+    /// [`InfantryRuntime`]: crate::sim::infantry::InfantryRuntime
+    #[serde(default)]
+    pub(crate) web: crate::sim::infantry::WebTimer,
     /// The Ares 3.0 TechnoExt and BuildingExt state, an [`AresPart`] kept out
     /// of line and only once Ares code writes it.
     #[serde(default)]
@@ -1430,9 +1514,11 @@ impl GameEntity {
             let quotient = if object.pip_wrap() == 0 {
                 1
             } else {
-                // Native IDIV likewise faults for MIN/-1; the ordinary
-                // signed quotient truncates toward zero.
-                current / object.pip_wrap()
+                // IDIV's signed quotient, truncated toward zero. Native
+                // faults on the one overflowing pair (Ammo=-2147483648 with
+                // PipWrap=-1); outside data never stops the game, so that
+                // pair wraps to i32::MIN instead.
+                current.wrapping_div(object.pip_wrap())
             };
             object.reload.wrapping_add(
                 object
@@ -1524,6 +1610,7 @@ impl GameEntity {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn install_ammo_for_test(&mut self, ammo: Option<TechnoAmmo>) {
+        let _ = self.note_names();
         self.seldom.ammo = ammo;
     }
 
@@ -1660,7 +1747,10 @@ impl GameEntity {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_pending_entry(&mut self, target: Option<u64>) {
         match target {
-            Some(building) => self.pending_entry.install(building),
+            Some(building) => {
+                let note = self.note_names();
+                self.pending_entry.install(building, note);
+            }
             None => self.pending_entry.clear(),
         }
     }
@@ -1791,7 +1881,7 @@ impl GameEntity {
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 
@@ -1815,6 +1905,7 @@ impl GameEntity {
 
     /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610`, a plain store.
     pub fn set_archive_target(&mut self, target: Option<crate::sim::combat::TargetKind>) {
+        let _ = self.note_names();
         self.seldom.base_defense_response.set_archive_target(target);
     }
 
@@ -2001,17 +2092,22 @@ impl GameEntity {
     /// Install a complete constructor or saved role supplied by a fixture.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_passenger_role_for_test(&mut self, role: PassengerRole) {
+        let _ = self.note_names();
         self.passenger_role = role;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn passenger_role_mut_for_test(&mut self) -> &mut PassengerRole {
+        let _ = self.note_names();
         &mut self.passenger_role
     }
 
     /// The role's own operations (`sim::passenger`) keep its invariants; the
-    /// paired garrison and cargo admissions live on that owner.
+    /// paired garrison and cargo admissions live on that owner. The role
+    /// names its carrier, riders and occupants, so the entity is noted for
+    /// the pointer-expiry index ([`Self::note_names`]).
     pub(crate) fn passenger_role_mut(&mut self) -> &mut PassengerRole {
+        let _ = self.note_names();
         &mut self.passenger_role
     }
 
@@ -2097,6 +2193,7 @@ impl GameEntity {
     /// changing this reference does not change either Unit's follower byte.
     pub(crate) fn set_unit_follower(&mut self, follower: Option<u64>) {
         assert_eq!(self.category, EntityCategory::Unit);
+        let _ = self.note_names();
         self.seldom.unit_follower = follower;
     }
 
@@ -2173,6 +2270,12 @@ impl GameEntity {
     /// `+0x388`.
     pub fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
+    }
+
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
     }
 
     /// The body heading's high byte at `frame`, the 8-bit direction a reader
@@ -2456,6 +2559,7 @@ impl GameEntity {
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
             cached_spatial_threat: Default::default(),
             turret_anim_frame: Default::default(),
+            names_unread: NamesUnread::default(),
             seldom: Box::new(Seldom {
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
@@ -2551,6 +2655,8 @@ impl GameEntity {
                 railgun_particle_system: Default::default(),
                 damage_smoke_system_id: Default::default(),
                 transport_unload_keep_count: Default::default(),
+                limpets: Default::default(),
+                web: Default::default(),
                 #[cfg(feature = "phobos")]
                 shield: None,
             }),
@@ -2677,6 +2783,23 @@ impl GameEntity {
         self.fall.parachute_animation_expired(animation);
     }
 
+    /// Note that this entity may come to name another object in a field
+    /// `Simulation::entity_expiry_holds` reads, and take the [`NameNote`]
+    /// that field's writer requires.
+    pub(crate) fn note_names(&mut self) -> NameNote {
+        self.names_unread.0 = true;
+        NameNote(())
+    }
+
+    /// Whether the entity was noted ([`Self::note_names`]) since the store
+    /// last asked, which forgets it.
+    pub(crate) fn take_names_unread(
+        &mut self,
+        _: crate::sim::entity_store::UnreadNamesAuthority,
+    ) -> bool {
+        std::mem::replace(&mut self.names_unread.0, false)
+    }
+
     /// The Anims held in the fields `Simulation::notify_anim_pointer_expired`
     /// clears when an Anim expires: Object+88's parachute (the owner's
     /// Detach710410 reaching5F6DA0), the Ares EMP sparkle, the Ares
@@ -2788,7 +2911,8 @@ impl GameEntity {
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     #[cfg(test)]
     pub fn mark_live_contact_with(&mut self, other_stable_id: u64) {
-        self.seldom.radio_contacts.insert(other_stable_id);
+        let note = self.note_names();
+        self.seldom.radio_contacts.admit(other_stable_id, note);
     }
 
     /// Whether this entity has a live RadioClass-style contact with another entity.
@@ -3096,6 +3220,32 @@ mod tests {
             (4, 3, 5)
         );
         assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
+
+    /// StartReloading6FB080's `Reload + ReloadIncrement * q * q` with `q` the
+    /// ammo count over `PipWrap=`: the overflowing pair (`i32::MIN` over -1)
+    /// no longer panics, and an ordinary pair keeps IDIV's quotient.
+    #[test]
+    fn reload_duration_divides_by_pip_wrap_without_overflow() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=ODD\n1=WRAP\n\
+                 [ODD]\nAmmo=5\nReload=10\nReloadIncrement=1\nPipWrap=-1\n\
+                 [WRAP]\nAmmo=9\nReload=10\nReloadIncrement=1\nPipWrap=2\n",
+            ))
+            .unwrap();
+        let duration = |name: &str, current: i32| {
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(current);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.start_reloading_ammo(rules.object(name).unwrap(), 0);
+            entity.seldom.ammo_reload_timer.remaining(0)
+        };
+        // i32::MIN wraps; MIN * MIN wraps to 0, so the clock runs Reload.
+        assert_eq!(duration("ODD", i32::MIN), 10);
+        // -7 / 2 truncates toward zero to -3: 10 + 9.
+        assert_eq!(duration("WRAP", -7), 19);
     }
 
     fn native_cloak_fixture() -> &'static serde_json::Value {

@@ -106,6 +106,7 @@ impl Simulation {
         // Scalar slot deletion451A2C ends its inherited FoggedOut199 flag;
         // the immutable FoggedObject record does not retain this Anim pointer.
         self.fog.forget_fogged_live_object(id);
+        self.delete_anim_alpha_shape(id);
         self.substrate.anims.remove(id);
     }
 
@@ -283,6 +284,8 @@ impl Simulation {
             .into_iter()
             .flatten()
         };
+        // Most effect anims name none of these, and for them neither list
+        // allocates; only a type with a chain pays for walking it.
         let mut pending: Vec<&str> = children(config).collect();
         let mut seen: Vec<&str> = Vec::new();
         while let Some(name) = pending.pop() {

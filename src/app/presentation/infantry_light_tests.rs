@@ -1,12 +1,14 @@
 //! Infantry DrawIt518F90 light boundaries and production SHP forwarding.
 
 use super::*;
+use crate::app::presentation::frame::PresentationFrame;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{test_grid, test_smudge_cell};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::Health;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::scenario_session::{ScenarioLightProfileUnits, ScenarioLightingState};
 use crate::sim::superweapon::lightning_storm::LightningStorm;
 use crate::sim::superweapon::psychic_dominator::PsychicDominatorState;
@@ -111,30 +113,55 @@ fn infantry_body_light_respects_side_threshold_signed_height_and_weather() {
     }
 }
 
+fn assert_shp_light(runtime: &mut SimRuntime, id: u64, light: &CellLightGrid, expected: i32) {
+    let sim = &runtime.simulation;
+    let before = (
+        sim.state_hash(),
+        sim.rng_state(),
+        sim.resolved_terrain()
+            .unwrap()
+            .shared_cell_dummy()
+            .snapshot(),
+    );
+    let frame = PresentationFrame::capture(runtime, &Default::default(), false);
+    frame.display_order(sim);
+    let viewer = sim.session().current_house();
+    let presentation = runtime.presentation_copy(viewer, None);
+    assert_shp_light_on_frame(&presentation, &frame, id, light, expected);
+    let sim = &runtime.simulation;
+    assert_eq!(
+        (
+            sim.state_hash(),
+            sim.rng_state(),
+            sim.resolved_terrain()
+                .unwrap()
+                .shared_cell_dummy()
+                .snapshot()
+        ),
+        before,
+    );
+}
+
 /// Keep real Display admission and SHP emission. The minimal atlas covers the
 /// authored six-frame Ready/Walk and retail GI's eight-facing Ready block.
-fn assert_shp_light(
-    runtime: &crate::sim::runtime::SimRuntime,
+fn assert_shp_light_on_frame(
+    runtime: &SimRuntime,
+    frame: &PresentationFrame,
     id: u64,
     light: &CellLightGrid,
     expected: i32,
 ) {
     use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-    use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
+    use crate::app::presentation::render::draw_plan_lowering::{ObjectTexture, PlannedObjects};
     use crate::render::sprite_atlas::{
         ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
     };
     use crate::rules::house_colors::HouseColorIndex;
 
-    let sim = &runtime.simulation;
-    let actor = sim.entities().get(id).unwrap();
-    let owner_name = sim.resolve(actor.owner()).to_owned();
-    let terrain = sim.resolved_terrain().unwrap();
-    let before = (
-        sim.state_hash(),
-        sim.rng_state(),
-        terrain.shared_cell_dummy().snapshot(),
-    );
+    let actor = frame.object(id).unwrap();
+    let owner_name = runtime.simulation.resolve(actor.owner());
+    let [x, y] = actor.pose.screen;
+    let camera = [x - 400.0, y - 300.0];
     let entry = ShpSpriteEntry {
         uv_origin: [0.0; 2],
         uv_size: [1.0; 2],
@@ -165,28 +192,23 @@ fn assert_shp_light(
     let voxel_images = std::cell::RefCell::default();
     let zshape_skips = std::cell::RefCell::default();
     let colors =
-        crate::map::houses::HouseColorMap::from([(owner_name.clone(), HouseColorIndex(0))]);
-    let location = crate::sim::movement::ground_pose::object_location(actor, Some(terrain));
-    let screen =
-        crate::util::lepton::absolute_leptons_to_screen(location.x, location.y, location.z);
-    let frame =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
-    let mut draws = Vec::new();
+        crate::map::houses::HouseColorMap::from([(owner_name.to_owned(), HouseColorIndex(0))]);
+    let mut draws = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime,
-            frame: &frame,
+            frame,
             atlas: Some(&atlas),
             overlay_atlas: None,
             unit_atlas: None,
             voxel_images: &voxel_images,
             zshape_skips: &zshape_skips,
             depth_tested_images: None,
-            camera: [screen.0 - 400.0, screen.1 - 300.0],
+            camera,
             render_size: [800, 600],
             zoom: 1.0,
             building_viewport: crate::app::presentation::render::tactical_world_viewport(
-                [screen.0 - 400.0, screen.1 - 300.0],
+                camera,
                 [0, 0, 800, 600],
                 None,
             ),
@@ -194,15 +216,16 @@ fn assert_shp_light(
                 origin_y: 0.0,
                 world_height: 10_000.0,
             },
-            local_owner: Some(&owner_name),
+            local_owner: Some(owner_name),
             ignore_visibility: true,
             lighting: light,
             house_colors: &colors,
             building_zshape: None,
         },
         &mut draws,
-        &NativeDisplayOrder::from_world(&sim, None),
+        frame.display_order(&runtime.simulation),
     );
+    let draws = draws.into_owned();
     let mut bodies = draws
         .iter()
         .filter(|draw| draw.parent.id == id)
@@ -214,21 +237,9 @@ fn assert_shp_light(
     for channel in body.instance.tint {
         assert!((channel - expected as f32 / 1000.0).abs() < 0.000_001);
     }
-    assert_eq!(
-        (
-            sim.state_hash(),
-            sim.rng_state(),
-            terrain.shared_cell_dummy().snapshot()
-        ),
-        before,
-    );
 }
 
-#[test]
-fn infantry_shp_top_light_follows_public_move_head_production() {
-    use crate::sim::command::Command;
-    use crate::sim::runtime::{SimResources, SimRuntime};
-
+fn gi_render_fixture() -> (SimRuntime, u64) {
     // Deliberate component-scene rules/art, not a retail type-load claim.
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
         &IniFile::from_str(
@@ -247,13 +258,46 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
     let id = sim
         .spawn_object("E1", "Americans", 10, 20, 0, &rules)
         .unwrap();
-    let mut runtime = SimRuntime {
-        simulation: sim,
-        resources: SimResources::new(rules).into(),
-    };
+    (
+        SimRuntime {
+            simulation: sim,
+            resources: SimResources::new(rules).into(),
+        },
+        id,
+    )
+}
+
+#[cfg(debug_assertions)]
+#[test]
+fn debug_first_frame_draws_infantry_from_the_published_snapshot() {
+    use crate::app::match_runtime::sim_host::SimHost;
+
+    let (runtime, id) = gi_render_fixture();
+    let mut host = SimHost::default();
+    host.install(Some(runtime));
+    host.ensure_frame();
+    let presentation = host.presentation().unwrap();
+    assert!(!std::ptr::eq(presentation, host.home_runtime().unwrap()));
+
+    let mut light = CellLightGrid::new();
+    let profile = light.profiles().default_profile_id();
+    light.insert_light(
+        (10, 20),
+        crate::map::lighting::CellLight::compatibility(profile, [1000; 3], 500),
+    );
+    // The first draw asks for Display order and emits the GI from the
+    // host's snapshot, whose world has no live entity store.
+    assert_shp_light_on_frame(presentation, host.frame().unwrap(), id, &light, 700);
+}
+
+#[test]
+fn infantry_shp_top_light_follows_public_move_head_production() {
+    use crate::sim::command::Command;
+
+    let (mut runtime, id) = gi_render_fixture();
     // Observed whole GI draws: null-head/destination-only700; a produced
     // head over top1000 gives1200, or700 when only the two tops are swapped.
-    let sample = |runtime: &SimRuntime, current_top, head_top, expected| {
+    let sample = |runtime: &mut SimRuntime, current_top, head_top, expected| {
         let mut light = CellLightGrid::new();
         let profile = light.profiles().default_profile_id();
         for (cell, top) in [((10, 20), current_top), ((11, 20), head_top)] {
@@ -264,7 +308,7 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         }
         assert_shp_light(runtime, id, &light, expected);
     };
-    sample(&runtime, 500, 1000, 700);
+    sample(&mut runtime, 500, 1000, 700);
     assert!(runtime.simulation.apply_command(
         "Americans",
         &Command::Move {
@@ -287,7 +331,7 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         loco.step_head().is_none(),
         "a destination does not supply a head"
     );
-    sample(&runtime, 500, 1000, 700);
+    sample(&mut runtime, 500, 1000, 700);
 
     let mut produced = false;
     for _ in 0..128 {
@@ -300,8 +344,8 @@ fn infantry_shp_top_light_follows_public_move_head_production() {
         if (actor.position.rx(), actor.position.ry()) == (10, 20)
             && (navigation.x / 256, navigation.y / 256) == (11, 20)
         {
-            sample(&runtime, 500, 1000, 1200);
-            sample(&runtime, 1000, 500, 700);
+            sample(&mut runtime, 500, 1000, 1200);
+            sample(&mut runtime, 1000, 500, 700);
             produced = true;
             break;
         }
@@ -356,5 +400,5 @@ fn retail_gi_body_light_on_the_physical_hills_bridge_side() {
         body_extra_light(actor, &scene.runtime.resources.rules, sim, Some(&cells)),
         -300
     );
-    assert_shp_light(&scene.runtime, id, &CellLightGrid::new(), 700);
+    assert_shp_light(&mut scene.runtime, id, &CellLightGrid::new(), 700);
 }

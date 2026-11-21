@@ -129,7 +129,8 @@ fn original_packet_bytes_mirrors_caches_and_expansion_match() {
     let controls = corpus();
     assert_eq!(controls.input_fill, 0xa5);
     assert_eq!(controls.decoded_fill, 0);
-    assert_eq!(PAYLOAD_LENGTHS.as_slice(), controls.payload_lengths);
+    let native_lengths: Vec<u8> = (0..47).filter_map(event_body_len).collect();
+    assert_eq!(native_lengths, controls.payload_lengths);
     for flow in controls.flows {
         let mut sender = EventPacketCodec::default();
         let mut receiver = EventPacketCodec::default();

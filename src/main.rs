@@ -25,6 +25,15 @@ use anyhow::Result;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
+    // `-ra2` selects the original Red Alert 2 non-md INI roots. Record it
+    // before any CLI switch below can load config, so every GameConfig::load
+    // resolves the same roots. The saved Options choice is read with VERA.INI
+    // (`GameConfig::use_ra2_mode`).
+    {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        let refs: Vec<_> = args.iter().map(std::ffi::OsString::as_os_str).collect();
+        vera20k::util::ra2_launch::configure(&refs);
+    }
     if let Some(result) =
         vera20k::app::frontend::launch::try_replay_verify(std::env::args_os().skip(1))
     {

@@ -303,7 +303,7 @@ fn play_gate_sound(
         return;
     };
     let event = crate::sim::world::SimSoundEvent::voc_at_location(
-        sound.to_owned(),
+        rules.sound_name(sound),
         entity,
         sim.resolved_terrain.as_ref(),
     );
@@ -472,9 +472,9 @@ mod tests {
                 CellListInsertion::PrependNonBuilding,
             );
         }
-        sim.main_rng = SimRng::new(seed);
-        sim.scenario_rng = SimRng::new(seed);
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         (sim, rules)
     }
 
@@ -743,7 +743,7 @@ mod tests {
         );
         gate.building.building_gate = Some(BuildingGateRuntime::default());
         sim.substrate.entities.insert(gate);
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.substrate.occupancy.add(
             10,
             10,
@@ -805,7 +805,7 @@ mod tests {
     #[test]
     fn an_open_gates_cell_admits_an_infantry_sublocation() {
         let (mut sim, rules) = fixture();
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             32,
             32,
             crate::map::resolved_terrain::test_loader_clear_cell,
@@ -914,7 +914,7 @@ mod tests {
                 .take_for_test()
                 .into_iter()
                 .filter_map(|event| match event {
-                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id),
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules).to_string()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()

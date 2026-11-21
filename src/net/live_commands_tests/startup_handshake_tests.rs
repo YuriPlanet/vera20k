@@ -4,11 +4,12 @@
 use super::*;
 
 /// Games that load the same world but would play it differently, another
-/// build or other rules, never certify one start; the start report names
-/// the part that differs.
+/// build, other rules or picture and model files the simulation reads
+/// differently, never certify one start; the start report names the part
+/// that differs.
 #[test]
 fn start_identity_differs_by_build_and_by_rules() {
-    let agreement = |version: &str, rules: &str| {
+    let agreement = |version: &str, rules: &str, file_inputs: u64| {
         let rate = NonZeroU32::new(1).unwrap();
         StartupAgreement::new(
             [(0, 0), (1, 1)],
@@ -18,15 +19,17 @@ fn start_identity_differs_by_build_and_by_rules() {
             30,
             rate,
             0,
+            file_inputs,
             version,
             rules,
         )
         .unwrap()
     };
-    let base = agreement("1.0:a:0000", "rules");
+    let base = agreement("1.0:a:0000", "rules", 0);
     for (other, part) in [
-        (agreement("1.0:b:0000", "rules"), "build"),
-        (agreement("1.0:a:0000", "other"), "rules"),
+        (agreement("1.0:b:0000", "rules", 0), "build"),
+        (agreement("1.0:a:0000", "other", 0), "rules"),
+        (agreement("1.0:a:0000", "rules", 7), "asset_files"),
     ] {
         assert_ne!(
             other.sequencing_identity().unwrap().0,
@@ -75,6 +78,7 @@ fn startup_cohort(active: &[u8], hashes: &[u64]) -> Vec<LiveCommandSession> {
                 30,
                 rate,
                 hashes[index],
+                0,
                 "",
                 "",
             )
@@ -149,6 +153,7 @@ fn full_and_majority_loading_rosters_require_the_same_frozen_world() {
             10,
             30,
             NonZeroU32::new(5).unwrap(),
+            0,
             0,
             "",
             ""
@@ -302,6 +307,7 @@ fn startup_ready_retries_after_release_and_old_scope_cannot_certify_rematch() {
         30,
         rate,
         Simulation::with_seed(73).state_hash(),
+        0,
         "",
         "",
     )

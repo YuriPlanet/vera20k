@@ -36,7 +36,7 @@ fn world(rules: &RuleSet) -> Simulation {
         .register(HouseState::new(owner, 0, None, true, 2000, 10));
     construct_house_supers(&mut sim, rules, owner, false);
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));

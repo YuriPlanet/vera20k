@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use anyhow::Result;
 
 /// Whether this build starts worker threads. The browser build does not, so
-/// it has no online map library and no login page counts.
+/// the browser uses asynchronous fetch for the login page counts.
 pub(crate) const THREADS: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 
 /// One worker thread whose result arrives on the receiver; `work` gets

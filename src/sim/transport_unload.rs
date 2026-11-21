@@ -344,7 +344,8 @@ fn eject_head_passenger(
                     transport.body_facing_current(now),
                     transport.position.z(),
                     height,
-                    obj.and_then(|o| o.leave_transport_sound.clone()),
+                    obj.and_then(|o| o.leave_transport_sound.as_deref())
+                        .map(|sound| rules.sound_name(sound)),
                 )
             };
             let Some(passenger_snapshot) = sim.substrate.entities.get(pax_id) else {
@@ -528,12 +529,7 @@ fn eject_head_passenger(
                     .get(pax_id)
                     .is_some_and(|passenger| passenger.deactivated.is_offline())
                 {
-                    Simulation::locomotor_power_off(
-                        &mut sim.scenario_rng,
-                        &mut sim.substrate,
-                        &sim.resolved_terrain,
-                        pax_id,
-                    );
+                    sim.locomotor_power_off(pax_id, rules, Some(rules.overlay_registry()), effects);
                 }
                 let powered = sim.substrate.entities.get(pax_id).and_then(|passenger| {
                     let cells = sim
@@ -561,7 +557,7 @@ fn eject_head_passenger(
             // `0x0073DC0C..0x0073DC19`: a transport in a team takes the
             // passenger into it (`Add_Member(passenger, 0)`); boarding's
             // Conceal had removed it from its own.
-            if let Some((team, _)) = sim.team_script_vm.team_for_member(transport_id) {
+            if let Some(team) = sim.team_script_vm.team_of(transport_id) {
                 sim.team_add_member(team, pax_id, false, rules, effects);
             }
 
@@ -755,7 +751,7 @@ pub(crate) fn building_mission_unload_absorber(
                 });
                 if let Some(coordinate) = coordinate {
                     sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound.clone(),
+                        rules.sound_name(sound),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
                             y: coordinate.y,
@@ -862,7 +858,10 @@ fn ares_tunnel_unload_one(
                 building.body_facing_current(now),
                 object_cell_height(sim, building),
                 building.position.z(),
-                object.leave_transport_sound.clone(),
+                object
+                    .leave_transport_sound
+                    .as_deref()
+                    .map(|sound| rules.sound_name(sound)),
                 crate::sim::movement::ground_pose::object_get_coords(
                     building,
                     sim.resolved_terrain.as_ref(),
@@ -1290,8 +1289,8 @@ pub(crate) fn mission_unload(
                         .entities
                         .get(pax_id)
                         .is_some_and(|pax| !pax.is_on_carryall())
-                    && sim.team_script_vm.team_for_member(pax_id).is_some()
-                    && let Some((team, _)) = sim.team_script_vm.team_for_member(id)
+                    && sim.team_script_vm.team_of(pax_id).is_some()
+                    && let Some(team) = sim.team_script_vm.team_of(id)
                 {
                     sim.team_add_member(team, pax_id, false, rules, effects);
                 }
@@ -1380,7 +1379,7 @@ fn eject_from_aircraft(
         |sim, pax_id, effects| {
             // `0x0041552E`: with the head popped, the aircraft leaves its Cell
             // (`MapClass::Pick_Up`), taking its list entry and raw bit along.
-            sim.foot_pick_up(aircraft_id, rules, overlay_registry);
+            sim.foot_pick_up(aircraft_id, rules, overlay_registry, true);
             picked_up = true;
             let location = match sim.substrate.entities.get(aircraft_id) {
                 Some(aircraft) => aircraft.position,
@@ -1483,6 +1482,7 @@ fn eject_from_aircraft(
             overlay_registry,
             &mut |_, _| {},
             effects,
+            true,
         );
     }
     passenger.filter(|_| ejected)

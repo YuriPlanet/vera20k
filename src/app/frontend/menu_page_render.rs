@@ -1,169 +1,406 @@
-//! Render glue for the RA2TS-bearing right-panel menu pages: Single Player
-//! `0x100` and Movies & Credits `0x101` (`ui::shell::menu_page`).
+//! The family pages' shared shell: the right-panel pages (main menu `0xE2`,
+//! Single Player `0x100`, Movies & Credits `0x101`, the movie list `0x129`,
+//! Mods, campaign `0x94`, Load Saved Game `0xB7` and the score pages) paint
+//! their panel, monitor, heading and status line, and their button column's
+//! `vera20k-gui` nodes through `gui_paint`, in [`encode_family_page`], each
+//! with what it draws under and over them. [`FamilyPage`] names the pages
+//! whose buttons are `ui::shell::menu_page` specs.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::Instant;
 
 use anyhow::Result;
 
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+
 use crate::app::AppState;
-use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, shell_reveal_path_a};
+use crate::app::frontend::main_menu_shell_render::{
+    Ra2tsDialogOwner, push_family_list_backing, shell_parent_background_instances,
+    shell_reveal_path_a,
+};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect, resolve_csf,
-    software_cursor,
+    ShellComposition, TexturedDraw, encode_shell_pass, software_cursor,
 };
+use crate::app::frontend::shell_transition::{ColumnDraw, ShellSlideKind};
+use crate::app::frontend::skirmish_shell_render::gui_paint::{ButtonArt, GuiStyle, paint_gui_ids};
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::process_assets::ProcessAssets;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_paint::{
-    self, ArtFit, ButtonPolicy, CURSOR_DEPTH, MOVIE_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_DISABLED, SHELL_TEXT_RGB_ENABLED,
-};
-use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::geom::{RectPx, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
-use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
+use crate::render::bit_font::BitFont;
+use crate::render::gpu::GpuContext;
+use crate::render::hud_paint::{HudPaint, Material};
+use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
+use crate::ui::shell::controller::DialogController;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
-
-/// Menu pages paint the 156x42 SDBTNANM frame filling its cell, right-anchored
-/// and vertically centred — the native placement at the authored cell size, and
-/// a proportional stretch of it on a stretched layout.
-/// Mouse hover updates static 0x695 but does not select frame 3. Press selects
-/// frame 4 without moving the art; a runtime-disabled button keeps its art and
-/// shows its caption in the disabled colour (owner-draw type 1, `0x006135F3`).
-pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
-    art_fit: ArtFit::FitRightAnchored {
-        panel_w: SDBTNANM_CELL_W_NARROW as f32,
-        tile_h: SDBTNANM_CELL_H as f32,
-    },
-    hover_flash: false,
-    art_sink_y: 0.0,
-};
-const MENU_PAGE_BUTTON_ALIGN: ShellAlign = ShellAlign::BUTTON_CAPTION;
+use crate::ui::shell::static_reveal::PresentedKind1Static;
+use crate::ui::single_player_shell::SinglePlayerShellState;
 
 pub(crate) enum MenuPageRenderResult {
     Rendered,
     Fallback,
 }
 
-/// One page to paint: its resource table, the dialog owning the RA2TS static
-/// `0x71A`, and the controls its dialog proc has runtime-disabled.
-pub(crate) struct MenuPageView<'a> {
-    pub spec: &'static MenuPageSpec,
-    pub movie_owner: Ra2tsDialogOwner,
-    pub disabled: &'a [u16],
+/// A family page whose buttons are `vera20k-gui` nodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FamilyPage {
+    MainMenu,
+    SinglePlayer,
+    MoviesAndCredits,
+    Campaign,
 }
 
-/// Press/hover for the page, read from the shared controller only while the
-/// page is its top dialog.
-#[derive(Debug, Clone, Copy, Default)]
-struct PageInput {
-    pressed: Option<u16>,
-    hovered: Option<u16>,
-}
-
-fn page_input(state: &AppState, spec: &MenuPageSpec) -> PageInput {
-    let controller = &state.frontend.shell_controller;
-    if controller.top_id() != Some(spec.dialog) {
-        return PageInput::default();
+impl FamilyPage {
+    /// Which RA2TS menu page owns the `MainMenu` screen, if any.
+    pub(crate) fn menu_page(frontend: &FrontendState) -> Option<Self> {
+        if frontend.screen != crate::ui::game_screen::GameScreen::MainMenu {
+            return None;
+        }
+        // Play_Movie and Show_Credits run after the page is destroyed.
+        if frontend.fullscreen_movie.is_some() || frontend.credits_roll.is_some() {
+            return None;
+        }
+        match frontend.shell_route {
+            ShellRoute::SinglePlayer => Some(Self::SinglePlayer),
+            ShellRoute::MoviesAndCredits => Some(Self::MoviesAndCredits),
+            _ => None,
+        }
     }
-    PageInput {
-        pressed: controller.pressed(),
-        hovered: controller.hovered(),
-    }
-}
 
-/// Owner-draw button list for the steady paint pass. A disabled control can
-/// never paint pressed.
-fn paint_buttons(layout: &MenuPageLayout, input: PageInput, disabled: &[u16]) -> Vec<PaintButton> {
-    layout
-        .buttons
-        .iter()
-        .map(|button| {
-            let enabled = !disabled.contains(&button.id);
-            PaintButton {
-                rect: button.rect,
-                pressed: enabled && input.pressed == Some(button.id),
-                hovered: enabled && input.hovered == Some(button.id),
-                enabled,
-            }
+    pub(crate) fn spec(self) -> &'static MenuPageSpec {
+        match self {
+            Self::MainMenu => &crate::ui::main_menu_shell::MAIN_MENU_PAGE,
+            Self::SinglePlayer => &crate::ui::single_player_shell::SINGLE_PLAYER_PAGE,
+            Self::MoviesAndCredits => &crate::ui::movies_credits_shell::MOVIES_CREDITS_PAGE,
+            Self::Campaign => &crate::ui::campaign_shell::CAMPAIGN_PAGE,
+        }
+    }
+
+    pub(crate) fn dialog(self) -> DialogResourceId {
+        self.spec().dialog
+    }
+
+    fn slide_kind(self) -> ShellSlideKind {
+        match self {
+            Self::MainMenu => ShellSlideKind::MainMenu,
+            Self::SinglePlayer => ShellSlideKind::SinglePlayer,
+            Self::MoviesAndCredits => ShellSlideKind::MoviesAndCredits,
+            Self::Campaign => ShellSlideKind::Campaign,
+        }
+    }
+
+    /// The dialog owning the RA2TS static `0x71A`.
+    fn movie_owner(self) -> Ra2tsDialogOwner {
+        match self {
+            Self::SinglePlayer => Ra2tsDialogOwner::SinglePlayer0x100,
+            Self::MoviesAndCredits => Ra2tsDialogOwner::MoviesAndCredits0x101,
+            Self::MainMenu | Self::Campaign => Ra2tsDialogOwner::MainMenu0xE2,
+        }
+    }
+
+    pub(crate) fn nodes(self) -> vera20k_gui::NodeSpec {
+        match self {
+            Self::Campaign => crate::ui::campaign_shell::nodes(),
+            _ => self.spec().nodes(),
+        }
+    }
+
+    pub(crate) fn layout(self, gpu: &GpuContext) -> MenuPageLayout {
+        match self {
+            Self::MainMenu => shell_layout::main_menu_layout(gpu).page(),
+            Self::Campaign => shell_layout::campaign_layout(gpu).page,
+            _ => shell_layout::menu_page_layout(gpu, self.spec()),
+        }
+    }
+
+    /// Controls the dialog proc runtime-disables: Single Player disables Load
+    /// Saved Game on `0x497` when no loadable save exists.
+    pub(crate) fn enabled(
+        self,
+        single_player_shell_state: &SinglePlayerShellState,
+    ) -> Option<(u16, bool)> {
+        (self == Self::SinglePlayer).then(|| {
+            let shell = single_player_shell_state;
+            (0x0689, shell.load_saved_game_enabled)
         })
-        .collect()
-}
+    }
 
-/// Status help for the hovered control. Hover is enable-unfiltered, so a
-/// disabled button still writes its help text.
-pub(crate) fn status_csf_key(spec: &MenuPageSpec, hovered: Option<u16>) -> Option<&'static str> {
-    hovered
-        .and_then(|id| spec.button(id))
-        .map(|button| button.tooltip_key)
-}
+    /// Whether the page reads its press and hover now: `0xE2` keeps painting
+    /// its own under a message box; the other pages read theirs only on top.
+    fn reads(self, controller: &crate::ui::shell::controller::DialogController) -> bool {
+        self == Self::MainMenu || controller.top_id() == Some(self.dialog())
+    }
 
-/// Button captions (none while a slide draws the frames) and the heading;
-/// the status line comes from [`paint_shell_status_line`].
-fn paint_labels<'a>(
-    state: &'a AppState,
-    view: &MenuPageView<'_>,
-    layout: &MenuPageLayout,
-    input: PageInput,
-    title_window: Option<Kind1RevealWindow>,
-    captions: bool,
-) -> Vec<PaintLabel<'a>> {
-    let mut out = Vec::with_capacity(layout.buttons.len() + 2);
-    for button in layout.buttons.iter().filter(|_| captions) {
-        let Some(spec_button) = view.spec.button(button.id) else {
-            continue;
+    /// Status help of the hovered control. Hover is enable-unfiltered, so a
+    /// disabled button still writes its help.
+    pub(crate) fn status_key(self, shell_controller: &DialogController) -> Option<String> {
+        let controller = shell_controller;
+        self.reads(controller)
+            .then(|| menu_page::hovered_help(controller, self.dialog()))
+            .flatten()
+    }
+
+    /// The page's button tree ([`page_tree`]).
+    pub(crate) fn tree(
+        self,
+        gpu: &GpuContext,
+        frontend: &mut FrontendState,
+    ) -> Option<(Gui, NodeId)> {
+        let layout = self.layout(gpu);
+        let campaign = (self == Self::Campaign).then(|| shell_layout::campaign_layout(gpu));
+        let rect_of = |id| match &campaign {
+            Some(campaign) => campaign.control_rect(id),
+            None => layout.button_rect(id),
         };
-        let enabled = !view.disabled.contains(&button.id);
-        let pressed = enabled && input.pressed == Some(button.id);
-        out.push(PaintLabel {
-            text: resolve_csf(state, spec_button.csf_key),
-            rect: owner_draw_button_label_rect(button.rect, pressed),
-            align: MENU_PAGE_BUTTON_ALIGN,
-            rgb: if enabled {
-                SHELL_TEXT_RGB_ENABLED
-            } else {
-                SHELL_TEXT_RGB_DISABLED
-            },
-            path_a_reveal: None,
-        });
+        let enabled = self.enabled(&frontend.single_player_shell_state);
+        page_tree(
+            &mut frontend.shell_controller,
+            self.dialog(),
+            || self.nodes(),
+            rect_of,
+            enabled.as_slice(),
+        )
     }
-    if let Some(window) = title_window {
-        out.push(PaintLabel {
-            text: resolve_csf(state, view.spec.title_key),
-            rect: layout.title,
-            align: ShellAlign::PANEL_TITLE,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: Some(shell_reveal_path_a(window)),
-        });
-    }
-    out
 }
 
-fn movie_instance(layout: &MenuPageLayout) -> SpriteInstance {
-    SpriteInstance {
-        position: [layout.movie.x as f32, layout.movie.y as f32],
-        size: [layout.movie.w as f32, layout.movie.h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        depth: MOVIE_DEPTH,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
-        ..Default::default()
+/// A page's button tree: `nodes` kept on `rect_of` with the `enabled`
+/// overrides under `dialog`'s live instance (`None`), or, while it has none
+/// (before its first pointer message, or under a box that took the stack),
+/// a scratch tree of them, which paints released.
+pub(crate) fn page_tree(
+    shell_controller: &mut DialogController,
+    dialog: DialogResourceId,
+    nodes: impl FnOnce() -> NodeSpec,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    enabled: &[(u16, bool)],
+) -> Option<(Gui, NodeId)> {
+    use crate::ui::shell::page;
+    let controller = shell_controller;
+    if controller.root_in(dialog).is_some() {
+        menu_page::sync_nodes(controller, dialog, nodes, rect_of, enabled);
+        return None;
     }
+    let mut gui = Gui::new(64);
+    let root = gui.create(NodeKind::Dialog, None).ok()?;
+    page::ensure_built(&mut gui, root, nodes);
+    page::sync_rects(&mut gui, root, rect_of);
+    for &(id, on) in enabled {
+        page::set(&mut gui, root, id, Prop::Enabled, Value::Bool(on));
+    }
+    Some((gui, root))
+}
+
+/// A family page frame's slide and statics.
+#[derive(Default)]
+pub(crate) struct PanelState {
+    /// The page's teardown slide-out runs.
+    pub(crate) leaving: bool,
+    /// The slide engine's (or a shuttered backdrop's) tile column, drawn in
+    /// place of the buttons and their captions (`0x006071E0`).
+    pub(crate) column: Option<Vec<ColumnDraw>>,
+    /// The `0x71C` monitor frame.
+    pub(crate) monitor: Option<usize>,
+    /// Heading `0x694`'s reveal.
+    pub(crate) title: Option<Kind1RevealWindow>,
+    /// Status line `0x695`.
+    pub(crate) status: Option<PaintLabel<'static>>,
+}
+
+/// The CSF text of a status help key; empty off every control.
+pub(crate) fn help_text(process_assets: &ProcessAssets, key: Option<&str>) -> String {
+    key.map(|key| process_assets.csf_text(key))
+        .unwrap_or_default()
+}
+
+/// The slide and statics of a family page other than `0xE2`: its teardown
+/// slide-out or its entry slide, then the monitor (when it has one), heading
+/// and status line with `status_key`'s help. The teardown starts with a full
+/// dialog repaint (`0x00622C4F`) and pumps no messages until it ends: the
+/// statics stay blank and the monitor window shows the right panel's own art.
+pub(crate) fn page_panel_state(
+    state: &mut AppState,
+    kind: ShellSlideKind,
+    monitor: bool,
+    status_key: impl FnOnce(&AppState) -> Option<String>,
+    status_rect: RectPx,
+) -> PanelState {
+    use crate::app::frontend::shell_transition::shell_exit_wave;
+    let exit = shell_exit_wave(&state.frontend.shell_exit, kind).map(|wave| wave.button_draws());
+    if exit.is_some() {
+        return PanelState {
+            leaving: true,
+            column: exit,
+            ..PanelState::default()
+        };
+    }
+    let column = state
+        .frontend
+        .shell_first_paint_slide
+        .as_ref()
+        .map(|wave| wave.button_draws());
+    let monitor = if monitor {
+        paint_shell_monitor(&mut state.frontend)
+    } else {
+        None
+    };
+    let title = state.frontend.shell_page_title.paint(Instant::now());
+    let text = help_text(&state.process_assets, status_key(state).as_deref());
+    let status = paint_shell_status_line(&mut state.frontend.shell_status_line, text, status_rect);
+    PanelState {
+        leaving: false,
+        column,
+        monitor,
+        title,
+        status,
+    }
+}
+
+/// The right panel's heading `0x694` and status line `0x695` as the family
+/// pages, the online pages and Options show them: the two kind-1 statics,
+/// `Text` widgets of one tree of their own ([`paint_panel_statics`]). The
+/// pages' own trees are rebuilt as scratch trees while a page has no
+/// instance, and their rect tables know no statics; the panel's outlive the
+/// pages.
+pub(crate) struct PanelStatics {
+    gui: Gui,
+    root: NodeId,
+}
+
+/// The heading's and the status line's ids in [`PanelStatics`].
+const PANEL_TITLE: i32 = 0x694;
+const PANEL_STATUS: i32 = 0x695;
+
+impl Default for PanelStatics {
+    fn default() -> Self {
+        let mut gui = Gui::new(4);
+        let root = gui
+            .create(NodeKind::Dialog, None)
+            .expect("an empty tree takes its root");
+        for id in [PANEL_TITLE, PANEL_STATUS] {
+            let node = gui
+                .create(NodeKind::Text, Some(root))
+                .expect("the panel's tree holds both statics");
+            let _ = gui.set(node, Prop::Id, Value::Int(id));
+        }
+        Self { gui, root }
+    }
+}
+
+/// A panel static as it shows this frame: its text, where and how it
+/// aligns, and its kind-1 reveal (unrevealed, the label colour).
+pub(crate) struct PanelStatic<'a> {
+    pub(crate) text: std::borrow::Cow<'a, str>,
+    pub(crate) rect: RectPx,
+    pub(crate) align: ShellAlign,
+    pub(crate) reveal: Option<crate::render::shell_text_reveal::PathAReveal>,
+}
+
+impl<'a> PanelStatic<'a> {
+    /// The heading revealing `window` of its text `text`.
+    pub(crate) fn title(
+        text: impl Into<std::borrow::Cow<'a, str>>,
+        rect: RectPx,
+        align: ShellAlign,
+        window: Kind1RevealWindow,
+    ) -> Self {
+        let reveal = Some(shell_reveal_path_a(window));
+        let text = text.into();
+        Self {
+            text,
+            rect,
+            align,
+            reveal,
+        }
+    }
+
+    /// The status line [`paint_shell_status_line`] gives.
+    pub(crate) fn status(label: PaintLabel<'a>) -> Self {
+        Self {
+            text: label.text,
+            rect: label.rect,
+            align: label.align,
+            reveal: label.path_a_reveal,
+        }
+    }
+}
+
+/// The heading and the status line (each when it shows) from the panel's
+/// widgets, in that order, at `scale`'s glyph size.
+pub(crate) fn paint_panel_statics(
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    statics: [Option<PanelStatic<'_>>; 2],
+    scale: crate::ui::shell::geom::ShellScale,
+) -> Vec<crate::render::shell_text::ShellTextDraw> {
+    // The render holds `frontend` shared; the panel's tree is the one piece it
+    // writes (a borrow flag, no lock).
+    let mut panel = frontend.panel_statics.borrow_mut();
+    let PanelStatics { gui, root } = &mut *panel;
+    let root = *root;
+    let mut reveals = [None; 2];
+    for (index, shown) in statics.into_iter().enumerate() {
+        let node = gui
+            .tree()
+            .children(root)
+            .ok()
+            .and_then(|c| c.get(index).copied());
+        let Some(node) = node else { continue };
+        let _ = gui.set(node, Prop::Visible, Value::Bool(shown.is_some()));
+        let Some(shown) = shown else { continue };
+        let _ = gui.set(node, Prop::Rect, Value::Rect(shown.rect));
+        let _ = gui.set(node, Prop::Align, Value::Int(shown.align.0.into()));
+        // The text is copied in only when it changes.
+        if !matches!(gui.get(node, Prop::Text), Ok(Some(Value::Text(old))) if *old == *shown.text) {
+            let _ = gui.set(node, Prop::Text, Value::Text(shown.text.into_owned()));
+        }
+        reveals[index] = shown.reveal;
+    }
+    let reveal_of = |id: i32| match id {
+        PANEL_TITLE => reveals[0],
+        PANEL_STATUS => reveals[1],
+        _ => None,
+    };
+    let style = GuiStyle {
+        reveal_of: Some(&reveal_of),
+        ..Default::default()
+    };
+    let mut paint = HudPaint::default();
+    crate::app::frontend::skirmish_shell_render::gui_paint::paint_gui_into(
+        &mut paint,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
+        None,
+        gui,
+        root,
+        scale,
+        &[],
+        style,
+    );
+    paint.texts
 }
 
 /// Advance the showing family dialog's `0x71C` for this recomposition; the
 /// frame loop commits it after present. No timer reaches the static while the
 /// dialog's first-paint slide runs.
-pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
-    let frames = state
-        .frontend
+pub(crate) fn paint_shell_monitor(frontend: &mut FrontendState) -> Option<usize> {
+    let frames = frontend
         .main_menu_shell_chrome
         .as_ref()
         .map_or(0, |chrome| chrome.warning_monitor_frames.len());
-    let timers = !crate::app::frontend::shell_transition::shell_slide_running(state);
-    state
-        .frontend
-        .shell_monitor
-        .paint(Instant::now(), frames, timers)
+    let timers = !crate::app::frontend::shell_transition::shell_slide_running(frontend);
+    frontend.shell_monitor.paint(Instant::now(), frames, timers)
 }
 
 /// Status line `0x695` for this recomposition: deliver the hover help text
@@ -171,12 +408,12 @@ pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
 /// while the static is hidden or blank. Kind-1 paint passes left alignment
 /// only (`0x00615A91`), so the text is top-left in the window.
 pub(crate) fn paint_shell_status_line(
-    state: &mut AppState,
+    shell_status_line: &mut PresentedKind1Static,
     text: String,
     window: RectPx,
 ) -> Option<PaintLabel<'static>> {
     let now = Instant::now();
-    let status = &mut state.frontend.shell_status_line;
+    let status = shell_status_line;
     status.set_text(&text, now);
     let reveal = status.paint(now)?;
     (!text.is_empty()).then(|| PaintLabel {
@@ -188,19 +425,10 @@ pub(crate) fn paint_shell_status_line(
     })
 }
 
-/// The slide kind of a menu page.
-fn page_slide_kind(spec: &MenuPageSpec) -> crate::app::frontend::shell_transition::ShellSlideKind {
-    use crate::app::frontend::shell_transition::ShellSlideKind;
-    if spec.dialog == crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog {
-        ShellSlideKind::SinglePlayer
-    } else {
-        ShellSlideKind::MoviesAndCredits
-    }
-}
-
 /// Heading text of the menu page a first-paint slide belongs to.
 pub(crate) fn active_page_title_text(
-    state: &AppState,
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
     kind: crate::app::frontend::shell_transition::ShellSlideKind,
 ) -> String {
     use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -214,11 +442,18 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
         ShellSlideKind::Mods => crate::ui::mods_shell::PAGE.title_key,
         ShellSlideKind::Campaign => crate::ui::campaign_shell::CAMPAIGN_PAGE.title_key,
-        ShellSlideKind::LoadSavedGame => {
-            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
-        }
+        ShellSlideKind::LoadSavedGame => frontend.load_saved_game.as_ref().map_or(
+            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key,
+            |browser| browser.game_title_label().0,
+        ),
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
-        ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
+        ShellSlideKind::WolLogin => wol_login_title_key(
+            frontend
+                .wol
+                .as_ref()
+                .and_then(|visit| visit.login())
+                .map(|login| login.policy),
+        ),
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
@@ -235,8 +470,7 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::RandomMap => crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY,
         // The Options heading is the dialog's own resolved label.
         ShellSlideKind::Options => {
-            return state
-                .frontend
+            return frontend
                 .options_dialog
                 .as_ref()
                 .map(|dialog| dialog.shell_title_text().to_owned())
@@ -251,236 +485,324 @@ pub(crate) fn active_page_title_text(
             return String::new();
         }
     };
-    resolve_csf(state, key).into_owned()
+    process_assets.csf_text(key)
 }
 
-/// Which menu page owns the `MainMenu` screen, if any.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ActiveMenuPage {
-    SinglePlayer,
-    MoviesAndCredits,
+fn wol_login_title_key(policy: Option<crate::ui::wol_login::LoginPolicy>) -> &'static str {
+    policy
+        .unwrap_or(crate::ui::wol_login::LoginPolicy::Legacy)
+        .page_spec()
+        .title_key
 }
 
-impl ActiveMenuPage {
-    pub(crate) fn from_state(state: &AppState) -> Option<Self> {
-        if state.frontend.screen != crate::ui::game_screen::GameScreen::MainMenu {
-            return None;
-        }
-        // Play_Movie and Show_Credits run after the page is destroyed.
-        if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
-            return None;
-        }
-        let route = state.frontend.shell_route;
-        if route.single_player() {
-            Some(Self::SinglePlayer)
-        } else if route.movies_and_credits() {
-            Some(Self::MoviesAndCredits)
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn spec(self) -> &'static MenuPageSpec {
-        match self {
-            Self::SinglePlayer => &crate::ui::single_player_shell::SINGLE_PLAYER_PAGE,
-            Self::MoviesAndCredits => &crate::ui::movies_credits_shell::MOVIES_CREDITS_PAGE,
-        }
-    }
-
-    fn movie_owner(self) -> Ra2tsDialogOwner {
-        match self {
-            Self::SinglePlayer => Ra2tsDialogOwner::SinglePlayer0x100,
-            Self::MoviesAndCredits => Ra2tsDialogOwner::MoviesAndCredits0x101,
-        }
-    }
-}
-
-/// Controls the page's dialog proc has runtime-disabled: Single Player
-/// disables Load Saved Game on `0x497` when no loadable save exists.
-const LOAD_SAVED_GAME_DISABLED: &[u16] = &[0x0689];
-
-/// Paint whichever menu page the route selects.
+/// Paint whichever RA2TS menu page the route selects.
 pub(crate) fn render_active_menu_page(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<MenuPageRenderResult> {
-    let Some(page) = ActiveMenuPage::from_state(state) else {
-        return Ok(MenuPageRenderResult::Fallback);
-    };
-    let disabled: &[u16] = match page {
-        ActiveMenuPage::SinglePlayer
-            if !state
-                .frontend
-                .single_player_shell_state
-                .load_saved_game_enabled =>
-        {
-            LOAD_SAVED_GAME_DISABLED
-        }
-        _ => &[],
-    };
-    render_menu_page(
-        state,
-        encoder,
-        destination,
-        MenuPageView {
-            spec: page.spec(),
-            movie_owner: page.movie_owner(),
-            disabled,
-        },
-    )
+    match FamilyPage::menu_page(&state.frontend) {
+        Some(page) => render_menu_page(state, encoder, destination, page),
+        None => Ok(MenuPageRenderResult::Fallback),
+    }
 }
 
+/// Single Player `0x100` or Movies & Credits `0x101`: the RA2TS movie under
+/// the shared family shell.
 pub(crate) fn render_menu_page(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
-    view: MenuPageView<'_>,
+    page: FamilyPage,
 ) -> Result<MenuPageRenderResult> {
-    crate::app::frontend::main_menu_shell_render::ensure_movie_for_current_layout(
-        state,
-        view.movie_owner,
+    use crate::app::frontend::main_menu_shell_render as movie;
+    movie::ensure_movie_for_current_layout(
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        page.movie_owner(),
     )?;
-    if state.frontend.main_menu_shell_error.is_some()
-        || state.frontend.main_menu_shell_chrome.is_none()
-    {
+    if state.frontend.main_menu_shell_error.is_some() || !family_art_ready(state) {
         state
             .frontend
             .main_menu_shell_error
             .get_or_insert_with(|| crate::i18n::tr("VERA:MenuResourcesMissing"));
         return Ok(MenuPageRenderResult::Fallback);
     }
-
-    // The page's slide, if one runs: its teardown slide-out or its entry
-    // slide. Either way the buttons animate through their SDBTNANM ramp
-    // frames; off-slide they paint steady-state.
-    let exit_wave =
-        crate::app::frontend::shell_transition::shell_exit_wave(state, page_slide_kind(view.spec))
-            .cloned();
-    let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     // While either slide runs the RA2TS static shows no movie and gets no
     // timer (`0x006071E0`; the teardown also stops it with 0x4E2), so the
     // shell background shows and the movie clock starts after the slide.
-    let sliding = wave.is_some();
-    if !super::main_menu_shell_render::step_ra2ts_movie(state, !sliding) {
+    let sliding = crate::app::frontend::shell_transition::shell_exit_wave(
+        &state.frontend.shell_exit,
+        page.slide_kind(),
+    )
+    .is_some()
+        || state.frontend.shell_first_paint_slide.is_some();
+    if !movie::step_ra2ts_movie(
+        &state.platform,
+        &state.renderer.gpu,
+        &mut state.frontend,
+        !sliding,
+    ) {
         return Ok(MenuPageRenderResult::Fallback);
     }
-
-    let layout = shell_layout::menu_page_layout(state, view.spec);
-    let input = page_input(state, view.spec);
-    // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
-    // and pumps no messages until it ends: the statics stay blank and the
-    // monitor window shows the right panel's own art.
-    let monitor_frame = if leaving {
-        None
-    } else {
-        paint_shell_monitor(state)
-    };
-    let (title_window, status_label) = if leaving {
-        (None, None)
-    } else {
-        let title_window = state.frontend.shell_page_title.paint(Instant::now());
-        let status_text = status_csf_key(view.spec, input.hovered)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
-        let status_label = paint_shell_status_line(state, status_text, layout.status_help);
-        (title_window, status_label)
-    };
-    let chrome = state
-        .frontend
-        .main_menu_shell_chrome
-        .as_ref()
-        .expect("checked before render");
-    let movie_texture = state
-        .frontend
-        .main_menu_movie
-        .as_ref()
-        .map(|movie| movie.batch_texture())
-        .expect("movie loaded before render");
-
+    let tree = page.tree(&state.renderer.gpu, &mut state.frontend);
+    let layout = page.layout(&state.renderer.gpu);
+    let panel = page_panel_state(
+        state,
+        page.slide_kind(),
+        true,
+        |state| page.status_key(&state.frontend.shell_controller),
+        layout.status_help,
+    );
+    let title = page.spec().title_key;
+    let mut frame = FamilyFrame::new("Menu Page Shell", &layout, panel, title);
     // Menu pages have no parent background under the movie; while a slide
     // runs the RA2TS area shows the shell background instead.
-    let backdrop = if sliding {
-        crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
-            chrome,
-            layout.screen.w,
-            layout.screen.h,
-            layout.scale,
+    frame.backdrop = sliding;
+    frame.under.extend(
+        movie::movie_draw(&state.frontend.main_menu_movie, layout.movie).filter(|_| !sliding),
+    );
+    let frame = frame.on(&state.frontend.shell_controller, page.dialog(), &tree);
+    encode_family_page(state, encoder, destination, frame);
+    Ok(MenuPageRenderResult::Rendered)
+}
+
+/// Whether the family shell's art is ready: the right panel's, and the
+/// Skirmish family's that the pages' buttons and lists paint with.
+pub(crate) fn family_art_ready(state: &mut AppState) -> bool {
+    state.frontend.main_menu_shell_chrome.is_some()
+        && crate::app::App::ensure_skirmish_shell_chrome(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
         )
-    } else {
-        Vec::new()
+}
+
+/// One family page frame for [`encode_family_page`].
+pub(crate) struct FamilyFrame<'a> {
+    pub(crate) label: &'static str,
+    pub(crate) layout: &'a MenuPageLayout,
+    pub(crate) panel: PanelState,
+    /// Heading `0x694`'s CSF key, shown while `panel.title` reveals it.
+    pub(crate) title_key: &'static str,
+    /// The tree whose nodes `ids` the column's buttons are (its root): the
+    /// owner-draw type-1 buttons with their captions, in `style`.
+    pub(crate) buttons: Option<(&'a Gui, NodeId)>,
+    pub(crate) ids: Vec<u16>,
+    pub(crate) style: GuiStyle<'a>,
+    /// The family parent background ([`shell_parent_background_instances`])
+    /// goes under everything.
+    pub(crate) backdrop: bool,
+    /// Family list boxes over that background, each its window and, when it
+    /// shows one, its scrollbar ([`push_family_list_backing`]).
+    pub(crate) list_boxes: Vec<(RectPx, Option<RectPx>)>,
+    /// The page's own art under the right panel, in draw order.
+    pub(crate) under: Vec<TexturedDraw<'a>>,
+    /// Other art over the panel, under the buttons (a score page's own).
+    pub(crate) over_panel_art: Vec<TexturedDraw<'a>>,
+    /// The page's own text, drawn before the heading and status line.
+    pub(crate) labels: Vec<PaintLabel<'a>>,
+    /// Skirmish-atlas sprites over the buttons (a list, a prompt), with
+    /// their text after all other text.
+    pub(crate) over: HudPaint,
+    /// Whether this pass draws the cursor (a box painted over the page next
+    /// draws it instead).
+    pub(crate) cursor: bool,
+}
+
+impl<'a> FamilyFrame<'a> {
+    pub(crate) fn new(
+        label: &'static str,
+        layout: &'a MenuPageLayout,
+        panel: PanelState,
+        title_key: &'static str,
+    ) -> Self {
+        Self {
+            label,
+            layout,
+            panel,
+            title_key,
+            buttons: None,
+            ids: layout.buttons.iter().map(|button| button.id).collect(),
+            style: GuiStyle::default(),
+            backdrop: false,
+            list_boxes: Vec::new(),
+            under: Vec::new(),
+            over_panel_art: Vec::new(),
+            labels: Vec::new(),
+            over: HudPaint::default(),
+            cursor: true,
+        }
+    }
+
+    /// The column's buttons are `dialog`'s nodes on the shell controller,
+    /// or `scratch`'s ([`page_tree`]).
+    pub(crate) fn on(
+        self,
+        shell_controller: &'a DialogController,
+        dialog: DialogResourceId,
+        scratch: &'a Option<(Gui, NodeId)>,
+    ) -> Self {
+        let controller = shell_controller;
+        let buttons = match scratch {
+            Some((gui, root)) => Some((gui, *root)),
+            None => controller
+                .root_in(dialog)
+                .map(|root| (controller.gui(), root)),
+        };
+        Self { buttons, ..self }
+    }
+}
+
+/// Compose and present one family page: its art, the right panel and lower
+/// strip with the monitor, the button column (owner-draw buttons with their
+/// captions, or the slide's tiles), the page's text, heading and status line,
+/// what it draws over them, and the cursor.
+pub(crate) fn encode_family_page(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    frame: FamilyFrame<'_>,
+) {
+    let (Some(chrome), Some(atlas)) = (
+        state.frontend.main_menu_shell_chrome.as_ref(),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) else {
+        return;
     };
-    let mut chrome_instances = shell_paint::paint_chrome(
+    let FamilyFrame {
+        label,
+        layout,
+        panel,
+        title_key,
+        buttons,
+        ids,
+        style,
+        backdrop,
+        list_boxes,
+        under,
+        over_panel_art,
+        labels,
+        mut over,
+        cursor,
+    } = frame;
+    let (screen, scale) = (layout.screen, layout.scale);
+    let mut draws = Vec::new();
+    if backdrop {
+        draws.push(TexturedDraw {
+            texture: &chrome.texture,
+            instances: shell_parent_background_instances(chrome, screen.w, screen.h, scale),
+        });
+        let mut backings = Vec::new();
+        for (window, bar) in list_boxes {
+            let size = (screen.w, screen.h);
+            push_family_list_backing(&mut backings, chrome, size, scale, window, bar);
+        }
+        draws.push(TexturedDraw {
+            texture: &chrome.texture,
+            instances: backings,
+        });
+    }
+    draws.extend(under);
+    let mut panel_sprites = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
         Some(layout.lower_strip),
-        layout.screen.w,
+        screen.w,
     );
-    chrome_instances.extend(monitor_frame.and_then(|frame| {
-        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, layout.scale)
+    panel_sprites.extend(panel.monitor.and_then(|frame| {
+        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, scale)
     }));
-    // While a slide runs the engine draws the whole tile column in place of
-    // the buttons (`0x006071E0`).
-    let buttons = match wave.as_ref() {
-        Some(wave) => {
-            chrome_instances.extend(shell_paint::paint_slide_column(
-                chrome,
-                layout.right_panel,
-                &wave.button_draws(),
-            ));
-            Vec::new()
+    let mut widgets = match (&panel.column, buttons) {
+        (Some(draws), _) => {
+            let column = shell_paint::paint_slide_column(chrome, layout.right_panel, draws);
+            panel_sprites.extend(column);
+            HudPaint::default()
         }
-        None => paint_buttons(&layout, input, view.disabled),
+        (None, Some((gui, root))) => {
+            let style = GuiStyle {
+                buttons: ButtonArt::Column,
+                ..style
+            };
+            paint_gui_ids(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                gui,
+                root,
+                ids,
+                scale,
+                style,
+            )
+        }
+        (None, None) => HudPaint::default(),
     };
-    let button_instances = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        MENU_PAGE_BUTTON_POLICY,
-        Instant::now(),
-        None,
-    );
-    let mut labels = paint_labels(state, &view, &layout, input, title_window, !sliding);
-    labels.extend(status_label);
-    let text =
-        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, layout.scale.factor());
-    let draws = [
-        TexturedDraw {
-            texture: movie_texture,
-            instances: if sliding {
-                Vec::new()
-            } else {
-                vec![movie_instance(&layout)]
-            },
-        },
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: backdrop,
-        },
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: chrome_instances,
-        },
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: button_instances,
-        },
-    ];
+    let title = panel.title.map(|window| {
+        let rect = layout.right_panel.family_title_caption(layout.title);
+        let text = state.csf_text(title_key);
+        PanelStatic::title(text, rect, ShellAlign::ART_CAPTION, window)
+    });
+    let mut text =
+        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    let status = panel.status.map(PanelStatic::status);
+    text.extend(paint_panel_statics(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        [title, status],
+        scale,
+    ));
+    // The column's widgets, then what goes over them, lane by lane: a
+    // paint's own buffer where it alone holds the lane.
+    let joined = |first: &mut HudPaint, then: &mut HudPaint, material| -> Vec<SpriteInstance> {
+        let mut lane = first.take_lane(material);
+        if lane.is_empty() {
+            return then.take_lane(material);
+        }
+        then.drain_lane(material, &mut lane);
+        lane
+    };
+    let column = joined(&mut widgets, &mut over, Material::Column);
+    let controls = joined(&mut widgets, &mut over, Material::Controls);
+    text.append(&mut widgets.texts);
+    text.append(&mut over.texts);
+    draws.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: panel_sprites,
+    });
+    draws.extend(over_panel_art);
+    draws.push(TexturedDraw {
+        texture: &chrome.texture,
+        instances: column,
+    });
+    draws.push(TexturedDraw {
+        texture: &atlas.texture,
+        instances: controls,
+    });
     encode_shell_pass(
-        state,
+        &state.renderer,
         encoder,
         destination,
-        "Menu Page Shell",
+        label,
         ShellComposition {
             draws: &draws,
             text: &text,
-            cursor: software_cursor(state, CURSOR_DEPTH),
+            cursor: if cursor {
+                software_cursor(state, CURSOR_DEPTH)
+            } else {
+                None
+            },
             effects: None,
             smooth_art: false,
         },
     );
-
-    Ok(MenuPageRenderResult::Rendered)
 }
 
 #[cfg(all(test, tests_app_frontend))]
@@ -489,44 +811,39 @@ mod tests {
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;
 
     #[test]
-    fn menu_page_policy_fills_the_authored_cell_without_mouse_hover_flash() {
-        // The fit is keyed on the authored 156x42 cell, so an unstretched
-        // layout gets the native placement; a stretched cell stretches the art.
+    fn the_wol_login_heading_comes_from_the_drawn_page() {
+        use crate::ui::wol_login::LoginPolicy;
         assert_eq!(
-            MENU_PAGE_BUTTON_POLICY.art_fit,
-            ArtFit::FitRightAnchored {
-                panel_w: 156.0,
-                tile_h: 42.0
-            }
+            wol_login_title_key(Some(LoginPolicy::ChooseEntry)),
+            "VERA:OnlineTitle"
         );
-        const { assert!(!MENU_PAGE_BUTTON_POLICY.hover_flash) };
-        assert_eq!(MENU_PAGE_BUTTON_POLICY.art_sink_y, 0.0);
+        assert_eq!(
+            wol_login_title_key(Some(LoginPolicy::Legacy)),
+            "GUI:LoginScreen"
+        );
+        assert_eq!(wol_login_title_key(None), "GUI:LoginScreen");
     }
 
     #[test]
     fn status_help_includes_disabled_load() {
-        assert_eq!(status_csf_key(&SINGLE_PLAYER_PAGE, None), None);
+        let layout = crate::ui::single_player_shell::compute_layout(800, 600);
+        let dialog = SINGLE_PLAYER_PAGE.dialog;
+        let mut c = crate::ui::shell::controller::DialogController::default();
+        c.ensure_active(dialog);
+        let rect_of = |id| layout.button_rect(id);
+        menu_page::sync_nodes(
+            &mut c,
+            dialog,
+            || SINGLE_PLAYER_PAGE.nodes(),
+            rect_of,
+            &[(0x0689, false)],
+        );
+        assert_eq!(menu_page::hovered_help(&c, dialog), None);
+        c.on_input(vera20k_gui::InputEvent::PointerMove { x: 700, y: 250 });
         assert_eq!(
-            status_csf_key(&SINGLE_PLAYER_PAGE, Some(0x0689)),
+            menu_page::hovered_help(&c, dialog).as_deref(),
             Some("STT:SingleButtonLoadSavedGame")
         );
-    }
-
-    #[test]
-    fn disabled_page_button_never_paints_pressed_or_hovered() {
-        let layout = crate::ui::single_player_shell::compute_layout(800, 600);
-        let input = PageInput {
-            pressed: Some(0x0689),
-            hovered: Some(0x0689),
-        };
-        let buttons = paint_buttons(&layout, input, &[0x0689]);
-        let load = buttons
-            .iter()
-            .zip(&layout.buttons)
-            .find(|(_, laid)| laid.id == 0x0689)
-            .map(|(button, _)| button)
-            .expect("load button");
-        assert!(!load.enabled && !load.pressed && !load.hovered);
     }
 
     #[test]

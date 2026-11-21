@@ -98,11 +98,13 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     (sim, squids, gun, target)
 }
 
-fn started_names(sim: &Simulation) -> Vec<String> {
+fn started_names(rules: &RuleSet, sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            SimSoundEvent::AnimationStarted { sound_id, .. } => {
+                Some(sound_id.name_in(rules).to_string())
+            }
             _ => None,
         })
         .collect()
@@ -193,8 +195,8 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             "the existing native Main corpus pins the interleaved raw prefix"
         );
     }
-    let quiet_names = started_names(&quiet);
-    let serviced_names = started_names(&serviced);
+    let quiet_names = started_names(&rules, &quiet);
+    let serviced_names = started_names(&rules, &serviced);
     assert_eq!(quiet_names.len(), 2);
     assert_eq!(serviced_names.len(), 2);
     assert_eq!(quiet_names[0], serviced_names[0]);

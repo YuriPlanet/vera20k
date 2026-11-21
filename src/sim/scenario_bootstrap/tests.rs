@@ -447,10 +447,10 @@ const ARES_WITH_CONST_RULES: &str = "[General]\nBaseUnit=AMCV\n[AI]\nBuildConst=
 /// Ares MPGameMode_SpawnBaseUnit_BuildConst (1001F0B0, hook 0x5D7048)
 /// and CreateStartingUnits_BaseCenter (1001ED60, hook 0x5D6F61): a
 /// WithConst house's base unit is its first BuildConst yard, one cell
-/// up-left of its start for a 4x3 foundation, with Guard queued. A human's
-/// yard is not opened, so the forced Guard stays current; a computer's
-/// opens and commences Construction, and its house also gets the
-/// deploy's AI half at that cell.
+/// up-left of its start for a 4x3 foundation, with Guard queued. Either
+/// owner's yard opens during its Unlimbo (a human's at its cell put, a
+/// computer's at its owner discovery) and commences Construction; a
+/// computer's house also gets the deploy's AI half at that cell.
 #[test]
 fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -473,6 +473,10 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
         });
         let terrain = techno_constructor_flat_start_terrain(96);
         let mut sim = techno_constructor_start_sim(0xC701_1006, 96);
+        // A skirmish's discovery rules: the cell put's DiscoveredBy(PlayerPtr)
+        // runs outside a campaign (`0x0047E9C8..0x0047E9DC`).
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
         sim.install_resolved_terrain_for_new_map(terrain.clone());
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
         let owner = sim.session.current_house().unwrap();
@@ -499,13 +503,10 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
             .unwrap();
         assert_eq!(sim.interner.resolve(yard.type_ref()), "GACNST");
         let yard_id = yard.stable_id();
+        assert!(yard.building_art.actually_placed(), "the yard opened");
         assert_eq!(
             yard.mission.current(),
-            MissionId::from_known(if human {
-                MissionType::Guard
-            } else {
-                MissionType::Construction
-            })
+            MissionId::from_known(MissionType::Construction)
         );
         assert_eq!(
             yard.mission.queued(),
@@ -513,12 +514,9 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
         );
         let house = &sim.houses[&owner];
         // The decrement moves only the yard: its Unlimbo republishes the
-        // primary centre (House 4FD150), which leaves none for the
-        // unopened human yard, and 1001ED60 restores the start cell it
-        // saved before the callback.
-        if human {
-            assert_eq!(house.base_center(), Some((44, 48)));
-        }
+        // primary centre (House 4FD150), which leaves none here, and
+        // 1001ED60 restores the start cell it saved before the callback.
+        assert_eq!(house.base_center(), Some((44, 48)));
         assert!(sim.substrate.occupancy.contains_entity(43, 47, yard_id));
         assert!(!sim.substrate.occupancy.contains_entity(47, 47, yard_id));
         if !human {
@@ -766,7 +764,7 @@ fn network_vision_perspective(
     sim.session.install_network_timing(10);
     initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let actors = [
         sim.spawn_object("MTNK", "Host", 8, 8, 0, &rules).unwrap(),
         sim.spawn_object("MTNK", "Guest", 24, 24, 0, &rules)
@@ -3318,7 +3316,7 @@ fn staged_simulation_owns_fill_and_generated_replay_without_reconstruction() {
     let owner = ScenarioBootstrapRng::new(seed);
     let mut sim = owner.into_simulation(&descriptor(seed));
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     sim.session.set_binary_frame_for_test(77);
     let retained_handle = sim.substrate.allocate_stable_id();
@@ -3380,7 +3378,7 @@ fn gsi_04_12_prefix_fill_and_generated_trace_share_one_scenario_owner() {
     // The match load stages the Simulation here, before Fill.
     let mut sim = owner.into_simulation(&descriptor(seed));
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
         let (mut scenario_fill, _main) = sim.terrain_load_draws();
@@ -3519,7 +3517,7 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
     scenario.mp_start_waypoints.insert(0, (start.rx, start.ry));
     let mut sim = owner.into_simulation(&scenario);
     // This isolated RNG fixture omits the full native Rules prefix.
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
         let (mut scenario_fill, _main) = sim.terrain_load_draws();
@@ -3565,7 +3563,7 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
 
     let terrain = techno_constructor_flat_start_terrain(SIZE);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(SIZE, SIZE));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(SIZE, SIZE));
     sim.install_playfield_from_map_header(&map.header);
     let house_roster = HouseRoster::default();
     initialize_skirmish_launch_houses(&mut sim, &house_roster, &rules, &launch);

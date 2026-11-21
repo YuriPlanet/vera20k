@@ -15,8 +15,8 @@ mod retained_cell_hash_tests {
     fn retained_cell_targets_hash_live_dummy_coordinate_without_restamping_it() {
         let mut sim = Simulation::new();
         let mut terrain = ResolvedTerrainGrid::from_cells(0, 0, Vec::new());
-        terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
-        sim.resolved_terrain = Some(terrain);
+        terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
+        *sim.resolved_terrain = Some(terrain);
         let dummy = sim.effective_shared_cell_dummy();
         let mut entity = GameEntity::test_default(1, "FV", "Test", 10, 10);
         // Every cell is deliberately unallocated. These different requested
@@ -225,24 +225,24 @@ mod playfield_authority_hash_tests {
     #[test]
     fn state_hash_includes_mutable_playfield_authority() {
         let mut baseline = Simulation::new();
-        baseline.playfield_bounds = Some(playfield());
-        baseline.playfield_size_height = Some(58);
+        *baseline.playfield_bounds = Some(playfield());
+        *baseline.playfield_size_height = Some(58);
 
         let mut changed_bounds = Simulation::new();
-        changed_bounds.playfield_bounds = Some(PlayfieldBounds {
+        *changed_bounds.playfield_bounds = Some(PlayfieldBounds {
             off_100: 5,
             ..playfield()
         });
-        changed_bounds.playfield_size_height = Some(58);
+        *changed_bounds.playfield_size_height = Some(58);
 
         let mut changed_size_height = Simulation::new();
-        changed_size_height.playfield_bounds = Some(playfield());
-        changed_size_height.playfield_size_height = Some(59);
+        *changed_size_height.playfield_bounds = Some(playfield());
+        *changed_size_height.playfield_size_height = Some(59);
 
         let mut changed_revision = Simulation::new();
-        changed_revision.playfield_bounds = Some(playfield());
-        changed_revision.playfield_size_height = Some(58);
-        changed_revision.playfield_revision = 1;
+        *changed_revision.playfield_bounds = Some(playfield());
+        *changed_revision.playfield_size_height = Some(58);
+        *changed_revision.playfield_revision = 1;
 
         assert_ne!(baseline.state_hash(), changed_bounds.state_hash());
         assert_ne!(baseline.state_hash(), changed_size_height.state_hash());
@@ -500,13 +500,13 @@ mod overlay_grid_hash_tests {
     fn gsi_04_09_empty_overlay_raw_data_changes_state_hash() {
         let mut sim_a = Simulation::new();
         let mut sim_b = Simulation::new();
-        sim_a.overlay_grid = Some(OverlayGrid::from_overlay_packs(
+        *sim_a.overlay_grid = Some(OverlayGrid::from_overlay_packs(
             &[],
             &OverlayDataPack::from_cells([]),
             2,
             2,
         ));
-        sim_b.overlay_grid = Some(OverlayGrid::from_overlay_packs(
+        *sim_b.overlay_grid = Some(OverlayGrid::from_overlay_packs(
             &[],
             &OverlayDataPack::from_cells([(1, 1, 42)]),
             2,
@@ -529,7 +529,7 @@ mod overlay_grid_hash_tests {
         let cells = vec![(-1, 0), (1, 2), (-1, 0), (-1, 0)];
         let mut sim_a = Simulation::new();
         let mut sim_b = Simulation::new();
-        sim_a.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
+        *sim_a.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
             crate::map::authored_overlay::FinalizedOverlayPayload::from_cells_for_test(
                 2,
                 2,
@@ -537,7 +537,7 @@ mod overlay_grid_hash_tests {
                 vec![0, 1, 0, 0],
             ),
         ));
-        sim_b.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
+        *sim_b.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
             crate::map::authored_overlay::FinalizedOverlayPayload::from_cells_for_test(
                 2,
                 2,
@@ -560,10 +560,10 @@ mod overlay_grid_hash_tests {
     #[test]
     fn a_new_grid_hashes_like_a_finalized_all_zero_wall_plane() {
         let mut fresh = Simulation::new();
-        fresh.overlay_grid = Some(OverlayGrid::new(2, 2));
+        *fresh.overlay_grid = Some(OverlayGrid::new(2, 2));
 
         let mut finalized = Simulation::new();
-        finalized.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
+        *finalized.overlay_grid = Some(OverlayGrid::from_finalized_map_payload(
             crate::map::authored_overlay::FinalizedOverlayPayload::from_cells_for_test(
                 2,
                 2,
@@ -1983,7 +1983,7 @@ mod infantry_hash_tests {
         let mut sim = Simulation::new();
         // Native Scenario load reseeds its stream to zero. Isolate this
         // retained Foot state from that established load-time RNG change.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let actor = hash_entity(&mut sim, EntityCategory::Infantry);
         sim.substrate.entities.insert(actor);
         let clear_hash = sim.state_hash();
@@ -2042,7 +2042,7 @@ mod infantry_hash_tests {
             (EntityCategory::Aircraft, "ORCA"),
         ] {
             let mut sim = Simulation::new();
-            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             let owner = sim.interner.intern("Allies");
             let type_ref = sim.interner.intern(type_name);
             sim.substrate
@@ -2105,7 +2105,7 @@ mod infantry_hash_tests {
         // Scenario deserialization deliberately reseeds to0. Start this
         // retained-byte fixture at that same state so its full-hash assertion
         // isolates persistence, not the intentionally changed RNG future.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let actor = hash_entity(&mut sim, EntityCategory::Infantry);
         assert_eq!(actor.navigation.path_runtime().scold_latch_raw(), 0);
         sim.substrate.entities.insert(actor);
@@ -2162,7 +2162,7 @@ mod smudge_hash_tests {
     #[test]
     fn hash_changes_when_smudge_placed() {
         let mut sim = Simulation::new();
-        sim.smudge_grid = Some(SmudgeGrid::new(8, 8));
+        *sim.smudge_grid = Some(SmudgeGrid::new(8, 8));
         let h0 = sim.state_hash();
         if let Some(grid) = sim.smudge_grid.as_mut() {
             grid.test_force_set(
@@ -2201,8 +2201,8 @@ mod bridge_state_hash_tests {
         record.bridge_kind = BridgeRecordKind::Low;
         state_b.test_set_endpoint_records(vec![record]);
 
-        sim_a.bridge_state = Some(state_a);
-        sim_b.bridge_state = Some(state_b);
+        *sim_a.bridge_state = Some(state_a);
+        *sim_b.bridge_state = Some(state_b);
 
         assert_ne!(
             sim_a.state_hash(),

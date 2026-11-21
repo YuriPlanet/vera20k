@@ -65,6 +65,9 @@ pub(crate) trait PreludeCells {
     /// The signed level and the slope.
     fn level_slope(&self, cell: Cell) -> (i32, u8);
     fn flags(&self, cell: Cell) -> u32;
+    fn corrected_deck(&self, _cell: Cell) -> Option<i32> {
+        None
+    }
 }
 
 impl PreludeCells for NativeCellQuery<'_> {
@@ -83,6 +86,12 @@ impl PreludeCells for NativeCellQuery<'_> {
 
     fn flags(&self, cell: Cell) -> u32 {
         NativeCellQuery::flags(self, cell)
+    }
+
+    fn corrected_deck(&self, cell: Cell) -> Option<i32> {
+        self.terrain()
+            .corrected_high_bridge_deck_at(cell)
+            .map(i32::from)
     }
 }
 
@@ -107,25 +116,43 @@ pub(crate) fn adjust_height_and_list(
     list_bridge: &mut bool,
 ) -> bool {
     let source = previous.unwrap_or_else(|| backstep_cell(cells, target, direction));
-    let target_level = cells.level_slope(target).0;
+    let (target_level, target_slope) = cells.level_slope(target);
+    let target_deck = cells.corrected_deck(target);
     if direction == -1 {
         if *height == -1 && cells.flags(target) & 0x100 != 0 {
-            *height = target_level + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
+            *height = target_deck.unwrap_or(target_level + 4);
         }
         return true;
     }
-    let (source_level, source_slope) = cells.level_slope(source);
-    if *height == -1 && cells.flags(source) & 0x100 != 0 {
-        *height = source_level + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
+    let (mut source_level, mut source_slope) = cells.level_slope(source);
+    let source_bridge = cells.flags(source) & 0x100 != 0;
+    let source_deck = cells.corrected_deck(source);
+    if *height == -1 && source_bridge {
+        *height = source_deck.unwrap_or(source_level + 4);
         if cells.flags(target) & 0x200 == 0 {
             return false;
         }
     }
-    let difference = if cells.flags(source) & 0x100 != 0 {
-        source_level
-    } else {
-        *height
-    } - target_level;
+    // Foot4D9C60 normally infers the deck from a four-level terrain step.
+    // A depressed lane admits bridge traffic at the span's actual elevation.
+    let on_source_deck = source_bridge && *height == source_deck.unwrap_or(source_level + 4);
+    if let Some(deck) = target_deck {
+        if *height == deck && (!source_bridge || on_source_deck) {
+            if cells.flags(target) & 0x300 != 0x300 {
+                return false;
+            }
+            *list_bridge = true;
+            return true;
+        }
+        if on_source_deck {
+            return false;
+        }
+    }
+    if on_source_deck && let Some(deck) = source_deck {
+        source_level = deck - 4;
+        source_slope = 0;
+    }
+    let difference = if source_bridge { source_level } else { *height } - target_level;
     match difference.abs() {
         0 => {
             if cells.flags(target) & 0x300 == 0x300 && cells.flags(source) & 0x100 != 0 {
@@ -135,7 +162,7 @@ pub(crate) fn adjust_height_and_list(
         }
         1 => {
             if difference > 0 {
-                cells.level_slope(target).1 != 0
+                target_slope != 0
             } else {
                 source_slope != 0
             }
@@ -147,7 +174,7 @@ pub(crate) fn adjust_height_and_list(
                 return false;
             }
             if target_level == source_level - 4 {
-                if cells.flags(target) & 0x300 != 0x300 {
+                if target_deck.is_some() || cells.flags(target) & 0x300 != 0x300 {
                     return false;
                 }
                 *list_bridge = true;

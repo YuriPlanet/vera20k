@@ -1,7 +1,7 @@
 //! Presentation and transport of a completed authored campaign stage.
 //! MatchSession owns the immutable options, vote, and handoff.
 
-use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::lan_service::CampaignControlSend;
 use crate::app::shell_network_setup::campaign_room;
 use crate::app::{App, AppState, GameScreen};
@@ -9,8 +9,7 @@ use crate::net::global::GlobalMessage;
 use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
 use crate::net::live_commands::LiveCommandSession;
 use crate::sim::house_state::HouseOutcomeKind;
-use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
-use crate::ui::shell::modal::ModalResult;
+use crate::ui::shell::modal::ShellBox;
 
 use super::session::{CampaignResult, NetworkReturnContext, StageHandoff, StageProgress};
 
@@ -47,7 +46,7 @@ fn capture(state: &AppState, outcome: HouseOutcomeKind) -> anyhow::Result<Campai
     let room = session
         .campaign_room()
         .context("campaign room disappeared")?;
-    let manifest = campaign_room::load_manifest(state, room)?;
+    let manifest = campaign_room::load_manifest(state.platform.game_config.as_ref(), room)?;
     let sim = &state
         .match_state
         .sim_runtime
@@ -73,37 +72,42 @@ fn present(state: &mut AppState, index: usize) {
     };
     let title = super::scenario_exit::outcome_title(result.outcome());
     let tr = crate::i18n::tr;
-    App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            labels: ShellMessageBoxLabels {
-                title: format!("{title}\n{}", plan.title),
-                confirm: tr(match plan.choice {
-                    StageChoice::Retry => "VERA:CampaignRetryStage",
-                    StageChoice::Route(_) => "VERA:CampaignContinueStage",
-                }),
-                third: if result.plans().len() > 1 {
-                    tr("VERA:CampaignOtherRoute")
-                } else {
-                    String::new()
-                },
-                cancel: tr("VERA:CampaignLeaveStage"),
-            },
-            purpose: ShellMessageBoxPurpose::AuthoredCampaignResult(Some(index)),
+    let shell_box = ShellBox::message(
+        format!("{title}\n{}", plan.title),
+        tr(match plan.choice {
+            StageChoice::Retry => "VERA:CampaignRetryStage",
+            StageChoice::Route(_) => "VERA:CampaignContinueStage",
+        }),
+        tr("VERA:CampaignLeaveStage"),
+        if result.plans().len() > 1 {
+            tr("VERA:CampaignOtherRoute")
+        } else {
+            String::new()
         },
+    );
+    App::open_shell_message_box(
+        &state.platform.window,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence.options_profile,
+        shell_box,
+        ShellMessageBoxPurpose::AuthoredCampaignResult(Some(index)),
     );
 }
 
-pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: ModalResult) {
+/// The stage box's answer: 0 its choice, 2 the other route, 1 (Leave, Enter
+/// or Escape) leaves the campaign; the waiting box's only button leaves too.
+pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: usize) {
     let Some(result) = state.match_state.session.campaign_result() else {
         return;
     };
     let tr = crate::i18n::tr;
     match (index, response) {
-        (Some(index), ModalResult::MessageBox(2)) => {
+        (Some(index), 2) => {
             present(state, (index + 1) % result.plans().len());
         }
-        (Some(index), ModalResult::MessageBox(0)) => {
+        (Some(index), 0) => {
             let Some(plan) = result.plans().get(index) else {
                 return;
             };
@@ -111,17 +115,20 @@ pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: Modal
                 .match_state
                 .session
                 .vote_for_campaign_stage(plan.choice);
+            let shell_box = ShellBox::message(
+                tr("VERA:CampaignWaitingForVotes"),
+                tr("VERA:CampaignLeaveStage"),
+                String::new(),
+                String::new(),
+            );
             App::open_shell_message_box(
-                state,
-                ShellMessageBox {
-                    labels: ShellMessageBoxLabels {
-                        title: tr("VERA:CampaignWaitingForVotes"),
-                        confirm: tr("VERA:CampaignLeaveStage"),
-                        third: String::new(),
-                        cancel: String::new(),
-                    },
-                    purpose: ShellMessageBoxPurpose::AuthoredCampaignResult(None),
-                },
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                shell_box,
+                ShellMessageBoxPurpose::AuthoredCampaignResult(None),
             );
         }
         _ => abort(state, None),
@@ -129,18 +136,18 @@ pub(crate) fn answer(state: &mut AppState, index: Option<usize>, response: Modal
 }
 
 pub(crate) fn receive(
-    state: &mut AppState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
     source: usize,
     signal: Signal,
     receipt: Option<GlobalMessage>,
 ) {
-    let from_host = crate::app::lan_service::campaign_host_source(state) == Some(source);
+    let from_host = crate::app::lan_service::campaign_host_source(match_state) == Some(source);
     let relay_retry_delta = relay_retry_delta(
-        state.match_state.session.network_return_context(),
-        state.match_state.live_network.as_ref(),
+        match_state.session.network_return_context(),
+        match_state.live_network.as_ref(),
         signal,
     );
-    state.match_state.session.receive_campaign_stage_signal(
+    match_state.session.receive_campaign_stage_signal(
         source,
         from_host,
         signal,
@@ -172,7 +179,7 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
         state
             .match_state
             .session
-            .confirm_campaign_stage_delivery(|discarded| live.global_sends_delivered(discarded));
+            .confirm_campaign_stage_delivery(|batch| live.global().batch_delivered(batch));
     }
     let session = &state.match_state.session;
     let Some(result) = session.campaign_result() else {
@@ -190,14 +197,25 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
         StageProgress::Waiting => {}
     }
     if let Some(plan) = result.plan_to_prepare().cloned() {
-        let result =
-            campaign_room::prepare_stage(state, &plan.stage, plan.carry).and_then(|room| {
-                let start = campaign_room::prepare_current(state, &room)?;
-                state
-                    .match_state
-                    .session
-                    .stage_prepared(room, start, now_ms)
-            });
+        let result = campaign_room::prepare_stage(
+            state.platform.game_config.as_ref(),
+            &state.match_state.session,
+            &state.process_assets,
+            &plan.stage,
+            plan.carry,
+        )
+        .and_then(|room| {
+            let start = campaign_room::prepare_current(
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &state.process_assets,
+                &room,
+            )?;
+            state
+                .match_state
+                .session
+                .stage_prepared(room, start, now_ms)
+        });
         if let Err(error) = result {
             log::warn!("Cannot admit the next campaign stage: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
@@ -214,22 +232,25 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     else {
         return;
     };
-    let peers = recipients(state, local);
+    let peers = recipients(&state.match_state, local);
     if !session.host() && peers.is_empty() {
         return;
     }
-    if let Some(CampaignControlSend::Queued(discarded_at_enqueue)) =
-        crate::app::lan_service::send_campaign_control(state, &peers, signal)
+    if let Some(CampaignControlSend::Queued(batch)) =
+        crate::app::lan_service::send_campaign_control(&mut state.match_state, &peers, signal)
     {
         state
             .match_state
             .session
-            .confirm_campaign_stage_send(signal, now_ms, discarded_at_enqueue);
+            .confirm_campaign_stage_send(signal, now_ms, batch);
     }
 }
 
-fn recipients(state: &AppState, local: usize) -> Vec<usize> {
-    let session = &state.match_state.session;
+fn recipients(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    local: usize,
+) -> Vec<usize> {
+    let session = &match_state.session;
     if session.host() {
         session
             .network_connected_source_indices()
@@ -238,7 +259,7 @@ fn recipients(state: &AppState, local: usize) -> Vec<usize> {
             .filter(|&source| source != local)
             .collect()
     } else {
-        crate::app::lan_service::campaign_host_source(state)
+        crate::app::lan_service::campaign_host_source(match_state)
             .into_iter()
             .collect()
     }
@@ -246,13 +267,24 @@ fn recipients(state: &AppState, local: usize) -> Vec<usize> {
 
 fn abort(state: &mut AppState, notice: Option<&str>) {
     if let Some(local) = super::network_match::local_source(&state.match_state.session) {
-        let peers = recipients(state, local);
-        let _ = crate::app::lan_service::send_campaign_control(state, &peers, Signal::StageAbort);
+        let peers = recipients(&state.match_state, local);
+        let _ = crate::app::lan_service::send_campaign_control(
+            &mut state.match_state,
+            &peers,
+            Signal::StageAbort,
+        );
     }
-    App::close_shell_message_box_from_controller(state);
+    App::close_shell_message_box_from_controller(&mut state.frontend);
     App::return_to_main_menu(state);
     if let Some(notice) = notice {
-        App::open_shell_notice(state, crate::i18n::tr(notice));
+        App::open_shell_notice(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+            crate::i18n::tr(notice),
+        );
     }
 }
 
@@ -262,7 +294,9 @@ fn commit(state: &mut AppState, now_ms: u64) {
             .match_state
             .session
             .take_campaign_stage_receipts(now_ms);
-        if let Err(error) = crate::app::lan_service::advance_campaign_transport(state, receipts) {
+        if let Err(error) =
+            crate::app::lan_service::advance_campaign_transport(&mut state.match_state, receipts)
+        {
             log::warn!("Cannot advance LAN campaign transport: {error:#}");
             abort(state, Some("VERA:CampaignStageUnavailable"));
             return;
@@ -270,7 +304,7 @@ fn commit(state: &mut AppState, now_ms: u64) {
     }
     match state.match_state.session.commit_campaign_stage(now_ms) {
         Ok(StageHandoff::Lan(startup)) => {
-            App::close_shell_message_box_from_controller(state);
+            App::close_shell_message_box_from_controller(&mut state.frontend);
             App::retire_finished_scenario(state);
             crate::app::loading::pump::begin_loading(
                 state,
@@ -278,7 +312,7 @@ fn commit(state: &mut AppState, now_ms: u64) {
             );
         }
         Ok(StageHandoff::Wol) => {
-            App::close_shell_message_box_from_controller(state);
+            App::close_shell_message_box_from_controller(&mut state.frontend);
             App::retire_finished_scenario(state);
             App::resume_shell_after_match(state);
         }
@@ -311,7 +345,8 @@ mod tests {
         )
         .unwrap();
         let rate = NonZeroU32::new(1).unwrap();
-        let agreement = StartupAgreement::new([(0, 0)], [0], 1, 10, 30, rate, 0, "", "").unwrap();
+        let agreement =
+            StartupAgreement::new([(0, 0)], [0], 1, 10, 30, rate, 0, 0, "", "").unwrap();
         let live =
             LiveCommandSession::new(agreement, transport, 0, 1, rate, LiveCommandMode::Wol, None)
                 .unwrap();

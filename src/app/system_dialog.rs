@@ -41,6 +41,10 @@ pub fn enable_fatal_messages() {
 
 /// What the last worker thread's panic said, kept for the box the main
 /// thread shows if that panic is re-raised there.
+///
+/// This and the flags above are process-wide statics because the panic hook
+/// ([`report_panic`]) has no receiver and runs on whichever thread panicked;
+/// the lock and atomics are for that thread boundary.
 static WORKER_PANIC: Mutex<Option<String>> = Mutex::new(None);
 
 /// The panic hook's notifier (`util::logging::install_panic_hook`). It runs
@@ -186,6 +190,33 @@ fn software_renderer_message(adapter: &str) -> (String, String) {
             &[
                 ("adapter", &adapter),
                 ("advice", &crate::i18n::tr(GRAPHICS_ADVICE)),
+            ],
+        ),
+    )
+}
+
+/// Tell the player that the graphics API `[VERA] GraphicsAPI=` names
+/// (`named`) found no adapter or could not start here, that the game draws
+/// through `used` instead, and which line to remove. The start goes on while
+/// the box shows.
+pub(crate) fn report_graphics_api_refused(named: wgpu::Backend, used: wgpu::Backend) {
+    if FATAL_MESSAGES.load(Ordering::Acquire) {
+        let (title, message) = graphics_api_refused_message(named, used);
+        show_warning_beside(title, message);
+    }
+}
+
+fn graphics_api_refused_message(named: wgpu::Backend, used: wgpu::Backend) -> (String, String) {
+    use crate::app::persistence::startup_backend::api_name;
+    let named = api_name(named);
+    (
+        crate::i18n::tr_fill("VERA:GraphicsApiRefusedTitle", &[("api", &named)]),
+        crate::i18n::tr_fill(
+            "VERA:GraphicsApiRefusedText",
+            &[
+                ("api", &named),
+                ("used", &api_name(used)),
+                ("log", &log_note()),
             ],
         ),
     )
@@ -497,6 +528,23 @@ mod tests {
         assert!(!title.is_empty() && !title.contains("MISSING"), "{title}");
         assert!(text.contains("(Microsoft Basic Render Driver)"), "{text}");
         assert!(text.ends_with(&crate::i18n::tr(GRAPHICS_ADVICE)), "{text}");
+    }
+
+    #[test]
+    fn the_refused_graphics_api_box_names_both_apis_and_the_line_to_remove() {
+        let (title, text) = graphics_api_refused_message(wgpu::Backend::Gl, wgpu::Backend::Dx12);
+        assert!(
+            title.contains("OpenGL") && !title.contains("MISSING"),
+            "{title}"
+        );
+        assert!(
+            text.contains("OpenGL") && text.contains("DirectX 12"),
+            "{text}"
+        );
+        assert!(
+            text.contains("GraphicsAPI") && !text.contains('{'),
+            "{text}"
+        );
     }
 
     #[test]

@@ -112,8 +112,8 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
 
         let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(16, 16);
         overlays.place_overlay(8, 5, 0, 0);
-        sim.overlay_grid = Some(overlays);
-        sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
+        *sim.overlay_grid = Some(overlays);
+        *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
         let detonation = crate::sim::projectile::ProjectileDetonation {
             projectile_id: 1,
             source_id: 99,
@@ -316,12 +316,12 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         cell.accepts_smudge = true;
         cell.allows_tiberium = true;
     }
-    sim.resolved_terrain = Some(terrain);
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
-    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
+    *sim.resolved_terrain = Some(terrain);
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
+    *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
     let mut overlay = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
     overlay.place_overlay(5, 5, ore_id, 9);
-    sim.overlay_grid = Some(overlay);
+    *sim.overlay_grid = Some(overlay);
     let detonation = crate::sim::projectile::ProjectileDetonation {
         projectile_id: 1,
         source_id: crate::sim::combat::RAD_NO_ATTACKER,
@@ -423,12 +423,12 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
         cell.accepts_smudge = true;
         cell.allows_tiberium = true;
     }
-    sim.resolved_terrain = Some(terrain);
-    sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
-    sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
+    *sim.resolved_terrain = Some(terrain);
+    *sim.smudge_grid = Some(crate::sim::smudge_grid::SmudgeGrid::new(10, 10));
+    *sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(10, 10);
     let mut overlay = crate::sim::overlay_grid::OverlayGrid::new(10, 10);
     overlay.place_overlay(5, 5, ore_id, 9);
-    sim.overlay_grid = Some(overlay);
+    *sim.overlay_grid = Some(overlay);
     // A cruising missile on the ground of the ore cell detonates at once.
     let mut missile = GameEntity::test_default_of_category(
         1,
@@ -572,7 +572,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     let mut sim = Simulation::new();
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let grid = PathGrid::test_all_passable(64, 64);
 
     // A represented House retains its power assessment after one of its two
@@ -582,7 +582,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
         crate::sim::intern::test_intern("GAPOWR"),
         crate::sim::intern::test_intern("Americans"),
     );
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let owner_id = sim.interner.intern("Americans");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -675,7 +675,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     let rules = RuleSet::from_ini(&ini).expect("repair rules parse");
 
     let mut sim = Simulation::new();
-    sim.input_delay_ticks = 0;
+    *sim.input_delay_ticks = 0;
     let grid = PathGrid::test_all_passable(64, 64);
 
     let mut atk = GameEntity::test_default(1, "MTNK", "Americans", 5, 5);
@@ -694,7 +694,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
         .set_foundation_for_test("1x1".to_string().into());
     bld.health = Health::new(50);
     bld.building.repairing.set_for_test(true);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
     sim.houses
         .register(HouseState::new(russia, 0, None, false, 1000, 10));
@@ -755,7 +755,7 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
 
     let mut sim = Simulation::new();
     let empty_hash = sim.state_hash();
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     let mut deferred = Vec::new();
     for _ in 0..3 {
@@ -812,7 +812,7 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     assert_eq!(sim.state_hash(), before_tick);
 
     let expected_order = sim.live_object_order_snapshot();
-    let expected_store = sim.substrate.voxel_anims.clone();
+    let expected_store = (*sim.substrate.voxel_anims).clone();
     let bytes =
         crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "live voxel debris", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
@@ -823,7 +823,7 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         .expect("restore live debris");
     assert_eq!(restored.live_object_order_snapshot(), expected_order);
     assert_eq!(
-        restored.substrate.voxel_anims, expected_store,
+        *restored.substrate.voxel_anims, expected_store,
         "every piece and its physics body survive the snapshot"
     );
     restored.debug_assert_logic_membership_consistent();

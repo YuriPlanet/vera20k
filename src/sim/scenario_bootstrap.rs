@@ -668,6 +668,10 @@ pub fn initialize_map_roster_houses(
             house_state
                 .team_creation_mut()
                 .read_scenario_ratio(ini.section_or_empty(&house.name));
+            // Ares hook 0x0050114D at the end of Read_Scenario_INI.
+            if rules.ares() {
+                house_state.read_ares_degrades(ini.section_or_empty(&house.name));
+            }
             let temporary_delay = house_state
                 .difficulty_value(&rules.general.team_delays)
                 .wrapping_add((index as i32).wrapping_mul(175));
