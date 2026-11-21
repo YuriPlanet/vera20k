@@ -1051,53 +1051,51 @@ struct PaceReport {
     at_ms: u64,
     // When its unbroken run of Behind reports began.
     behind_since: Option<u64>,
-    // Its latest Behind report's frames run, time and tick cost: with frames
-    // waiting on it, all its PC could run at that tick cost.
+    // Frames run, time and tick cost at the latest sustained shortfall.
     capacity: Option<(u16, u64, u32)>,
 }
 
 impl PaceReport {
-    /// A report received at `at_ms`, after the source's `previous` one. A
-    /// federation follower forwards the latest report again and again, so
-    /// this keeps times, not counts.
+    /// Record measured capacity only after a continuous shortfall at the
+    /// current clock rate. A missing or expired sample breaks the run.
     fn new(
-        previous: Option<PaceReport>,
-        pace: OrderPace,
-        frames_per_second: u16,
-        tick_micros: u32,
+        previous: Option<Self>,
+        sample: crate::link::PaceSegment,
         at_ms: u64,
+        rate: u16,
     ) -> Self {
-        let behind_since = (pace == OrderPace::Behind).then(|| {
+        let tick_micros = (sample.tick_micros != 0).then_some(sample.tick_micros);
+        let running_behind = sample.pace == OrderPace::Behind
+            && tick_micros.is_some()
+            && (1..rate).contains(&sample.frames_per_second);
+        let behind_since = running_behind.then(|| {
             previous
-                .and_then(|previous| previous.behind_since)
+                .filter(|p| at_ms.saturating_sub(p.at_ms) <= PACE_REPORT_MS)
+                .and_then(|p| p.behind_since)
                 .unwrap_or(at_ms)
         });
-        let capacity = if pace == OrderPace::Behind && frames_per_second > 0 && tick_micros != 0 {
-            Some((frames_per_second, at_ms, tick_micros))
-        } else {
-            previous.and_then(|previous| previous.capacity)
-        };
-        Self {
-            pace,
-            frames_per_second,
-            tick_micros: (tick_micros != 0).then_some(tick_micros),
+        let mut report = Self {
+            pace: sample.pace,
+            frames_per_second: sample.frames_per_second,
+            tick_micros,
             at_ms,
             behind_since,
-            capacity,
+            capacity: previous.and_then(|p| p.capacity),
+        };
+        if report.measured_rate(rate).is_some() {
+            report.capacity = Some((sample.frames_per_second, at_ms, sample.tick_micros));
         }
+        report
     }
 
-    /// What it can hold by what it ran rather than by its tick cost, once it
-    /// has been behind for `SUSTAINED_BEHIND_MS` running fewer
-    /// frames than the clock's `rate`: nine tenths of it, to drain the frames
-    /// waiting on it.
+    /// Nine tenths of what the player actually ran once fresh samples show
+    /// a sustained shortfall. A rate change can end the shortfall.
     fn measured_rate(&self, rate: u16) -> Option<u32> {
-        (self.tick_micros.is_some()
+        (self.frames_per_second < rate
             && self
                 .behind_since
-                .is_some_and(|since| self.at_ms.saturating_sub(since) >= SUSTAINED_BEHIND_MS)
-            && self.frames_per_second < rate)
-            .then(|| u32::from(self.frames_per_second) * 9 / 10)
+                .is_some_and(|since| self.at_ms - since >= SUSTAINED_BEHIND_MS))
+        .then(|| u32::from(self.frames_per_second) * 9 / 10)
     }
 
     /// [`Self::sustainable_rate`], or less when what it ran says so.
@@ -1114,7 +1112,7 @@ impl PaceReport {
         self.tick_micros.is_some_and(|micros| {
             self.capacity.is_some_and(|(ran, at, then)| {
                 now_ms.saturating_sub(at) < PACE_RAISE_MAX_MS
-                    && micros >= then - then / 10
+                    && u64::from(micros) * 10 > u64::from(then) * 9
                     && u32::from(ran) * 9 / 10 < u32::from(rate)
             })
         })
@@ -1142,6 +1140,8 @@ struct Source {
     pause_request: Option<PauseRequest>,
     // Also its capability: a source that reported reads rate markers.
     pace: Option<PaceReport>,
+    // Coordinator only: last pace packet sequence and reported age at the follower.
+    forwarded_pace: (u64, u32),
     // Last authenticated packet from this source, keepalives included.
     heard_ms: u64,
 }
@@ -1514,13 +1514,9 @@ impl OrderingRoom {
     /// tick cost is none.
     fn report_pace(&mut self, source: u8, report: crate::link::PaceSegment, now_ms: u64) {
         let slot = &mut self.sources[usize::from(source)].pace;
-        *slot = Some(PaceReport::new(
-            *slot,
-            report.pace,
-            report.frames_per_second,
-            report.tick_micros,
-            now_ms,
-        ));
+        if slot.is_none_or(|previous| now_ms >= previous.at_ms) {
+            *slot = Some(PaceReport::new(*slot, report, now_ms, self.pace.rate));
+        }
     }
 
     /// Slows the clock while a player reports it cannot keep up: to the
