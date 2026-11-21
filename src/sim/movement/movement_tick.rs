@@ -191,7 +191,9 @@ fn no_queue_path_request(
     }
     let loco = entity.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk if loco.step_head().is_none() => loco.walk_destination(),
+        LocomotorKind::Walk | LocomotorKind::Mech if loco.step_head().is_none() => {
+            loco.walk_destination()
+        }
         _ => None,
     }
 }
@@ -324,25 +326,9 @@ struct MovementPassEffects {
     walk_boundary: Option<(u64, crate::sim::components::DriveCoord)>,
     foot_path_request: Option<FootPathRequest>,
     walk_admission_request: Option<WalkAdmissionRequest>,
-    /// A Drive/Ship Unit's Process_Movement(&out, 1, 0), which the host runs
+    /// A Drive/Ship Foot's Process_Movement(&out, 1, 0), which the host runs
     /// at the Simulation (`track_fresh`).
     track_movement: Option<(u64, super::track_process::TrackFamily)>,
-}
-
-/// A Drive/Ship Unit: its Process_Movement is `track_fresh`. The active
-/// locomotor's Process decides it (`DriveLocomotionClass::Process`
-/// `0x004B0500`, `ShipLocomotionClass::Process` `0x0069FC10`).
-fn native_track_route(
-    entity: &crate::sim::game_entity::GameEntity,
-) -> Option<super::track_process::TrackFamily> {
-    if entity.category() != EntityCategory::Unit {
-        return None;
-    }
-    match entity.locomotor.as_ref()?.active_kind() {
-        LocomotorKind::Drive => Some(super::track_process::TrackFamily::Drive),
-        LocomotorKind::Ship => Some(super::track_process::TrackFamily::Ship),
-        _ => None,
-    }
 }
 
 /// Where a mover visit enters [`advance_ordinary_mover`].
@@ -425,7 +411,13 @@ fn advance_ordinary_mover(
         }
         // Drive4B0A79 / Ship6A0142 (and the track-end continuation 4B0647):
         // Process_Movement runs at the Simulation; see `track_fresh`.
-        if let Some(family) = entities.get(entity_id).and_then(native_track_route) {
+        // Drive4B0A79 / Ship6A0142 call Process_Movement for the linked
+        // Foot. Infantry and Unit dispatch through the same locomotor slot.
+        if let Some(family) = entities
+            .get(entity_id)
+            .and_then(|actor| actor.locomotor.as_ref())
+            .and_then(|loco| super::track_process::TrackFamily::from_kind(loco.active_kind()))
+        {
             debug_assert!(track_movement.is_none(), "scoped Process has one request");
             *track_movement = Some((entity_id, family));
             return;
@@ -434,7 +426,12 @@ fn advance_ordinary_mover(
         if !entities
             .get(entity_id)
             .and_then(|entity| entity.locomotor.as_ref())
-            .is_some_and(|locomotor| locomotor.active_kind() == LocomotorKind::Walk)
+            .is_some_and(|locomotor| {
+                matches!(
+                    locomotor.active_kind(),
+                    LocomotorKind::Walk | LocomotorKind::Mech
+                )
+            })
         {
             return;
         }
@@ -811,8 +808,10 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     // destination (+0x1C): either one runs its step, neither the idle tail
     // 75BCE3 (Walk75AEC3..75AF10).
     let walk_route = entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == LocomotorKind::Walk
-            && (loco.step_head().is_some() || loco.walk_destination().is_some())
+        matches!(
+            loco.active_kind(),
+            LocomotorKind::Walk | LocomotorKind::Mech
+        ) && (loco.step_head().is_some() || loco.walk_destination().is_some())
     });
     let idle_tail = entity.is_active() && !walk_route;
     // A Drive or Ship got here through the outer Process gates
@@ -824,16 +823,15 @@ fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     });
     // The idle tail writes only speed and the scold latch, which neither
     // route nor layer reads.
-    let layer = entity.movement_layer_or_ground();
     if idle_tail
         && let Some(entity) = entities.get_mut_if(entity_id, super::walk_step::finish_idle_writes)
     {
         super::walk_step::finish_idle(entity);
     }
-    if !walk_route && !track_route {
-        return false;
-    }
-    !matches!(layer, MovementLayer::Air | MovementLayer::Underground)
+    // Foot AI dispatches the installed class (4DA877). A grounded
+    // Jumpjet can install Walk (51B0CC); Walk::In_Which_Layer (75C7E0)
+    // returns Ground even when the displaced controller cached Air.
+    walk_route || track_route
 }
 
 #[cfg(any(test, feature = "test-support"))]

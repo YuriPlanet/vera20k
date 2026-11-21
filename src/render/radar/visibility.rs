@@ -33,7 +33,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
     } else if entity.category() == EntityCategory::Aircraft {
         entity.ammo().is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
-        entity.low_bridge_tube_state.is_none()
+        entity.active_tube().is_none()
     }
 }
 

@@ -432,22 +432,27 @@ pub(crate) fn set_walk_destination_coord(
     entity: &mut GameEntity,
     coord: DriveCoord,
     terrain: Option<&ResolvedTerrainGrid>,
+    binary_frame: u32,
 ) {
-    // Walk75ACBD/75ACD0/75ACE3 checks EMP and both owner warp bytes.
-    // The teleport owner represents the latter; the native EMP timer still
-    // lacks its production writer. There is deliberately no power gate here.
-    if super::locomotor_owner::owner_is_warping(entity) {
-        return;
-    }
-    let Some(loco) = entity
-        .locomotor
-        .as_mut()
-        .filter(|l| l.active_kind() == LocomotorKind::Walk)
+    let Some(kind @ (LocomotorKind::Walk | LocomotorKind::Mech)) =
+        entity.locomotor.as_ref().map(|loco| loco.active_kind())
     else {
         return;
     };
+    // Both Move_To slots (Walk 75ACBD, Mech 5B008A) check EMP and the
+    // two warp bytes. Only Mech checks the Foot's paralysis timer at 5B0099.
+    if entity.is_under_emp()
+        || super::locomotor_owner::owner_is_warping(entity)
+        || (kind == LocomotorKind::Mech && entity.parasite.is_paralyzed(binary_frame))
+    {
+        return;
+    }
+    let loco = entity
+        .locomotor
+        .as_mut()
+        .expect("installed Move_To receiver");
     let mut coord = coord;
-    if coord != (DriveCoord { x: 0, y: 0, z: 0 })
+    if (kind == LocomotorKind::Mech || coord != super::foot_coordinate::NULL_COORD)
         && let Some(terrain) = terrain
     {
         let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
@@ -459,7 +464,11 @@ pub(crate) fn set_walk_destination_coord(
                 ));
         }
     }
-    loco.set_walk_destination(Some(coord));
+    if kind == LocomotorKind::Mech {
+        loco.mech_move_to(coord);
+    } else {
+        loco.set_walk_destination(Some(coord));
+    }
 }
 
 /// The Foot's Locomotor (`+0x674`) is a `DriveLocomotionClass` (Move_To `0x004AFD40`).
@@ -793,7 +802,9 @@ pub(crate) fn set_destination_internal_coord(
         match super::hover::hover_move_to(entity, coord, resolved_terrain, binary_frame) {
             HoverMoveTo::PathStepOwed => return true,
             HoverMoveTo::Done => {}
-            HoverMoveTo::NotHover => set_walk_destination_coord(entity, coord, resolved_terrain),
+            HoverMoveTo::NotHover => {
+                set_walk_destination_coord(entity, coord, resolved_terrain, binary_frame)
+            }
         }
     }
     false
@@ -963,6 +974,31 @@ fn ship_stop_moving(entity: &mut GameEntity) {
 }
 
 impl crate::sim::world::Simulation {
+    /// FootClass::Set_Destination_Internal calls the installed ground
+    /// locomotor's Move_To (0x004D965D). Hover's immediate path step belongs
+    /// to that call, for both Infantry and Unit receivers.
+    pub(super) fn ground_foot_move_to(
+        &mut self,
+        id: u64,
+        requested: NavTargetRef,
+        coord: DriveCoord,
+        rules: &crate::rules::ruleset::RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), crate::sim::world::FrameAdvanceError> {
+        if let Some(actor) = self.substrate.entities.get_mut(id)
+            && set_destination_internal_coord(
+                actor,
+                requested,
+                coord,
+                self.resolved_terrain.as_ref(),
+                self.session.binary_frame(),
+            )
+        {
+            self.hover_move_to_path_step(id, rules, effects)?;
+        }
+        Ok(())
+    }
+
     /// Foot4D94B0 clears NavComAux before its three nonnull admission gates:
     /// a Magnetron-lifted object (`+0x6AD`), a passenger of an open transport
     /// (`+0x82`) and a bunkered vehicle (`+0x2E4`) take no destination. An
@@ -1140,7 +1176,9 @@ impl crate::sim::world::Simulation {
             LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover => {
                 track_stop_moving(entity);
             }
-            LocomotorKind::Walk => self.walk_stop_moving(id, rules, frame_effects)?,
+            LocomotorKind::Walk | LocomotorKind::Mech => {
+                self.walk_stop_moving(id, rules, frame_effects)?
+            }
             LocomotorKind::Jumpjet => {
                 if !self.jumpjet_stop_moving(id, rules, registry, frame_effects) {
                     log::debug!("Jumpjet {id} Stop_Moving lacks the map or rules");

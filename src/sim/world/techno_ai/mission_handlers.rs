@@ -1206,26 +1206,22 @@ pub(crate) fn enter_idle_mode(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: &mut FrameEffects<'_>,
-) {
+) -> bool {
     match sim
         .substrate
         .entities
         .get(id)
         .map(|entity| entity.category())
     {
-        Some(EntityCategory::Unit) => {
-            sim.unit_enter_idle_mode(id, rules, false, effects);
-        }
+        Some(EntityCategory::Unit) => sim.unit_enter_idle_mode(id, rules, false, effects),
         Some(EntityCategory::Infantry) => {
-            sim.infantry_enter_idle_mode(id, rules, registry, effects);
+            sim.infantry_enter_idle_mode(id, rules, registry, effects)
         }
         Some(EntityCategory::Aircraft) => {
-            crate::sim::aircraft::enter_idle_mode_for(sim, id, rules, effects);
+            crate::sim::aircraft::enter_idle_mode_for(sim, id, rules, effects)
         }
-        Some(EntityCategory::Structure) => {
-            sim.building_enter_idle_mode(id, false, rules);
-        }
-        None => {}
+        Some(EntityCategory::Structure) => sim.building_enter_idle_mode(id, false, rules),
+        None => false,
     }
 }
 

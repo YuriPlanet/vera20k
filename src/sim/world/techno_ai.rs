@@ -814,7 +814,7 @@ impl Simulation {
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         ) && !self.quiet(id)
-            && entity.low_bridge_tube_state.is_some()
+            && entity.active_tube().is_some()
         {
             return outcome;
         }

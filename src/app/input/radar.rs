@@ -104,6 +104,7 @@ impl RadarAction {
             | Kind::FriendlyUnit
             | Kind::FriendlyStructure
             | Kind::Grind
+            | Kind::EnterTunnel
             | Kind::EngineerDamage
             | Kind::RepairAction(_)
             | Kind::NoDeploy

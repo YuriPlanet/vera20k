@@ -1774,7 +1774,7 @@ impl Simulation {
                 destination,
                 movement_zone: object.movement_zone,
                 on_bridge: actor.on_bridge(),
-                in_tube: actor.low_bridge_tube_state.is_some(),
+                in_tube: actor.active_tube().is_some(),
                 allow_destination_fringe,
             },
         )

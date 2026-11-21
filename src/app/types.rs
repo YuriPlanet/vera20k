@@ -322,6 +322,8 @@ pub(crate) enum CursorFeedbackKind {
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// Tunnel entrance (35) uses the Enter row and the radar drops its action.
+    EnterTunnel,
     /// Grind (11) shares Enter's cursor but is excluded by the radar keep table.
     Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).

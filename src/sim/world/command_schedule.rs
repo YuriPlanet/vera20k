@@ -1100,7 +1100,7 @@ impl Simulation {
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }

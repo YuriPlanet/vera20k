@@ -594,7 +594,7 @@ fn admitted_techno_observer(
     // `observer_draw_context` for the frame's local player.
     let observer = entity.seen.observer;
     crate::app::presentation::instances::tactical_entity_admission(
-        crate::app::presentation::instances::TacticalEntityPurpose::Drawing,
+        crate::app::presentation::instances::TacticalEntityPurpose::Extras,
         entity,
         local_owner_id,
         sim.fog(),

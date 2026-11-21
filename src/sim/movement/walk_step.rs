@@ -38,8 +38,11 @@ pub(super) fn finish_idle_writes(entity: &GameEntity) -> bool {
 /// A Walk with no head and no destination, which [`finish_idle`] serves.
 fn idle_walk(entity: &GameEntity) -> bool {
     entity.locomotor.as_ref().is_some_and(|loco| {
-        loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
-            && loco.step_head().is_none()
+        matches!(
+            loco.active_kind(),
+            crate::rules::locomotor_type::LocomotorKind::Walk
+                | crate::rules::locomotor_type::LocomotorKind::Mech
+        ) && loco.step_head().is_none()
             && loco.walk_destination().is_none()
     })
 }

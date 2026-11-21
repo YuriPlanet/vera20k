@@ -88,6 +88,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
+    pub(crate) in_tube: bool,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
@@ -630,6 +631,7 @@ impl ObjectRecord {
                 on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle,
+            in_tube: entity.low_bridge_tube_state.is_some(),
             locomotor: entity.locomotor.as_ref().map(|locomotor| {
                 LocomotorView::of(locomotor, || {
                     let type_name = at.sim.interner().resolve(entity.type_ref());

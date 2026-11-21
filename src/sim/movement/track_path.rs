@@ -78,10 +78,12 @@ fn hover_unit(entity: &GameEntity) -> bool {
 /// the Unit setter's Foot tail reaches Walk Move_To (0x0075ACB0).
 fn walk_unit(entity: &GameEntity) -> bool {
     entity.category() == EntityCategory::Unit
-        && entity
-            .locomotor
-            .as_ref()
-            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Walk)
+        && entity.locomotor.as_ref().is_some_and(|loco| {
+            matches!(
+                loco.active_kind(),
+                LocomotorKind::Walk | LocomotorKind::Mech
+            )
+        })
 }
 
 /// A Unit on a Teleport locomotor, which for a type that is no `Teleporter=`
@@ -306,15 +308,10 @@ impl Simulation {
     ) -> Result<FootPathOutcome, String> {
         let destination = self.substrate.entities.get(id).and_then(track_destination);
         //4B28CD / 6A1F1D: the zone precheck on the LIVE destination, which the
-        //Unit receiver may already have cleared (Cell(0,0) refuses).
+        //class receiver may already have cleared (Cell(0,0) refuses).
         let probe = destination.unwrap_or(super::foot_coordinate::NULL_COORD);
         if !self.foot_path_zone_precheck(id, probe, rules)? {
-            self.set_unit_null_destination(
-                id,
-                rules,
-                Some(rules.overlay_registry()),
-                frame_effects,
-            );
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return Ok(FootPathOutcome::Returned);
         }
         //4B28F5..4B2917: a null destination returns.
@@ -608,7 +605,7 @@ impl Simulation {
 
     /// The shared stop/waypoint pair: clear the head; with an empty NavQueue
     /// SetDestination(NULL, 1), else Foot 0x4DF0D0 (NavCom only) then the
-    /// Unit idle entry (+0x484 = 0x738970), whose AL the caller may return.
+    /// owner's idle entry (vt+0x484), whose AL the caller may return.
     /// Returns that AL (false after the NULL setter).
     pub(super) fn stop_or_take_next_waypoint(
         &mut self,
@@ -621,22 +618,23 @@ impl Simulation {
         };
         clear_track_head(actor);
         if actor.navigation.nav_queue().is_empty() {
-            self.set_unit_null_destination(
-                id,
-                rules,
-                Some(rules.overlay_registry()),
-                frame_effects,
-            );
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
             return false;
         }
         actor.navigation.stop_moving();
-        self.unit_enter_idle_mode(id, rules, false, frame_effects)
+        crate::sim::world::enter_idle_mode(
+            self,
+            id,
+            rules,
+            Some(rules.overlay_registry()),
+            frame_effects,
+        )
     }
 
     /// The outer Process stop at a same-cell Cell NavCom (0x4B066C..0x4B06D2)
     /// or a Guard exact destination (0x4B06D5..0x4B0772), Ship twins
     /// 0x69FD13 / 0x69FD7F: NavQueue empty -> SetDestination(NULL, 1), else
-    /// Foot 0x4DF0D0 then the Unit idle entry (+0x484). No head write.
+    /// Foot 0x4DF0D0 then the owner's idle entry (vt+0x484). No head write.
     pub(super) fn track_navcom_stop(
         &mut self,
         id: u64,
@@ -647,15 +645,16 @@ impl Simulation {
             return;
         };
         if actor.navigation.nav_queue().is_empty() {
-            self.set_unit_null_destination(
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
+        } else {
+            actor.navigation.stop_moving();
+            crate::sim::world::enter_idle_mode(
+                self,
                 id,
                 rules,
                 Some(rules.overlay_registry()),
                 frame_effects,
             );
-        } else {
-            actor.navigation.stop_moving();
-            self.unit_enter_idle_mode(id, rules, false, frame_effects);
         }
     }
 
@@ -1360,7 +1359,6 @@ impl Simulation {
         } else {
             None
         };
-        let terrain = self.resolved_terrain.as_ref();
         let actor = self
             .substrate
             .entities
@@ -1377,12 +1375,12 @@ impl Simulation {
                     LocomotorKind::Drive
                     | LocomotorKind::Ship
                     | LocomotorKind::Hover
-                    | LocomotorKind::Walk,
+                    | LocomotorKind::Walk
+                    | LocomotorKind::Mech,
                 ) => {
                     let coord = coord.expect("accepted Move_To captures target +4C");
-                    if super::navcom::set_destination_internal_coord(
-                        actor, requested, coord, terrain, frame,
-                    ) && let Err(error) = self.hover_move_to_path_step(id, rules, frame_effects)
+                    if let Err(error) =
+                        self.ground_foot_move_to(id, requested, coord, rules, frame_effects)
                     {
                         log::warn!("Unit Hover MoveTo {id}: {}", error.cause);
                     }

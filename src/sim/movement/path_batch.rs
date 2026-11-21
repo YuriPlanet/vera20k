@@ -562,7 +562,7 @@ struct FootSearchKey {
 pub(super) fn code2_ladder_destination(actor: &GameEntity) -> Option<DriveCoord> {
     let loco = actor.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk => Some(
+        LocomotorKind::Walk | LocomotorKind::Mech => Some(
             loco.walk_destination()
                 .unwrap_or(super::foot_coordinate::NULL_COORD),
         ),
@@ -578,7 +578,7 @@ pub(super) fn code2_ladder_destination(actor: &GameEntity) -> Option<DriveCoord>
 fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
     let loco = actor.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk => loco.walk_destination(),
+        LocomotorKind::Walk | LocomotorKind::Mech => loco.walk_destination(),
         LocomotorKind::Drive | LocomotorKind::Ship => super::track_path::track_destination(actor),
         _ => None,
     }

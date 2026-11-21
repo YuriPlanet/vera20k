@@ -330,7 +330,11 @@ impl Simulation {
     /// is read after the whole LogicVector, not in the unit's own Process;
     /// and its first AI comes a frame late, since a native wake made
     /// mid-walk joins that frame's walk.
-    pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
+    pub(crate) fn spawn_wakes_for_frame(
+        &mut self,
+        rules: &RuleSet,
+        tube_turns: &std::collections::BTreeSet<u64>,
+    ) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)
         {
@@ -345,6 +349,11 @@ impl Simulation {
             .entities
             .values()
             .filter_map(|entity| {
+                // Unit AI 7363A4 and Infantry AI 51BAB8 took TubeMovement
+                // in place of their locomotor, even on the exit turn.
+                if tube_turns.contains(&entity.stable_id()) {
+                    return None;
+                }
                 let underwater = self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.underwater);

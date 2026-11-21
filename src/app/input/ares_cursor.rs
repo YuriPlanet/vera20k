@@ -186,6 +186,7 @@ impl CursorOverrides {
             Kind::NoIvanBomb => NO_IVAN_BOMB,
             Kind::Enter if self.answered_capture => CAPTURE,
             Kind::Enter => ENTER,
+            Kind::EnterTunnel => 0x23,
             Kind::Grind => REPAIR,
             Kind::NoEnter => NO_ENTER,
             Kind::Tote => TOTE,

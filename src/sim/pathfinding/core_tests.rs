@@ -1043,6 +1043,39 @@ fn astar_uses_explicit_nonzero_tube_edge() {
     assert_eq!(path, vec![(0, 0), (4, 0)]);
 }
 
+/// A refused tunnel exit that is the goal ends the path at the entrance,
+/// just as a refused compass candidate does (0x00429F54, 0x0042A17D).
+#[test]
+fn a_refused_tunnel_exit_ends_the_route_at_its_entrance() {
+    let mut cells: Vec<_> = (0..6).map(|x| make_resolved_cell(x, 0)).collect();
+    let (entrance, exit) = ((1, 0), (5, 0));
+    cells[1].tube_index = Some(TubeId(0));
+    let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+        6,
+        1,
+        cells,
+        vec![TubeFact::explicit(entrance, exit, 2, vec![2; 4])],
+    );
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+    let entry = RefusedGoal {
+        goal: exit,
+        passive_unit: false,
+    };
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    let path = astar_search(&grid, (0, 0), MovementLayer::Ground, exit, &options).unwrap();
+    assert_eq!(
+        path.iter().map(|s| (s.rx, s.ry)).collect::<Vec<_>>(),
+        [(0, 0), entrance]
+    );
+    assert!(matches!(
+        astar_search(&grid, entrance, MovementLayer::Ground, exit, &options),
+        Err(PathSearchFailure::CellSearchExhausted)
+    ));
+}
+
 #[test]
 fn astar_rejects_zero_step_auto_shell_tube_edge() {
     let mut cells: Vec<_> = (0..5).map(|x| make_resolved_cell(x, 0)).collect();

@@ -65,8 +65,7 @@ impl Simulation {
             return (None, None);
         };
         let zone = friendly
-            .low_bridge_tube_state
-            .as_ref()
+            .active_tube()
             .and_then(|state| self.resolved_terrain.as_ref()?.tube(state.tube_id()))
             .map_or(TeamTarget::Object(friendly.stable_id()), |tube| {
                 // CalcCenter's Script10 arm resolves the exit at6EB17E.

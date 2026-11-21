@@ -292,9 +292,10 @@ impl Simulation {
         let ares = rules.ares_form();
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
         let terrain = self.resolved_terrain.as_ref();
-        if terrain
-            .is_some_and(|terrain| terrain.is_tube_deploy_neighborhood((rx as i16, ry as i16)))
-        {
+        if terrain.is_some_and(|terrain| {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+            cells.is_near_tube_northwest(cells.lookup((rx as i16, ry as i16)))
+        }) {
             return false;
         }
         match entity.category() {
@@ -312,7 +313,7 @@ impl Simulation {
                 if ares && (entity.is_falling_down() || entity.is_warping_in()) {
                     return false;
                 }
-                if entity.low_bridge_tube_state.is_some() {
+                if entity.active_tube().is_some() {
                     return false;
                 }
                 let bunkered = entity.bunker.link().installed_in().is_some();

@@ -326,10 +326,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
