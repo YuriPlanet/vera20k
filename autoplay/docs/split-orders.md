@@ -4,10 +4,12 @@ A mechanical split of `src/sim/strategy/assist/orders.rs` (4,252 lines, 49
 top-level functions) into a parent module and two children: `common` for the
 command-admission layer, `tests` for the test module it already held inline.
 
-**Status:** plan only. Nothing here has been applied.
-**Precondition:** the `Push` design (army commitment) must be written first —
-see section 7. If that design turns out to absorb `issue`'s callers, this split
-shrinks to four functions in `common` and must be re-planned.
+**Status:** applied. `orders.rs` is 2,399 lines, `orders/common.rs` 239,
+`orders/tests.rs` 1,640. Section 7's question was answered before the move:
+`Push` owns the army's target and gate, `issue` keeps admission, so all eight
+functions moved.
+**Precondition (met):** the `Push` design (army commitment) decides whether
+this split is eight functions or four — see section 7.
 
 ---
 
@@ -149,9 +151,13 @@ reachable from `super::`.
 
 ## 4. Visibility and the facade
 
-Every moved function keeps its current visibility: `pub(super)`. Inside
-`orders/common.rs`, `pub(super)` means "visible in `orders` and its
-descendants" — which is exactly what the current file-private helpers need.
+The moved functions keep their visibility, which is `pub(super)` today. Inside
+`orders/common.rs` that would mean "visible in `orders` and its descendants" —
+too narrow, because **sibling** modules call them (`admits` alone has nine call
+sites in `advance`, `avoidance`, `dodge`, `expand`, `kite`, `micro`,
+`mod` and `walls`). As applied, the six public ones are
+`pub(in crate::sim::strategy::assist)` — the same reach `pub(super)` gave them
+from inside `orders` — and `goal_cell`/`cell_in_bounds` stay private.
 
 The parent re-exports what other modules call, so no call site changes:
 
@@ -187,9 +193,9 @@ mod common;
 #[cfg(all(test, tests_sim_p_s))]
 mod tests;
 
-pub(super) use common::{
-    admits, already_attacking, cell_in_bounds, goal_cell, issue, on_map, ordered_this_frame,
-    reachable,
+/// The admission half, re-exported so every caller keeps the path it had.
+pub(in crate::sim::strategy::assist) use common::{
+    admits, already_attacking, issue, on_map, ordered_this_frame, reachable,
 };
 
 // ... the forty-one decision functions, verbatim ...
@@ -209,8 +215,8 @@ them into a single unverified write.
 | 1 | Create `src/sim/strategy/assist/orders/` | — |
 | 2 | Move the eight functions of section 3 into `orders/common.rs`, **verbatim**, with their doc comments. Write imports for what that file actually uses — do not paste the parent's import block | `cargo build` fails on unresolved names only |
 | 3 | Delete the eight from `orders.rs`; add `mod common;` and the `pub(super) use common::{...}` facade | `build` |
-| 4 | Move the test module to `orders/tests.rs`; replace the inline block with `#[cfg(all(test, tests_sim_p_s))] mod tests;` | `build --tests` |
-| 5 | Narrow `suicide_errand`, `mind_controls`, `carrying_step`, `wants_board` to private if the compiler agrees | `build` |
+| 4 | Move the test module to `orders/tests.rs`; replace the inline block with `#[cfg(all(test, tests_sim_p_s))] mod tests;`; dedent the module body one level and drop `mod tests {` | `build --tests` |
+| 5 | Narrow `mind_controls`, `carrying_step`, `wants_board` to private — the compiler agrees; `suicide_errand` has **no caller at all** and stays `pub(super)` so it does not become dead code | `build` |
 | 6 | Run the focused suite; expect 166 passed | see section 6 |
 | 7 | Hand-edit the group tag if `group_tests check` names the new module | `group_tests check` silent |
 
