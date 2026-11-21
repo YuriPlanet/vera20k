@@ -44,3 +44,7 @@ Gleicher Zustand, gleiche Eingaben und gleicher Zufalls-Seed müssen auf jeder P
 - Objekte kommen in der Reihenfolge der aktiven Objekte des Originals an die Reihe.
 
 Im normalen Spiel wird der gesamte Zustand alle 15 Frames für das Diagnose-Replay-Log gehasht; Tests und Benchmarks können jeden Frame hashen. Der Lockstep-Mehrspielermodus wird stattdessen auf die Synchronisations-Prüfsumme angewiesen sein, die das Original in jedem Frame berechnet.
+
+## Entwürfe
+
+- [Regelpakete, Gelände und Bodenbewegung](../rfcs/preset-terrain.de.md)

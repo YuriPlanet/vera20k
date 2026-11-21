@@ -55,6 +55,10 @@ log; tests and benchmarks can hash every frame. Multiplayer has a separate
 per-frame sync checksum, with calculation, exchange and comparison handled by the
 simulation, session and network command owners.
 
+## Design proposals
+
+- [Preset loading, terrain and ground movement](rfcs/preset-terrain.md)
+
 ## Feature docs
 
 - [Campaign manifests](campaign-manifest.md) covers stages, roles, carry-over, local checks and room setup.
