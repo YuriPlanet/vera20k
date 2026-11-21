@@ -334,7 +334,7 @@ enum VisitEntry {
     /// no active-track dispatch and no new mover visit.
     AfterTrackEnd,
     /// Below the no-queue request, after Find_Path resumed head selection.
-    FootPathResume(Box<OrdinaryMoverVisit>),
+    FootPathResume(OrdinaryMoverVisit),
 }
 
 /// Run one ordinary mover visit. An early return ends this visit, including
@@ -397,7 +397,7 @@ fn advance_ordinary_mover(
     let resumed_path_request = matches!(entry, VisitEntry::FootPathResume(_));
     let counts_visit = matches!(entry, VisitEntry::Process);
     let visit = if let VisitEntry::FootPathResume(visit) = entry {
-        *visit
+        visit
     } else {
         if counts_visit {
             stats.movers_total = stats.movers_total.saturating_add(1);
@@ -876,7 +876,7 @@ pub(crate) struct PendingMovementPass {
 pub(crate) enum MoverReentry {
     /// Find_Path resumed head selection (Walk after 0x75AFC5, Drive 0x4B32A1,
     /// Ship 0x6A28F1).
-    FootPath(Box<FootPathRequest>),
+    FootPath(FootPathRequest),
     /// Process_Movement after Process_Track(0) ended the track in the same
     /// Process (Drive 0x4B0647 / Ship 0x69FCEE).
     AfterTrackEnd(u64),
@@ -925,10 +925,9 @@ impl PendingMovementPass {
             playfield_bounds: sim.playfield_bounds(),
         };
         let (entity_id, entry) = match reentry {
-            MoverReentry::FootPath(request) => (
-                request.entity_id,
-                VisitEntry::FootPathResume(Box::new(request.visit)),
-            ),
+            MoverReentry::FootPath(request) => {
+                (request.entity_id, VisitEntry::FootPathResume(request.visit))
+            }
             MoverReentry::AfterTrackEnd(entity_id) => (entity_id, VisitEntry::AfterTrackEnd),
         };
         advance_ordinary_mover(

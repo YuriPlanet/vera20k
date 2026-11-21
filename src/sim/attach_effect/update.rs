@@ -743,7 +743,9 @@ impl Simulation {
             }
         }
         // One record per instance, at the instance's index; the removal below
-        // drops both together so they stay aligned.
+        // drops both together so they stay aligned. Built per object that
+        // holds effects, as long as its effect list; only the `phobos` build
+        // runs this.
         let mut records: Vec<InstanceFrame> = list
             .instances
             .iter()
