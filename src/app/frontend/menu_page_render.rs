@@ -169,8 +169,7 @@ pub(crate) fn paint_shell_monitor(state: &mut AppState) -> Option<usize> {
 /// Status line `0x695` for this recomposition: deliver the hover help text
 /// (`0x4B2`, empty off every control) and return the label to draw, `None`
 /// while the static is hidden or blank. Kind-1 paint passes left alignment
-/// only (`0x00615A91`), so the text is top-left in the window. VERA's
-/// [`ShellAlign::STATUS_LINE`] lets a long help shrink to stay on the line.
+/// only (`0x00615A91`), so the text is top-left in the window.
 pub(crate) fn paint_shell_status_line(
     state: &mut AppState,
     text: String,
@@ -183,7 +182,7 @@ pub(crate) fn paint_shell_status_line(
     (!text.is_empty()).then(|| PaintLabel {
         text: text.into(),
         rect: crate::ui::shell::layout::status_text_rect(window),
-        align: ShellAlign::STATUS_LINE,
+        align: ShellAlign::NONE,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: Some(shell_reveal_path_a(reveal)),
     })

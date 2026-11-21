@@ -46,56 +46,37 @@ use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
 /// How far a text is squeezed to fit the box it draws in: narrower letters,
-/// along the bundled fonts' width axis. VERA's own: gamemd cuts off what does
-/// not fit, and translations run longer than the English the boxes were drawn
-/// for. What the narrowest letters still do not fit is cut off as gamemd cuts
-/// it. Only a status line's help shrinks them too ([`Fit::SHRUNK`]).
+/// along the bundled fonts' width axis, at their own height. VERA's own:
+/// gamemd cuts off what does not fit, and translations run longer than the
+/// English the boxes were drawn for. What the narrowest letters still do not
+/// fit is cut off as gamemd cuts it: smaller letters would read worse, since
+/// GAME.FNT's whole-pixel strokes run together when shrunk.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Fit(u8);
 
-/// Each step's width and size as shares of the text's own. Noto Sans's width
-/// axis ends at 62.5, a quarter narrower than Latin text's 82.
-const FIT_STEPS: [(f32, f32); 5] = [
-    (1.0, 1.0),
-    (72.0 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.9),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.8),
-];
+/// Each step's width as a share of the text's own. Noto Sans's width axis
+/// ends at 62.5, a quarter narrower than Latin text's 82.
+const FIT_STEPS: [f32; 3] = [1.0, 72.0 / LATIN_WIDTH_PERCENT, 62.5 / LATIN_WIDTH_PERCENT];
 
 impl Fit {
     /// The text as designed.
     pub const NONE: Self = Self(0);
-    /// The narrowest letters at their own height: the last step a text
-    /// takes, where a word too long for a line splits.
-    pub const TIGHTEST: Self = Self(2);
-    /// The last step a status line's help takes, with smaller letters, so a
-    /// whole help stays on its one line. Shrunk, GAME.FNT's whole-pixel
-    /// strokes run together, so nothing else goes past [`Self::TIGHTEST`].
-    pub const SHRUNK: Self = Self(FIT_STEPS.len() as u8 - 1);
+    /// The narrowest letters: the last step, where a word too long for a
+    /// line splits.
+    pub const TIGHTEST: Self = Self(FIT_STEPS.len() as u8 - 1);
 
-    /// The next step up to `last`, or `None` past it.
-    pub fn tighter(self, last: Self) -> Option<Self> {
-        (self < last).then_some(Self(self.0 + 1))
+    /// The next step, or `None` past the tightest.
+    pub fn tighter(self) -> Option<Self> {
+        (self < Self::TIGHTEST).then_some(Self(self.0 + 1))
     }
 
     fn width(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].0
+        FIT_STEPS[usize::from(self.0)]
     }
 
     /// Each width the steps narrow text to, as designed first.
     fn widths() -> impl Iterator<Item = f32> {
-        let mut widths: Vec<f32> = Vec::with_capacity(FIT_STEPS.len());
-        for (width, _) in FIT_STEPS {
-            if !widths.contains(&width) {
-                widths.push(width);
-            }
-        }
-        widths.into_iter()
-    }
-
-    fn size(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].1
+        FIT_STEPS.into_iter()
     }
 }
 
@@ -525,9 +506,7 @@ impl TextEngine {
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
             &stack,
         ))));
-        builder.push_default(StyleProperty::FontSize(
-            TextClass::Latin.size() * fit.size(),
-        ));
+        builder.push_default(StyleProperty::FontSize(TextClass::Latin.size()));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(LATIN_WEIGHT)));
         builder.push_default(StyleProperty::FontWidth(FontWidth::from_percentage(
             LATIN_WIDTH_PERCENT * fit.width(),
@@ -547,10 +526,7 @@ impl TextEngine {
                 TextClass::Cjk => CJK_WEIGHT,
                 TextClass::Other(_) => OTHER_WEIGHT,
             };
-            builder.push(
-                StyleProperty::FontSize(class.size() * fit.size()),
-                start..end,
-            );
+            builder.push(StyleProperty::FontSize(class.size()), start..end);
             builder.push(
                 StyleProperty::FontWeight(FontWeight::new(weight)),
                 start..end,
@@ -1016,11 +992,7 @@ mod tests {
         let mut engine = engine_with_tiny_fnt();
         let after_thai = engine.shape("กA", 0, Fit::NONE);
         assert!(after_thai.lines[0].glyphs[1].x.fract() != 0.0);
-        for (text, fit) in [
-            ("AAAA", Fit::TIGHTEST),
-            ("AAAA", Fit::SHRUNK),
-            ("กA", Fit::NONE),
-        ] {
+        for (text, fit) in [("AAAA", Fit(1)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
             let alpha = draw_fit(&mut engine, text, fit, 1.0, 64, 16);
             assert!(alpha.contains(&255), "{text} {fit:?}");
             assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{text} {fit:?}");

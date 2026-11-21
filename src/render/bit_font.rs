@@ -268,12 +268,6 @@ impl BitFont {
     /// as many as the text's own line breaks make; 0 holds any number). The
     /// tightest when none does.
     pub fn fit_box(&self, text: &str, max_width: u32, max_height: u32) -> Fit {
-        self.fit_box_until(text, max_width, max_height, Fit::TIGHTEST)
-    }
-
-    /// [`Self::fit_box`] through the steps up to `last`: a status line's help
-    /// goes on to [`Fit::SHRUNK`].
-    pub fn fit_box_until(&self, text: &str, max_width: u32, max_height: u32, last: Fit) -> Fit {
         if max_width == 0 || text.is_empty() {
             return self.fit.get();
         }
@@ -284,7 +278,7 @@ impl BitFont {
             }
         }
         .max(text.split('\n').count());
-        self.first_fit(last, |font| {
+        self.first_fit(|font| {
             let layout = font.wrap_layout(text, max_width);
             layout.lines.len() <= rows && !layout.split_word && layout.width <= max_width
         })
@@ -298,22 +292,22 @@ impl BitFont {
     /// `text` is no wider than `max_width` native pixels on one line; the
     /// tightest when none is.
     pub fn fit_line(&self, text: &str, max_width: u32) -> Fit {
-        self.first_fit(Fit::TIGHTEST, |font| font.text_width(text) <= max_width)
+        self.first_fit(|font| font.text_width(text) <= max_width)
             .unwrap_or_else(|tightest| {
                 crate::render::text_audit::cut_off(text, max_width);
                 tightest
             })
     }
 
-    /// The first step up to `last` that `fits`, or the last one tried as the
-    /// error when none does. GPU-free test fonts draw their cells as they are.
-    pub(crate) fn first_fit(&self, last: Fit, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
+    /// The first step that `fits`, or the tightest as the error when none
+    /// does. GPU-free test fonts draw their cells as they are.
+    pub(crate) fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
         let mut fit = self.fit.get();
         if self.cells_only {
             return Ok(fit);
         }
         while !self.fitted(fit, &fits) {
-            let Some(tighter) = fit.tighter(last) else {
+            let Some(tighter) = fit.tighter() else {
                 return Err(fit);
             };
             fit = tighter;
