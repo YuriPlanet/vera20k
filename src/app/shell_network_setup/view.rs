@@ -246,15 +246,15 @@ pub(crate) fn room_listing(state: &AppState) -> Option<RoomListing> {
             .collect();
         // A room with teams, or with the host's Room size, keeps its team
         // bar under the roster.
-        let bottom = crate::app::input::multiplayer_setup::roster_bottom(
+        let frame = crate::app::input::multiplayer_setup::roster_frame(
             state,
             grouped,
             room_size_shown(state),
         );
-        let scroll = roster_scroll(&items, bottom);
+        let scroll = roster_scroll(&items, frame);
         listing.first_row = ui.map_or(0, |ui| ui.roster_top(scroll.max_top));
         let top = scroll.stops.get(listing.first_row).copied().unwrap_or(0);
-        listing.places = roster_page(&items, top, bottom);
+        listing.places = roster_page(&items, top, frame);
         listing.page_len = listing.places.len();
         listing.pages = vec![0];
         listing.roster_scroll = (scroll.stops.len(), scroll.max_top);
