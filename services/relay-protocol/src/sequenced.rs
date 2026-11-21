@@ -355,13 +355,14 @@ pub fn paced_rates(tick_hz: u16) -> &'static [u16] {
     &FRAME_RATES[fastest..(fastest + 3).min(FRAME_RATES.len())]
 }
 
-/// Whether a match certified at `tick_hz` with `pacing` may run at `rate`:
-/// a [`paced_rates`] row, or under continuous pacing any whole rate from
-/// `tick_hz` down to [`CONTINUOUS_FLOOR`].
+/// Rates allowed by the certificate: a fixed rate with pacing off, one of
+/// the [`paced_rates`] rows with ordinary pacing, or any whole rate down to
+/// [`CONTINUOUS_FLOOR`] with continuous pacing.
 pub fn admits_rate(tick_hz: u16, pacing: CertificatePacing, rate: u16) -> bool {
     match pacing {
         CertificatePacing::Continuous => (CONTINUOUS_FLOOR.min(tick_hz)..=tick_hz).contains(&rate),
-        _ => paced_rates(tick_hz).contains(&rate),
+        CertificatePacing::Off => rate == tick_hz,
+        CertificatePacing::On | CertificatePacing::Legacy => paced_rates(tick_hz).contains(&rate),
     }
 }
 
@@ -1787,7 +1788,7 @@ impl OrderingRoom {
         if self.pace.anchor.is_some() && now_ms.saturating_sub(changed_at) < PACE_STEP_MS {
             return None;
         }
-        let deepest = u32::from(rate) * (100 - CONTINUOUS_STEP_DOWN_PERCENT) / 100;
+        let deepest = u32::from(rate) - u32::from(rate) * CONTINUOUS_STEP_DOWN_PERCENT / 100;
         match slowest {
             Some((sustainable, _, source)) if rate > floor => Some((
                 sustainable

@@ -299,6 +299,18 @@ fn a_continuous_certificate_admits_whole_rates_down_to_the_floor() {
     assert!(admits_rate(60, Continuous, 53) && admits_rate(60, Continuous, 10));
     assert!(!admits_rate(60, Continuous, 9) && !admits_rate(60, Continuous, 61));
     assert!(!admits_rate(60, On, 53) && admits_rate(60, On, 45));
+    assert!(admits_rate(60, Off, 60) && !admits_rate(60, Off, 45));
+}
+
+#[test]
+fn continuous_pacing_keeps_an_odd_rate_within_the_quarter_step() {
+    let slow = Player {
+        capacity: |_| 15,
+        tick_micros: 8_000,
+    };
+    let outcome = replay_paced(slow, 30, CertificatePacing::Continuous);
+    let first_rates: Vec<_> = outcome.rates.iter().take(3).map(|&(_, rate)| rate).collect();
+    assert_eq!(first_rates, [60, 45, 34]);
 }
 
 /// A PC that runs just above the clock after a stall keeps a standing

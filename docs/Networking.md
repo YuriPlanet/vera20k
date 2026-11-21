@@ -427,8 +427,14 @@ speeds up half the way to the slowest player's ceiling, at least one frame and
 at most a tenth of its rate at a time, up to its own speed. The ceiling is the
 player's tick cost and nineteen twentieths of what it ran in a ten-second
 backlog or when it fell behind a second time within five minutes, so a hitch of a
-few seconds holds nothing back. Messages, replays and saves are as above. A build or relay from before it refuses such a
-certificate, so the lobby turns it on only once every admitted build reads it.
+few seconds holds nothing back. Messages, replays and saves are as above.
+
+The lobby enables continuous pacing only after every participating relay and
+every admitted game build support bit 2. An older game rejects the grant with
+“invalid gameplay clock”. An older relay silently drops the Ready request, so
+an upgraded game can keep retrying. For a rollback, stop issuing continuous
+certificates to new matches and let active continuous matches finish before
+downgrading their relays.
 
 When the lobby admits a match on three or more relays with federation
 adjudication, a relay missing for ten minutes ends that match without a winner.

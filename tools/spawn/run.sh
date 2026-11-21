@@ -49,7 +49,6 @@ bin=${VERA20K_BIN:-$(ls -t "$root"/target/owned-worktrees/*/fast/vera20k 2>/dev/
 pids=""
 cleanup() {
   for pid in $pids; do kill "$pid" 2>/dev/null || true; done
-  [ "$mode" = browser ] || pkill -f -- "$bin -SPAWN" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 extra="--players $players"
@@ -79,8 +78,17 @@ if [ "$mode" = relay ] || [ "$mode" = browser ]; then
   VERA_RELAY_TICKET_KEY=$key node "$root/tools/spawn/spawn-e2e.mjs" relay --out "$out" --ra2 "$ra2" $extra \
     --port "$service_port" --relay "127.0.0.1:$relay_port" ${PACING:+--pacing "$PACING"} \
     > "$out/service.log" 2>&1 &
-  pids="$pids $!"
-  until grep -q "match API on" "$out/service.log" 2>/dev/null; do sleep 0.2; done
+  service_pid=$!
+  pids="$pids $service_pid"
+  service_deadline=$(( $(date +%s) + limit ))
+  until grep -q "match API on" "$out/service.log" 2>/dev/null; do
+    if ! kill -0 "$service_pid" 2>/dev/null; then
+      echo "match API exited during startup: see $out/service.log" >&2
+      exit 1
+    fi
+    [ "$(date +%s)" -lt "$service_deadline" ] || { echo "timeout after ${limit}s: match API startup" >&2; exit 1; }
+    sleep 0.2
+  done
 else
   [ -n "${IPS:-}" ] && extra="$extra --ips $IPS"
   # shellcheck disable=SC2086
@@ -116,11 +124,11 @@ while [ "$source" -lt "$players" ]; do
   # VERA20K_SPAWN_HIDDEN_WINDOW=1: invisible window, no Dock/menu bar entry.
   # shellcheck disable=SC2086
   (cd "$out/p$source" && exec env VERA20K_SPAWN_HIDDEN_WINDOW=1 $hooks "$bin" -SPAWN -WIN > stdout.log 2>&1) &
+  pids="$pids $!"
   clients="$clients $!"
   eval "client_$source=$!"
   source=$((source + 1))
 done
-pids="$pids $clients"
 
 # Watchers join the match once it plays; each exits when it has watched it
 # to its end.
@@ -141,10 +149,10 @@ if [ "$watchers" -gt 0 ]; then
     # once the players are surely gone.
     (cd "$out/w$index" && exec env VERA20K_SPAWN_HIDDEN_WINDOW=1 \
       VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$((act + bound + 60)) "$bin" -SPAWN -WIN > stdout.log 2>&1) &
+    pids="$pids $!"
     watcher_clients="$watcher_clients $!"
     index=$((index + 1))
   done
-  pids="$pids $watcher_clients"
 fi
 
 if [ "$kill_target" != none ]; then
