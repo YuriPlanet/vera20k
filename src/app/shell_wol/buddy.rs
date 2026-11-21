@@ -9,6 +9,7 @@
 //! [`crate::ui::wol_buddy`]; the mirror is [`super::buddies`]. No RNG is
 //! drawn on these paths.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
@@ -103,7 +104,7 @@ pub(super) fn open_dialog(state: &mut AppState) {
         timer_at: Instant::now() + TIMER_PERIOD,
         refresh_at: None,
     }));
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    state.frontend.shell_route = ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
@@ -120,7 +121,7 @@ pub(super) fn dialog_ended(state: &mut AppState) {
     }
     super::page::close_received(state);
     super::leaf::free_art(state, DIALOG);
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    state.frontend.shell_route = ShellRoute::Wol;
 }
 
 /// The stop paths of Create and Join (`0x0079F4D7`), a failed or refused
@@ -128,7 +129,7 @@ pub(super) fn dialog_ended(state: &mut AppState) {
 /// RESIDUAL: Create's stop path shows a set `[0xB77AD0]` in a box first;
 /// no path here leaves one set.
 pub(crate) fn stopped(state: &mut AppState) {
-    if state.frontend.shell_route.network_setup() {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup {
         crate::app::shell_network_setup::abandon_for_wol_runner(state);
     }
     dialog_ended(state);
@@ -506,7 +507,11 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     }
     // The observer image 0x75F toggles on a press anywhere on it.
-    let image = pressed && layout(state).observer_image.contains(x, y);
+    let image = pressed
+        && layout(state)
+            .rect_of(crate::ui::wol_buddy::OBSERVER_IMAGE)
+            .unwrap_or_default()
+            .contains(x, y);
     let events = leaf::pointer(state, at);
     if image {
         App::play_page_cue(state, PageCue::Checkbox);
@@ -554,7 +559,6 @@ fn double_click(state: &mut AppState) {
     if let Some(action) = action {
         apply(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// Keys reach only `0x115`'s edit while it runs.
@@ -572,7 +576,6 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         apply(state, action);
     }
     sync_add(state);
-    state.platform.window.request_redraw();
 }
 
 /// `0x116`'s timers (the 1000 ms status refresh and Refresh's 3000 ms

@@ -119,7 +119,6 @@ pub(super) fn open(state: &mut AppState) {
     let _ = App::ensure_skirmish_shell_chrome(state);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     present(state);
-    state.platform.window.request_redraw();
 }
 
 /// API+0xD0's count fills `0x62A` (`0x00798F50`) and selects the persona's
@@ -139,7 +138,6 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
         combo.selected = combo.rows.iter().position(|row| row.data == persona.locale);
     }
     present(state);
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn page(state: &AppState) -> Option<&WolMyInfoPage> {
@@ -341,4 +339,3 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     }
     present(state);
 }
-

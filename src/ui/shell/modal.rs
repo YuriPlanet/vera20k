@@ -891,42 +891,16 @@ vera20k_gui::scaled_rects!(WolChannelPasswordLayout {
 
 /// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
 /// centred box: executed screen rects (tools/storage_oracle/wol_shell.json).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WolPageLayout {
     pub dialog: RectPx,
-    /// Static `GUI:PageBuddy`, right aligned.
-    pub name_label: RectPx,
-    /// Edit `0x5C1` after its NewEdit inset.
-    pub name: RectPx,
-    /// Static `GUI:TextToSend`.
-    pub text_label: RectPx,
-    /// Edit `0x540` after its NewEdit inset.
-    pub text: RectPx,
-    /// Owner-draw list `0x5B5` (`LBS_NOSEL`).
-    pub transcript: RectPx,
-    /// Static `GUI:FindStatus` and the status `0x5C8`.
-    pub status_label: RectPx,
-    pub status: RectPx,
-    /// `0x5C2` (`GUI:Page`) and Cancel.
-    pub send: RectPx,
-    pub cancel: RectPx,
+    pub rects: super::layout::RectTable,
 }
 
 impl WolPageLayout {
     /// Where `0xCF`'s control `id` sits.
     pub fn rect_of(&self, id: u16) -> Option<RectPx> {
-        Some(match id {
-            0x5C1 => self.name,
-            0x540 => self.text,
-            0x5B5 => self.transcript,
-            0x5C2 => self.send,
-            control::CANCEL => self.cancel,
-            crate::ui::wol_page::NAME_CAPTION => self.name_label,
-            crate::ui::wol_page::TEXT_CAPTION => self.text_label,
-            crate::ui::wol_page::STATUS_CAPTION => self.status_label,
-            crate::ui::wol_page::STATUS => self.status,
-            _ => return None,
-        })
+        self.rects.get(id)
     }
 }
 
@@ -937,54 +911,12 @@ pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
 /// The box centred on `area`: the match's frame for the in-match page.
 pub fn wol_page_layout_in(area: RectPx) -> WolPageLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
-    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    WolPageLayout {
-        dialog,
-        name_label: child(20, 9, 54, 11),
-        name: new_edit_window(child(79, 9, 80, 12)),
-        text_label: child(20, 26, 137, 11),
-        text: new_edit_window(child(16, 39, 268, 12)),
-        transcript: child(16, 63, 268, 78),
-        status_label: child(183, 9, 49, 10),
-        status: child(183, 22, 98, 10),
-        send: child(45, 164, 83, 15),
-        cancel: child(163, 163, 83, 15),
-    }
+    let rects = super::layout_data::in_box("0xCF", dialog);
+    WolPageLayout { dialog, rects }
 }
 
 /// The page-received dialog `0x11E` (proc `0x0079DB50`), the same box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WolPageReceivedLayout {
-    pub dialog: RectPx,
-    /// Static `GUI:PageReceived`, centred.
-    pub title: RectPx,
-    /// List `0x53F` (selectable).
-    pub transcript: RectPx,
-    /// Multiline edit `0x540` after its NewEdit inset.
-    pub reply: RectPx,
-    /// Static `GUI:ReplyTo`, right aligned, and the name `0x718`.
-    pub reply_to_label: RectPx,
-    pub reply_to: RectPx,
-    /// `0x5C2` (`GUI:ReplyPage`) and `0x686` (`GUI:Back`).
-    pub send: RectPx,
-    pub back: RectPx,
-}
-
-impl WolPageReceivedLayout {
-    /// Where `0x11E`'s control `id` sits.
-    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
-        Some(match id {
-            0x53F => self.transcript,
-            0x540 => self.reply,
-            0x5C2 => self.send,
-            0x686 => self.back,
-            crate::ui::wol_page::TITLE_CAPTION => self.title,
-            crate::ui::wol_page::REPLY_TO_CAPTION => self.reply_to_label,
-            crate::ui::wol_page::REPLY_TO => self.reply_to,
-            _ => return None,
-        })
-    }
-}
+pub type WolPageReceivedLayout = WolPageLayout;
 
 pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceivedLayout {
     wol_page_received_layout_in(menu_popup_area(screen_w, screen_h))
@@ -993,58 +925,17 @@ pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceived
 /// The box centred on `area`: the match's frame for the in-match page.
 pub fn wol_page_received_layout_in(area: RectPx) -> WolPageReceivedLayout {
     let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
-    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    WolPageReceivedLayout {
-        dialog,
-        title: child(7, 4, 277, 11),
-        transcript: child(8, 22, 281, 79),
-        reply: new_edit_window(child(8, 118, 283, 14)),
-        reply_to_label: child(25, 146, 105, 11),
-        reply_to: child(142, 147, 139, 8),
-        send: child(42, 166, 83, 15),
-        back: child(164, 166, 83, 15),
-    }
+    let rects = super::layout_data::in_box("0x11E", dialog);
+    WolPageLayout { dialog, rects }
 }
 
 /// Add Buddy `0x115` (proc `0x0079DFE0`), the same 451x326 centred box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WolAddBuddyLayout {
-    pub dialog: RectPx,
-    /// Static `GUI:BuddyNickname`, centred.
-    pub label: RectPx,
-    /// Edit `0x540` after its NewEdit inset.
-    pub name: RectPx,
-    /// `0x702` (`GUI:AddBuddy`, created disabled) and `0x686` (`GUI:Back`).
-    pub add: RectPx,
-    pub back: RectPx,
-    /// The status line `0x695` along the box's foot.
-    pub status: RectPx,
-}
-
-impl WolAddBuddyLayout {
-    /// Where `0x115`'s control `id` sits.
-    pub fn rect_of(&self, id: u16) -> Option<RectPx> {
-        Some(match id {
-            0x540 => self.name,
-            0x702 => self.add,
-            0x686 => self.back,
-            crate::ui::wol_buddy::NICKNAME_CAPTION => self.label,
-            _ => return None,
-        })
-    }
-}
+pub type WolAddBuddyLayout = WolPageLayout;
 
 pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
     let dialog = menu_box(screen_w, screen_h);
-    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    WolAddBuddyLayout {
-        dialog,
-        label: child(57, 61, 193, 15),
-        name: new_edit_window(child(77, 85, 152, 14)),
-        add: child(65, 118, 83, 15),
-        back: child(159, 118, 83, 15),
-        status: child(0, 186, 273, 12),
-    }
+    let rects = super::layout_data::in_box("0x115", dialog);
+    WolPageLayout { dialog, rects }
 }
 
 /// The connection verify `0x130` (`0x00794C5B`), the same 451x326 centred
@@ -1492,25 +1383,19 @@ mod tests {
                 assert_eq!(received.dialog, page.dialog);
                 for (id, child) in case["controls"].as_object().unwrap() {
                     let mut native = rect(&child["screen_rect"]);
-                    let actual = match (key, id.as_str()) {
-                        ("0xCF", "0x540") => page.text,
-                        ("0xCF", "0x5C1") => page.name,
-                        ("0xCF", "0x5B5") => page.transcript,
-                        ("0xCF", "0x5C2") => page.send,
-                        ("0xCF", "0x2") => page.cancel,
-                        ("0xCF", "0x5C8") => page.status,
-                        ("0xCF", "0xFFFF") => page.text_label,
-                        ("0xCF", "0xFFFF#1") => page.name_label,
-                        ("0xCF", "0xFFFF#2") => page.status_label,
-                        (_, "0x53F") => received.transcript,
-                        (_, "0x540") => received.reply,
-                        (_, "0x5C2") => received.send,
-                        (_, "0x686") => received.back,
-                        (_, "0x718") => received.reply_to,
-                        (_, "0xFFFF") => received.title,
-                        (_, "0xFFFF#1") => received.reply_to_label,
-                        other => panic!("{other:?}"),
+                    use crate::ui::wol_page::*;
+                    let layout = if key == "0xCF" { &page } else { &received };
+                    let control = match (key, id.as_str()) {
+                        ("0xCF", "0xFFFF") => TEXT_CAPTION,
+                        ("0xCF", "0xFFFF#1") => NAME_CAPTION,
+                        ("0xCF", "0xFFFF#2") => STATUS_CAPTION,
+                        (_, "0xFFFF") => TITLE_CAPTION,
+                        (_, "0xFFFF#1") => REPLY_TO_CAPTION,
+                        (_, id) => u16::from_str_radix(&id[2..], 16).unwrap(),
                     };
+                    let actual = layout
+                        .rect_of(control)
+                        .unwrap_or_else(|| panic!("{key} {id}"));
                     if child["class"] == "Edit" {
                         native = new_edit_window(native);
                     }
@@ -1544,14 +1429,11 @@ mod tests {
             );
             for (id, child) in case["controls"].as_object().unwrap() {
                 let mut native = rect(&child["screen_rect"]);
-                let actual = match id.as_str() {
-                    "0x540" => layout.name,
-                    "0x686" => layout.back,
-                    "0x695" => layout.status,
-                    "0x702" => layout.add,
-                    "0xFFFF" => layout.label,
-                    other => panic!("{other}"),
+                let control = match id.as_str() {
+                    "0xFFFF" => crate::ui::wol_buddy::NICKNAME_CAPTION,
+                    id => u16::from_str_radix(&id[2..], 16).unwrap(),
                 };
+                let actual = layout.rect_of(control).unwrap_or_else(|| panic!("{id}"));
                 if child["class"] == "Edit" {
                     native = new_edit_window(native);
                 }

@@ -6,6 +6,7 @@ mod http;
 mod maps;
 mod wire;
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -1578,9 +1579,10 @@ fn problem_chat_open(
     awaiting_room: bool,
 ) -> bool {
     match route {
-        crate::app::shell_route::ShellRoute::NetworkSetup => setup_open,
-        route if route.wol() => quick_match_open,
-        route => route.wol_lobby() && lobby_open && !awaiting_room,
+        ShellRoute::NetworkSetup => setup_open,
+        ShellRoute::Wol => quick_match_open,
+        ShellRoute::WolLobby => lobby_open && !awaiting_room,
+        _ => false,
     }
 }
 

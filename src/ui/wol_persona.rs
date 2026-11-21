@@ -18,11 +18,11 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{
-    RectPx, ShellScale, child_window, };
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 
 pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
@@ -188,9 +188,7 @@ pub(crate) const TEXT: u16 = 0xFFFF;
 pub(crate) fn spec(dialog: DialogId) -> NodeSpec {
     let text = NodeSpec::new(NodeKind::Text).id(TEXT.into());
     let (text, control) = if dialog == LOCALE_DIALOG {
-        let list = NodeSpec::new(NodeKind::List)
-            .with(Prop::DoubleClick, Value::Bool(false))
-            .with(Prop::ListWindow, Value::Bool(true));
+        let list = NodeSpec::new(NodeKind::List);
         (
             text.label(LOCALE_LABEL_KEY)
                 .with(Prop::Align, align(ShellAlign::H_CENTER)),
@@ -205,8 +203,7 @@ pub(crate) fn spec(dialog: DialogId) -> NodeSpec {
         (
             text,
             checkbox
-                .id(DO_NOT_ASK.into())
-                .with(Prop::ActivateOnPress, Value::Bool(true)),
+                .id(DO_NOT_ASK.into()),
         )
     };
     let control = match tooltip_key(dialog, control_id(dialog)) {
@@ -243,11 +240,9 @@ fn control_id(dialog: DialogId) -> u16 {
 pub(crate) struct WolPersonaLayout {
     pub(crate) dialog: DialogId,
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    /// `0x112`/`0x122`: the question; `0xFE`: the list's caption.
-    pub(crate) text: RectPx,
-    /// `0x112`/`0x122`: Don't Ask; `0xFE`: the list `0x3F0`.
-    pub(crate) control: RectPx,
+    /// The question or the list's caption [`TEXT`], and Don't Ask or the
+    /// list `0x3F0`.
+    pub(crate) rects: RectTable,
 }
 
 impl WolPersonaLayout {
@@ -260,49 +255,19 @@ impl WolPersonaLayout {
     }
 
     pub(crate) fn new(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
-        let spec = Self::spec(dialog);
-        let locale = dialog == LOCALE_DIALOG;
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(spec, scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
-        // 0x112's heading 0x694 is 108x11 DLU and placed by 0x0060B1D0, one
-        // row taller than the family's. 0xFE's is not placed at all: it
-        // stays at its template rect at every size.
-        page.title = if locale {
-            place.at(AnchorRule::ChildWindow, 424, 4, 108, 11)
-        } else {
-            place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11)
-        };
-        let (text, control) = match dialog {
-            LOCALE_DIALOG => (
-                child_window(119, 91, 187, 15),
-                child_window(119, 112, 188, 145),
-            ),
-            ADD_BUDDY_DIALOG => (
-                child_window(21, 73, 380, 109),
-                child_window(109, 222, 220, 14),
-            ),
-            _ => (
-                child_window(15, 131, 392, 109),
-                child_window(124, 236, 157, 14),
-            ),
-        };
+        let section = format!("{:#X}", dialog.0);
+        let (page, rects) =
+            layout_data::menu_page(Self::spec(dialog), &section, scale, width, height);
         Self {
             dialog,
             page,
-            status_help,
-            text: scale.scale_rect(text),
-            control: scale.scale_rect(control),
+            rects,
         }
     }
 
     /// Where control `id` sits.
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
-        match id {
-            TEXT => Some(self.text),
-            LOCALE_LIST | DO_NOT_ASK => Some(self.control),
-            id => self.page.button_rect(id),
-        }
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -326,19 +291,21 @@ mod tests {
             let key = format!("0x{:X}", dialog.0);
             for (size, case) in corpus["layouts"][&key]["sizes"].as_object().unwrap() {
                 let (width, height) = size.split_once('x').unwrap();
-                let layout =
-                    WolPersonaLayout::new(dialog, width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
+                let layout = WolPersonaLayout::new(
+                    dialog,
+                    width.parse().unwrap(),
+                    height.parse().unwrap(),
+                    ShellScale::RETAIL,
+                );
                 for (control, child) in case["controls"].as_object().unwrap() {
                     let id = u16::from_str_radix(&control[2..], 16).unwrap();
                     let actual = match id {
                         0x71C => layout.page.warning_monitor,
                         0x694 => layout.page.title,
-                        0x695 => layout.status_help,
-                        0xFFFF | 0x71B => layout.text,
-                        DO_NOT_ASK | LOCALE_LIST => layout.control,
+                        0x695 => layout.page.status_help,
+                        0x71B => layout.rect_of(TEXT).unwrap(),
                         _ => layout
-                            .page
-                            .button_rect(id)
+                            .rect_of(id)
                             .unwrap_or_else(|| panic!("{key} {control}")),
                     };
                     assert_eq!(actual, rect(&child["rect"]), "{key} {size} {control}");

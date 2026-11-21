@@ -115,10 +115,9 @@ fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog).children(CONTROLS.map(|(control, id, help)| {
         let node = match control {
             KeyboardControl::Button(_) => NodeSpec::new(NodeKind::Button),
-            KeyboardControl::Commands => NodeSpec::new(NodeKind::List)
-                .with(Prop::RowCount, Value::Int(0))
-                .with(Prop::ListWindow, Value::Bool(true))
-                .with(Prop::DoubleClick, Value::Bool(false)),
+            KeyboardControl::Commands => {
+                NodeSpec::new(NodeKind::List).with(Prop::RowCount, Value::Int(0))
+            }
             _ => NodeSpec::new(NodeKind::Text),
         };
         node.id(id.into()).tooltip(help)
@@ -222,7 +221,6 @@ impl KeyboardState {
         let count = self.rows.len() as i32;
         if let Some(node) = self.list_node() {
             let gui = self.ui.gui_mut();
-            gui.cancel_list_scroll(node);
             let _ = gui.set(node, Prop::RowCount, Value::Int(count));
             let _ = gui.set(node, Prop::Selected, Value::Int(-1));
             let _ = gui.set(node, Prop::Top, Value::Int(0));
@@ -287,6 +285,18 @@ impl KeyboardState {
     }
 }
 
+/// The captions (statics `0xFFFF`): key and whether centred.
+const LABELS: [(u16, &str, bool); 6] = [
+    (0xFF00, "GUI:Category", false),
+    (0xFF01, "GUI:Commands", false),
+    (0xFF02, "GUI:PressShortcut", false),
+    (0xFF03, "GUI:CustomizeKeyboard", true),
+    (0xFF04, "GUI:CurAssignedTo", false),
+    (0xFF05, "GUI:CurrentShortcut", false),
+];
+/// The description text inside group box `0x6E9`.
+const DESCRIPTION_TEXT: u16 = 0xFF06;
+
 #[derive(Debug, Clone, Copy)]
 pub struct KeyboardLayout {
     pub title: RectPx,
@@ -329,8 +339,8 @@ impl KeyboardLayout {
         scale: ShellScale,
     ) -> Self {
         // Common60B7A0 ordinary controls use signed centering then clamp origins.
-        let dlu = |x, y, w, h| {
-            let r = geom::dlu_rect(x, y, w, h);
+        let dlu = |template: RectPx| {
+            let r = geom::dlu_rect(template.x, template.y, template.w, template.h);
             if scale.is_retail() {
                 in_game_shell::ordinary_child_rect(r, width, height)
             } else {
@@ -357,7 +367,10 @@ impl KeyboardLayout {
             );
             (page.title, page.buttons[0].rect, page.status_help)
         };
-        let mut category = dlu(63, 83, 138, 146);
+        let rects = super::layout_data::map("0xA3", dlu);
+        let rect = |id| rects.get(id).unwrap_or_default();
+        let control = |control: KeyboardControl| rect(control.id());
+        let mut category = control(KeyboardControl::Category);
         category.h =
             (crate::ui::skirmish_shell::COMBO_FACE_H as f32 * scale.factor()).round() as i32;
         Self {
@@ -365,23 +378,16 @@ impl KeyboardLayout {
             back,
             footer,
             category,
-            commands: dlu(224, 82, 136, 110),
-            group: dlu(63, 98, 138, 95),
-            description: dlu(70, 109, 127, 42),
-            capture: dlu(64, 245, 124, 14),
-            assign: dlu(224, 245, 83, 15),
-            reset: dlu(224, 278, 83, 15),
-            current_owner: dlu(63, 278, 138, 10),
-            current_shortcut: dlu(63, 215, 138, 10),
-            error: dlu(224, 203, 146, 22),
-            labels: [
-                ("GUI:Category", dlu(63, 68, 146, 9), false),
-                ("GUI:Commands", dlu(224, 68, 146, 8), false),
-                ("GUI:PressShortcut", dlu(64, 233, 124, 9), false),
-                ("GUI:CustomizeKeyboard", dlu(69, 45, 292, 11), true),
-                ("GUI:CurAssignedTo", dlu(63, 266, 134, 11), false),
-                ("GUI:CurrentShortcut", dlu(63, 203, 138, 11), false),
-            ],
+            commands: control(KeyboardControl::Commands),
+            group: control(KeyboardControl::Description),
+            description: rect(DESCRIPTION_TEXT),
+            capture: control(KeyboardControl::Capture),
+            assign: control(KeyboardControl::Button(KeyboardButton::Assign)),
+            reset: control(KeyboardControl::Button(KeyboardButton::ResetAll)),
+            current_owner: control(KeyboardControl::CurrentOwner),
+            current_shortcut: control(KeyboardControl::CurrentShortcut),
+            error: control(KeyboardControl::Error),
+            labels: LABELS.map(|(id, key, centred)| (key, rect(id), centred)),
             scale,
         }
     }

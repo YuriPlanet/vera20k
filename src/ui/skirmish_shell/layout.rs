@@ -10,8 +10,8 @@ use crate::ui::shell::geom::{
     right_panel_rects,
 };
 use crate::ui::shell::layout::Placer;
+use crate::ui::shell::layout_data;
 use vera20k_gui::scaled_rects;
-use vera20k_gui::shell::combo_scroll::ScrollModel;
 
 pub const SHELL_BASE_W: i32 = 800;
 pub const SHELL_BASE_H: i32 = 600;
@@ -133,12 +133,6 @@ pub enum ShellControlId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColorComboId {
-    Player,
-    Ai(usize),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkirmishCheckboxId {
     ShortGame0x54e,
     McvRepacks0x693,
@@ -161,34 +155,22 @@ pub enum SkirmishTrackbarId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SkirmishRightPanelTextRects {
-    pub title: RectPx,
-    pub game_type: RectPx,
-    pub map_label: RectPx,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishTrackbarRects {
     pub game_speed: RectPx,
     pub credits: RectPx,
     pub unit_count: RectPx,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SkirmishTrackbarLabelRects {
-    pub game_speed: RectPx,
-    pub credits: RectPx,
-    pub unit_count: RectPx,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SkirmishColumnLabelRects {
-    pub players: RectPx,
-    pub side: RectPx,
-    pub color: RectPx,
-    pub start: RectPx,
-    pub team: RectPx,
-}
+/// `0x102`'s statics in [`SkirmishShellLayout::statics`]: the heading, the
+/// game type and map name (as `0x102` numbers them), and VERA's ids for the
+/// player columns' and the sliders' headings (Players, Side, Color, Start,
+/// Team, then Game Speed, Credits, Unit Count).
+pub const TITLE_STATIC: u16 = 0x694;
+pub const GAME_TYPE_STATIC: u16 = 0x6EC;
+pub const MAP_LABEL_STATIC: u16 = 0x5A8;
+pub const HEADINGS: u16 = 0x7500;
+/// The first of the sliders' headings.
+const SLIDER_HEADINGS: u16 = HEADINGS + 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishRowRects {
@@ -206,7 +188,9 @@ pub struct SkirmishShellLayout {
     pub scale: ShellScale,
     pub screen: RectPx,
     pub right_panel: RightPanelRects,
-    pub right_panel_text: SkirmishRightPanelTextRects,
+    /// The statics without a field of their own ([`TITLE_STATIC`] and the
+    /// others), from `shell_layout.ini`'s `[0x102]`.
+    pub statics: crate::ui::shell::layout::RectTable,
     pub start_button: RectPx,
     /// gamemd's Choose Map (`0x5AA`), one tile down where VERA's Game Options
     /// takes its tile.
@@ -219,7 +203,6 @@ pub struct SkirmishShellLayout {
     pub setups_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
-    pub column_labels: SkirmishColumnLabelRects,
     pub player_name: RectPx,
     /// Every row slot the page can show; the first [`Self::shown_rows`] show.
     pub rows: SkirmishRowRects,
@@ -232,12 +215,16 @@ pub struct SkirmishShellLayout {
     /// round it, beside the player rows ([`opponent_scrollbar_rect`]).
     pub opponent_scrollbar: RectPx,
     pub trackbars: SkirmishTrackbarRects,
-    pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
     pub status_help: RectPx,
 }
 
 impl SkirmishShellLayout {
+    /// Static `id`'s rect ([`Self::statics`]).
+    pub fn static_rect(&self, id: u16) -> RectPx {
+        self.statics.get(id).unwrap_or_default()
+    }
+
     /// Where the shell's own art sits: gamemd's [`dialog_origin`] on the retail
     /// layout, and the scaled dialog's top-left once the 800x600 space is
     /// scaled into the window — every child rect already carries that scale.
@@ -365,19 +352,15 @@ impl AdvancedField {
         )
     }
 
-    /// The same scrollbar geometry the combo dropdowns use, with the seven
-    /// visible Advanced rows as its page size.
-    pub fn advanced_scrollbar_model(scale: ShellScale) -> ScrollModel {
-        ScrollModel::combo_at(Self::PAGE_SIZE as i32, DropdownMetrics::scaled(scale))
-    }
-
-    /// Thumb position for a scroll offset clamped to the available pages.
+    /// Thumb position for a scroll offset clamped to the available pages, on
+    /// the shared scrollbar kernel (`0x0061C690`) the combo dropdowns use.
     pub fn advanced_scrollbar_thumb(layout: &RandomMapSetupLayout, page: usize) -> RectPx {
+        use vera20k_gui::shell::list::{ListMetrics, scrollbar_thumb_y, thumb_height};
         let bar = Self::advanced_scrollbar_rect(layout);
-        let model = Self::advanced_scrollbar_model(layout.scale);
-        let thumb_h = model.thumb_height(Self::PAGE_SIZE, Self::ALL.len(), bar.h);
+        let metrics = ListMetrics::scaled(layout.scale);
+        let thumb_h = thumb_height(bar.h, Self::ALL.len() - Self::PAGE_SIZE, metrics);
         let top = page.min(Self::PAGE_COUNT - 1);
-        let thumb_y = model.thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1);
+        let thumb_y = scrollbar_thumb_y(bar, thumb_h, top, Self::PAGE_COUNT - 1, metrics);
         RectPx::new(bar.x, thumb_y, bar.w, thumb_h)
     }
 
@@ -415,12 +398,9 @@ impl AdvancedField {
     ) -> usize {
         let bar = Self::advanced_scrollbar_rect(layout);
         let thumb = Self::advanced_scrollbar_thumb(layout, page);
-        Self::advanced_scrollbar_model(layout.scale).top_index_at_pointer(
-            bar,
-            thumb.h,
-            Self::PAGE_COUNT - 1,
-            y,
-        )
+        use vera20k_gui::shell::list::{ListMetrics, scrollbar_top_at_pointer};
+        let metrics = ListMetrics::scaled(layout.scale);
+        scrollbar_top_at_pointer(bar, thumb.h, Self::PAGE_COUNT - 1, y, metrics)
     }
 
     /// The row label: the string table's own names where it has one.
@@ -574,33 +554,25 @@ const fn translate_checkbox(rect: SkirmishCheckboxRect, dx: i32, dy: i32) -> Ski
 
 pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> SkirmishShellLayout {
     layout.right_panel = layout.right_panel.translate(dx, dy);
-    let text = &mut layout.right_panel_text;
-    let labels = &mut layout.column_labels;
+    layout.statics = layout
+        .statics
+        .iter()
+        .map(|(id, rect)| (id, rect.translate(dx, dy)))
+        .collect();
     let rows = &mut layout.rows;
     let rects = [
         &mut layout.screen,
-        &mut text.title,
-        &mut text.game_type,
-        &mut text.map_label,
         &mut layout.start_button,
         &mut layout.choose_map_button,
         &mut layout.game_options_button,
         &mut layout.setups_button,
         &mut layout.back_button,
         &mut layout.map_preview,
-        &mut labels.players,
-        &mut labels.side,
-        &mut labels.color,
-        &mut labels.start,
-        &mut labels.team,
         &mut layout.player_name,
         &mut layout.opponent_scrollbar,
         &mut layout.trackbars.game_speed,
         &mut layout.trackbars.credits,
         &mut layout.trackbars.unit_count,
-        &mut layout.trackbar_labels.game_speed,
-        &mut layout.trackbar_labels.credits,
-        &mut layout.trackbar_labels.unit_count,
         &mut layout.status_help,
     ];
     let columns = rows.ai_type_combos.iter_mut().chain(&mut rows.side_combos);
@@ -746,26 +718,13 @@ pub fn compute_layout_for_rows(
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         right_panel: right_panel_rects(screen_w, screen_h),
-        // The executed relayout places them at (635, 3, 163, 17), (650, 167,
-        // 136, 17) and (650, 189, 136, 34) at 800x600.
-        right_panel_text: SkirmishRightPanelTextRects {
-            title: place.at(LOW_HEADING_ANCHOR, 425, 1, 108, 10),
-            game_type: place.at(MAP_TEXT_ANCHOR, 432, 103, 90, 10),
-            map_label: place.at(MAP_TEXT_ANCHOR, 432, 116, 90, 20),
-        },
+        statics: layout_data::place("0x102", ShellScale::RETAIL, screen_w, screen_h),
         start_button: place.at(BUTTON, 425, 149, 108, 23),
         choose_map_button,
         game_options_button,
         setups_button: choose_map_button.translate(0, SDBTNBKGD_H),
         back_button: place.rule(BACK_BUTTON),
         map_preview: place.at(AnchorRule::RightAnchor, 429, 23, 96, 69),
-        column_labels: SkirmishColumnLabelRects {
-            players: dlu_rect(39, 21, 97, 10),
-            side: dlu_rect(191, 21, 73, 10),
-            color: dlu_rect(283, 21, 42, 10),
-            start: dlu_rect(325, 21, 34, 10),
-            team: dlu_rect(363, 21, 34, 10),
-        },
         player_name,
         opponent_scrollbar: opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT),
         rows,
@@ -777,11 +736,6 @@ pub fn compute_layout_for_rows(
             credits: child_window(269, 193, 85, 13),
             // The fix-up pass `0x0060B950` lifts Unit Count one pixel.
             unit_count: child_window(269, 210, 85, 13).translate(0, -1),
-        },
-        trackbar_labels: SkirmishTrackbarLabelRects {
-            game_speed: RectPx::new(302, 286, 90, 16),
-            credits: RectPx::new(302, 314, 90, 16),
-            unit_count: RectPx::new(302, 341, 90, 16),
         },
         checkboxes: [
             checkbox(SkirmishCheckboxId::ShortGame0x54e, 48, 176, 100, 10, -1),
@@ -813,11 +767,13 @@ impl SkirmishShellLayout {
             &mut self.trackbars.game_speed,
             &mut self.trackbars.credits,
             &mut self.trackbars.unit_count,
-            &mut self.trackbar_labels.game_speed,
-            &mut self.trackbar_labels.credits,
-            &mut self.trackbar_labels.unit_count,
         ] {
             *rect = rect.translate(0, dy);
+        }
+        for id in SLIDER_HEADINGS..SLIDER_HEADINGS + 3 {
+            if let Some(rect) = self.statics.get(id) {
+                self.statics.insert(id, rect.translate(0, dy));
+            }
         }
         self.shown_rows = shown;
         self.opponent_scrollbar = opponent_scrollbar_rect(&self.rows, shown);
@@ -1105,27 +1061,10 @@ pub fn compute_saved_seed_layout(
 // added to a layout must be scaled too or the crate stops building. `screen`
 // is the exception: it stays the whole window, as on the retail layout.
 
-scaled_rects!(SkirmishRightPanelTextRects {
-    title,
-    game_type,
-    map_label
-});
 scaled_rects!(SkirmishTrackbarRects {
     game_speed,
     credits,
     unit_count
-});
-scaled_rects!(SkirmishTrackbarLabelRects {
-    game_speed,
-    credits,
-    unit_count
-});
-scaled_rects!(SkirmishColumnLabelRects {
-    players,
-    side,
-    color,
-    start,
-    team
 });
 scaled_rects!(SkirmishRowRects {
     ai_type_combos,
@@ -1136,9 +1075,9 @@ scaled_rects!(SkirmishRowRects {
 scaled_rects!(SkirmishCheckboxRect { rect; keep: id });
 scaled_rects!(SkirmishShellLayout {
     [scale, screen]
-    right_panel, right_panel_text, start_button, choose_map_button, game_options_button,
-    setups_button, back_button, map_preview, column_labels, player_name, rows, color_combos,
-    flags, opponent_scrollbar, trackbars, trackbar_labels, checkboxes, status_help;
+    right_panel, statics, start_button, choose_map_button, game_options_button,
+    setups_button, back_button, map_preview, player_name, rows, color_combos,
+    flags, opponent_scrollbar, trackbars, checkboxes, status_help;
     keep: shown_rows
 });
 scaled_rects!(ChooseMapModalLayout {
@@ -1292,7 +1231,10 @@ mod tests {
         assert_eq!(layout.choose_map_button, RectPx::new(756, 409, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(756, 121, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(756, 619, 156, 42));
-        assert_eq!(layout.column_labels.players, RectPx::new(171, 118, 146, 16));
+        assert_eq!(
+            layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS),
+            RectPx::new(171, 118, 146, 16)
+        );
         assert_eq!(
             layout.rows.ai_type_combos[0],
             RectPx::new(171, 169, 150, 120)
@@ -1369,8 +1311,8 @@ mod tests {
             moved(retail.trackbars.unit_count)
         );
         assert_eq!(
-            thirty.trackbar_labels.credits,
-            moved(retail.trackbar_labels.credits)
+            thirty.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 6),
+            moved(retail.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 6))
         );
         let last_row_bottom = thirty.rows.side_combos[12].y + COMBO_FACE_H;
         assert!(last_row_bottom < thirty.trackbars.game_speed.y);
@@ -1410,7 +1352,10 @@ mod tests {
     #[test]
     fn row_combo_rects_match_800x600_resource_geometry() {
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.column_labels.players, RectPx::new(59, 34, 146, 16));
+        assert_eq!(
+            layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS),
+            RectPx::new(59, 34, 146, 16)
+        );
         assert_eq!(layout.rows.ai_type_combos[0], RectPx::new(59, 85, 150, 120));
         assert_eq!(layout.rows.side_combos[0], RectPx::new(287, 59, 117, 120));
         assert_eq!(layout.color_combos[0], RectPx::new(423, 59, 44, 119));
@@ -1621,15 +1566,15 @@ mod tests {
             compute_layout(1024, 768),
         ] {
             assert_eq!(
-                layout.trackbar_labels.game_speed,
+                layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 5),
                 RectPx::new(302, 286, 90, 16)
             );
             assert_eq!(
-                layout.trackbar_labels.credits,
+                layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 6),
                 RectPx::new(302, 314, 90, 16)
             );
             assert_eq!(
-                layout.trackbar_labels.unit_count,
+                layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 7),
                 RectPx::new(302, 341, 90, 16)
             );
         }
@@ -1640,13 +1585,16 @@ mod tests {
         use vera20k_gui::fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
-            assert_eq!(layout.right_panel_text.title, executed(0x102, 0x694, w, h));
             assert_eq!(
-                layout.right_panel_text.game_type,
+                layout.static_rect(crate::ui::skirmish_shell::layout::TITLE_STATIC),
+                executed(0x102, 0x694, w, h)
+            );
+            assert_eq!(
+                layout.static_rect(crate::ui::skirmish_shell::layout::GAME_TYPE_STATIC),
                 executed(0x102, 0x6EC, w, h)
             );
             assert_eq!(
-                layout.right_panel_text.map_label,
+                layout.static_rect(crate::ui::skirmish_shell::layout::MAP_LABEL_STATIC),
                 executed(0x102, 0x5A8, w, h)
             );
             assert_eq!(layout.status_help, executed(0x102, 0x695, w, h));
@@ -1865,16 +1813,22 @@ mod tests {
             (layout.map_preview, base.map_preview),
             (layout.player_name, base.player_name),
             (layout.status_help, base.status_help),
-            (layout.right_panel_text.title, base.right_panel_text.title),
-            (layout.column_labels.players, base.column_labels.players),
+            (
+                layout.static_rect(crate::ui::skirmish_shell::layout::TITLE_STATIC),
+                base.static_rect(crate::ui::skirmish_shell::layout::TITLE_STATIC),
+            ),
+            (
+                layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS),
+                base.static_rect(crate::ui::skirmish_shell::layout::HEADINGS),
+            ),
             (layout.rows.side_combos[0], base.rows.side_combos[0]),
             (layout.rows.team_combos[7], base.rows.team_combos[7]),
             (layout.color_combos[0], base.color_combos[0]),
             (layout.flags[0], base.flags[0]),
             (layout.trackbars.game_speed, base.trackbars.game_speed),
             (
-                layout.trackbar_labels.unit_count,
-                base.trackbar_labels.unit_count,
+                layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 7),
+                base.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 7),
             ),
             (layout.checkboxes[0].rect, base.checkboxes[0].rect),
         ] {

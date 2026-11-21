@@ -21,6 +21,7 @@ use crate::app::frontend::shell_pass::{
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
+use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
@@ -32,7 +33,6 @@ use crate::ui::shell::geom::{RectPx, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
 use crate::ui::shell::sound::SHELL_SOUND_PAGE;
-use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
 use crate::ui::wol_shell::{WOL_LOBBY_TITLE_KEY, WOL_WELCOME_DIALOG};
 
 /// Icon and group-box children sit over the background, under the text.
@@ -182,7 +182,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             let spec = layout.page_spec();
             painted(
                 layout.page.clone(),
-                layout.status_help,
+                layout.page.status_help,
                 spec,
                 Body::Welcome(layout),
             )
@@ -190,7 +190,12 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         wol_login::DIALOG => {
             let layout = crate::app::shell_wol::login_layout(state);
             let spec = layout.page_spec();
-            painted(layout.page.clone(), layout.status_help, spec, Body::Login(layout))
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Login(layout),
+            )
         }
         wol_lobby::DIALOG => {
             // Hidden (created hidden, or slid out for a join) or covered by
@@ -213,7 +218,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             options::sync_gui(state);
             painted(
                 layout.page.clone(),
-                layout.status_help,
+                layout.page.status_help,
                 &wol_options::PAGE,
                 Body::Widgets,
             )
@@ -223,7 +228,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             options::sync_gui(state);
             painted(
                 layout.page.clone(),
-                layout.status_help,
+                layout.page.status_help,
                 &SHELL_SOUND_PAGE,
                 Body::Widgets,
             )
@@ -231,15 +236,21 @@ fn painted(state: &mut AppState) -> Option<Painted> {
         wol_my_info::DIALOG => {
             my_info::sync(state);
             let layout = my_info::layout(state);
-            let body = Body::MyInfo(layout.group_box);
-            painted(layout.page.clone(), layout.status_help, &wol_my_info::PAGE, body)
+            let group_box = layout.rect_of(wol_my_info::GROUP_BOX).unwrap_or_default();
+            let help = layout.page.status_help;
+            painted(
+                layout.page.clone(),
+                help,
+                &wol_my_info::PAGE,
+                Body::MyInfo(group_box),
+            )
         }
         wol_buddy::DIALOG => {
             buddy::sync(state);
             let layout = buddy::layout(state);
             painted(
                 layout.page.clone(),
-                layout.status_help,
+                layout.page.status_help,
                 &wol_buddy::PAGE,
                 Body::Buddy(layout),
             )
@@ -250,7 +261,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             let spec = &wol_quick_match::PAGE;
             painted(
                 layout.page.clone(),
-                layout.status_help,
+                layout.page.status_help,
                 spec,
                 Body::QuickMatch(layout),
             )
@@ -259,7 +270,12 @@ fn painted(state: &mut AppState) -> Option<Painted> {
             persona::sync(state);
             let layout = persona::layout(state)?;
             let spec = crate::ui::wol_persona::WolPersonaLayout::spec(dialog);
-            painted(layout.page.clone(), layout.status_help, spec, Body::Widgets)
+            painted(
+                layout.page.clone(),
+                layout.page.status_help,
+                spec,
+                Body::Widgets,
+            )
         }
     })
 }
@@ -405,23 +421,28 @@ pub(crate) fn render_wol_page(
     let mut welcome_texts = None;
     match body.filter(|_| children) {
         Some(Body::Welcome(layout)) => {
-            for window in &layout.group_boxes {
-                push_group_box(&mut sprites, chrome, *window, scale);
+            for window in layout.group_boxes() {
+                push_group_box(&mut sprites, chrome, window, scale);
             }
             let icons = art.iter().flat_map(|art| &art.icons);
-            for (file, window) in &layout.icons {
+            for (file, window) in layout.icons() {
                 let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
                     continue;
                 };
                 let (w, h) = entry.native_size();
-                let (x, y) = centred_in_window(scale.base_rect(*window), w, h);
+                let (x, y) = centred_in_window(scale.base_rect(window), w, h);
                 push_entry_scaled(&mut icon_sprites, *entry, x, y, scale, CHILD_DEPTH);
             }
             welcome_texts =
                 Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
         }
         Some(Body::MyInfo(group_box)) => push_group_box(&mut sprites, chrome, *group_box, scale),
-        Some(Body::Buddy(layout)) => push_group_box(&mut sprites, chrome, layout.group_box, scale),
+        Some(Body::Buddy(layout)) => {
+            let group_box = layout
+                .rect_of(crate::ui::wol_buddy::GROUP_BOX)
+                .unwrap_or_default();
+            push_group_box(&mut sprites, chrome, group_box, scale)
+        }
         _ => {}
     }
     let shown = body.filter(|_| children);
@@ -660,11 +681,15 @@ pub(crate) fn render_wol_page(
         let parts = shell_box.parts(screen_w, screen_h, scale);
         box_dialog = Some(parts.dialog);
         let held = crate::app::App::wol_held(state);
-        let look = BoxLook {
-            unscaled_sink: true,
-            ..BoxLook::new(atlas.mode_two_dialog_background(None), BOX_DEPTHS)
-        };
-        let draw = paint_shell_box(state, Some(atlas), &shell_box, &parts, |id| held == Some(id), look);
+        let look = BoxLook::new(atlas.mode_two_dialog_background(None), BOX_DEPTHS);
+        let draw = paint_shell_box(
+            state,
+            Some(atlas),
+            &shell_box,
+            &parts,
+            |id| held == Some(id),
+            look,
+        );
         box_sprites = draw.sprites;
         text.extend(draw.text);
     }

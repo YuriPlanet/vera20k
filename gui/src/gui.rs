@@ -264,33 +264,28 @@ impl Gui {
         }
     }
 
-    /// Drops the top dialog's capture and hover when the host loses the
-    /// pointer (`0x0061E3AF..0x0061E44E` for a held trackbar); an open
-    /// drop-down stays open. A held list scrollbar lets go (`0x0061D2D3`).
+    /// [`Self::drop_pointer_in`] for the top dialog, when the host loses the
+    /// pointer (`0x0061E3AF..0x0061E44E` for a held trackbar).
     pub fn cancel_pointer(&mut self) {
-        if let Some(held) = self.pressed().filter(|n| self.tree.kind(*n) == Ok(NodeKind::List)) {
-            self.with_ctx(0, |ctx| widget::list::release(ctx, held, 0, 0));
-        }
-        if let Some(d) = self.dialogs.last_mut() {
-            d.pointer.pressed = None;
-            d.pointer.dragging = false;
-            d.pointer.hovered = None;
-            d.pointer.hover_started = None;
+        if let Some(top) = self.top_dialog() {
+            self.drop_pointer_in(top);
         }
     }
 
     /// Drops dialog `id`'s capture and hover only, on top or not: a page
-    /// under a modal box loses the pointer while the box keeps its press.
-    /// Its open drop-down stays open but lets go of a held scroll part.
+    /// under a modal box loses the pointer while the box keeps its press. A
+    /// held list scrollbar lets go (`0x0061D2D3`); an open drop-down stays
+    /// open but lets go of a held scroll part.
     pub fn drop_pointer_in(&mut self, id: DialogId) {
-        if let Some(d) = self.dialogs.iter_mut().find(|d| d.id == id) {
-            d.pointer.pressed = None;
-            d.pointer.dragging = false;
-            d.pointer.hovered = None;
-            d.pointer.hover_started = None;
-            if let Some(popup) = d.pointer.popup {
-                widget::combo::release_scroll(&mut self.tree, popup);
-            }
+        let Some(d) = self.dialogs.iter_mut().find(|d| d.id == id) else { return };
+        if let Some(held) = d.pointer.pressed.take() {
+            widget::list::cancel_scroll(&mut self.tree, held);
+        }
+        d.pointer.dragging = false;
+        d.pointer.hovered = None;
+        d.pointer.hover_started = None;
+        if let Some(popup) = d.pointer.popup {
+            widget::combo::release_scroll(&mut self.tree, popup);
         }
     }
 
@@ -464,10 +459,8 @@ impl Gui {
     /// a modal keeps.
     pub fn caret_visible_in(&self, dialog: DialogId, node: NodeId, now: UiMs) -> bool {
         self.dialog(dialog).is_some_and(|d| d.pointer.focus == Some(node))
-            && self.tree.node(node).is_ok_and(|n| match (n.props.get(&Prop::CaretFrom), &n.state) {
-                // The host's blink origin (`CaretFrom`) stands for the focus's.
-                (Some(Value::Int(from)), _) => crate::shell::new_edit::caret_visible(*from as UiMs, now),
-                (_, widget::WidgetState::Edit(s)) => s.caret_visible(now),
+            && self.tree.node(node).is_ok_and(|n| match &n.state {
+                widget::WidgetState::Edit(s) => s.caret_visible(now),
                 _ => widget::edit::EditState::default().caret_visible(now),
             })
     }
@@ -525,15 +518,6 @@ impl Gui {
         self.top_pointer().popup
     }
 
-    /// Drops list `node`'s scrollbar hold for the host (its rows were
-    /// rebuilt): the capture ends without a release.
-    pub fn cancel_list_scroll(&mut self, node: NodeId) {
-        widget::list::cancel_scroll(&mut self.tree, node);
-        for d in self.dialogs.iter_mut().filter(|d| d.pointer.pressed == Some(node)) {
-            d.pointer.pressed = None;
-        }
-    }
-
     /// Closes the top dialog's open drop-down for the host (no event, as a
     /// host `set` reports none); true when one was open.
     pub fn close_popup(&mut self) -> bool {
@@ -574,15 +558,6 @@ impl Gui {
         widget::list::view(&self.tree, node)
     }
 
-    /// Forgets what `node`'s widget kept between inputs (a list's scroll
-    /// hold and double-click memory, an edit's caret phase), as a fresh
-    /// window would have.
-    pub fn reset_widget(&mut self, node: NodeId) {
-        if let Ok(n) = self.tree.node_mut(node) {
-            n.state = Default::default();
-        }
-    }
-
     fn with_ctx<R>(&mut self, now: UiMs, f: impl FnOnce(&mut Ctx<'_>) -> R) -> R {
         let d = self.dialogs.last_mut().expect("callers check for a top dialog");
         let mut ctx = Ctx {
@@ -617,17 +592,18 @@ impl Gui {
         }
         let Ok(n) = self.tree.node(node) else { return };
         if n.kind == NodeKind::Checkbox {
-            // OwnerDraw_CheckBox 0x006163A0 admits a press only on its
-            // 18x18 icon at the row's left; a `HitRect` takes it anywhere.
+            // OwnerDraw_CheckBox 0x006163A0 toggles on the press, admitted
+            // only on its 18x18 icon at the row's left; a `HitRect` takes it
+            // anywhere.
             let rect = self.tree.screen_rect(node).unwrap_or_default();
             let scale = self.dialogs.last().map_or(ShellScale::RETAIL, |d| d.scale);
             let anywhere = n.props.contains_key(&Prop::HitRect);
-            if !anywhere && !scale.derive_rect(rect, |r| Rect::new(r.x, r.y, 18, 18)).contains(x, y) {
-                return;
+            if anywhere || scale.derive_rect(rect, |r| Rect::new(r.x, r.y, 18, 18)).contains(x, y) {
+                self.toggle(node);
             }
+            return;
         }
         match n.kind {
-            NodeKind::Checkbox if n.bool_prop(Prop::ActivateOnPress, false) => self.toggle(node),
             NodeKind::Trackbar => {
                 let range = trackbar_range(n);
                 let value = n.int_prop(Prop::Pos, range.min);
@@ -666,7 +642,6 @@ impl Gui {
                 let value = Value::Int(n.int_prop(Prop::Pos, 0));
                 self.events.push(UiEvent::Changed { node, value, final_: true });
             }
-            NodeKind::Checkbox if over && enabled => self.toggle(node),
             _ if over && enabled => self.activate(node),
             _ => {}
         }
@@ -798,18 +773,6 @@ pub fn hover_flash_on(started: UiMs, now: UiMs) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_caret_from_the_host_blinks_from_that_time_not_the_focus() {
-        let mut g = Gui::new(8);
-        let root = g.create(NodeKind::Dialog, None).unwrap();
-        let edit = g.create(NodeKind::Edit, Some(root)).unwrap();
-        g.push_dialog(root, DialogKind::Page, None, None).unwrap();
-        g.focus_edit(Some(edit), 1500).unwrap();
-        assert!(g.caret_visible(edit, 1500), "the focus starts a shown second");
-        g.set(edit, Prop::CaretFrom, Value::Int(0)).unwrap();
-        assert!(!g.caret_visible(edit, 1500), "1.5 s after the origin it is hidden");
-    }
-
     fn page_with_two_buttons() -> (Gui, NodeId, NodeId) {
         let mut g = Gui::new(16);
         let root = g.create(NodeKind::Dialog, None).unwrap();
@@ -896,34 +859,18 @@ mod tests {
     }
 
     #[test]
-    fn checkbox_toggles_on_release_over_it_or_on_press_when_asked() {
-        let (mut g, _, _) = page_with_two_buttons();
-        let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
-        let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
-        g.set(cb, Prop::Rect, Value::Rect(Rect::new(30, 0, 10, 10))).unwrap();
-        down(&mut g, 35);
-        up(&mut g, 50);
-        assert_eq!(g.get(cb, Prop::Checked).unwrap(), None, "released off the box");
-        down(&mut g, 35);
-        up(&mut g, 35);
-        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
-        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
-        down(&mut g, 35);
-        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(false)));
-    }
-
-    #[test]
     fn checkbox_takes_a_press_only_on_its_icon() {
         let (mut g, _, _) = page_with_two_buttons();
         let root = g.dialog_root(g.top_dialog().unwrap()).unwrap();
         let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
         g.set(cb, Prop::Rect, Value::Rect(Rect::new(30, 0, 100, 20))).unwrap();
-        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
         down(&mut g, 30 + 18);
         assert_eq!(g.hovered(), Some(cb), "the caption still hovers");
         assert_eq!(g.get(cb, Prop::Checked).unwrap(), None);
         down(&mut g, 30 + 17);
-        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)), "toggled on the press");
+        up(&mut g, 30 + 17);
+        assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)), "not again on the release");
     }
 
     #[test]
@@ -964,7 +911,6 @@ mod tests {
         let cb = g.create(NodeKind::Checkbox, Some(root)).unwrap();
         g.set(cb, Prop::Rect, Value::Rect(Rect::new(60, 0, 20, 10))).unwrap();
         g.set(cb, Prop::HitRect, Value::Rect(Rect::new(30, 0, 100, 10))).unwrap();
-        g.set(cb, Prop::ActivateOnPress, Value::Bool(true)).unwrap();
         down(&mut g, 31);
         assert_eq!(g.get(cb, Prop::Checked).unwrap(), Some(&Value::Bool(true)));
         // 120 px, 0..=2, no plaque: the track spans the whole window

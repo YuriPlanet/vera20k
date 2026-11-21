@@ -36,7 +36,7 @@ pub(crate) enum ModalPage {
 }
 
 /// The page that owns the current screen when no modal page is open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScreenPage {
     FullscreenMovie,
     CreditsRoll,
@@ -54,6 +54,7 @@ pub(crate) enum ScreenPage {
     SinglePlayer,
     MoviesAndCredits,
     /// The main menu 0xE2, also for a route whose page is not built.
+    #[default]
     MainMenu,
     Loading,
     /// An in-scenario modal drawn as its active-game shell.
@@ -99,14 +100,10 @@ struct Layers {
     keyboard: bool,
     shell_message_box: bool,
     screen: Screen,
-    route: ShellRoute,
+    /// The page the shell route shows ([`route_page`]).
+    route_page: ScreenPage,
     fullscreen_movie: bool,
     credits_roll: bool,
-    movie_list: bool,
-    mods: bool,
-    campaign: bool,
-    wol: bool,
-    load_saved_game: bool,
     launcher_options: bool,
     in_game_menu: InGameMenuState,
     /// The active-game shell art for `in_game_menu` is loaded.
@@ -136,14 +133,9 @@ impl Layers {
                 GameScreen::InGame => Screen::InGame,
                 GameScreen::MissionResult { .. } => Screen::MissionResult,
             },
-            route: frontend.shell_route,
+            route_page: route_page(state),
             fullscreen_movie: frontend.fullscreen_movie.is_some(),
             credits_roll: frontend.credits_roll.is_some(),
-            movie_list: App::movie_list_active(state),
-            mods: App::mods_page_active(state),
-            campaign: App::campaign_active(state),
-            wol: App::wol_active(state),
-            load_saved_game: App::load_saved_game_active(state),
             launcher_options: App::native_launcher_options_active(state),
             in_game_menu: state.match_state.match_presentation.in_game_menu,
             in_game_shell: crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
@@ -192,21 +184,8 @@ impl Layers {
                     (self.credits_roll, ScreenPage::CreditsRoll),
                     // The Esc menu opens Options over any route's page.
                     (self.launcher_options, ScreenPage::LauncherOptions),
-                    (self.movie_list, ScreenPage::MovieList),
-                    (self.mods, ScreenPage::Mods),
-                    (self.campaign, ScreenPage::Campaign),
-                    (self.route.lan_lobby(), ScreenPage::LanLobby),
-                    (self.route.network_setup(), ScreenPage::NetworkSetup),
-                    (self.wol, ScreenPage::Wol),
-                    (self.load_saved_game, ScreenPage::LoadSavedGame),
-                    (self.route.skirmish(), ScreenPage::Skirmish),
-                    (self.route.single_player(), ScreenPage::SinglePlayer),
-                    (
-                        self.route.movies_and_credits(),
-                        ScreenPage::MoviesAndCredits,
-                    ),
                 ],
-                ScreenPage::MainMenu,
+                self.route_page,
             ),
             Screen::Loading => ScreenPage::Loading,
             Screen::InGame => first(
@@ -244,6 +223,32 @@ impl Layers {
             self.page()
                 .map_or_else(|| InputLayer::Screen(self.screen_page()), InputLayer::Page)
         }
+    }
+}
+
+/// The page the shell route shows on the main-menu screen once its model is
+/// built, else the main menu, which also stands in for a page not built.
+/// Overlays (a movie, the credits, Options) are left to [`Layers`].
+pub(crate) fn route_page(state: &AppState) -> ScreenPage {
+    let frontend = &state.frontend;
+    if frontend.screen != GameScreen::MainMenu {
+        return ScreenPage::MainMenu;
+    }
+    match frontend.shell_route {
+        ShellRoute::MovieList if frontend.movie_list.is_some() => ScreenPage::MovieList,
+        ShellRoute::Mods if frontend.mods.page.is_some() => ScreenPage::Mods,
+        ShellRoute::Campaign if frontend.campaign.is_some() => ScreenPage::Campaign,
+        ShellRoute::LanLobby => ScreenPage::LanLobby,
+        ShellRoute::NetworkSetup => ScreenPage::NetworkSetup,
+        // One WOL visit owns both routes.
+        ShellRoute::Wol | ShellRoute::WolLobby if frontend.wol.is_some() => ScreenPage::Wol,
+        ShellRoute::LoadSavedGame if frontend.load_saved_game.is_some() => {
+            ScreenPage::LoadSavedGame
+        }
+        ShellRoute::Skirmish => ScreenPage::Skirmish,
+        ShellRoute::SinglePlayer => ScreenPage::SinglePlayer,
+        ShellRoute::MoviesAndCredits => ScreenPage::MoviesAndCredits,
+        _ => ScreenPage::MainMenu,
     }
 }
 
@@ -298,8 +303,7 @@ mod tests {
     #[test]
     fn input_goes_to_the_page_render_draws() {
         let movie = Layers {
-            route: ShellRoute::MovieList,
-            movie_list: true,
+            route_page: ScreenPage::MovieList,
             fullscreen_movie: true,
             ..Default::default()
         };
@@ -322,8 +326,7 @@ mod tests {
         let stopped_slide = Layers {
             shell_error: true,
             shell_transition: true,
-            route: ShellRoute::MovieList,
-            movie_list: true,
+            route_page: ScreenPage::MovieList,
             ..Default::default()
         };
         assert_eq!(stopped_slide.page(), Some(ModalPage::ShellError));
@@ -339,7 +342,7 @@ mod tests {
     fn a_message_box_over_a_page_takes_input_and_keeps_the_page() {
         let over_page = Layers {
             shell_message_box: true,
-            route: ShellRoute::LanLobby,
+            route_page: ScreenPage::LanLobby,
             ..Default::default()
         };
         assert_eq!(
@@ -361,8 +364,7 @@ mod tests {
     #[test]
     fn the_mods_page_takes_input_until_its_question_is_asked() {
         let mut layers = Layers {
-            route: ShellRoute::Mods,
-            mods: true,
+            route_page: ScreenPage::Mods,
             ..Default::default()
         };
         assert_eq!(layers.input(), InputLayer::Screen(ScreenPage::Mods));
@@ -375,14 +377,10 @@ mod tests {
     /// stays, so closing Options returns to that page.
     #[test]
     fn options_opened_from_a_page_covers_it() {
-        for (route, campaign) in [
-            (ShellRoute::Campaign, true),
-            (ShellRoute::NetworkSetup, false),
-        ] {
+        for route_page in [ScreenPage::Campaign, ScreenPage::NetworkSetup] {
             let layers = Layers {
                 launcher_options: true,
-                route,
-                campaign,
+                route_page,
                 ..Default::default()
             };
             assert_eq!(

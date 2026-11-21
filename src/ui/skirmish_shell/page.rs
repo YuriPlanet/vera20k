@@ -109,22 +109,10 @@ fn flag_slot(id: u16) -> Option<usize> {
 
 /// The player columns' and the sliders' headings, statics with no control of
 /// their own (VERA's ids).
-const HEADINGS: u16 = 0x7500;
+use super::layout::HEADINGS;
 
 fn heading_rect(layout: &SkirmishShellLayout, index: usize) -> Option<RectPx> {
-    let (columns, sliders) = (&layout.column_labels, &layout.trackbar_labels);
-    [
-        columns.players,
-        columns.side,
-        columns.color,
-        columns.start,
-        columns.team,
-        sliders.game_speed,
-        sliders.credits,
-        sliders.unit_count,
-    ]
-    .get(index)
-    .copied()
+    layout.statics.get(HEADINGS + u16::try_from(index).ok()?)
 }
 
 /// The words the page's captions take: each combo row's label, the Random
@@ -152,18 +140,13 @@ impl SkirmishLabels {
 fn spec() -> NodeSpec {
     let combos = (0..SKIRMISH_LONG_ROW_COUNT).flat_map(|slot| {
         (u16::from(slot == 0)..5).map(move |kind| {
-            NodeSpec::new(NodeKind::Combo)
-                .id(i32::from(COMBO + kind * 0x20) + slot as i32)
-                .with(Prop::Truncate, Value::Bool(true))
-                .with(Prop::ComboScrollbar, Value::Bool(true))
+            NodeSpec::new(NodeKind::Combo).id(i32::from(COMBO + kind * 0x20) + slot as i32)
         })
     });
     let flags = (0..SKIRMISH_LONG_ROW_COUNT).map(|slot| (FLAG + slot as u16, Target::FlagPicture));
     let controls = CONTROLS.into_iter().chain(flags).map(|(id, target)| {
         let spec = match target {
-            Target::Checkbox(_) => {
-                NodeSpec::new(NodeKind::Checkbox).with(Prop::ActivateOnPress, Value::Bool(true))
-            }
+            Target::Checkbox(_) => NodeSpec::new(NodeKind::Checkbox),
             Target::Trackbar(_) => NodeSpec::new(NodeKind::Trackbar),
             Target::OwnerDrawButton(_) => NodeSpec::new(NodeKind::Button),
             // A static hovers for its status help, none for the status line.
@@ -210,8 +193,8 @@ fn rect(
         Target::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => layout.back_button,
         Target::PlayerName0x6a0 => layout.player_name,
         Target::MapPreview0x468 => layout.map_preview,
-        Target::GameTypeLabel0x6ec => layout.right_panel_text.game_type,
-        Target::ScenarioLabel0x5a8 => layout.right_panel_text.map_label,
+        Target::GameTypeLabel0x6ec => layout.static_rect(super::GAME_TYPE_STATIC),
+        Target::ScenarioLabel0x5a8 => layout.static_rect(super::MAP_LABEL_STATIC),
         Target::StatusHelp0x695 => layout.status_help,
         _ => return None,
     })
@@ -375,40 +358,32 @@ fn set_trackbar_value(state: &mut SkirmishShellState, id: SkirmishTrackbarId, vi
     std::mem::replace(stored, value) != value
 }
 
-/// What the page's widget events do to the session, in order; the button the
-/// user activated. Cues go to [`SkirmishShellState::pending_ui_sounds`].
+/// What the page's widget events do to the session, in order: the cues to
+/// play and the button the user activated.
 fn handle(
     state: &mut SkirmishShellState,
     maps: &[MapMenuEntry],
     events: Vec<PageEvent>,
-) -> Option<SkirmishShellAction> {
-    let mut action = None;
+) -> (Vec<PageCue>, Option<SkirmishShellAction>) {
+    let (mut cues, mut action) = (Vec::new(), None);
     for event in events {
-        let sound = match event {
-            PageEvent::Cue(
-                cue @ (PageCue::Button
-                | PageCue::Checkbox
-                | PageCue::ComboOpen
-                | PageCue::ComboClose),
-            ) => Some(cue),
+        match event {
+            PageEvent::Cue(cue) => cues.push(cue),
             PageEvent::Activated(id) => {
-                action = match control(id) {
-                    Some(Target::OwnerDrawButton(button)) => Some(match button {
+                if let Some(Target::OwnerDrawButton(button)) = control(id) {
+                    action = Some(match button {
                         OwnerDrawButton::StartGame0x617 => SkirmishShellAction::StartGame,
                         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
                         OwnerDrawButton::GameOptions => SkirmishShellAction::GameOptions,
                         OwnerDrawButton::Setups => SkirmishShellAction::Setups,
                         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
-                    }),
-                    _ => action,
-                };
-                None
+                    });
+                }
             }
             PageEvent::Toggled(id, on) => {
                 if let Some(Target::Checkbox(checkbox)) = control(id) {
                     *checkbox_value(state, checkbox) = on;
                 }
-                None
             }
             PageEvent::Picked(id, row) => {
                 let combo = combo_of(state, id).map(|(combo, _)| combo);
@@ -420,7 +395,6 @@ fn handle(
                 if let (Some(combo), Some(item)) = (combo, item) {
                     apply_combo_selection(state, combo, item);
                 }
-                None
             }
             // A pointer-driven change clicks (`0x0061E6DD`); the dialog has no
             // `WM_HSCROLL` case for the notification sent before it.
@@ -428,19 +402,17 @@ fn handle(
                 id,
                 value,
                 final_: false,
-            } => match control(id) {
-                Some(Target::Trackbar(trackbar)) if set_trackbar_value(state, trackbar, value) => {
-                    Some(PageCue::ListClick)
+            } => {
+                if let Some(Target::Trackbar(trackbar)) = control(id)
+                    && set_trackbar_value(state, trackbar, value)
+                {
+                    cues.push(PageCue::ListClick);
                 }
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some(sound) = sound {
-            state.push_ui_sound(sound);
+            }
+            _ => {}
         }
     }
-    action
+    (cues, action)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -457,10 +429,36 @@ pub fn slider_held(gui: &Gui) -> bool {
         .is_some_and(|node| gui.tree().kind(node) == Ok(NodeKind::Trackbar))
 }
 
+/// One pointer message on the controller's top dialog of the Skirmish
+/// family, as its widgets' events. A release that frees a held control
+/// (`held`, or a slider) lets the dialog's hit test see the pointer where it
+/// let go.
+pub fn route(
+    controller: &mut DialogController,
+    at: Pointer,
+    x: i32,
+    y: i32,
+    held: bool,
+) -> Vec<PageEvent> {
+    match at {
+        Pointer::Down => controller.on_pointer_down(x, y),
+        Pointer::Move => controller.on_pointer_move(x, y),
+        Pointer::Up => {
+            let held = held || slider_held(controller.gui());
+            controller.on_pointer_up(x, y);
+            if held {
+                controller.on_pointer_move(x, y);
+            }
+        }
+    }
+    let raw = controller.drain_events();
+    page::page_events(controller.gui(), raw)
+}
+
 /// The pointer at `x`, `y` on the page: VERA's scrollbar beside the
 /// computer rows takes a press no list holds and every move while it holds
-/// the mouse; the widgets take the rest. Returns the button the user
-/// activated; the cues wait in [`SkirmishShellState::pending_ui_sounds`].
+/// the mouse; the widgets take the rest. Returns the cues to play and the
+/// button the user activated.
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(
     controller: &mut DialogController,
@@ -471,34 +469,33 @@ pub fn pointer(
     at: Pointer,
     x: i32,
     y: i32,
-) -> Option<SkirmishShellAction> {
-    sync_page(controller, state, layout, maps, labels)?;
-    match at {
-        Pointer::Down => {
-            let now = crate::util::time::Instant::now();
-            if controller.gui().popup().is_none()
-                && super::state::press_opponent_scrollbar(state, layout, maps, x, y, now)
-            {
-                return None;
-            }
-            controller.on_pointer_down(x, y);
-        }
-        Pointer::Move if state.opponent_scroll.captured() => {
-            super::state::move_opponent_scrollbar(state, layout, maps, x, y);
-        }
-        Pointer::Move => controller.on_pointer_move(x, y),
-        Pointer::Up => {
-            let held = slider_held(controller.gui()) || state.opponent_scroll.captured();
-            state.opponent_scroll.cancel();
-            controller.on_pointer_up(x, y);
-            // The freed hit test sees the pointer where it let go.
-            if held {
-                controller.on_pointer_move(x, y);
-            }
-        }
+) -> (Vec<PageCue>, Option<SkirmishShellAction>) {
+    if sync_page(controller, state, layout, maps, labels).is_none() {
+        return (Vec::new(), None);
     }
-    let raw = controller.drain_events();
-    let events = page::page_events(controller.gui(), raw);
+    let scrolling = state.opponent_scroll.captured();
+    match at {
+        Pointer::Down
+            if controller.gui().popup().is_none()
+                && super::state::press_opponent_scrollbar(
+                    state,
+                    layout,
+                    maps,
+                    x,
+                    y,
+                    crate::util::time::Instant::now(),
+                ) =>
+        {
+            return (Vec::new(), None);
+        }
+        Pointer::Move if scrolling => {
+            super::state::move_opponent_scrollbar(state, layout, maps, x, y);
+            return (Vec::new(), None);
+        }
+        Pointer::Up => state.opponent_scroll.cancel(),
+        _ => {}
+    }
+    let events = route(controller, at, x, y, scrolling);
     handle(state, maps, events)
 }
 

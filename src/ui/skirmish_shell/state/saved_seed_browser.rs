@@ -165,24 +165,13 @@ fn spec(mode: SavedSeedMode) -> NodeSpec {
         _ => node,
     };
     let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
-    // The second press of a double-click anywhere in the list only reports
-    // it (LBN_DBLCLK, 0x0061A904); presses below the last row count too, and
-    // a press elsewhere between them does not end it. A held arrow keeps
-    // stepping off the pointer.
-    let on = Value::Bool(true);
-    let list = NodeSpec::new(NodeKind::List)
-        .id(LIST.into())
-        .with(Prop::ListWindow, on.clone())
-        .with(Prop::AreaDoubleClick, on.clone())
-        .with(Prop::DoubleClickAcross, on.clone())
-        .with(Prop::HeldArrow, on);
-    // The caret blinks from the browser's opening (its controller's epoch).
+    let list = NodeSpec::new(NodeKind::List).id(LIST.into());
     let limit = Value::Int(SAVED_SEED_DESCRIPTION_MAX_UNITS as i32);
     let edit = NodeSpec::new(NodeKind::Edit)
         .id(EDIT.into())
         .with(Prop::MaxLen, limit);
     NodeSpec::new(NodeKind::Dialog)
-        .child(edit.with(Prop::CaretFrom, Value::Int(0)))
+        .child(edit)
         .child(help(list, LOAD_LIST_HELP_KEY))
         .child(help(button(ACTION), PAGE.stacked[0].tooltip_key))
         .children([LOAD, DELETE].map(button))
@@ -298,9 +287,6 @@ impl<I> SavedSeedBrowserState<I> {
     /// Raise a message box over the browser. It takes the edit focus and ends
     /// any held press or scroll repeat; its buttons own input until answered.
     pub fn show_prompt(&mut self, prompt: SavedSeedPrompt<I>) {
-        if let Some(list) = self.node(LIST) {
-            self.ui.gui_mut().cancel_list_scroll(list);
-        }
         self.ui.drop_pointer_in(BROWSER_DIALOG);
         self.ui.focus_control(BROWSER_DIALOG, None);
         self.ui.close(PROMPT_DIALOG);
@@ -325,13 +311,10 @@ impl<I> SavedSeedBrowserState<I> {
         self.ui.focus_control(BROWSER_DIALOG, Some(EDIT));
     }
 
-    /// Window focus loss: the release that would end the held press, the
-    /// scroll repeat and the double-click pair never arrives.
+    /// Window focus loss: the release that would end the held press and
+    /// the scroll repeat never arrives.
     pub fn reset_interaction(&mut self) {
         self.ui.gui_mut().cancel_pointer();
-        if let Some(list) = self.node(LIST) {
-            self.ui.gui_mut().reset_widget(list);
-        }
     }
 }
 

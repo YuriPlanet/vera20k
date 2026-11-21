@@ -68,14 +68,13 @@ fn surface(window: RectPx) -> RectPx {
 }
 
 fn spec() -> NodeSpec {
+    // The owner-draw list (`0x00618D40`) draws a row's text with
+    // `Shell__DrawTextAligned` (`0x006211D0`) and flags 0: top-left, so a
+    // name too wide for the row keeps its first line in the row.
     let list = |id: u16| {
         NodeSpec::new(NodeKind::List)
             .id(id.into())
-            .with(Prop::ListWindow, Value::Bool(true))
-            // 0x6B's double-click spans the rows' area, below the last row
-            // too; any other press ends it.
-            .with(Prop::AreaDoubleClick, Value::Bool(true))
-            .with(Prop::ContentDoubleClick, Value::Bool(true))
+            .with(Prop::Align, Value::Int(0))
     };
     let help = |target| status_help_key_for_choose_map_hover(target).unwrap_or_default();
     let align = |align: ShellAlign| Value::Int(align.0.into());
@@ -218,18 +217,6 @@ pub fn show_texts(
     }
 }
 
-/// A rebuilt map list drops a hold on its scrollbar, as the old list's
-/// capture went with it.
-pub fn take_rebuild(controller: &mut DialogController, modal: &mut ChooseMapModalState) {
-    if std::mem::take(&mut modal.map_list_rebuilt)
-        && let Some(list) = controller
-            .root_in(DIALOG)
-            .and_then(|root| controller.gui().find_id(root, MAP_LIST.into()))
-    {
-        controller.gui_mut().cancel_list_scroll(list);
-    }
-}
-
 /// Drops the chooser's dialog and any left above it.
 pub fn close(controller: &mut DialogController) {
     while controller.root_in(DIALOG).is_some() {
@@ -238,12 +225,11 @@ pub fn close(controller: &mut DialogController) {
 }
 
 /// What one pointer input on the chooser asks of the app.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChooserInput {
-    /// A press on an enabled button: GUIMainButtonSound (`0x00612B70`).
-    pub button_press: bool,
-    /// A press on a row: the list's GenericClick (`0x0061AA5A`).
-    pub row_click: bool,
+    /// The cues to play: a press on an enabled button's GUIMainButtonSound
+    /// (`0x00612B70`), a row press's GenericClick (`0x0061AA5A`).
+    pub cues: Vec<PageCue>,
     /// A game-type row rebuilt the map list.
     pub rebuilt: bool,
     /// The second press of a double-click on a row, which `0x6B` ignores.
@@ -255,7 +241,8 @@ pub struct ChooserInput {
 /// Takes the widgets' events into `modal`: a row press selects, a scroll
 /// keeps the list's first row.
 fn take_events(
-    controller: &mut DialogController,
+    controller: &DialogController,
+    events: Vec<PageEvent>,
     modal: &mut ChooseMapModalState,
     layout: &ChooseMapModalLayout,
     (modes, records): (&[SkirmishGameMode], &[SkirmishScenarioRecord]),
@@ -265,13 +252,11 @@ fn take_events(
     let Some(root) = controller.root_in(DIALOG) else {
         return out;
     };
-    let raw = controller.drain_events();
     let gui = controller.gui();
     let top = |id| page::int(gui, root, id, Prop::Top).unwrap_or(0).max(0) as usize;
-    for event in page::page_events(gui, raw) {
+    for event in events {
         match event {
-            PageEvent::Cue(PageCue::Button) => out.button_press = true,
-            PageEvent::Cue(PageCue::ListClick) => out.row_click = true,
+            PageEvent::Cue(cue) => out.cues.push(cue),
             PageEvent::Selected(MODE_LIST, row) => {
                 out.rebuilt |=
                     modal.click_mode_row(row as usize, layout, modes, records, last_mode_row);
@@ -302,18 +287,11 @@ pub fn pointer(
     x: i32,
     y: i32,
 ) -> ChooserInput {
-    take_rebuild(controller, modal);
     if sync_page(controller, modal, layout).is_none() {
         return ChooserInput::default();
     }
-    match at {
-        Pointer::Down => controller.on_pointer_down(x, y),
-        Pointer::Move => controller.on_pointer_move(x, y),
-        Pointer::Up => {
-            controller.on_pointer_up(x, y);
-        }
-    }
-    take_events(controller, modal, layout, lists, last_mode_row)
+    let events = super::page::route(controller, at, x, y, false);
+    take_events(controller, events, modal, layout, lists, last_mode_row)
 }
 
 /// A held scrollbar arrow's repeat; whether a list moved, and the next poll.
@@ -325,10 +303,11 @@ pub fn poll(
     if controller.top_id() != Some(DIALOG) {
         return (false, None);
     }
-    take_rebuild(controller, modal);
     let next = controller.poll();
     let tops = (modal.mode_top_index, modal.map_top_index);
-    take_events(controller, modal, layout, (&[], &[]), &mut None);
+    let raw = controller.drain_events();
+    let events = page::page_events(controller.gui(), raw);
+    take_events(controller, events, modal, layout, (&[], &[]), &mut None);
     (tops != (modal.mode_top_index, modal.map_top_index), next)
 }
 

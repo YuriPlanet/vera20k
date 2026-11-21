@@ -136,7 +136,6 @@ pub fn sync(
                         _ => SKIRMISH_CHEATS_LABEL,
                     };
                     NodeSpec::new(NodeKind::Checkbox)
-                        .with(Prop::ActivateOnPress, Value::Bool(true))
                         .with(Prop::Text, Value::Text(crate::i18n::tr(label)))
                 }
                 GameOptionsControl::Ok => NodeSpec::new(NodeKind::Button),
@@ -181,8 +180,8 @@ pub fn sync(
 }
 
 /// The pointer at `x`, `y` over the open box, which takes every press, move
-/// and release over the page. Its cues wait in the page's sounds; true when
-/// OK came up over its own press and the box closes.
+/// and release over the page: the cues to play, and true when OK came up
+/// over its own press and the box closes.
 pub fn pointer(
     controller: &mut DialogController,
     state: &mut super::SkirmishShellState,
@@ -190,33 +189,19 @@ pub fn pointer(
     at: super::page::Pointer,
     x: i32,
     y: i32,
-) -> bool {
+) -> (Vec<PageCue>, bool) {
+    let (mut cues, mut close) = (Vec::new(), false);
     let Some(open) = state.game_options.as_mut() else {
-        return false;
+        return (cues, close);
     };
     if sync(controller, open, layout).is_none() {
-        return false;
+        return (cues, close);
     }
-    match at {
-        super::page::Pointer::Down => controller.on_pointer_down(x, y),
-        super::page::Pointer::Move => controller.on_pointer_move(x, y),
-        super::page::Pointer::Up => {
-            controller.on_pointer_up(x, y);
-        }
-    }
-    let raw = controller.drain_events();
-    let mut close = false;
-    for event in page::page_events(controller.gui(), raw) {
-        let sound = match event {
-            PageEvent::Cue(cue @ (PageCue::Button | PageCue::Checkbox)) => Some(cue),
-            PageEvent::Toggled(2, on) => {
-                open.rules.terrain_deformation = on;
-                None
-            }
-            PageEvent::Toggled(3, on) => {
-                open.rules.skirmish_cheats = on;
-                None
-            }
+    for event in super::page::route(controller, at, x, y, false) {
+        match event {
+            PageEvent::Cue(cue) => cues.push(cue),
+            PageEvent::Toggled(2, on) => open.rules.terrain_deformation = on,
+            PageEvent::Toggled(3, on) => open.rules.skirmish_cheats = on,
             // A pointer-driven change clicks, as the page's sliders do
             // (`0x0061E6DD`).
             PageEvent::Slid {
@@ -225,18 +210,15 @@ pub fn pointer(
                 ..
             } => {
                 let limit = admitted_superweapon_limit(value);
-                let changed = std::mem::replace(&mut open.rules.superweapon_limit, limit) != limit;
-                changed.then_some(PageCue::ListClick)
+                if std::mem::replace(&mut open.rules.superweapon_limit, limit) != limit {
+                    cues.push(PageCue::ListClick);
+                }
             }
-            PageEvent::Activated(4) => {
-                close = true;
-                None
-            }
-            _ => None,
-        };
-        state.pending_ui_sounds.extend(sound);
+            PageEvent::Activated(4) => close = true,
+            _ => {}
+        }
     }
-    close
+    (cues, close)
 }
 
 /// The box's control under the pointer, for its status help.
@@ -312,17 +294,16 @@ mod tests {
             };
             Open(DialogController::default(), state)
         }
-        fn at(&mut self, at: Pointer, x: i32, y: i32) -> bool {
+        fn at(&mut self, at: Pointer, x: i32, y: i32) -> (Vec<PageCue>, bool) {
             pointer(&mut self.0, &mut self.1, &layout(), at, x, y)
         }
         fn mouse_down(&mut self, x: i32, y: i32) -> Vec<PageCue> {
             self.at(Pointer::Move, x, y);
-            self.at(Pointer::Down, x, y);
-            self.1.drain_pending_ui_sounds()
+            self.at(Pointer::Down, x, y).0
         }
         fn mouse_up(&mut self, x: i32, y: i32) -> bool {
             self.at(Pointer::Move, x, y);
-            self.at(Pointer::Up, x, y)
+            self.at(Pointer::Up, x, y).1
         }
         fn rules(&self) -> MatchRules {
             self.1.game_options.unwrap().rules

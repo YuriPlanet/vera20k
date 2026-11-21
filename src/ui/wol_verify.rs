@@ -62,11 +62,9 @@ impl WolVerifyDialog {
         let boxes = (0..count).map(|node| {
             NodeSpec::new(NodeKind::Checkbox)
                 .id(i32::from(node_box(node)))
-                .with(Prop::ActivateOnPress, Value::Bool(true))
         });
         let list = NodeSpec::new(NodeKind::List)
             .id(i32::from(LIST))
-            .with(Prop::ListWindow, Value::Bool(true))
             .with(Prop::RowCount, Value::Int(count as i32));
         let ok = NodeSpec::new(NodeKind::Button).id(i32::from(BOX_OK));
         // The first node under the pointer takes it: the boxes over the list.

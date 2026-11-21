@@ -70,7 +70,7 @@ pub(crate) fn paint_wol_buddy_children(
         };
         if let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) {
             let (w, h) = entry.native_size();
-            let base = scale.base_rect(layout.refresh);
+            let base = scale.base_rect(layout.rect_of(REFRESH).unwrap_or_default());
             let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
             shell_paint::push_entry_grown(
                 &mut paint.icons,
@@ -86,7 +86,7 @@ pub(crate) fn paint_wol_buddy_children(
         push_flag_entry_clipped_centered(
             &mut paint.controls,
             entry,
-            layout.observer_image,
+            layout.rect_of(OBSERVER_IMAGE).unwrap_or_default(),
             scale,
             SHELL_CONTROL_DEPTH,
         );
@@ -95,8 +95,12 @@ pub(crate) fn paint_wol_buddy_children(
     // The list widget's top and pushed arrow.
     let view = node(LIST).and_then(|list| gui.list_view(list));
     let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
-    let geometry =
-        ShellListGeometry::new(layout.list, ui.rows.len(), top, ListMetrics::scaled(scale));
+    let geometry = ShellListGeometry::new(
+        layout.rect_of(LIST).unwrap_or_default(),
+        ui.rows.len(),
+        top,
+        ListMetrics::scaled(scale),
+    );
     list_view_controls(
         &mut paint.controls,
         atlas,

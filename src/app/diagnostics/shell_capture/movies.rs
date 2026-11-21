@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::app::App;
+use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
@@ -1554,10 +1555,10 @@ impl MoviesCapture {
                 .as_ref()
                 .and_then(|wave| wave.compatibility_tick());
             ensure!(
-                state.frontend.shell_route.movies_and_credits() && entry_tick == Some(0),
+                state.frontend.shell_route == ShellRoute::MoviesAndCredits && entry_tick == Some(0),
                 "the frame after the 0x129 teardown is not the 0x101 entry tick 0 \
                  (route M&C {}, entry tick {entry_tick:?})",
-                state.frontend.shell_route.movies_and_credits()
+                state.frontend.shell_route == ShellRoute::MoviesAndCredits
             );
             return Ok(true);
         }
@@ -1629,16 +1630,17 @@ impl MoviesCapture {
             return Ok(false);
         }
         let expected = match self.target {
-            MoviesTarget::Page0x101 => state.frontend.shell_route.movies_and_credits(),
+            MoviesTarget::Page0x101 => state.frontend.shell_route == ShellRoute::MoviesAndCredits,
             MoviesTarget::Mods { press } => {
-                state.frontend.shell_route.mods()
+                state.frontend.shell_route == ShellRoute::Mods
                     && state.frontend.mods.page.is_some()
                     && state.frontend.shell_message_box.is_some() == (press != ModsPress::Nothing)
             }
             MoviesTarget::List0x129
             | MoviesTarget::List0x129Selected
             | MoviesTarget::FullList { .. } => {
-                state.frontend.shell_route.movie_list() && state.frontend.movie_list.is_some()
+                state.frontend.shell_route == ShellRoute::MovieList
+                    && state.frontend.movie_list.is_some()
             }
             MoviesTarget::Credits { .. } => state.frontend.credits_roll.is_some(),
             MoviesTarget::SneakPeek { .. } => state.frontend.fullscreen_movie.is_some(),
@@ -1657,7 +1659,7 @@ impl MoviesCapture {
                 ..
             } => wol_api_missing_shown(state),
             MoviesTarget::WolWelcome { entry_tick, .. } => {
-                state.frontend.shell_route.wol()
+                state.frontend.shell_route == ShellRoute::Wol
                     && entry_tick.is_none_or(|target| {
                         state
                             .frontend
@@ -1673,7 +1675,7 @@ impl MoviesCapture {
                     == Some(tick)
             }
             MoviesTarget::Campaign0x94 { entry_tick, .. } => {
-                state.frontend.shell_route.campaign()
+                state.frontend.shell_route == ShellRoute::Campaign
                     && state.frontend.campaign.is_some()
                     && entry_tick.is_none_or(|target| {
                         state
@@ -1685,7 +1687,7 @@ impl MoviesCapture {
                     })
             }
             MoviesTarget::LoadSavedGame0xB7 { entry_tick } => {
-                state.frontend.shell_route.load_saved_game()
+                state.frontend.shell_route == ShellRoute::LoadSavedGame
                     && state.frontend.load_saved_game.is_some()
                     && entry_tick.is_none_or(|target| {
                         state
@@ -1721,7 +1723,7 @@ impl MoviesCapture {
             MoviesTarget::CampaignStart { .. } => unreachable!("handled above"),
             MoviesTarget::CampaignBack => {
                 state.frontend.screen == GameScreen::MainMenu
-                    && state.frontend.shell_route.single_player()
+                    && state.frontend.shell_route == ShellRoute::SinglePlayer
                     && state.frontend.campaign.is_none()
                     && state.frontend.loading_session.is_none()
                     && state.frontend.shell_exit.is_none()
@@ -2052,7 +2054,7 @@ fn process_source_ini_hashes(state: &AppState) -> Result<Value> {
 fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     ensure!(
         state.frontend.screen == GameScreen::MainMenu
-            && state.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu,
+            && state.frontend.shell_route == ShellRoute::MainMenu,
         "campaign abort did not return to the ordinary main menu"
     );
     ensure!(

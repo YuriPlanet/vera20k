@@ -13,10 +13,11 @@ use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, UiEvent, Value};
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
+use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::skirmish_shell::{COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 use crate::ui::wol_account::{
@@ -48,6 +49,7 @@ pub(crate) const PLAY: u16 = 0x7FF3;
 /// `GUI:Password`; VERA online's heading, status line, field captions and
 /// counts. Not gamemd controls: the ids only name their rects.
 pub(crate) const LABELS: [u16; 2] = [0x7FD0, 0x7FD1];
+pub(crate) const LABEL_KEYS: [&str; 2] = ["GUI:LoginName", "GUI:Password"];
 pub(crate) const HEADING_TEXT: u16 = 0x7FD2;
 pub(crate) const STATUS_TEXT: u16 = 0x7FD3;
 pub(crate) const CAPTIONS_TEXT: [u16; 2] = [0x7FD4, 0x7FD5];
@@ -113,7 +115,7 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 /// popup (docs/lobby-protocol.md "Accounts"), and Back leaves WOL with the
 /// welcome Main Menu's help. The fourth takes My Info's stacked place
 /// (`wol_my_info`), the others the native three's. The page's left side
-/// welcomes the player and holds the sign-in form ([`WolOnlineLoginLayout`]).
+/// welcomes the player and holds the sign-in form (`[0x10F.Online]`).
 const ONLINE_PAGE: MenuPageSpec = MenuPageSpec {
     stacked: &[
         button(PLAY, 121, "VERA:Play", "VERA:PlayHelp", None),
@@ -340,12 +342,7 @@ fn edit(id: u16, limit: usize) -> NodeSpec {
 /// sign-in form's fields and Remember password in their place.
 pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
     let buttons = page::menu_buttons(policy.page_spec());
-    let check = |id: u16, key| {
-        NodeSpec::new(NodeKind::Checkbox)
-            .id(id.into())
-            .label(key)
-            .with(Prop::ActivateOnPress, Value::Bool(true))
-    };
+    let check = |id: u16, key| NodeSpec::new(NodeKind::Checkbox).id(id.into()).label(key);
     let text = |id: u16, align: ShellAlign| {
         NodeSpec::new(NodeKind::Text)
             .id(id.into())
@@ -366,12 +363,9 @@ pub(crate) fn spec(policy: LoginPolicy) -> NodeSpec {
             .child(grey(STATUS_TEXT))
             .children(COUNTS_TEXT.map(grey));
     }
-    // ComboDrop's internals are untraced: its arrow opens the list even
-    // without rows, and the next press closes the empty list.
     let combo = NodeSpec::new(NodeKind::Combo)
         .id(NICKNAME_DROP.into())
-        .tooltip(tooltip_key(NICKNAME).unwrap_or_default())
-        .with(Prop::OpenEmpty, Value::Bool(true));
+        .tooltip(tooltip_key(NICKNAME).unwrap_or_default());
     let password = edit(PASSWORD, PASSWORD_LIMIT).with(Prop::Password, Value::Bool(true));
     // A disabled Remember's caption takes the disabled owner-draw colour
     // (`0x00612F5F`).
@@ -887,19 +881,11 @@ impl WolLoginState {
 pub(crate) struct WolLoginLayout {
     pub(crate) policy: LoginPolicy,
     pub(crate) page: MenuPageLayout,
-    /// Status line `0x695`: the template is 316 DLU wide here.
-    pub(crate) status_help: RectPx,
-    /// `GUI:LoginName` and `GUI:Password`, right aligned.
-    pub(crate) labels: [(&'static str, RectPx); 2],
-    /// The combo window including its drop list.
-    pub(crate) nickname_combo: RectPx,
-    /// Its closed face (`OwnerDraw_ComboBox` height 24).
-    pub(crate) nickname_face: RectPx,
-    /// The password NewEdit after its init inset (`0x00614CCF`).
-    pub(crate) password: RectPx,
-    pub(crate) remember: RectPx,
-    /// VERA online: the left side in place of gamemd's fields.
-    pub(crate) online: Option<WolOnlineLoginLayout>,
+    /// gamemd's fields (`[0x10F]`), or VERA online's left side
+    /// (`[0x10F.Online]`): the welcome heading with the sign-in form's
+    /// status line under it, a caption over each field, Remember password
+    /// and the lobby's activity, on [`POPUP_AREA`]'s centre line.
+    pub(crate) rects: RectTable,
 }
 
 /// VERA online: the account popups centre on the page's left side, in the
@@ -907,64 +893,31 @@ pub(crate) struct WolLoginLayout {
 /// column, not on the whole page.
 pub(crate) const POPUP_AREA: RectPx = RectPx::new(36, 36, 560, 504);
 
-/// VERA online: the page's left side, drawn straight over its art: the
-/// welcome heading with the sign-in form's status line right under it,
-/// saying what to do, the form (a caption over its field each for the
-/// username and the password, and Remember password under them) and the
-/// lobby's activity below.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WolOnlineLoginLayout {
-    pub(crate) heading: RectPx,
-    /// Up to two wrapped rows.
-    pub(crate) status: RectPx,
-    /// Each field's caption and, under it, its NewEdit's window.
-    pub(crate) fields: [(RectPx, RectPx); 2],
-    pub(crate) remember: RectPx,
-    /// One row per count.
-    pub(crate) counts: [RectPx; 2],
-}
-
-/// In the shell's authored 800x600 units: one column on [`POPUP_AREA`]'s
-/// centre line, centred in the art's height too. The heading, the status
-/// line and the counts centre on the line; each field stands under its
-/// caption, as wide as a 24-letter username, with Remember password at the
-/// fields' left edge. The text rows are the shell font's 19 pixels and the
-/// fields as tall as gamemd's password field.
-const ONLINE_HEADING: RectPx = RectPx::new(36, 158, 560, 19);
-const ONLINE_STATUS: RectPx = RectPx::new(96, 181, 440, 38);
-const ONLINE_FIELDS: [(RectPx, RectPx); 2] = [
-    (
-        RectPx::new(186, 229, 260, 19),
-        RectPx::new(186, 250, 260, 22),
-    ),
-    (
-        RectPx::new(186, 280, 260, 19),
-        RectPx::new(186, 301, 260, 22),
-    ),
-];
-const ONLINE_REMEMBER: RectPx = RectPx::new(186, 333, 260, 22);
-const ONLINE_COUNTS: [RectPx; 2] = [RectPx::new(36, 371, 560, 19), RectPx::new(36, 392, 560, 19)];
-
 impl WolLoginLayout {
     pub(crate) fn page_spec(&self) -> &'static MenuPageSpec {
         self.policy.page_spec()
     }
 
+    fn nickname_face(&self) -> RectPx {
+        self.rects.get(NICKNAME_DROP).unwrap_or_default()
+    }
+
     pub(crate) fn nickname_text_rect(&self) -> RectPx {
-        crate::ui::skirmish_shell::combo_text_rect(self.nickname_face, self.page.scale)
+        crate::ui::skirmish_shell::combo_text_rect(self.nickname_face(), self.page.scale)
     }
 
     /// The drop list's rows. ComboDrop's internals are untraced: the list
     /// fills the template height below the face.
     pub(crate) fn drop_rows(&self) -> i32 {
-        let combo = self.page.scale.base_rect(self.nickname_combo);
-        ((combo.h - COMBO_FACE_H - 1) / COMBO_DROPDOWN_ROW_H).max(1)
+        let combo = layout_data::entry_of("0x10F", NICKNAME_DROP)
+            .map_or(0, |e| child_window(0, 0, 0, e.rect.h).h);
+        ((combo - COMBO_FACE_H - 1) / COMBO_DROPDOWN_ROW_H).max(1)
     }
 
     /// The combo's NewEdit takes every press on the face but the arrow zone
     /// (`combo_arrow_hit_rect`), which opens the list.
     pub(crate) fn nickname_hit(&self) -> RectPx {
-        self.page.scale.derive_rect(self.nickname_face, |face| {
+        self.page.scale.derive_rect(self.nickname_face(), |face| {
             RectPx::new(face.x, face.y, face.w - COMBO_ARROW_RESERVE_W + 1, face.h)
         })
     }
@@ -974,68 +927,23 @@ impl WolLoginLayout {
     /// the online sign-in form's fields ([`WolAccountForm::field_id`]),
     /// Remember password ([`FORM_REMEMBER`]) and statics.
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
-        if let Some(rect) = self.page.button_rect(id) {
-            return Some(rect);
-        }
-        if let Some(online) = &self.online {
-            let at = |ids: [u16; 2], rects: [RectPx; 2]| {
-                Some(rects[ids.iter().position(|other| *other == id)?])
-            };
-            return match id {
-                FORM_REMEMBER => Some(online.remember),
-                HEADING_TEXT => Some(online.heading),
-                STATUS_TEXT => Some(online.status),
-                _ => at(CAPTIONS_TEXT, online.fields.map(|f| f.0))
-                    .or_else(|| at(COUNTS_TEXT, online.counts))
-                    .or_else(|| {
-                        let index = id.checked_sub(WolAccountForm::field_id(0))?;
-                        online.fields.get(usize::from(index)).map(|f| f.1)
-                    }),
-            };
-        }
-        Some(match id {
-            NICKNAME => self.nickname_text_rect(),
-            NICKNAME_DROP => self.nickname_face,
-            PASSWORD => self.password,
-            REMEMBER => self.remember,
-            _ => self.labels[LABELS.iter().position(|label| *label == id)?].1,
+        let gamemd = self.policy != LoginPolicy::Online;
+        self.page.button_rect(id).or_else(|| match id {
+            NICKNAME if gamemd => Some(self.nickname_text_rect()),
+            _ => self.rects.get(id),
         })
     }
 
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale, policy: LoginPolicy) -> Self {
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(policy.page_spec(), scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 354, 316, 12);
-        // Heading 0x694 is 108x11 DLU here, one row taller than the family's
-        // (the same executed rect as 0x10E's).
-        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
-        let px = |rect: RectPx| scale.scale_rect(rect);
-        let combo = child_window(196, 147, 141, 143);
-        let password = child_window(196, 177, 140, 14);
+        let (page, mut rects) =
+            layout_data::menu_page(policy.page_spec(), "0x10F", scale, width, height);
+        if policy == LoginPolicy::Online {
+            rects = layout_data::place("0x10F.Online", scale, width, height);
+        }
         Self {
             policy,
             page,
-            status_help,
-            labels: [
-                ("GUI:LoginName", px(child_window(49, 148, 119, 11))),
-                ("GUI:Password", px(child_window(49, 179, 119, 11))),
-            ],
-            nickname_combo: px(combo),
-            nickname_face: px(RectPx::new(combo.x, combo.y, combo.w, COMBO_FACE_H)),
-            password: px(RectPx::new(
-                password.x + 1,
-                password.y + 1,
-                password.w - 2,
-                password.h - 2,
-            )),
-            remember: px(child_window(196, 207, 213, 13)),
-            online: (policy == LoginPolicy::Online).then(|| WolOnlineLoginLayout {
-                heading: px(ONLINE_HEADING),
-                status: px(ONLINE_STATUS),
-                fields: ONLINE_FIELDS.map(|(caption, edit)| (px(caption), px(edit))),
-                remember: px(ONLINE_REMEMBER),
-                counts: ONLINE_COUNTS.map(px),
-            }),
+            rects,
         }
     }
 }
@@ -1155,14 +1063,19 @@ mod tests {
             ]
         );
         assert_eq!(layout.page.title, RectPx::new(635, 9, 163, 19));
-        assert_eq!(layout.status_help, RectPx::new(10, 578, 475, 21));
-        assert_eq!(layout.labels[0].1, RectPx::new(74, 241, 180, 19));
-        assert_eq!(layout.labels[1].1, RectPx::new(74, 291, 180, 19));
-        assert_eq!(layout.nickname_combo, RectPx::new(294, 239, 213, 233));
-        assert_eq!(layout.nickname_face, RectPx::new(294, 239, 213, 24));
+        let rect = |id| layout.rect_of(id).unwrap();
+        assert_eq!(layout.page.status_help, RectPx::new(10, 578, 475, 21));
+        assert_eq!(rect(LABELS[0]), RectPx::new(74, 241, 180, 19));
+        assert_eq!(rect(LABELS[1]), RectPx::new(74, 291, 180, 19));
+        // The combo window is 213x233; its face the top 24.
+        assert_eq!(
+            layout.drop_rows(),
+            (233 - COMBO_FACE_H - 1) / COMBO_DROPDOWN_ROW_H
+        );
+        assert_eq!(rect(NICKNAME_DROP), RectPx::new(294, 239, 213, 24));
         // Executed (294, 288, 211, 24), then the NewEdit inset.
-        assert_eq!(layout.password, RectPx::new(295, 289, 209, 22));
-        assert_eq!(layout.remember, RectPx::new(294, 336, 321, 22));
+        assert_eq!(rect(PASSWORD), RectPx::new(295, 289, 209, 22));
+        assert_eq!(rect(REMEMBER), RectPx::new(294, 336, 321, 22));
         assert_eq!(
             layout.page.warning_monitor,
             RectPx::new(670, 47, 93, 55),
@@ -1174,7 +1087,7 @@ mod tests {
             small.page.button_rect(BACK),
             Some(RectPx::new(484, 409, 156, 42))
         );
-        assert_eq!(small.password, layout.password);
+        assert_eq!(small.rect_of(PASSWORD), layout.rect_of(PASSWORD));
     }
 
     #[test]
@@ -1254,8 +1167,9 @@ mod tests {
         assert_eq!(page.globals.password, "12345678", "limit 8");
         assert!(page.on(LOGIN, Prop::Enabled) && page.on(REMEMBER, Prop::Enabled));
         assert!(page.globals.changed);
-        let remember =
-            WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy).remember;
+        let remember = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy)
+            .rect_of(REMEMBER)
+            .unwrap();
         page.click(&mut login, inside(remember));
         assert!(page.globals.remember && page.on(REMEMBER, Prop::Checked));
         assert_eq!(
@@ -1309,27 +1223,6 @@ mod tests {
             !globals.auto_login_names("alpha"),
             "strcmp is case-sensitive"
         );
-    }
-
-    #[test]
-    fn the_arrow_opens_an_empty_list_that_swallows_the_next_press() {
-        let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
-        let mut login = WolLoginState::open(&mut page.cx());
-        let layout = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Legacy);
-        let face = layout.nickname_face;
-        page.click(&mut login, (face.x + face.w - 5, face.y + 5));
-        let combo = page.ui.control(DIALOG, NICKNAME_DROP).unwrap();
-        assert!(
-            page.ui.gui().combo_drop_down(combo).is_some(),
-            "open without rows"
-        );
-        let back = layout.page.button_rect(BACK).unwrap();
-        assert_eq!(
-            page.click(&mut login, inside(back)),
-            None,
-            "the press only closes it"
-        );
-        assert!(page.ui.gui().combo_drop_down(combo).is_none());
     }
 
     #[test]
@@ -1479,22 +1372,25 @@ mod tests {
         assert!(page.globals.remember);
         // Unticking Remember password, on its box only, forgets it at once.
         let mut login = WolLoginState::open_online(&mut page.cx(), Some("Tanya"), None);
-        let online = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
-            .online
+        let remember = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
+            .rect_of(FORM_REMEMBER)
             .unwrap();
-        let caption = (online.remember.x + 30, online.remember.y + 5);
+        let caption = (remember.x + 30, remember.y + 5);
         assert_eq!(page.click(&mut login, caption), None);
         assert!(
             page.on(FORM_REMEMBER, Prop::Checked),
             "the caption does not toggle"
         );
         assert_eq!(
-            page.click(&mut login, inside(online.remember)),
+            page.click(&mut login, inside(remember)),
             Some(WolLoginAction::ForgetSignIn)
         );
         assert!(!page.on(FORM_REMEMBER, Prop::Checked) && login.remembered.is_none());
         // A press on a field gives it the keys.
-        page.click(&mut login, inside(online.fields[0].1));
+        let name_field = WolLoginLayout::new(800, 600, ShellScale::RETAIL, LoginPolicy::Online)
+            .rect_of(WolAccountForm::field_id(0))
+            .unwrap();
+        page.click(&mut login, inside(name_field));
         login.insert_text(&mut page.cx(), "2");
         assert_eq!(login.online_name(&page.ui), "Tanya2");
     }
@@ -1585,12 +1481,16 @@ mod tests {
         assert_eq!(help(BACK), Some("STT:WOLWelcomeBack"));
         // The sign-in form's fields are as tall as gamemd's password field;
         // each stands under its caption, at the same left edge.
-        let online = layout.online.unwrap();
-        assert!(native.online.is_none());
+        let rect = |id| layout.rect_of(id).unwrap();
+        assert_eq!(native.rect_of(FORM_REMEMBER), None);
         let mut page = Page::new(WolAccountGlobals::default(), Vec::new());
         WolLoginState::open_online(&mut page.cx(), None, None);
-        for (index, (caption, edit)) in online.fields.into_iter().enumerate() {
-            assert_eq!(edit.h, native.password.h);
+        for index in 0..2 {
+            let (caption, edit) = (
+                rect(CAPTIONS_TEXT[index]),
+                rect(WolAccountForm::field_id(index)),
+            );
+            assert_eq!(edit.h, native.rect_of(PASSWORD).unwrap().h);
             assert_eq!((caption.x, caption.w), (edit.x, edit.w));
             assert!(caption.y + caption.h <= edit.y);
             assert_eq!(
@@ -1599,30 +1499,32 @@ mod tests {
             );
             assert_eq!(page.hit(&layout, caption.x + 1, caption.y + 1), None);
         }
+        let remember = rect(FORM_REMEMBER);
         assert_eq!(
-            page.hit(&layout, online.remember.x + 1, online.remember.y + 1),
+            page.hit(&layout, remember.x + 1, remember.y + 1),
             Some(FORM_REMEMBER)
         );
         // Top to bottom: the heading, the status line saying what to do, the
         // two captioned fields, Remember password and the counts, clear of
         // the buttons and the page's own status line.
         let rows = [
-            online.heading,
-            online.status,
-            online.fields[0].0,
-            online.fields[0].1,
-            online.fields[1].0,
-            online.fields[1].1,
-            online.remember,
-            online.counts[0],
-            online.counts[1],
-        ];
+            HEADING_TEXT,
+            STATUS_TEXT,
+            CAPTIONS_TEXT[0],
+            WolAccountForm::field_id(0),
+            CAPTIONS_TEXT[1],
+            WolAccountForm::field_id(1),
+            FORM_REMEMBER,
+            COUNTS_TEXT[0],
+            COUNTS_TEXT[1],
+        ]
+        .map(rect);
         for pair in rows.windows(2) {
             assert!(pair[0].y + pair[0].h <= pair[1].y, "{pair:?}");
         }
         for row in rows {
             assert!(row.x + row.w < layout.page.right_panel.top.x, "{row:?}");
-            assert!(row.y + row.h < layout.status_help.y, "{row:?}");
+            assert!(row.y + row.h < layout.page.status_help.y, "{row:?}");
         }
         // Every row shares the popups' centre line, and the column centres
         // in the art's height as the popups do.
@@ -1630,8 +1532,8 @@ mod tests {
         for row in rows {
             assert_eq!(centre(row), centre(POPUP_AREA), "{row:?}");
         }
-        let last = online.counts[1];
-        let middle = online.heading.y + last.y + last.h;
+        let last = rect(COUNTS_TEXT[1]);
+        let middle = rect(HEADING_TEXT).y + last.y + last.h;
         assert!(
             (middle - (2 * POPUP_AREA.y + POPUP_AREA.h)).abs() <= 8,
             "{middle}"

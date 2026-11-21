@@ -13,6 +13,7 @@ use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, dlu_rect};
+use crate::ui::shell::list::list_box_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
@@ -61,9 +62,8 @@ pub fn compute_movie_list_layout(screen_w: u32, screen_h: u32) -> MovieListLayou
 vera20k_gui::scaled_rects!(MovieListLayout { page, list, prompt });
 
 /// The list box (subclass `0x0061A948`) as a `List` node under `parent`:
-/// window `rect`, `rows` the page paints itself, `selected` and `top`.
-/// `double_click` off makes every press select, as the Mods page, which
-/// checks for no double-click, does. The node holds the selection from then
+/// window `rect` (its `Rect` the paint surface, [`list_box_rect`]), `rows`
+/// the page paints itself, `selected` and `top`. The node holds the selection from then
 /// on: the subclass's LB_SETCURSEL handler (`0x0061A534..0x0061A5F5`) always
 /// returns 0, so the proc's fallback `LB_SETCURSEL(0)` never runs and a
 /// fresh process opens with nothing selected.
@@ -74,12 +74,9 @@ pub fn build_family_list(
     rows: usize,
     selected: Option<usize>,
     top: usize,
-    double_click: bool,
 ) -> Option<NodeId> {
     let node = gui.create(NodeKind::List, Some(parent)).ok()?;
-    gui.set(node, Prop::Rect, Value::Rect(rect)).ok()?;
-    gui.set(node, Prop::DoubleClick, Value::Bool(double_click))
-        .ok()?;
+    gui.set(node, Prop::Rect, Value::Rect(list_box_rect(rect))).ok()?;
     set_family_list(gui, node, rows, selected, top);
     Some(node)
 }
@@ -127,12 +124,11 @@ pub fn family_list_node(
     dialog: DialogId,
     rect: RectPx,
     (rows, selected, top): (usize, Option<usize>, usize),
-    double_click: bool,
 ) -> Option<NodeId> {
     if let Some(node) = find_family_list(controller, dialog) {
         let _ = controller
             .gui_mut()
-            .set(node, Prop::Rect, Value::Rect(rect));
+            .set(node, Prop::Rect, Value::Rect(list_box_rect(rect)));
         return Some(node);
     }
     let root = controller.root_in(dialog)?;
@@ -143,7 +139,6 @@ pub fn family_list_node(
         rows,
         selected,
         top,
-        double_click,
     )
 }
 
@@ -260,7 +255,6 @@ mod tests {
             list.len(),
             retained_movie_row(&list, -1),
             0,
-            true,
         )
         .unwrap();
         gui.push_dialog(root, DialogKind::Page, None, None).unwrap();
@@ -308,21 +302,6 @@ mod tests {
             layout.page.button_rect(0x0686),
             Some(RectPx::new(644, 535, 156, 42))
         );
-    }
-
-    #[test]
-    fn press_hit_uses_client_y_without_border_correction() {
-        let (mut gui, _) = list_page();
-        // A second apart: no press is the second of a double-click.
-        assert_eq!(press(&mut gui, 150, 128, 0), Some(0));
-        assert_eq!(press(&mut gui, 150, 146, 1000), Some(0));
-        assert_eq!(
-            press(&mut gui, 150, 147, 2000),
-            None,
-            "row 1 does not exist"
-        );
-        assert_eq!(press(&mut gui, 119, 130, 3000), None);
-        assert_eq!(press(&mut gui, 519, 130, 4000), None);
     }
 
     fn files(progress: MovieProgress) -> Vec<&'static str> {

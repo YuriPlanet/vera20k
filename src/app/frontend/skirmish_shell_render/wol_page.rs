@@ -75,16 +75,13 @@ fn paint_widget_box(
 ) -> WolLobbyPaint {
     let mut paint = paint_box(state, rect, &[], &[]);
     let c = &state.frontend.shell_controller;
-    let (Some(root), Some(atlas)) = (
-        c.root_in(dialog),
-        state.frontend.skirmish_shell_chrome.as_ref(),
-    ) else {
+    let Some(root) = c.root_in(dialog) else {
         return paint;
     };
     let style = GuiStyle {
         text_of: Some(text_of),
         rows_of: Some(rows_of),
-        ..GuiStyle::popup(atlas)
+        ..GuiStyle::popup()
     };
     let widgets = super::gui_paint::paint_gui_styled(state, c.gui(), root, SCALE, &[], style);
     paint.controls.extend(widgets.controls);
@@ -175,7 +172,10 @@ pub(crate) fn paint_wol_verify(
         let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
             return paint;
         };
-        let (w, h) = (state.renderer.gpu.config.width, state.renderer.gpu.config.height);
+        let (w, h) = (
+            state.renderer.gpu.config.width,
+            state.renderer.gpu.config.height,
+        );
         let parts = message.parts(w as i32, h as i32, SCALE);
         let pressed = verify.ok_pressed();
         let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);

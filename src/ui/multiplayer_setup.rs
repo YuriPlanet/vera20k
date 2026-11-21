@@ -10,9 +10,10 @@ use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 use crate::ui::lan_shell::{LanChatState, LanListState};
 use crate::ui::shell::combobox::ComboPopup;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
+use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
 use crate::ui::shell::layout::Placer;
+use crate::ui::shell::layout_data;
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self as page_nodes, PageCue, PageEvent};
@@ -1062,6 +1063,21 @@ pub(crate) struct GameOptionsLayout {
     pub(crate) ok: RectPx,
 }
 
+/// The roster's column captions (ids `0xFF00..`) and the option trackbars'
+/// captions.
+const LABELS: [&str; 5] = [
+    "GUI:Players",
+    "GUI:Side",
+    "GUI:Color",
+    "GUI:StartPosition",
+    "GUI:Team",
+];
+const OPTION_LABELS: [(u16, &str); 3] = [
+    (OPTION_CAPTIONS[0], "GUI:GameSpeed"),
+    (OPTION_CAPTIONS[1], "GUI:Credits"),
+    (OPTION_CAPTIONS[2], "GUI:UnitCount"),
+];
+
 /// Previous and Next under the roster: the size of the MNBTTN art the
 /// shell's ordinary buttons draw, as Game Options' OK.
 const ROSTER_BUTTON_W: i32 = 124;
@@ -1150,16 +1166,19 @@ impl MultiplayerSetupLayout {
         let scale = page.scale;
         let place = Placer::on(scale, width, height);
         let rect = |x, y, w, h| place.px(x, y, w, h);
-        // Resource templates of the anchored statics (BC/BD vs C2/C9).
-        let (title, preview_x, label_x, map_label_y) = match (dialog.flavor, host) {
-            (SetupFlavor::Lan, _) => (RectPx::new(425, 1, 108, 10), 429, 431, 116),
-            (SetupFlavor::Wol, true) => (RectPx::new(424, 4, 108, 11), 432, 434, 118),
-            (SetupFlavor::Wol, false) => (RectPx::new(424, 4, 108, 11), 433, 435, 118),
+        // `shell_layout.ini`'s BC/BD/C2/C9: the original relayout
+        // 0x60C4A0 -> 0x60C0C0 keeps the body at its resource places and
+        // anchors the heading, status line, preview and map texts.
+        let section = match (dialog.flavor, host) {
+            (SetupFlavor::Lan, true) => "0xBC",
+            (SetupFlavor::Lan, false) => "0xBD",
+            (SetupFlavor::Wol, true) => "0xC2",
+            (SetupFlavor::Wol, false) => "0xC9",
         };
-        page.title = place.at(LOW_HEADING_ANCHOR, title.x, title.y, title.w, title.h);
-        // Original BC/BD relayout60C4A0→60C0C0. Body controls stay at
-        // resource coordinates; only the sidebar is anchored to screen size.
-        page.status_help = place.at(AnchorRule::StatusLine, 2, 355, 410, 12);
+        let rects = layout_data::place(section, scale, width, height);
+        let at = |id| rects.get(id).unwrap_or_default();
+        page.title = at(0x694);
+        page.status_help = at(0x695);
         let combos = std::array::from_fn(|row| {
             std::array::from_fn(|column| {
                 let (x, w) = [(49, 100), (201, 78), (294, 27), (334, 25), (374, 25)][column];
@@ -1167,38 +1186,6 @@ impl MultiplayerSetupLayout {
                 scale.scale_rect(RectPx::new(window.x, window.y, window.w, 24))
             })
         });
-        // C9's option block sits 1-2 px lower than C2/BC/BD in its resource.
-        let wol_guest = dialog.wol() && !host;
-        let option_y: [i32; 4] = if wol_guest {
-            [254, 281, 309, 336]
-        } else {
-            [252, 280, 307, 335]
-        };
-        // BC/BD and C2 differ by one pixel in the credits/unit rows.
-        let (credit_y, unit_y) = match (dialog.flavor, host) {
-            (SetupFlavor::Lan, _) => (279, 306),
-            (SetupFlavor::Wol, _) => (option_y[1], option_y[2]),
-        };
-        let (label_speed_y, label_credit_y, label_unit_y) = if wol_guest {
-            (254, 281, 309)
-        } else {
-            (252, 280, 307)
-        };
-        let labels = [
-            ("GUI:Players", 74, 11, 147, 17),
-            ("GUI:Side", 302, 11, 111, 17),
-            ("GUI:Color", 440, 11, 64, 17),
-            ("GUI:StartPosition", 503, 11, 52, 17),
-            ("GUI:Team", 560, 11, 52, 17),
-        ]
-        .into_iter()
-        .map(|(s, x, y, w, h)| (s, rect(x, y, w, h)))
-        .collect();
-        let option_labels = [
-            ("GUI:GameSpeed", rect(302, label_speed_y, 93, 17)),
-            ("GUI:Credits", rect(302, label_credit_y, 91, 17)),
-            ("GUI:UnitCount", rect(302, label_unit_y, 91, 17)),
-        ];
         // C2's sixth row icons sit at 164 (template 101), C9's at 166.
         let icon_y = |row: usize| {
             if dialog.wol() && host && row == 5 {
@@ -1206,18 +1193,6 @@ impl MultiplayerSetupLayout {
             } else {
                 36 + row as i32 * 26
             }
-        };
-        let checkbox_x = if dialog.wol() { 72 } else { 71 };
-        let build_off_ally_width = match (dialog.flavor, host) {
-            (SetupFlavor::Lan, true) => 225,
-            (SetupFlavor::Lan, false) => 234,
-            (SetupFlavor::Wol, true) => 256,
-            (SetupFlavor::Wol, false) => 261,
-        };
-        let (chat_y, chat_w, chat_log_w) = match (dialog.flavor, host) {
-            (SetupFlavor::Lan, _) => (533, 609, 610),
-            (SetupFlavor::Wol, true) => (533, 580, 612),
-            (SetupFlavor::Wol, false) => (535, 580, 612),
         };
         // A header's Join over the Side column, the size of the MNBTTN art
         // as Previous and Next under the roster; the host's Add AI over the
@@ -1240,12 +1215,8 @@ impl MultiplayerSetupLayout {
             header_controls,
             roster_rows: [RectPx::new(0, 0, 0, 0); MODERN_SETUP_ROWS],
             group_boxes: [None; MODERN_SETUP_ROWS],
-            // The native dialogs' rows leave 18 px above their options.
-            roster_navigation: [
-                rect(74, 230, ROSTER_BUTTON_W, 18),
-                rect(611 - ROSTER_BUTTON_W, 230, ROSTER_BUTTON_W, 18),
-            ],
-            roster_page_label: rect(208, 230, 269, 18),
+            roster_navigation: [at(PREVIOUS_ROWS), at(NEXT_ROWS)],
+            roster_page_label: at(0xFF05),
             roster_area: RectPx::new(0, 0, 0, 0),
             roster_columns: RosterColumns::new(RectPx::new(0, 0, ROSTER_W + ROSTER_SPARE_W, 0)),
             roster_bottom: ROSTER_BOTTOM,
@@ -1257,17 +1228,10 @@ impl MultiplayerSetupLayout {
                     rect(42, icon_y(row), 28, 21)
                 }
             }),
-            emote: dialog.wol().then(|| rect(596, 533, 27, 24)),
-            // The NewEdit paints inside its one-pixel resource frame.
-            chat: rect(12, chat_y + 1, chat_w - 2, 19),
-            chat_log: rect(11, 369, chat_log_w, 160),
-            checkboxes: [
-                rect(checkbox_x, option_y[0], 151, 17),
-                rect(checkbox_x, option_y[1], 151, 17),
-                rect(checkbox_x, option_y[2], 151, 17),
-                rect(checkbox_x, option_y[3], 151, 17),
-                rect(302, option_y[3], build_off_ally_width, 17),
-            ],
+            emote: rects.get(EMOTE),
+            chat: at(CHAT),
+            chat_log: at(CHAT_LOG),
+            checkboxes: CHECKBOXES.map(at),
             room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
@@ -1277,26 +1241,27 @@ impl MultiplayerSetupLayout {
             team_colors: None,
             balance: None,
             trackbars: [
-                (SPEED, rect(404, option_y[0], 129, 21)),
-                (CREDITS, rect(404, credit_y, 129, 21)),
-                (UNITS, rect(404, unit_y, 129, 21)),
-                (
-                    DIFFICULTY,
-                    rect(180, 215, 266, if dialog.wol() && host { 21 } else { 22 }),
-                ),
+                (SPEED, at(SPEED)),
+                (CREDITS, at(CREDITS)),
+                (UNITS, at(UNITS)),
+                (DIFFICULTY, at(DIFFICULTY)),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
                 (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
                 (ROOM_SIZE, RectPx::new(0, 0, 0, 0)),
             ],
-            labels,
-            option_labels,
+            labels: LABELS
+                .iter()
+                .zip(0xFF00..)
+                .map(|(key, id)| (*key, at(id)))
+                .collect(),
+            option_labels: OPTION_LABELS.map(|(id, key)| (key, at(id))),
             game_options: None,
             map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             notice_ok: crate::ui::shell::modal::body_ok_layout(width, height).ok,
-            cooperative_description: rect(60, 98, 540, 143),
-            map_preview: place.at(AnchorRule::RightAnchor, preview_x, 23, 96, 69),
-            mode_label: place.at(MAP_TEXT_ANCHOR, label_x, 103, 90, 10),
-            map_label: place.at(MAP_TEXT_ANCHOR, label_x, map_label_y, 90, 20),
+            cooperative_description: at(0xFF06),
+            map_preview: at(MAP_PREVIEW),
+            mode_label: at(0x6EC),
+            map_label: at(0x5A8),
         };
         if dialog.modern {
             layout.move_options_into_popup(dialog.wol(), host);
@@ -1701,7 +1666,6 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         .chain(dialog.page().buttons().map(|button| button.id));
     let list = |id| {
         node(NodeKind::List, id)
-            .with(Prop::ListWindow, Value::Bool(true))
             .with(Prop::RowCount, Value::Int(0))
             .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
     };
@@ -1752,11 +1716,9 @@ fn option_spec(
             .find(|(known, _)| **known == id)
             .map_or("", |(_, key)| key)
     };
-    let checkboxes = checkboxes.into_iter().map(move |id| {
-        node(NodeKind::Checkbox, id)
-            .label(label(id))
-            .with(Prop::ActivateOnPress, Value::Bool(true))
-    });
+    let checkboxes = checkboxes
+        .into_iter()
+        .map(move |id| node(NodeKind::Checkbox, id).label(label(id)));
     let trackbars = trackbars.into_iter().map(|id| {
         node(NodeKind::Trackbar, id).with(Prop::ShowValue, Value::Bool(id != DIFFICULTY))
     });
@@ -1931,7 +1893,7 @@ fn props(
             props.push((Prop::PressThrough, Value::Bool(!opens)));
             if let Some(list) = layout.roster_list(id, combo, cap) {
                 props.extend([
-                    (Prop::PopupRowHeight, Value::Int(list.row_height)),
+                    (Prop::RowHeight, Value::Int(list.row_height)),
                     (Prop::PopupRect, Value::Rect(list.rect)),
                 ]);
             }

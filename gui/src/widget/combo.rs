@@ -59,16 +59,11 @@ pub(crate) fn drop_down(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<
         return None;
     };
     st.list.control?;
-    let captured_part = st.list.scroll.captured_part();
-    // The combo's own scrollbar shows a held arrow pushed wherever the
-    // pointer is.
-    let own = tree.node(node).ok()?.bool_prop(Prop::ComboScrollbar, false);
-    let held_arrow = captured_part.filter(|p| matches!(p, ListScrollPart::Up | ListScrollPart::Down));
     Some(ComboDropDown {
         popup: popup_at(tree, node, scale, st.list.top_index)?,
         hot_row: st.list.hot_row,
-        pressed_part: if own { held_arrow } else { st.list.scroll.pressed_part() },
-        captured_part,
+        pressed_part: st.list.scroll.pressed_part(),
+        captured_part: st.list.scroll.captured_part(),
     })
 }
 
@@ -88,7 +83,7 @@ fn selected(n: &Node) -> Option<usize> {
 fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<ComboPopup> {
     let n = tree.node(node).ok()?;
     let total = row_count(n);
-    if total == 0 && !n.bool_prop(Prop::OpenEmpty, false) {
+    if total == 0 {
         return None;
     }
     let cap = n.int_prop(Prop::VisibleRows, 0).max(0) as usize;
@@ -97,7 +92,7 @@ fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<
         face.w += n.int_prop(Prop::PopupWiden, 0);
     }
     let mut popup = ComboPopup::new(face, scale, total, cap, top);
-    if let Some(Value::Int(row_h)) = n.props.get(&Prop::PopupRowHeight) {
+    if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
         popup = popup.with_row_height(*row_h);
     }
     if let Some(Value::Int(bottom)) = n.props.get(&Prop::PopupBottom) {
@@ -149,7 +144,6 @@ fn close(ctx: &mut Ctx<'_>, node: NodeId) {
     ctx.events.push(UiEvent::ComboClosed { node });
 }
 
-/// Closes the list for the host: no cue, no event.
 /// Lets go of the open list's held scrollbar part for the host, which lost
 /// the pointer; the list stays open.
 pub(crate) fn release_scroll(tree: &mut Tree, node: NodeId) {
@@ -158,6 +152,7 @@ pub(crate) fn release_scroll(tree: &mut Tree, node: NodeId) {
     }
 }
 
+/// Closes the list for the host: no cue, no event.
 pub(crate) fn dismiss(tree: &mut Tree, node: NodeId) {
     if let Some(st) = state_mut(tree, node) {
         st.list.close();
@@ -216,30 +211,11 @@ fn open_popup(ctx: &mut Ctx<'_>, node: NodeId) -> Option<ComboPopup> {
 /// A press while this combo's list is the dialog's popup (ComboDropWin
 /// 0x0060E0C0): the scrollbar takes it silently; a row or anywhere else
 /// closes the list, a row then selecting.
-/// The part of the owner-draw combo's own scrollbar under the pointer: the
-/// whole bar hits, each arrow the art's height at its end, the thumb its
-/// rows, the track the rest.
-fn own_scroll_part(popup: &ComboPopup, x: i32, y: i32) -> Option<ListScrollPart> {
-    let bar = popup.scrollbar().filter(|bar| bar.contains(x, y))?;
-    let arrow_h = popup.scroll_geometry().metrics.arrow_h;
-    let thumb = popup.thumb()?;
-    Some(if y < bar.y + arrow_h {
-        ListScrollPart::Up
-    } else if y >= bar.y + bar.h - arrow_h {
-        ListScrollPart::Down
-    } else if (thumb.y..thumb.y + thumb.h).contains(&y) {
-        ListScrollPart::Thumb
-    } else {
-        ListScrollPart::Track
-    })
-}
-
 pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     let Some(popup) = open_popup(ctx, node) else {
         *ctx.popup = None;
         return;
     };
-    let own_scrollbar = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::ComboScrollbar, false));
     let now = ctx.now;
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
@@ -247,12 +223,6 @@ pub(crate) fn popup_press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) {
     let before = st.list.top_index;
     st.pointer = (x, y);
     let now = st.epoch + Duration::from_millis(now);
-    if own_scrollbar
-        && let Some(part) = own_scroll_part(&popup, x, y)
-    {
-        st.list.scroll.press(part, popup.scroll_geometry(), &mut st.list.top_index, y, now);
-        return sync_top(ctx, node, before);
-    }
     match st.list.press_list(popup, x, y, now) {
         ComboPress::Scroll(_) => sync_top(ctx, node, before),
         // CBN_SELCHANGE on every pick, the current row too.
@@ -483,28 +453,6 @@ mod tests {
         // Removing the combo forgets its open list.
         g.remove(c).unwrap();
         assert_eq!(g.popup(), None);
-    }
-
-    #[test]
-    fn the_combos_own_scrollbar_takes_its_left_column_and_keeps_a_held_arrow_pushed() {
-        use crate::shell::list::ListScrollPart;
-        let (mut g, c) = page_with_combo(9, 4);
-        g.set(c, Prop::ComboScrollbar, Value::Bool(true)).unwrap();
-        click(&mut g, 125, 25);
-        let bar = g.combo_drop_down(c).unwrap().popup.scrollbar().unwrap();
-        // Just above the down arrow's art, in the bar's first column: the
-        // track, which jumps (the list box's bar would step one row).
-        let y = bar.y + bar.h - 22 - 1;
-        let top = g.combo_drop_down(c).unwrap().popup.scroll_geometry().top_at_pointer(y);
-        g.input(InputEvent::PointerDown { x: bar.x, y, button: MouseButton::Left }, 0);
-        assert_eq!(g.combo_drop_down(c).unwrap().captured_part, Some(ListScrollPart::Track));
-        assert_eq!(g.get(c, Prop::Top).unwrap(), Some(&Value::Int(top as i32)));
-        g.input(InputEvent::PointerUp { x: bar.x, y, button: MouseButton::Left }, 0);
-        // A held arrow stays pushed with the pointer off it.
-        g.input(InputEvent::PointerDown { x: bar.x + 2, y: bar.y + bar.h - 2, button: MouseButton::Left }, 0);
-        g.input(InputEvent::PointerMove { x: 500, y: 500 }, 0);
-        assert_eq!(g.combo_drop_down(c).unwrap().pressed_part, Some(ListScrollPart::Down));
-        assert!(g.popup().is_some());
     }
 
     #[test]

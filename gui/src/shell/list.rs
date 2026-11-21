@@ -126,20 +126,6 @@ impl ListScrollInteraction {
             _ => {}
         }
     }
-    /// [`Self::poll`] for a scrollbar whose held arrow steps on and off the
-    /// pointer; a hold on the thumb or track ends the repeat.
-    pub(crate) fn poll_held(&mut self, max_top: usize, top: &mut usize, now: Instant) {
-        if !self.repeat_at.is_some_and(|deadline| now >= deadline) {
-            return;
-        }
-        match self.captured {
-            Some(part @ (ListScrollPart::Up | ListScrollPart::Down)) => {
-                Self::step(part, max_top, top);
-                self.repeat_at = Some(now + Duration::from_millis(25));
-            }
-            _ => self.repeat_at = None,
-        }
-    }
     pub fn pressed_part(&self) -> Option<ListScrollPart> {
         match (self.captured, self.hovered) {
             (Some(ListScrollPart::Thumb) | None, _) => None,
@@ -311,14 +297,11 @@ impl ListBoxState {
         }
     }
 
-    /// List and scrollbar geometry ([`list_box_geometry`]).
+    /// List and scrollbar geometry on the paint surface `list`.
     pub(crate) fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
         match self.visible_rows {
-            Some(rows) => {
-                let outer = RectPx::new(list.x, list.y, list.w + 1, list.h + 1);
-                ShellListGeometry::with_visible_rows(outer, self.rows, rows, self.top, metrics)
-            }
-            None => list_box_geometry(list, self.rows, self.top, metrics),
+            Some(rows) => ShellListGeometry::with_visible_rows(list, self.rows, rows, self.top, metrics),
+            None => ShellListGeometry::new(list, self.rows, self.top, metrics),
         }
     }
 
@@ -373,48 +356,30 @@ impl ListBoxState {
     ) -> bool {
         is_double_click(&mut self.last_press, now, x, y, limits)
     }
+}
 
-    /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
-    /// without a border correction, ignoring presses below the last row. The
-    /// scrollbar is its own child window, so presses on it never reach the
-    /// list.
-    pub(crate) fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
-        if !list.contains(x, y)
-            || self
-                .geometry(list, metrics)
-                .scrollbar
-                .is_some_and(|bar| bar.contains(x, y))
-        {
-            return None;
-        }
-        let row = ((y - list.y) / metrics.row_h) as usize + self.top;
-        (row < self.rows).then_some(row)
-    }
+/// The paint surface of the `0x744` list box window `list`: one pixel wider
+/// and taller, which reproduces the retail frames (a scrollbar only above 15
+/// rows, at `x + w - 20` and 20 wide, a 202 px thumb for 17 rows).
+pub fn list_box_rect(list: RectPx) -> RectPx {
+    RectPx::new(list.x, list.y, list.w + 1, list.h + 1)
 }
 
 /// An owner-draw list box's list and scrollbar geometry with `count` rows
-/// from `top`. The shared geometry takes the paint surface, one pixel wider
-/// and taller than the `0x744` window `list`, which reproduces the retail
-/// frames: a scrollbar only above 15 rows, at `x + w - 20` and 20 wide, a
-/// 202 px thumb for 17 rows.
+/// from `top` in window `list` ([`list_box_rect`]).
 pub fn list_box_geometry(
     list: RectPx,
     count: usize,
     top: usize,
     metrics: ListMetrics,
 ) -> ShellListGeometry {
-    ShellListGeometry::new(
-        RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
-        count,
-        top,
-        metrics,
-    )
+    ShellListGeometry::new(list_box_rect(list), count, top, metrics)
 }
 
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
 /// ComboDropWin create the same 0061C690 child; its range is the maximum
 /// top index, not the item count. The paint origin includes the one-pixel inset.
-pub(crate) fn scrollbar_thumb_y(
+pub fn scrollbar_thumb_y(
     bar: RectPx,
     thumb_h: i32,
     top: usize,
@@ -434,7 +399,7 @@ pub(crate) fn scrollbar_thumb_y(
 /// Native reads the pointer in window coordinates (before the paint inset),
 /// recenters the thumb on every drag update, and truncates signed division.
 /// The down event inside the thumb only captures; callers invoke this on move.
-pub(crate) fn scrollbar_top_at_pointer(
+pub fn scrollbar_top_at_pointer(
     bar: RectPx,
     thumb_h: i32,
     max_top: usize,
@@ -569,7 +534,7 @@ pub(crate) fn is_double_click(
 /// same proportion against its grown arrows. f64 arithmetic preserves ordinary
 /// control geometry; x87 rounding-edge cases remain outside the sampled native
 /// comparison coverage.
-pub(crate) fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
+pub fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
     let track = f64::from(height - 2 - metrics.arrow_h * 2);
     ftol_f64(track - ((range + 1) as f64).ln() * track * 0.2).max(metrics.min_thumb_h)
 }

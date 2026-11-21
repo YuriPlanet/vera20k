@@ -9,8 +9,10 @@ use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 
 pub(crate) const CREATE: u16 = 0x6CC;
@@ -71,7 +73,6 @@ pub(crate) fn spec() -> NodeSpec {
     let list = |id: u16| {
         node(NodeKind::List, id)
             .with(Prop::RowCount, Value::Int(0))
-            .with(Prop::ListWindow, Value::Bool(true))
             .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
             .with(Prop::NoSelectionFill, Value::Bool(id == CHAT_LOG))
     };
@@ -79,15 +80,8 @@ pub(crate) fn spec() -> NodeSpec {
         .children(crate::ui::shell::page::menu_buttons(&PAGE))
         .child(node(NodeKind::Text, NAME))
         .child(node(NodeKind::Text, CHAT))
-        .children([GAMES, PLAYERS, CHAT_LOG].map(|id| {
-            // The players list counts a press below its last row toward a
-            // double-click too (its proc ignores LBN_DBLCLK).
-            list(id).with(Prop::AreaDoubleClick, Value::Bool(id == PLAYERS))
-        }))
-        .child(
-            node(NodeKind::Checkbox, OBSERVER_TOGGLE)
-                .with(Prop::ActivateOnPress, Value::Bool(true)),
-        )
+        .children([GAMES, PLAYERS, CHAT_LOG].map(list))
+        .child(node(NodeKind::Checkbox, OBSERVER_TOGGLE))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -772,55 +766,31 @@ pub(crate) fn apply_chat_length_limit(edit: &mut SavedSeedDescriptionEdit) {
     }
 }
 
+/// BB's captions (statics `0xFFFF`), the lobby paints them.
+pub(crate) const LABELS: [(u16, &str); 3] = [
+    (0xFF00, "GUI:Games"),
+    (0xFF01, "GUI:Players"),
+    (0xFF02, "GUI:YourName"),
+];
+
+/// BB at the current screen (`[0xBB]`): ordinary controls keep their
+/// template places at every size, right-panel controls take the shared
+/// anchors.
 #[derive(Debug, Clone)]
 pub(crate) struct LanLobbyLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) name: RectPx,
-    pub(crate) chat: RectPx,
-    pub(crate) games: RectPx,
-    pub(crate) players: RectPx,
-    pub(crate) chat_log: RectPx,
-    pub(crate) observer_image: RectPx,
-    pub(crate) observer_toggle: RectPx,
-    pub(crate) labels: [(&'static str, RectPx); 3],
+    pub(crate) rects: RectTable,
 }
 
 impl LanLobbyLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
-        let page = menu_page::compute_layout_for(&PAGE, scale, width, height);
-        let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        // Executed original BB child setup60AAB0/include60C540/relayout60C4A0
-        // ->60C0C0; corpus lan_lobby.json. Ordinary controls retain template
-        // positions even at1024x768; right-panel controls use shared anchors.
-        // NewEdit497 at614CCF..614CF3 adds1 to x/y and removes2 from w/h.
-        Self {
-            page,
-            name: rect(136, 17, 134, 19),
-            chat: rect(12, 524, 609, 19),
-            games: rect(323, 73, 300, 292),
-            players: rect(11, 73, 301, 292),
-            chat_log: rect(11, 369, 612, 154),
-            observer_image: rect(594, 13, 28, 21),
-            observer_toggle: rect(576, 16, 16, 17),
-            labels: [
-                ("GUI:Games", rect(326, 49, 223, 17)),
-                ("GUI:Players", rect(15, 49, 171, 17)),
-                ("GUI:YourName", rect(15, 16, 112, 17)),
-            ],
-        }
+        let (page, rects) = layout_data::menu_page(&PAGE, "0xBB", scale, width, height);
+        Self { page, rects }
     }
 
     /// Control `id`'s window; none for a control BB does not show.
     pub(crate) fn rect(&self, id: u16) -> Option<RectPx> {
-        Some(match id {
-            NAME => self.name,
-            CHAT => self.chat,
-            GAMES => self.games,
-            PLAYERS => self.players,
-            CHAT_LOG => self.chat_log,
-            OBSERVER_TOGGLE => self.observer_toggle,
-            _ => return self.page.button_rect(id),
-        })
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -964,29 +934,11 @@ mod tests {
             let id = row["id"].as_u64().unwrap() as u32;
             let expected: Vec<i32> = serde_json::from_value(row["rect"].clone()).unwrap();
             let rect = match id as u16 {
-                NAME => Some(RectPx::new(
-                    layout.name.x - 1,
-                    layout.name.y - 1,
-                    layout.name.w + 2,
-                    layout.name.h + 2,
-                )),
-                CHAT => Some(RectPx::new(
-                    layout.chat.x - 1,
-                    layout.chat.y - 1,
-                    layout.chat.w + 2,
-                    layout.chat.h + 2,
-                )),
-                GAMES => Some(layout.games),
-                PLAYERS => Some(layout.players),
-                CHAT_LOG => Some(layout.chat_log),
-                OBSERVER_IMAGE => Some(layout.observer_image),
-                OBSERVER_TOGGLE => Some(layout.observer_toggle),
-                _ => layout
-                    .page
-                    .buttons
-                    .iter()
-                    .find(|button| u32::from(button.id) == id)
-                    .map(|button| button.rect),
+                // The NewEdits' windows before 0x00614CCF's inset.
+                NAME | CHAT => layout
+                    .rect(id as u16)
+                    .map(|r| RectPx::new(r.x - 1, r.y - 1, r.w + 2, r.h + 2)),
+                id => layout.rect(id),
             };
             if let Some(rect) = rect {
                 assert_eq!(

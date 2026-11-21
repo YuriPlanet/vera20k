@@ -12,6 +12,7 @@ pub mod diplomacy;
 pub mod game_speed;
 pub mod in_game_options_state;
 pub mod in_game_shell;
+pub mod layout_data;
 pub mod menu_page;
 pub mod modal;
 pub mod page;

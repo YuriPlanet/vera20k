@@ -32,14 +32,17 @@ pub(crate) struct BoxLook<'a> {
     pub(crate) depths: ModalDepths,
     pub(crate) body_depth: f32,
     pub(crate) covered: &'a [RectPx],
-    /// The WOL boxes sink a pressed caption by device pixels, unscaled.
-    pub(crate) unscaled_sink: bool,
 }
 
 impl BoxLook<'_> {
     pub(crate) fn new(background: Option<SkirmishShellChromeEntry>, depths: ModalDepths) -> Self {
         let body_depth = depths.text;
-        BoxLook { background, depths, body_depth, covered: &[], unscaled_sink: false }
+        BoxLook {
+            background,
+            depths,
+            body_depth,
+            covered: &[],
+        }
     }
 
     /// The Skirmish family's boxes, over its open drop-down.
@@ -53,7 +56,6 @@ impl BoxLook<'_> {
             },
             body_depth: SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
             covered: &[],
-            unscaled_sink: false,
         }
     }
 
@@ -61,7 +63,10 @@ impl BoxLook<'_> {
     /// Map and saved-file prompts).
     pub(crate) fn prompt(background: Option<SkirmishShellChromeEntry>) -> Self {
         let look = Self::skirmish(background);
-        BoxLook { body_depth: look.depths.text, ..look }
+        BoxLook {
+            body_depth: look.depths.text,
+            ..look
+        }
     }
 }
 
@@ -75,7 +80,9 @@ pub(crate) fn paint_shell_box(
     pressed: impl Fn(u16) -> bool,
     look: BoxLook<'_>,
 ) -> ModalDraw {
-    let sprites = atlas.map_or_else(Vec::new, |a| box_sprites(a, shell_box, parts, &pressed, look));
+    let sprites = atlas.map_or_else(Vec::new, |a| {
+        box_sprites(a, shell_box, parts, &pressed, look)
+    });
     let text = box_texts(&state.renderer.bit_font, shell_box, parts, &pressed, look);
     ModalDraw { sprites, text }
 }
@@ -98,11 +105,21 @@ pub(crate) fn box_sprites(
     pressed: &impl Fn(u16) -> bool,
     look: BoxLook<'_>,
 ) -> Vec<SpriteInstance> {
-    let button =
-        |(b, rect, pressed): (&BoxButton, _, _)| ModalButton { rect, pressed, enabled: b.enabled };
+    let button = |(b, rect, pressed): (&BoxButton, _, _)| ModalButton {
+        rect,
+        pressed,
+        enabled: b.enabled,
+    };
     let buttons: Vec<ModalButton> = shown(shell_box, parts, pressed).map(button).collect();
     let (frames, at) = (type3_button_frames(atlas), parts.dialog);
-    paint_modal_sprites(look.background, frames, at, &buttons, parts.scale, look.depths)
+    paint_modal_sprites(
+        look.background,
+        frames,
+        at,
+        &buttons,
+        parts.scale,
+        look.depths,
+    )
 }
 
 /// The body, then the captions; those an overlay covers give way.
@@ -123,11 +140,9 @@ pub(crate) fn box_texts(
     let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
     let captions: Vec<PaintLabel> = shown(shell_box, parts, pressed)
         .map(|(b, rect, pressed)| {
-            let sink = |r| owner_draw_button_label_rect(r, pressed);
-            let at = match look.unscaled_sink {
-                true => sink(rect),
-                false => parts.scale.derive_rect(rect, sink),
-            };
+            let at = parts
+                .scale
+                .derive_rect(rect, |r| owner_draw_button_label_rect(r, pressed));
             let rgb = match b.enabled {
                 true => SHELL_TEXT_RGB_ENABLED,
                 false => SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
@@ -136,11 +151,21 @@ pub(crate) fn box_texts(
         })
         .collect();
     let align = [ShellAlign::NONE, ShellAlign::H_CENTER][usize::from(parts.centred)];
-    let body = vec![label(&shell_box.body, parts.body, align, SHELL_TEXT_RGB_ENABLED)];
+    let body = vec![label(
+        &shell_box.body,
+        parts.body,
+        align,
+        SHELL_TEXT_RGB_ENABLED,
+    )];
     let mut text = Vec::new();
     for (mut labels, depth) in [(body, look.body_depth), (captions, look.depths.text)] {
         labels.retain(|label| !text_covered_by_overlay(label.rect, look.covered));
-        text.extend(paint_labels_at_depth_scaled(font, &labels, depth, parts.scale.factor()));
+        text.extend(paint_labels_at_depth_scaled(
+            font,
+            &labels,
+            depth,
+            parts.scale.factor(),
+        ));
     }
     text
 }
@@ -162,7 +187,13 @@ pub(crate) fn push_skirmish_box(
     if let (Some(out), Some(atlas)) = (sprites, state.frontend.skirmish_shell_chrome.as_ref()) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
         if look.background.is_none() {
-            push_solid_rect(out, atlas, at, SHELL_MODAL_PANEL_RGB, look.depths.background);
+            push_solid_rect(
+                out,
+                atlas,
+                at,
+                SHELL_MODAL_PANEL_RGB,
+                look.depths.background,
+            );
             push_rect_outline(out, atlas, at, edge, SHELL_DROPDOWN_DEPTH - 0.00015);
         }
         out.extend(box_sprites(atlas, shell_box, &parts, &pressed, look));
@@ -171,7 +202,13 @@ pub(crate) fn push_skirmish_box(
         if exclude_under {
             super::text::exclude_text_under(out, parts.dialog);
         }
-        out.extend(box_texts(&state.renderer.bit_font, shell_box, &parts, &pressed, look));
+        out.extend(box_texts(
+            &state.renderer.bit_font,
+            shell_box,
+            &parts,
+            &pressed,
+            look,
+        ));
     }
 }
 
@@ -218,7 +255,15 @@ pub(crate) fn push_choose_map_prompt(
         _ => false,
     };
     let (texts, look) = (texts.map(|out| (out, true)), BoxLook::prompt(background));
-    push_skirmish_box(state, render_size(state), &shell_box, pressed, look, sprites, texts);
+    push_skirmish_box(
+        state,
+        render_size(state),
+        &shell_box,
+        pressed,
+        look,
+        sprites,
+        texts,
+    );
 }
 
 /// The saved-file browser's message box (its art and buttons), when one is up.
@@ -232,7 +277,13 @@ pub(super) fn push_saved_browser_prompt_instances<I>(
         let shell_box = prompt.shell_box();
         let parts = shell_box.parts(layout.screen.w, layout.screen.h, ShellScale::RETAIL);
         let look = BoxLook::prompt(atlas.mode_two_dialog_background(None));
-        out.extend(box_sprites(atlas, &shell_box, &parts, &|id| browser.pressed(id), look));
+        out.extend(box_sprites(
+            atlas,
+            &shell_box,
+            &parts,
+            &|id| browser.pressed(id),
+            look,
+        ));
     }
 }
 
@@ -248,6 +299,12 @@ pub(super) fn push_saved_browser_prompt_text<I>(
         let parts = shell_box.parts(layout.screen.w, layout.screen.h, ShellScale::RETAIL);
         super::text::exclude_text_under(out, parts.dialog);
         let (font, look) = (&state.renderer.bit_font, BoxLook::prompt(None));
-        out.extend(box_texts(font, &shell_box, &parts, &|id| browser.pressed(id), look));
+        out.extend(box_texts(
+            font,
+            &shell_box,
+            &parts,
+            &|id| browser.pressed(id),
+            look,
+        ));
     }
 }

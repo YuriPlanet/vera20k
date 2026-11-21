@@ -4,6 +4,7 @@
 //! module keeps the original handler body intact.
 
 use super::frame::{FramePass, FrameRenderOutcome};
+use super::frontend::menu_page_render::FamilyPage;
 use super::input::dispatch;
 use super::input::hotkeys::HotkeyCommand;
 use super::input::precedence::{InputLayer, ModalPage, ScreenPage};
@@ -13,12 +14,33 @@ use super::{
     ShellKey, WindowEvent, WindowId,
 };
 use crate::ui::pause_menu::InGameMenuState;
+use winit::event::{ElementState, KeyEvent};
 
 /// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
 /// reference makes the no-close/no-replacement guarantee explicit at the
 /// keyboard routing seam.
 fn launcher_options_consumes_escape<T>(dialog: &Option<T>, is_escape: bool) -> bool {
     is_escape && dialog.is_some()
+}
+
+/// One window input, routed to the layer that takes it.
+#[derive(Clone, Copy)]
+enum Input<'a> {
+    Key(&'a KeyEvent),
+    /// Pointer motion.
+    Move,
+    Button(MouseButton, ElementState),
+    /// Wheel lines.
+    Wheel(f32),
+}
+
+/// A key's release drops it from the held keys.
+fn release_held_key(state: &mut AppState, event: &KeyEvent) {
+    if !event.state.is_pressed()
+        && let PhysicalKey::Code(code) = event.physical_key
+    {
+        state.match_state.input.keys_held.remove(&code);
+    }
 }
 
 fn capture_render_continues(deadline: &mut Option<Instant>, outcome: FrameRenderOutcome) -> bool {
@@ -94,17 +116,13 @@ impl App {
                     state,
                     crate::ui::shell::modal::ModalResult::MessageBox(1),
                 );
-                state.platform.window.request_redraw();
             }
-        } else if is_escape {
-            if launcher_options_consumes_escape(&state.frontend.options_dialog, is_escape) {
-                // `0xD5` ignores IDCANCEL=2. Preserve the same
-                // dialog instance and emit no Apply/write/event.
-                state.platform.window.request_redraw();
-            } else {
-                Self::close_main_menu_dialogs(state);
-                state.platform.window.request_redraw();
-            }
+        } else if is_escape
+            // `0xD5` ignores IDCANCEL=2. Preserve the same dialog instance
+            // and emit no Apply/write/event.
+            && !launcher_options_consumes_escape(&state.frontend.options_dialog, is_escape)
+        {
+            Self::close_main_menu_dialogs(state);
         }
         true
     }
@@ -412,21 +430,12 @@ impl App {
             },
             ScreenPage::LoadSavedGame if left => match down {
                 None => Self::handle_load_saved_game_mouse_move(state),
-                Some(pressed) => {
-                    Self::handle_load_saved_game_mouse(state, pressed);
-                    state.platform.window.request_redraw();
-                }
+                Some(pressed) => Self::handle_load_saved_game_mouse(state, pressed),
             },
             ScreenPage::Wol if left => match down {
                 None => Self::handle_wol_mouse_move(state),
-                Some(pressed) => {
-                    if pressed {
-                        Self::handle_wol_mouse_down(state);
-                    } else {
-                        Self::handle_wol_mouse_up(state);
-                    }
-                    state.platform.window.request_redraw();
-                }
+                Some(true) => Self::handle_wol_mouse_down(state),
+                Some(false) => Self::handle_wol_mouse_up(state),
             },
             ScreenPage::LauncherOptions if left => Self::handle_launcher_options_mouse(state, down),
             // A retained main-menu dialog takes the click: the SHP
@@ -448,8 +457,11 @@ impl App {
             ScreenPage::CampaignScore if left => Self::handle_campaign_score_mouse(state, down),
             ScreenPage::Score if left => Self::handle_score_shell_mouse(state, down),
             ScreenPage::Skirmish if left => skirmish(state),
-            ScreenPage::SinglePlayer | ScreenPage::MoviesAndCredits if left => {
-                Self::handle_menu_page_mouse(state, down);
+            ScreenPage::SinglePlayer if left => {
+                Self::handle_family_page_mouse(state, FamilyPage::SinglePlayer, down);
+            }
+            ScreenPage::MoviesAndCredits if left => {
+                Self::handle_family_page_mouse(state, FamilyPage::MoviesAndCredits, down);
             }
             // While the SHP quit-confirm modal owns the controller, the menu
             // move handler must not re-activate 0xE2 and reset the gesture:
@@ -467,6 +479,514 @@ impl App {
                 Some((button, edge)) => dispatch::handle_mouse_input(state, button, edge),
             },
             _ => {}
+        }
+    }
+
+    /// Routes one window input to the layer `input::precedence` names, then
+    /// asks for one draw: the pages' input handlers ask for none of their
+    /// own. Pointer motion over a match waits for the redraw gate's limit.
+    fn route_input(state: &mut AppState, input: Input) {
+        Self::route_to_layer(state, input);
+        if !matches!(input, Input::Move) || state.frontend.screen != GameScreen::InGame {
+            state.platform.window.request_redraw();
+        }
+    }
+
+    fn route_to_layer(state: &mut AppState, input: Input) {
+        use crate::app::frontend::preview_zoom;
+        use crate::app::input::tooltips;
+        let layer = crate::app::input::precedence::input_layer(state);
+        // The blocking layers take every input first.
+        match (layer, input) {
+            (InputLayer::HouseOutcomeWait, Input::Key(event)) => {
+                return release_held_key(state, event);
+            }
+            (InputLayer::HouseOutcomeWait, Input::Button(_, edge)) => {
+                if !edge.is_pressed() {
+                    Self::release_in_game_pointer_state(state);
+                }
+                return;
+            }
+            (InputLayer::HouseOutcomeWait, _) => return,
+            (InputLayer::Page(ModalPage::NetworkFailure), input) => {
+                use crate::app::match_runtime::network_failure;
+                match input {
+                    Input::Key(event) => network_failure::key(state, event),
+                    Input::Move => network_failure::cursor_moved(state),
+                    Input::Button(button, edge) => {
+                        network_failure::mouse(state, button, edge.is_pressed())
+                    }
+                    Input::Wheel(_) => {}
+                }
+                return;
+            }
+            _ => {}
+        }
+        let zoom_page = matches!(
+            layer,
+            InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+        );
+        match input {
+            Input::Key(event) if Self::window_key(state, event) => return,
+            // Nothing under VERA's enlarged map preview follows the pointer;
+            // only the cursor over it moves.
+            Input::Move if zoom_page && preview_zoom::is_open(state) => return,
+            // Shared tooltip service: every move restarts the show delay and
+            // hides a visible tip, and any button edge (middle too) kills a
+            // visible tip and its timer (study S1).
+            Input::Move => tooltips::on_mouse_move(state),
+            Input::Button(..) => tooltips::on_button_event(state),
+            Input::Key(_) | Input::Wheel(_) => {}
+        }
+        let screen = match layer {
+            InputLayer::Screen(screen) => screen,
+            // The wait loop pumps 0xEA without IsDialogMessage and polls no
+            // game keys while it is open (0x006497EC); its mouse route
+            // belongs to the in-game dispatch.
+            InputLayer::Page(ModalPage::NetworkWait) => {
+                match input {
+                    Input::Key(event) => release_held_key(state, event),
+                    Input::Move => crate::app::input::connection::cursor_moved(state),
+                    Input::Button(button, edge) => {
+                        dispatch::handle_mouse_input(state, button, edge)
+                    }
+                    Input::Wheel(_) => {}
+                }
+                return;
+            }
+            InputLayer::Page(ModalPage::Keyboard) => {
+                use crate::app::input::keyboard;
+                match input {
+                    Input::Key(event) => keyboard::key(state, event),
+                    Input::Move => keyboard::cursor_moved(state),
+                    Input::Button(button, edge) => {
+                        keyboard::mouse(state, button, edge.is_pressed())
+                    }
+                    Input::Wheel(lines) => keyboard::wheel(state, lines),
+                }
+                return;
+            }
+            // The open box takes the input; the update offer's change list
+            // follows the pointer and the wheel.
+            InputLayer::Page(ModalPage::ShellMessageBox) => {
+                match input {
+                    Input::Key(event) => {
+                        if let PhysicalKey::Code(code) = event.physical_key {
+                            Self::raise_shell_message_box(state);
+                            Self::handle_main_menu_dialog_key(
+                                state,
+                                code,
+                                event.state.is_pressed(),
+                                event.repeat,
+                            );
+                        }
+                    }
+                    Input::Move => {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        crate::app::updater::notes::cursor_moved(state);
+                        Self::shell_menu_pointer(state, None);
+                    }
+                    Input::Button(MouseButton::Left, edge) => {
+                        Self::raise_shell_message_box(state);
+                        Self::handle_shell_message_box_mouse(state, edge.is_pressed());
+                    }
+                    Input::Button(..) => {}
+                    Input::Wheel(_lines) => {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        crate::app::updater::notes::wheel(state, _lines);
+                    }
+                }
+                return;
+            }
+            // A slide or the quit cascade takes no input; the status card
+            // took the shell error's.
+            InputLayer::ShellTransition
+            | InputLayer::HouseOutcomeWait
+            | InputLayer::Page(ModalPage::NetworkFailure | ModalPage::ShellError) => return,
+        };
+        match input {
+            Input::Key(event) => Self::screen_key(state, screen, event),
+            Input::Move => Self::screen_pointer(state, screen, None),
+            Input::Button(_, edge)
+                if zoom_page && preview_zoom::mouse(state, edge.is_pressed()) => {}
+            Input::Button(button, edge) => {
+                Self::screen_pointer(state, screen, Some((button, edge)))
+            }
+            Input::Wheel(lines) => Self::screen_wheel(state, screen, lines),
+        }
+    }
+
+    /// The keys taken ahead of every page: the release that ends an
+    /// admitted planning gesture, and VERA's every-screen window keys. True
+    /// when the key was used.
+    fn window_key(state: &mut AppState, event: &KeyEvent) -> bool {
+        // Host delivery adaptation: dialogs may consume ordinary keys,
+        // but a release for an admitted planning gesture must still
+        // end that gesture. Opening a menu itself never commits it.
+        if !event.state.is_pressed()
+            && state.frontend.screen == GameScreen::InGame
+            && let PhysicalKey::Code(code) = event.physical_key
+            && state.match_state.input.planning.owns_key(code)
+        {
+            crate::app::input::planning_mode::key_edge(
+                state,
+                crate::app::input::hotkeys::HotkeyResolution::Unhandled,
+                code,
+                event.state,
+                event.repeat,
+            );
+            state.match_state.input.keys_held.remove(&code);
+            return true;
+        }
+        // VERA's every-screen keys, as the Keyboard page's VERA section
+        // binds them: Lock Cursor to Window (Ctrl+Alt+L), Full Screen
+        // (Alt+Enter) and Performance Stats (Ctrl+Alt+F) by default. Scroll
+        // Lock and, on macOS, the system's Ctrl+Cmd+F stay fixed
+        // extras ahead of the bindings. All are consumed before retail
+        // key dispatch, but a key the Keyboard page is capturing goes
+        // to the page.
+        let modifiers = state.platform.live_modifiers;
+        let fixed = match event.physical_key {
+            PhysicalKey::Code(KeyCode::ScrollLock) => Some(HotkeyCommand::LockCursor),
+            PhysicalKey::Code(KeyCode::KeyF)
+                if cfg!(target_os = "macos")
+                    && modifiers.control_key()
+                    && modifiers.super_key()
+                    && !modifiers.alt_key() =>
+            {
+                Some(HotkeyCommand::FullScreen)
+            }
+            _ => None,
+        };
+        let capturing = state
+            .frontend
+            .keyboard_dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.capture_focused);
+        let window_command = fixed.or_else(|| {
+            if capturing {
+                return None;
+            }
+            let unmodified = event.key_without_modifiers();
+            let logical = crate::app::input::hotkeys::binding_logical_key(
+                &event.logical_key,
+                &unmodified,
+                event.location,
+            );
+            state.match_state.input.hotkey_bindings.window_command(
+                logical,
+                event.location,
+                modifiers,
+            )
+        });
+        // A capture keeps its fixed surface, and its Full Screen key
+        // goes on to the screen.
+        let Some(command) = window_command.filter(|command| {
+            *command != HotkeyCommand::FullScreen || state.platform.capture_client_size.is_none()
+        }) else {
+            return false;
+        };
+        if event.state.is_pressed() && !event.repeat {
+            dispatch::run_window_command(state, command);
+        }
+        true
+    }
+
+    /// A key on the screen's page, in the order the pages take keys.
+    fn screen_key(state: &mut AppState, screen: ScreenPage, event: &KeyEvent) {
+        let pressed = event.state.is_pressed();
+        let fresh_press = pressed && !event.repeat;
+        let zoom_page = matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish);
+        let chooser_open = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some();
+        if (zoom_page && crate::app::frontend::preview_zoom::key(state, event))
+            || Self::shell_menu_key(state, event, screen)
+        {
+            return;
+        }
+        match screen {
+            ScreenPage::CoopScore => return crate::app::input::coop_score::key(state, event),
+            ScreenPage::LanLobby => return crate::app::shell_lan::key(state, event),
+            // VERA: typing in Choose Map fills its search line.
+            _ if zoom_page && Self::choose_map_search_key(state, event) => return,
+            ScreenPage::NetworkSetup if !chooser_open => {
+                return crate::app::input::multiplayer_setup::key(state, event);
+            }
+            // ChooseMap's loop has no IsDialogMessage. Only the existing
+            // eject prompt consumes its default keys.
+            ScreenPage::NetworkSetup => {
+                if fresh_press
+                    && let PhysicalKey::Code(code) = event.physical_key
+                    && !Self::shell_key_for_code(code)
+                        .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                    && matches!(
+                        code,
+                        KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                    )
+                {
+                    Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape);
+                }
+                return;
+            }
+            _ => {}
+        }
+        if screen == ScreenPage::Skirmish {
+            // The seed browser, then VERA's Setups page, takes the keys
+            // over the page.
+            let shell = &state.frontend.skirmish_shell_state;
+            let game_options = shell.game_options.is_some();
+            let browser_key: Option<fn(&mut AppState, Option<KeyCode>, Option<&str>)> =
+                if shell.saved_seed_browser.is_some() {
+                    Some(Self::handle_saved_seed_browser_key)
+                } else if shell.setups_browser.is_some() {
+                    Some(Self::handle_skirmish_setups_key)
+                } else {
+                    None
+                };
+            if let Some(browser_key) = browser_key {
+                if pressed {
+                    let code = match event.physical_key {
+                        PhysicalKey::Code(code) => Some(code),
+                        _ => None,
+                    };
+                    browser_key(state, code, event.text.as_deref());
+                }
+                return;
+            }
+            // VERA's Game Options box takes the keys over the page;
+            // Escape and Enter close it, as they close the room's.
+            if game_options {
+                if fresh_press
+                    && matches!(
+                        event.physical_key,
+                        PhysicalKey::Code(KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter)
+                    )
+                {
+                    Self::close_skirmish_game_options(state);
+                }
+                return;
+            }
+        }
+        let PhysicalKey::Code(code) = event.physical_key else {
+            return;
+        };
+        // ESC always reaches the handler when in-game (even when paused)
+        // so the player can toggle pause regardless of diagnostic GUI focus.
+        let is_escape = code == KeyCode::Escape && fresh_press;
+        let enter_or_escape = matches!(
+            code,
+            KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+        );
+        let in_game = state.frontend.screen == GameScreen::InGame;
+        let paused_at_event = in_game && state.match_state.paused();
+        let locally_paused_at_event = in_game && state.match_state.local_paused();
+        let modifiers = state.platform.live_modifiers;
+        // A shared pause must be resumable without a simulation tick,
+        // including while the local Options dialog is open.
+        if in_game
+            && code == KeyCode::Pause
+            && !(modifiers.shift_key()
+                || modifiers.control_key()
+                || modifiers.alt_key()
+                || modifiers.super_key())
+            && crate::app::input::pause_menu::multiplayer_control(state).is_some()
+        {
+            if fresh_press {
+                crate::app::input::pause_menu::toggle_multiplayer_pause(state);
+            }
+            return;
+        }
+        match screen {
+            ScreenPage::FullscreenMovie => return Self::fullscreen_movie_key(state, code, pressed),
+            ScreenPage::CreditsRoll => {
+                use crate::app::frontend::credits_roll::CreditsInput;
+                // Keyboard::Get() == 0x1B: a bare Escape press. Releases
+                // (0x800) and every other key are queued and ignored.
+                let bare =
+                    !(modifiers.shift_key() || modifiers.control_key() || modifiers.alt_key());
+                let input = if code == KeyCode::Escape && pressed && bare {
+                    CreditsInput::Escape
+                } else {
+                    CreditsInput::Other
+                };
+                return Self::credits_roll_input(state, input);
+            }
+            _ => {}
+        }
+        if Self::handle_main_menu_dialog_key(state, code, pressed, event.repeat)
+            || Self::handle_main_menu_typed_code_key(state, event)
+            || (screen == ScreenPage::Skirmish
+                && fresh_press
+                && (Self::shell_key_for_code(code)
+                    .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                    || (enter_or_escape
+                        && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape))))
+        {
+            return;
+        }
+        let menu = state.match_state.match_presentation.in_game_menu;
+        match screen {
+            ScreenPage::Wol => {
+                return Self::handle_wol_key(state, Some(code), pressed, event.text.as_deref());
+            }
+            // The message box takes Enter/Escape; the page ignores
+            // IDOK/IDCANCEL (0x00558A30).
+            ScreenPage::LoadSavedGame => {
+                if pressed {
+                    Self::handle_load_saved_game_key(state, code);
+                }
+                return;
+            }
+            ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
+                if pressed {
+                    Self::saved_game_key(state, Some(code), event.text.as_deref());
+                }
+                return;
+            }
+            // 0x005D36A0: IDOK and IDCANCEL both answer result 1.
+            _ if in_game && menu == InGameMenuState::Surrender => {
+                if fresh_press && enter_or_escape {
+                    crate::app::input::surrender::key(state);
+                }
+                return;
+            }
+            // 0xCF's loop takes every key; Escape names nothing. A release
+            // still drops its held key: the loop's KeyboardClear
+            // (0x0077D861) leaves nothing latched.
+            _ if in_game && menu == InGameMenuState::Page => {
+                if pressed {
+                    crate::app::shell_wol::page::key_press(
+                        state,
+                        Some(code),
+                        event.text.as_deref(),
+                    );
+                } else {
+                    state.match_state.input.keys_held.remove(&code);
+                }
+                return;
+            }
+            // B8 has no IDOK/IDCANCEL close command. Neither has 0x73: its
+            // proc keys commands by GetDlgCtrlID(lParam) (0x006581A7), and
+            // Return 0x423 is owner-drawn, so Enter and Escape name no child
+            // it handles.
+            ScreenPage::InGameShell(
+                InGameMenuState::Sound
+                | InGameMenuState::Diplomacy
+                | InGameMenuState::MissionBriefing,
+            ) => return,
+            // B6 accepts default IDOK1 as Resume (4F1A59..4F1A65). Owner
+            // buttons reject focus through610CA0:6118BF..DE; their resource
+            // has no WS_TABSTOP. Do not invent a focused-button Return/Space
+            // route. IDCANCEL is ignored.
+            ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
+                if fresh_press && matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                    crate::app::input::abort::activate(
+                        state,
+                        crate::ui::shell::abort::AbortButton::Resume,
+                    );
+                }
+                return;
+            }
+            _ => {}
+        }
+        // Shared pause still admits chat. The keyboard owner consumes chat
+        // first, then blocks gameplay hotkeys.
+        if !crate::app::input::hotkeys::input_admitted_while_paused(
+            locally_paused_at_event,
+            &event.logical_key,
+        ) || (screen == ScreenPage::Skirmish
+            && pressed
+            && !is_escape
+            && Self::handle_skirmish_shell_key_input(state, code, event.text.as_deref()))
+            || !in_game
+        {
+            return;
+        }
+        // An existing modal handles Escape before tactical input. World
+        // Escape goes through the bindings below; Options opens B5 only if
+        // selected, or as the native fallback.
+        if is_escape && Self::in_game_menu_owns_escape(state) {
+            return Self::route_in_game_menu_escape(state);
+        }
+        let unmodified = event.key_without_modifiers();
+        crate::app::input::keyboard::in_game_key_edge(
+            state,
+            crate::app::input::keyboard::InGameKeyEdge {
+                physical: code,
+                logical: &event.logical_key,
+                unmodified: &unmodified,
+                location: event.location,
+                state: event.state,
+                repeat: event.repeat,
+                text: event.text.as_deref(),
+            },
+            paused_at_event,
+        );
+    }
+
+    /// The wheel on the screen's page. ComboDropWin consumes no mouse-wheel
+    /// selection or scroll; the pages left out have no wheel route.
+    fn screen_wheel(state: &mut AppState, screen: ScreenPage, lines: f32) {
+        let chooser_open = state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some();
+        match screen {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            ScreenPage::MainMenu => {
+                crate::app::updater::notes::wheel(state, lines);
+            }
+            // Nothing under VERA's enlarged map preview takes it.
+            ScreenPage::NetworkSetup | ScreenPage::Skirmish
+                if crate::app::frontend::preview_zoom::is_open(state) => {}
+            ScreenPage::NetworkSetup if !chooser_open => {
+                crate::app::input::multiplayer_setup::wheel(state, lines);
+            }
+            ScreenPage::Mods => Self::handle_mods_wheel(state, lines),
+            ScreenPage::Skirmish => {
+                Self::handle_skirmish_shell_mouse_wheel(state, lines);
+            }
+            ScreenPage::InGameShell(_) | ScreenPage::Battlefield
+                if !state.match_state.paused()
+                    && !crate::app::input::campaign_input::is_locked(state) =>
+            {
+                if crate::app::presentation::super_timers::wheel(state, lines) {
+                    return;
+                }
+                // Optional player setting: over the battlefield the wheel
+                // changes the view distance tier, anchored on the tactical
+                // centre. Over the sidebar and the bottom strip it keeps
+                // gamemd's native SidebarUp/SidebarDown routing.
+                if state.persistence.options_profile.mouse_wheel_zoom
+                    && crate::app::input::camera::cursor_over_battlefield(state)
+                {
+                    crate::app::input::camera::cycle_view_distance(state, lines);
+                } else if let Some(action) = dispatch::wheel_notch(lines) {
+                    // Every wheel notch scrolls the active build strip by
+                    // one row. gamemd routes the wheel message straight to
+                    // the SidebarUp / SidebarDown commands and has no world
+                    // zoom.
+                    dispatch::sidebar_scroll_command(state, action);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The timers of the page the shell route shows; the next wake.
+    fn poll_route_page(state: &mut AppState) -> Option<Instant> {
+        match crate::app::input::precedence::route_page(state) {
+            ScreenPage::MovieList | ScreenPage::Mods => Self::poll_family_list(state),
+            ScreenPage::Campaign => Self::poll_campaign(state),
+            ScreenPage::LoadSavedGame => {
+                Self::update_load_saved_game_scroll(state);
+                None
+            }
+            _ => None,
         }
     }
 
@@ -1322,441 +1842,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 // An open composition owns the keys (`app::input::ime`).
-                if event.state.is_pressed() && state.platform.ime.composing() {
-                    return;
-                }
-                let layer = crate::app::input::precedence::input_layer(state);
-                match layer {
-                    InputLayer::HouseOutcomeWait => {
-                        if !event.state.is_pressed()
-                            && let PhysicalKey::Code(code) = event.physical_key
-                        {
-                            state.match_state.input.keys_held.remove(&code);
-                        }
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::NetworkFailure) => {
-                        crate::app::match_runtime::network_failure::key(state, &event);
-                        return;
-                    }
-                    _ => {}
-                }
-                // Host delivery adaptation: dialogs may consume ordinary keys,
-                // but a release for an admitted planning gesture must still
-                // end that gesture. Opening a menu itself never commits it.
-                if !event.state.is_pressed()
-                    && state.frontend.screen == GameScreen::InGame
-                    && let PhysicalKey::Code(code) = event.physical_key
-                    && state.match_state.input.planning.owns_key(code)
-                {
-                    crate::app::input::planning_mode::key_edge(
-                        state,
-                        crate::app::input::hotkeys::HotkeyResolution::Unhandled,
-                        code,
-                        event.state,
-                        event.repeat,
-                    );
-                    state.match_state.input.keys_held.remove(&code);
-                    return;
-                }
-                // VERA's every-screen keys, as the Keyboard page's VERA section
-                // binds them: Lock Cursor to Window (Ctrl+Alt+L), Full Screen
-                // (Alt+Enter) and Performance Stats (Ctrl+Alt+F) by default. Scroll
-                // Lock and, on macOS, the system's Ctrl+Cmd+F stay fixed
-                // extras ahead of the bindings. All are consumed before retail
-                // key dispatch, but a key the Keyboard page is capturing goes
-                // to the page.
-                let modifiers = state.platform.live_modifiers;
-                let fixed = match event.physical_key {
-                    PhysicalKey::Code(KeyCode::ScrollLock) => Some(HotkeyCommand::LockCursor),
-                    PhysicalKey::Code(KeyCode::KeyF)
-                        if cfg!(target_os = "macos")
-                            && modifiers.control_key()
-                            && modifiers.super_key()
-                            && !modifiers.alt_key() =>
-                    {
-                        Some(HotkeyCommand::FullScreen)
-                    }
-                    _ => None,
-                };
-                let capturing = state
-                    .frontend
-                    .keyboard_dialog
-                    .as_ref()
-                    .is_some_and(|dialog| dialog.capture_focused);
-                let window_command = fixed.or_else(|| {
-                    if capturing {
-                        return None;
-                    }
-                    let unmodified = event.key_without_modifiers();
-                    let logical = crate::app::input::hotkeys::binding_logical_key(
-                        &event.logical_key,
-                        &unmodified,
-                        event.location,
-                    );
-                    state.match_state.input.hotkey_bindings.window_command(
-                        logical,
-                        event.location,
-                        modifiers,
-                    )
-                });
-                // A capture keeps its fixed surface, and its Full Screen key
-                // goes on to the screen.
-                if let Some(command) = window_command
-                    && (command != HotkeyCommand::FullScreen
-                        || state.platform.capture_client_size.is_none())
-                {
-                    if event.state.is_pressed() && !event.repeat {
-                        dispatch::run_window_command(state, command);
-                    }
-                    return;
-                }
-                // The keys above work under every layer; the rest follow it.
-                let screen = match layer {
-                    InputLayer::Screen(screen) => screen,
-                    // The wait loop pumps 0xEA without IsDialogMessage and
-                    // polls no game keys while it is open (0x006497EC).
-                    InputLayer::Page(ModalPage::NetworkWait) => {
-                        if !event.state.is_pressed()
-                            && let PhysicalKey::Code(code) = event.physical_key
-                        {
-                            state.match_state.input.keys_held.remove(&code);
-                        }
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::Keyboard) => {
-                        crate::app::input::keyboard::key(state, &event);
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::ShellMessageBox) => {
-                        if let PhysicalKey::Code(code) = event.physical_key {
-                            Self::raise_shell_message_box(state);
-                            Self::handle_main_menu_dialog_key(
-                                state,
-                                code,
-                                event.state.is_pressed(),
-                                event.repeat,
-                            );
-                        }
-                        return;
-                    }
-                    // The status card took the shell error's keys.
-                    InputLayer::ShellTransition
-                    | InputLayer::HouseOutcomeWait
-                    | InputLayer::Page(ModalPage::NetworkFailure | ModalPage::ShellError) => {
-                        return;
-                    }
-                };
-                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                    && crate::app::frontend::preview_zoom::key(state, &event)
-                {
-                    return;
-                }
-                if Self::shell_menu_key(state, &event, screen) {
-                    return;
-                }
-                if screen == ScreenPage::CoopScore {
-                    crate::app::input::coop_score::key(state, &event);
-                    return;
-                }
-                if screen == ScreenPage::LanLobby {
-                    crate::app::shell_lan::key(state, &event);
-                    return;
-                }
-                // VERA: typing in Choose Map fills its search line.
-                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                    && Self::choose_map_search_key(state, &event)
-                {
-                    return;
-                }
-                if screen == ScreenPage::NetworkSetup {
-                    if state
-                        .frontend
-                        .skirmish_shell_state
-                        .choose_map_modal
-                        .is_none()
-                    {
-                        crate::app::input::multiplayer_setup::key(state, &event);
-                    } else if event.state.is_pressed() && !event.repeat {
-                        // ChooseMap's loop has no IsDialogMessage. Only the
-                        // existing eject prompt consumes its default keys.
-                        if let PhysicalKey::Code(code) = event.physical_key {
-                            if Self::shell_key_for_code(code)
-                                .is_some_and(|key| Self::route_validation_modal_key(state, key))
-                            {
-                                return;
-                            }
-                            if matches!(
-                                code,
-                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
-                            ) {
-                                Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape);
-                            }
-                        }
-                    }
-                    return;
-                }
-                // The seed browser, then VERA's Setups page, takes the keys
-                // over the page.
-                let shell = &state.frontend.skirmish_shell_state;
-                let browser_key: Option<fn(&mut AppState, Option<KeyCode>, Option<&str>)> =
-                    if shell.saved_seed_browser.is_some() {
-                        Some(Self::handle_saved_seed_browser_key)
-                    } else if shell.setups_browser.is_some() {
-                        Some(Self::handle_skirmish_setups_key)
-                    } else {
-                        None
-                    };
-                if screen == ScreenPage::Skirmish
-                    && let Some(browser_key) = browser_key
-                {
-                    if event.state.is_pressed() {
-                        let code = match event.physical_key {
-                            PhysicalKey::Code(code) => Some(code),
-                            _ => None,
-                        };
-                        browser_key(state, code, event.text.as_deref());
-                        state.platform.window.request_redraw();
-                    }
-                    return;
-                }
-                // VERA's Game Options box takes the keys over the page;
-                // Escape and Enter close it, as they close the room's.
-                if screen == ScreenPage::Skirmish
-                    && state.frontend.skirmish_shell_state.game_options.is_some()
-                {
-                    if event.state.is_pressed()
-                        && !event.repeat
-                        && matches!(
-                            event.physical_key,
-                            PhysicalKey::Code(
-                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
-                            )
-                        )
-                    {
-                        Self::close_skirmish_game_options(state);
-                    }
-                    return;
-                }
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    // ESC always reaches the handler when in-game (even when paused)
-                    // so the player can toggle pause regardless of diagnostic GUI focus.
-                    let is_escape: bool =
-                        code == KeyCode::Escape && event.state.is_pressed() && !event.repeat;
-                    let in_game: bool = state.frontend.screen == GameScreen::InGame;
-                    let paused_at_event = in_game && state.match_state.paused();
-                    let locally_paused_at_event = in_game && state.match_state.local_paused();
-
-                    // A shared pause must be resumable without a simulation
-                    // tick, including while the local Options dialog is open.
-                    let modifiers = state.platform.live_modifiers;
-                    if in_game
-                        && code == KeyCode::Pause
-                        && !(modifiers.shift_key()
-                            || modifiers.control_key()
-                            || modifiers.alt_key()
-                            || modifiers.super_key())
-                        && crate::app::input::pause_menu::multiplayer_control(state).is_some()
-                    {
-                        if event.state.is_pressed() && !event.repeat {
-                            crate::app::input::pause_menu::toggle_multiplayer_pause(state);
-                        }
-                        return;
-                    }
-
-                    if screen == ScreenPage::FullscreenMovie {
-                        Self::fullscreen_movie_key(state, code, event.state.is_pressed());
-                        return;
-                    }
-                    if screen == ScreenPage::CreditsRoll {
-                        let modifiers = state.platform.live_modifiers;
-                        let bare = !(modifiers.shift_key()
-                            || modifiers.control_key()
-                            || modifiers.alt_key());
-                        // Keyboard::Get() == 0x1B: a bare Escape press. Releases
-                        // (0x800) and every other key are queued and ignored.
-                        let input = if code == KeyCode::Escape && event.state.is_pressed() && bare {
-                            crate::app::frontend::credits_roll::CreditsInput::Escape
-                        } else {
-                            crate::app::frontend::credits_roll::CreditsInput::Other
-                        };
-                        Self::credits_roll_input(state, input);
-                        return;
-                    }
-
-                    if Self::handle_main_menu_dialog_key(
-                        state,
-                        code,
-                        event.state.is_pressed(),
-                        event.repeat,
-                    ) {
-                        return;
-                    }
-                    if Self::handle_main_menu_typed_code_key(state, &event) {
-                        return;
-                    }
-
-                    if screen == ScreenPage::Skirmish
-                        && event.state.is_pressed()
-                        && !event.repeat
-                        && Self::shell_key_for_code(code)
-                            .is_some_and(|key| Self::route_validation_modal_key(state, key))
-                    {
-                        return;
-                    }
-
-                    if screen == ScreenPage::Skirmish
-                        && event.state.is_pressed()
-                        && !event.repeat
-                        && matches!(
-                            code,
-                            KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
-                        )
-                        && Self::answer_choose_map_prompt_key(state, code != KeyCode::Escape)
-                    {
-                        return;
-                    }
-
-                    if screen == ScreenPage::Wol {
-                        Self::handle_wol_key(
-                            state,
-                            Some(code),
-                            event.state.is_pressed(),
-                            event.text.as_deref(),
-                        );
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-
-                    if screen == ScreenPage::LoadSavedGame {
-                        // The message box takes Enter/Escape; the page
-                        // ignores IDOK/IDCANCEL (0x00558A30).
-                        if event.state.is_pressed() {
-                            Self::handle_load_saved_game_key(state, code);
-                        }
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-
-                    if matches!(
-                        screen,
-                        ScreenPage::InGameShell(InGameMenuState::SavedGame(_))
-                    ) {
-                        if event.state.is_pressed() {
-                            Self::saved_game_key(state, Some(code), event.text.as_deref());
-                        }
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    if in_game
-                        && state.match_state.match_presentation.in_game_menu
-                            == InGameMenuState::Surrender
-                    {
-                        // 0x005D36A0: IDOK and IDCANCEL both answer result 1.
-                        if event.state.is_pressed()
-                            && !event.repeat
-                            && matches!(
-                                code,
-                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape
-                            )
-                        {
-                            crate::app::input::surrender::key(state);
-                        }
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    if in_game
-                        && state.match_state.match_presentation.in_game_menu
-                            == InGameMenuState::Page
-                    {
-                        // 0xCF's loop takes every key; Escape names nothing.
-                        // A release still drops its held key: the loop's
-                        // KeyboardClear (0x0077D861) leaves nothing latched.
-                        if event.state.is_pressed() {
-                            crate::app::shell_wol::page::key_press(
-                                state,
-                                Some(code),
-                                event.text.as_deref(),
-                            );
-                        } else {
-                            state.match_state.input.keys_held.remove(&code);
-                        }
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    if matches!(
-                        screen,
-                        ScreenPage::InGameShell(
-                            InGameMenuState::Sound
-                                | InGameMenuState::Diplomacy
-                                | InGameMenuState::MissionBriefing
-                        )
-                    ) {
-                        // B8 has no IDOK/IDCANCEL close command. Neither has
-                        // 0x73: its proc keys commands by GetDlgCtrlID(lParam)
-                        // (0x006581A7), and Return 0x423 is owner-drawn, so
-                        // Enter and Escape name no child it handles.
-                        return;
-                    }
-                    if screen == ScreenPage::InGameShell(InGameMenuState::AbortConfirm) {
-                        // B6 accepts default IDOK1 as Resume (4F1A59..4F1A65).
-                        // Owner buttons reject focus through610CA0:6118BF..DE;
-                        // their resource has no WS_TABSTOP. Do not invent a
-                        // focused-button Return/Space route. IDCANCEL is ignored.
-                        if event.state.is_pressed()
-                            && !event.repeat
-                            && matches!(code, KeyCode::Enter | KeyCode::NumpadEnter)
-                        {
-                            crate::app::input::abort::activate(
-                                state,
-                                crate::ui::shell::abort::AbortButton::Resume,
-                            );
-                        }
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    if !crate::app::input::hotkeys::input_admitted_while_paused(
-                        // Shared pause still admits chat. The keyboard owner
-                        // consumes chat first, then blocks gameplay hotkeys.
-                        locally_paused_at_event,
-                        &event.logical_key,
-                    ) {
-                        return;
-                    }
-
-                    if screen == ScreenPage::Skirmish
-                        && event.state.is_pressed()
-                        && !is_escape
-                        && Self::handle_skirmish_shell_key_input(state, code, event.text.as_deref())
-                    {
-                        return;
-                    }
-
-                    // An existing modal handles Escape before tactical input.
-                    // World Escape goes through the bindings below; Options
-                    // opens B5 only if selected, or as the native fallback.
-                    if in_game && is_escape && Self::in_game_menu_owns_escape(state) {
-                        Self::route_in_game_menu_escape(state);
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-
-                    if in_game {
-                        let unmodified = event.key_without_modifiers();
-                        crate::app::input::keyboard::in_game_key_edge(
-                            state,
-                            crate::app::input::keyboard::InGameKeyEdge {
-                                physical: code,
-                                logical: &event.logical_key,
-                                unmodified: &unmodified,
-                                location: event.location,
-                                state: event.state,
-                                repeat: event.repeat,
-                                text: event.text.as_deref(),
-                            },
-                            paused_at_event,
-                        );
-                    }
+                if !(event.state.is_pressed() && state.platform.ime.composing()) {
+                    Self::route_input(state, Input::Key(&event));
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -1767,202 +1854,27 @@ impl ApplicationHandler for App {
                     state.match_state.input.cursor_from_touch = false;
                 }
                 state.set_cursor_from_window(position.x as f32, position.y as f32);
-                let layer = crate::app::input::precedence::input_layer(state);
-                match layer {
-                    InputLayer::HouseOutcomeWait => return,
-                    InputLayer::Page(ModalPage::NetworkFailure) => {
-                        crate::app::match_runtime::network_failure::cursor_moved(state);
-                        return;
-                    }
-                    _ => {}
-                }
-                // Nothing under VERA's enlarged map preview follows the
-                // pointer; only the cursor over it moves.
-                if matches!(
-                    layer,
-                    InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                ) && crate::app::frontend::preview_zoom::is_open(state)
-                {
-                    state.platform.window.request_redraw();
-                    return;
-                }
-                // Shared tooltip service: every move restarts the show delay
-                // and hides a visible tip (study S1).
-                crate::app::input::tooltips::on_mouse_move(state);
-                let screen = match layer {
-                    InputLayer::Screen(screen) => screen,
-                    InputLayer::Page(ModalPage::NetworkWait) => {
-                        crate::app::input::connection::cursor_moved(state);
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::Keyboard) => {
-                        crate::app::input::keyboard::cursor_moved(state);
-                        return;
-                    }
-                    // The open box takes the move; the update offer's change
-                    // list follows it.
-                    InputLayer::Page(ModalPage::ShellMessageBox) => {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        crate::app::updater::notes::cursor_moved(state);
-                        Self::shell_menu_pointer(state, None);
-                        return;
-                    }
-                    // The status card took the shell error's moves.
-                    InputLayer::ShellTransition
-                    | InputLayer::HouseOutcomeWait
-                    | InputLayer::Page(ModalPage::NetworkFailure | ModalPage::ShellError) => {
-                        return;
-                    }
-                };
-                Self::screen_pointer(state, screen, None);
+                Self::route_input(state, Input::Move);
             }
             WindowEvent::MouseInput {
-                state: btn_state,
+                state: edge,
                 button,
                 ..
             } => {
                 // A click in the game locks the cursor again after Ctrl+Alt+L
                 // freed it, when the Options box keeps it locked. The click
                 // still reaches the game.
-                if btn_state.is_pressed() {
+                if edge.is_pressed() {
                     crate::app::input::cursor::relock_cursor_on_click(state);
                 }
-                let layer = crate::app::input::precedence::input_layer(state);
-                match layer {
-                    InputLayer::HouseOutcomeWait => {
-                        if !btn_state.is_pressed() {
-                            Self::release_in_game_pointer_state(state);
-                        }
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::NetworkFailure) => {
-                        crate::app::match_runtime::network_failure::mouse(
-                            state,
-                            button,
-                            btn_state.is_pressed(),
-                        );
-                        return;
-                    }
-                    _ => {}
-                }
-                // Any button press/release kills a visible tooltip + pending
-                // timer (all buttons incl. middle — study S1).
-                crate::app::input::tooltips::on_button_event(state);
-                let screen = match layer {
-                    InputLayer::Screen(screen) => screen,
-                    // 0xEA's route belongs to the in-game dispatch.
-                    InputLayer::Page(ModalPage::NetworkWait) => {
-                        dispatch::handle_mouse_input(state, button, btn_state);
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::Keyboard) => {
-                        crate::app::input::keyboard::mouse(state, button, btn_state.is_pressed());
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::ShellMessageBox) => {
-                        if button == MouseButton::Left {
-                            Self::raise_shell_message_box(state);
-                            Self::handle_shell_message_box_mouse(state, btn_state.is_pressed());
-                            state.platform.window.request_redraw();
-                        }
-                        return;
-                    }
-                    // The status card took the shell error's buttons.
-                    InputLayer::ShellTransition
-                    | InputLayer::HouseOutcomeWait
-                    | InputLayer::Page(ModalPage::NetworkFailure | ModalPage::ShellError) => {
-                        return;
-                    }
-                };
-                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                    && crate::app::frontend::preview_zoom::mouse(state, btn_state.is_pressed())
-                {
-                    return;
-                }
-                Self::screen_pointer(state, screen, Some((button, btn_state)));
+                Self::route_input(state, Input::Button(button, edge));
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let lines = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(pos) => (pos.y as f32 / 30.0).clamp(-3.0, 3.0),
                 };
-                let screen = match crate::app::input::precedence::input_layer(state) {
-                    InputLayer::Screen(screen) => screen,
-                    InputLayer::Page(ModalPage::Keyboard) => {
-                        crate::app::input::keyboard::wheel(state, lines);
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    InputLayer::Page(ModalPage::ShellMessageBox) => {
-                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                        crate::app::updater::notes::wheel(state, lines);
-                        return;
-                    }
-                    // ComboDropWin consumes no mouse-wheel selection/scroll;
-                    // the other pages have no wheel route.
-                    InputLayer::HouseOutcomeWait
-                    | InputLayer::ShellTransition
-                    | InputLayer::Page(
-                        ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::NetworkWait,
-                    ) => return,
-                };
-                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                if screen == ScreenPage::MainMenu && crate::app::updater::notes::wheel(state, lines)
-                {
-                    return;
-                }
-                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
-                    && crate::app::frontend::preview_zoom::is_open(state)
-                {
-                    return;
-                }
-                if screen == ScreenPage::NetworkSetup
-                    && state
-                        .frontend
-                        .skirmish_shell_state
-                        .choose_map_modal
-                        .is_none()
-                    && crate::app::input::multiplayer_setup::wheel(state, lines)
-                {
-                    state.platform.window.request_redraw();
-                    return;
-                }
-                if screen == ScreenPage::Mods {
-                    Self::handle_mods_wheel(state, lines);
-                    return;
-                }
-                if screen == ScreenPage::Skirmish
-                    && Self::handle_skirmish_shell_mouse_wheel(state, lines)
-                {
-                    state.platform.window.request_redraw();
-                    return;
-                }
-                if matches!(screen, ScreenPage::InGameShell(_) | ScreenPage::Battlefield)
-                    && !state.match_state.paused()
-                    && !crate::app::input::campaign_input::is_locked(state)
-                {
-                    if crate::app::presentation::super_timers::wheel(state, lines) {
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    // Optional player setting: over the battlefield the wheel changes the view
-                    // distance tier, anchored on the tactical centre. Over the
-                    // sidebar and the bottom strip it keeps gamemd's native
-                    // SidebarUp/SidebarDown routing.
-                    if state.persistence.options_profile.mouse_wheel_zoom
-                        && crate::app::input::camera::cursor_over_battlefield(state)
-                    {
-                        crate::app::input::camera::cycle_view_distance(state, lines);
-                        state.platform.window.request_redraw();
-                        return;
-                    }
-                    // Every wheel notch scrolls the active build strip by one
-                    // row. gamemd routes the wheel message straight to the
-                    // SidebarUp / SidebarDown commands and has no world zoom.
-                    if let Some(action) = dispatch::wheel_notch(lines) {
-                        dispatch::sidebar_scroll_command(state, action);
-                    }
-                }
+                Self::route_input(state, Input::Wheel(lines));
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
@@ -2087,48 +1999,44 @@ impl ApplicationHandler for App {
             }
             Self::update_saved_seed_browser_scroll(state, false);
             Self::update_skirmish_setups_scroll(state, false);
-            Self::update_load_saved_game_scroll(state, false);
-            [
-                crate::app::input::keyboard::poll_scroll_repeat(state),
-                crate::app::shell_lan::poll(state),
-                crate::app::shell_wol::poll(state),
-                crate::app::shell_network_setup::poll(state),
-                crate::app::input::multiplayer_setup::poll(state),
-                crate::app::input::coop_score::active(state)
-                    .then(|| crate::app::input::coop_score::poll(state))
-                    .flatten(),
-                crate::app::input::sound::poll_scroll_repeat(state),
-                Self::poll_family_list(state),
-                Self::poll_mod_files(state),
-                Self::poll_choose_map_scroll(state),
-                Self::poll_skirmish_opponent_scroll(state),
-                // Captures replay sealed input; they never read the library.
-                (self.shell_capture.is_none() && self.hidden_run.is_none())
-                    .then(|| crate::app::map_library::poll(state))
-                    .flatten(),
-                // Nor the login page's counts.
-                (self.shell_capture.is_none() && self.hidden_run.is_none())
-                    .then(|| crate::app::shell_wol::login_info::poll(state))
-                    .flatten(),
-                (self.shell_capture.is_none() && self.hidden_run.is_none())
-                    .then(|| crate::app::map_picture::poll(state))
-                    .flatten(),
-                Self::poll_campaign(state),
-                Self::poll_language_files(state),
-                Self::campaign_score_animation_deadline(state),
-                // Captures replay sealed input; no box tells them of a mod.
-                (self.shell_capture.is_none() && self.hidden_run.is_none())
-                    .then(|| crate::app::mods::poll(state))
-                    .flatten(),
-                // Captures replay sealed input; they never check or ask.
+            type Poll = fn(&mut AppState) -> Option<Instant>;
+            let polls: &[Poll] = &[
+                crate::app::input::keyboard::poll_scroll_repeat,
+                crate::app::shell_lan::poll,
+                crate::app::shell_wol::poll,
+                crate::app::shell_network_setup::poll,
+                crate::app::input::multiplayer_setup::poll,
+                |state| {
+                    use crate::app::input::coop_score;
+                    coop_score::active(state)
+                        .then(|| coop_score::poll(state))
+                        .flatten()
+                },
+                crate::app::input::sound::poll_scroll_repeat,
+                Self::poll_route_page,
+                Self::poll_mod_files,
+                Self::poll_choose_map_scroll,
+                Self::poll_skirmish_opponent_scroll,
+                Self::poll_language_files,
+                |state| Self::campaign_score_animation_deadline(state),
+            ];
+            // Captures and hidden runs replay sealed input: they never read
+            // the library, the login page's counts or the map pictures, no
+            // box tells them of a mod, and they never check for an update.
+            let live_polls: &[Poll] = &[
+                crate::app::map_library::poll,
+                crate::app::shell_wol::login_info::poll,
+                crate::app::map_picture::poll,
+                crate::app::mods::poll,
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-                (self.shell_capture.is_none() && self.hidden_run.is_none())
-                    .then(|| crate::app::updater::poll(state))
-                    .flatten(),
-            ]
-            .into_iter()
-            .flatten()
-            .min()
+                crate::app::updater::poll,
+            ];
+            let live = self.shell_capture.is_none() && self.hidden_run.is_none();
+            polls
+                .iter()
+                .chain(if live { live_polls } else { &[] })
+                .filter_map(|poll| poll(state))
+                .min()
         } else {
             None
         };

@@ -599,10 +599,8 @@ impl LiveRoundFlow {
             {
                 // The page's form starts from the last username: replace it.
                 let username = crate::app::shell_wol::login_layout(state)
-                    .online
-                    .context("the online sign-in form")?
-                    .fields[0]
-                    .1;
+                    .rect_of(crate::ui::wol_account::WolAccountForm::field_id(0))
+                    .context("the online sign-in form")?;
                 click(state, username);
                 App::handle_wol_key(state, Some(KeyCode::Home), true, None);
                 for _ in 0..32 {
@@ -1494,7 +1492,9 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
         .context("online lobby")?;
     let geometry = lobby.ui.shown_geometry(
         crate::ui::wol_lobby::GAMES,
-        layout.games,
+        layout
+            .control_rect(crate::ui::wol_lobby::GAMES)
+            .unwrap_or_default(),
         lobby.ui.game_rows.len(),
         layout.page.scale,
     );
@@ -1515,7 +1515,10 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
                 top > geometry.max_top,
                 "offscreen online game has no ordinary scroll input"
             );
-            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
+            let games = layout
+                .control_rect(crate::ui::wol_lobby::GAMES)
+                .unwrap_or_default();
+            RectPx::new(games.x, games.y, games.w, 1)
         };
         click(state, rect);
         return Ok(false);

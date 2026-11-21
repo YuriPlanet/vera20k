@@ -193,7 +193,6 @@ pub(super) fn open_locale_page(state: &mut AppState) {
         let gui = state.frontend.shell_controller.gui_mut();
         page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(false));
     }
-    state.platform.window.request_redraw();
 }
 
 /// API+0xD0's count fills `0xFE`'s list with `WOL:Locale%02d` (`0x00780A00`,
@@ -212,7 +211,6 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
         let gui = state.frontend.shell_controller.gui_mut();
         page::set(gui, root, LOCALE_LIST, Prop::Items, Value::Items(items));
     }
-    state.platform.window.request_redraw();
 }
 
 /// `0x0078766F..0x007876C1`: the empty backdrop, the AutoLoginQuery art and
@@ -227,7 +225,6 @@ pub(super) fn open_auto_login_query(state: &mut AppState) {
         .frontend
         .shell_controller
         .reset_to(AUTO_LOGIN_DIALOG, false);
-    state.platform.window.request_redraw();
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
@@ -266,7 +263,6 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
         let gui = state.frontend.shell_controller.gui_mut();
         page::set(gui, root, TEXT, Prop::Text, Value::Text(question));
     }
-    state.platform.window.request_redraw();
 }
 
 /// `0x122` while it exists: the opponent its question names.
@@ -300,7 +296,6 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
         visit.page = WolPage::Backdrop { wait: None };
     }
     service::locale_chosen(state, locale);
-    state.platform.window.request_redraw();
 }
 
 /// The open page's dialog.
@@ -341,7 +336,7 @@ pub(crate) fn list_view(state: &AppState) -> Option<(ShellListGeometry, usize)> 
     let view = gui.list_view(list)?;
     let metrics = ListMetrics::scaled(layout.page.scale);
     Some((
-        view.window_geometry(layout.rect_of(LOCALE_LIST)?, metrics),
+        view.geometry(layout.rect_of(LOCALE_LIST)?, metrics),
         view.top,
     ))
 }

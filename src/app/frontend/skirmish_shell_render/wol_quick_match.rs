@@ -12,7 +12,7 @@ use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_quick_match::{
-    DIALOG, MATCH_STATUS_KEY, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
+    CAPTION, DIALOG, MATCH_STATUS_KEY, TRANSCRIPT, WolQuickMatchLayout, WolQuickMatchPage,
 };
 
 pub(crate) fn paint_wol_quick_match_children(
@@ -40,7 +40,7 @@ pub(crate) fn paint_wol_quick_match_children(
     };
     paint.texts.push(text(
         &state.csf_text(MATCH_STATUS_KEY),
-        layout.caption,
+        layout.rect_of(CAPTION).unwrap_or_default(),
         SHELL_LABEL_TEXT_RGB,
     ));
     // The list widget's top and pushed arrow.
@@ -52,7 +52,7 @@ pub(crate) fn paint_wol_quick_match_children(
         .and_then(|list| gui.list_view(list));
     let (top, pressed) = view.map_or((0, None), |view| (view.top, view.pressed));
     let geometry = ShellListGeometry::new(
-        layout.transcript,
+        layout.rect_of(TRANSCRIPT).unwrap_or_default(),
         ui.lines.len(),
         top,
         ListMetrics::scaled(scale),

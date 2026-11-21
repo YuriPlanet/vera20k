@@ -1,16 +1,13 @@
-//! Hover targets, status-help keys, and action application for the skirmish shell.
+//! Hover targets and status-help keys for the skirmish shell.
 
-use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::LaunchCountry;
 
 use super::super::layout::{
-    ChooseMapModalButton, ColorComboId, RandomMapSetupControl, SkirmishCheckboxId,
-    SkirmishTrackbarId,
+    ChooseMapModalButton, RandomMapSetupControl, SkirmishCheckboxId, SkirmishTrackbarId,
 };
 use super::{
     ChooseMapHoverTarget, OwnerDrawButton, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
-    SkirmishCountryChoice, SkirmishHoverTarget, SkirmishShellAction, SkirmishShellState,
-    accept_selected_map, player_row_visible,
+    SkirmishCountryChoice, SkirmishHoverTarget,
 };
 
 /// Like [`status_help_key_for_hover`], but an Ares country row may supply
@@ -202,15 +199,6 @@ fn status_help_key_for_side_item(country: SkirmishCountryChoice) -> Option<&'sta
     }
 }
 
-/// The lobby colour after `color` in list order, wrapping to the first.
-fn next_lobby_color(state: &SkirmishShellState, color: usize) -> usize {
-    usize::from(
-        state
-            .lobby_colors
-            .next_lobby_priority(i32::try_from(color).unwrap_or(-1)),
-    )
-}
-
 /// gamemd names its eight colours and the observer's (`STT:PlayerColor*`);
 /// VERA's extra colours show their swatch and no status line.
 fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static str> {
@@ -226,39 +214,5 @@ fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static st
         SkirmishComboItem::Color(7) => Some("STT:PlayerColorPink"),
         SkirmishComboItem::Color(8) => Some("STT:PlayerColorObserver"),
         _ => None,
-    }
-}
-
-pub fn apply_action(
-    state: &mut SkirmishShellState,
-    action: SkirmishShellAction,
-    maps: &[MapMenuEntry],
-) -> SkirmishShellAction {
-    match action {
-        SkirmishShellAction::None => SkirmishShellAction::None,
-        SkirmishShellAction::StartGame => SkirmishShellAction::StartGame,
-        SkirmishShellAction::BackOrExit => SkirmishShellAction::BackOrExit,
-        SkirmishShellAction::ChooseMap => SkirmishShellAction::ChooseMap,
-        SkirmishShellAction::GameOptions => SkirmishShellAction::GameOptions,
-        SkirmishShellAction::Setups => SkirmishShellAction::Setups,
-        SkirmishShellAction::SelectMap(idx) => {
-            accept_selected_map(state, maps, idx);
-            SkirmishShellAction::None
-        }
-        SkirmishShellAction::SelectColor(target) => {
-            match target {
-                ColorComboId::Player => {
-                    state.player_color_index = next_lobby_color(state, state.player_color_index);
-                }
-                ColorComboId::Ai(idx) => {
-                    let visible = player_row_visible(state, maps, idx + 1);
-                    if visible && let Some(current) = state.opponents.get(idx) {
-                        let next = next_lobby_color(state, current.color_index);
-                        state.opponents[idx].color_index = next;
-                    }
-                }
-            }
-            SkirmishShellAction::None
-        }
     }
 }

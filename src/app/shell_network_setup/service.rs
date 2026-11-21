@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::app::match_runtime::session::PeerChoicesChange;
+use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::{LaunchTeam, SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::modal::ShellBox;
@@ -95,7 +96,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     // drops the setup protocol: later setup packets have no receiver. VERA:
     // a lobby visitor's room goes on hidden behind the lobby page.
     anyhow::ensure!(
-        (state.frontend.shell_route.network_setup()
+        (state.frontend.shell_route == ShellRoute::NetworkSetup
             || crate::app::shell_wol::lobby::visiting(state)
             || super::quick_match(state)
             || super::external(state))
@@ -262,7 +263,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 // The part sink 0x785740 played PlayerLeft and clears the
                 // acceptances itself (super::wol::user_left).
                 super::cooperative::guest_left(state)?;
-                state.platform.window.request_redraw();
                 return Ok(());
             }
             // A VERA room's host moves its open spectator row after a leave;
@@ -725,7 +725,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         NetworkSetupEvent::PeerConnected { node } => super::wol::verify_connected(state, node)?,
         NetworkSetupEvent::Negotiated { result } => super::wol::negotiated(state, result)?,
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -850,7 +849,6 @@ pub(super) fn publish_choices(state: &mut AppState, change: PeerChoicesChange) {
     if change.options {
         protocol.requests.push(NetworkSetupRequest::PublishOptions);
     }
-    state.platform.window.request_redraw();
 }
 
 /// VERA's room tells a guest in its own chat when the host's options move
@@ -1135,7 +1133,6 @@ pub(super) fn install_received_preview_image(
     protocol.accept_preview_bounds(None);
     protocol.received_preview_count += 1;
     protocol.received_preview = Some((protocol.received_preview_count, image));
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -1195,7 +1192,6 @@ pub(crate) fn set_network_map_progress(state: &mut AppState, progress: Option<(u
             protocol.accept_eligible = false;
         }
     }
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn accept_network_map_source(
@@ -1283,7 +1279,6 @@ pub(crate) fn invalidate_network_agreement(state: &mut AppState) -> anyhow::Resu
             .requests
             .retain(|request| !matches!(request, NetworkSetupRequest::Ready(_)));
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -1386,7 +1381,6 @@ fn auto_accept(state: &mut AppState) {
     if let Err(error) = super::actions::accept(state) {
         log::warn!("automatic Accept refused: {error:#}");
     }
-    state.platform.window.request_redraw();
 }
 
 /// VERA's join queue in the host's game: each free seat goes to the queue's
@@ -1438,7 +1432,7 @@ const BRIEFING_HINT: &str = "VERA:MapHasBriefing";
 /// the room's map has a briefing: when they enter the room on such a map and
 /// when the room changes to one. Nothing is sent to the others.
 fn point_out_briefing(state: &mut AppState) {
-    if state.frontend.shell_route != crate::app::shell_route::ShellRoute::NetworkSetup
+    if state.frontend.shell_route != ShellRoute::NetworkSetup
         || !super::dialog(state).modern
         || super::quick_match(state)
         || super::external(state)
@@ -1468,7 +1462,6 @@ fn point_out_briefing(state: &mut AppState) {
             color: u32::MAX,
         },
     );
-    state.platform.window.request_redraw();
 }
 
 /// The service could not take the local acceptance. It stays withdrawn
@@ -1488,7 +1481,6 @@ pub(crate) fn refuse_local_acceptance(state: &mut AppState) -> anyhow::Result<()
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.accept_eligible = false;
     }
-    state.platform.window.request_redraw();
     Ok(())
 }
 

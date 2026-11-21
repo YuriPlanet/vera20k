@@ -7,9 +7,7 @@ use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::text::{button_text_rect, rect_to_text_rect};
-use super::{
-    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
-};
+use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint;
@@ -56,7 +54,7 @@ fn paint_create_box(
         ROOM_PLAYERS_CAPTION,
         ROOM_SPECTATORS,
     ];
-    let style = super::gui_paint::GuiStyle::popup(atlas);
+    let style = super::gui_paint::GuiStyle::popup();
     let widgets = super::gui_paint::paint_gui_ids(
         state,
         controller.gui(),
@@ -161,10 +159,10 @@ pub(crate) fn render_lan_lobby(
     let gui = state.frontend.shell_controller.gui();
     let root = state.frontend.shell_controller.root_in(PAGE.dialog);
     if !leaving && !runtime.creating {
-        for (key, rect) in layout.labels {
+        for (id, key) in crate::ui::lan_shell::LABELS {
             texts.push(text(
                 &state.csf_label(key, key),
-                rect,
+                layout.rect(id).unwrap_or_default(),
                 ShellAlign::NONE,
                 SHELL_LABEL_TEXT_RGB,
             ));
@@ -174,8 +172,16 @@ pub(crate) fn render_lan_lobby(
             .ime
             .composition(crate::app::input::ime::ImeTarget::LanLobbyChat);
         for (rect, edit, composition) in [
-            (layout.name, &lobby.name, None),
-            (layout.chat, &lobby.chat.edit, chat_composition),
+            (
+                layout.rect(crate::ui::lan_shell::NAME).unwrap_or_default(),
+                &lobby.name,
+                None,
+            ),
+            (
+                layout.rect(crate::ui::lan_shell::CHAT).unwrap_or_default(),
+                &lobby.chat.edit,
+                chat_composition,
+            ),
         ] {
             push_new_edit(
                 &mut controls,
@@ -199,7 +205,9 @@ pub(crate) fn render_lan_lobby(
             push_flag_entry_clipped_centered(
                 &mut controls,
                 entry,
-                layout.observer_image,
+                layout
+                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
+                    .unwrap_or_default(),
                 scale,
                 SHELL_CONTROL_DEPTH,
             );
@@ -306,7 +314,10 @@ pub(crate) fn render_lan_lobby(
         ));
         if let Some(key) = runtime.modal {
             use crate::app::shell_lan::{MODAL, OK};
-            let body = runtime.modal_body.clone().unwrap_or_else(|| state.csf_label(key, key));
+            let body = runtime
+                .modal_body
+                .clone()
+                .unwrap_or_else(|| state.csf_label(key, key));
             let ok = state.csf_label("TXT_OK", "OK");
             let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(
                 OK,
@@ -315,10 +326,15 @@ pub(crate) fn render_lan_lobby(
             );
             let pressed = box_pressed(state, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
-            let (sprites, texts) = (Some(&mut overlay.controls), Some((&mut overlay.texts, false)));
+            let (sprites, texts) = (
+                Some(&mut overlay.controls),
+                Some((&mut overlay.texts, false)),
+            );
             let size = (width as i32, height as i32);
             let pressed = |id| pressed && id == OK;
-            super::shell_box::push_skirmish_box(state, size, &notice, pressed, look, sprites, texts);
+            super::shell_box::push_skirmish_box(
+                state, size, &notice, pressed, look, sprites, texts,
+            );
         }
     }
     if runtime.creating {

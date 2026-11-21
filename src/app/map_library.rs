@@ -13,6 +13,7 @@
 //! `[PreviewPack]`, `[Waypoints]`, `[Header]` and `[RandomMap]` sections, so
 //! its row is read by the same record reader as a local map's.
 
+use crate::app::shell_route::ShellRoute;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -363,7 +364,7 @@ pub(crate) fn download_progress(state: &AppState) -> Option<(u64, u64)> {
 /// build that can read the library.
 pub(crate) fn listed_in_choose_map(state: &AppState) -> bool {
     crate::app::worker::THREADS
-        && state.frontend.shell_route.network_setup()
+        && state.frontend.shell_route == ShellRoute::NetworkSetup
         && state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }
 

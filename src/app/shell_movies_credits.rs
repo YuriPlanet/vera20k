@@ -86,12 +86,6 @@ impl App {
         Self::movie_list_sync(state);
     }
 
-    pub(super) fn movie_list_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.movie_list()
-            && state.frontend.movie_list.is_some()
-    }
-
     /// Binds the controller to the page and keeps its list `0x744`, the
     /// dialog's `List` node: a hover target for status help and its own
     /// press handler, never a button press.
@@ -103,19 +97,20 @@ impl App {
         controller.set_scale(layout.page.scale);
         if let Some(rows) = state.frontend.movie_list.as_ref() {
             let list = (rows.len(), retained_movie_row(rows, retained), 0);
-            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list, true);
+            family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list);
         }
         layout
     }
 
     /// The movie or Mods list's scrollbar arrow repeat
-    /// (`0x0061D215..0x0061D2C8`); returns the next wake deadline.
+    /// (`0x0061D215..0x0061D2C8`) while its page shows; returns the next
+    /// wake deadline.
     pub(super) fn poll_family_list(state: &mut AppState) -> Option<Instant> {
-        if !Self::movie_list_active(state) && !Self::mods_page_active(state) {
-            return None;
-        }
         let window = &state.platform.window;
-        state.frontend.shell_controller.poll_then(|| window.request_redraw())
+        state
+            .frontend
+            .shell_controller
+            .poll_then(|| window.request_redraw())
     }
 
     /// One pointer message (`down`: `None` moves). A press on a button
@@ -271,7 +266,6 @@ impl App {
         if running_scenario {
             state.frontend.screen = crate::ui::game_screen::GameScreen::MainMenu;
         }
-        state.platform.window.request_redraw();
     }
 
     /// End of Play_Movie: resume the paused music and recreate the caller's
@@ -307,8 +301,6 @@ impl App {
         };
         if ended {
             Self::finish_fullscreen_movie(state);
-        } else {
-            state.platform.window.request_redraw();
         }
         Ok(())
     }
@@ -324,8 +316,6 @@ impl App {
             .advance(crate::app::frontend::credits_roll::wall_bucket(now_ms));
         if session.roll.finished() {
             Self::finish_credits_roll(state);
-        } else {
-            state.platform.window.request_redraw();
         }
     }
 
@@ -375,7 +365,6 @@ impl App {
             && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
         {
             movie.abort();
-            state.platform.window.request_redraw();
         }
     }
 
@@ -429,14 +418,12 @@ impl App {
             last_drawn: Vec::new(),
             return_to,
         });
-        state.platform.window.request_redraw();
     }
 
     /// Queue one keyboard/mouse event for the credits loop.
     pub(super) fn credits_roll_input(state: &mut AppState, input: CreditsInput) {
         if let Some(session) = state.frontend.credits_roll.as_mut() {
             session.roll.push_input(input);
-            state.platform.window.request_redraw();
         }
     }
 

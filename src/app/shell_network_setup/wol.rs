@@ -472,7 +472,6 @@ pub(super) fn options_preview(state: &mut AppState) {
     }
     protocol.accept_eligible = false;
     protocol.requests.push(NetworkSetupRequest::Ready(false));
-    state.platform.window.request_redraw();
     if let Some(index) = local
         && let Err(error) = state
             .match_state
@@ -799,15 +798,10 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
             _ => {}
         }
     }
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
-    let (moved, deadline) = verify_mut(state).ok()?.poll_scroll();
-    if moved {
-        state.platform.window.request_redraw();
-    }
-    deadline
+    verify_mut(state).ok()?.poll_scroll().1
 }
 
 /// C2/C9 0x540 Enter (notify 0x501): commands first, then a plain line.

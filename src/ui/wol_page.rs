@@ -61,8 +61,6 @@ fn transcript(id: u16) -> NodeSpec {
     NodeSpec::new(NodeKind::List)
         .id(id.into())
         .with(Prop::RowCount, Value::Int(0))
-        .with(Prop::ListWindow, Value::Bool(true))
-        .with(Prop::DoubleClick, Value::Bool(false))
 }
 
 fn node(kind: NodeKind, id: u16) -> NodeSpec {
@@ -91,9 +89,21 @@ pub(crate) fn button(id: u16, key: &str) -> NodeSpec {
 pub(crate) fn page_spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         // SS_RIGHT, then two left-aligned statics and the status.
-        .child(static_text(NAME_CAPTION, Some("GUI:PageBuddy"), ShellAlign::H_RIGHT))
-        .child(static_text(TEXT_CAPTION, Some("GUI:TextToSend"), ShellAlign::NONE))
-        .child(static_text(STATUS_CAPTION, Some("GUI:FindStatus"), ShellAlign::NONE))
+        .child(static_text(
+            NAME_CAPTION,
+            Some("GUI:PageBuddy"),
+            ShellAlign::H_RIGHT,
+        ))
+        .child(static_text(
+            TEXT_CAPTION,
+            Some("GUI:TextToSend"),
+            ShellAlign::NONE,
+        ))
+        .child(static_text(
+            STATUS_CAPTION,
+            Some("GUI:FindStatus"),
+            ShellAlign::NONE,
+        ))
         .child(static_text(STATUS, None, ShellAlign::NONE))
         .child(button(SEND, "GUI:Page").with(Prop::Enabled, Value::Bool(false)))
         .child(button(CANCEL, "GUI:Cancel"))
@@ -110,8 +120,16 @@ pub(crate) fn page_spec() -> NodeSpec {
 /// disabled.
 pub(crate) fn received_spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
-        .child(static_text(TITLE_CAPTION, Some("GUI:PageReceived"), ShellAlign::H_CENTER))
-        .child(static_text(REPLY_TO_CAPTION, Some("GUI:ReplyTo"), ShellAlign::H_RIGHT))
+        .child(static_text(
+            TITLE_CAPTION,
+            Some("GUI:PageReceived"),
+            ShellAlign::H_CENTER,
+        ))
+        .child(static_text(
+            REPLY_TO_CAPTION,
+            Some("GUI:ReplyTo"),
+            ShellAlign::H_RIGHT,
+        ))
         .child(static_text(REPLY_TO, None, ShellAlign::NONE))
         .child(button(SEND, "GUI:ReplyPage").with(Prop::Enabled, Value::Bool(false)))
         .child(button(BACK, "GUI:Back"))
@@ -796,7 +814,7 @@ mod tests {
         received.input(&mut c, typed("o"));
         // Choosing another pager keeps the reply's focus: a press on the
         // transcript's first row.
-        let row = layout.transcript;
+        let row = layout.rect_of(0x53F).unwrap();
         c.on_pointer_down(row.x + 10, row.y + 6);
         assert_eq!(
             c.prop(RECEIVED_DIALOG, RECEIVED_TRANSCRIPT, Prop::Selected),

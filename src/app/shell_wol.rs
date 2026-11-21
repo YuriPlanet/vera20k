@@ -662,13 +662,6 @@ impl App {
         Self::wol_welcome_sync(state, &filled);
     }
 
-    /// Any WOL page owns the shell's input and paint.
-    pub(super) fn wol_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.wol_visit()
-            && state.frontend.wol.is_some()
-    }
-
     /// Builds `0x10E`'s widgets once (`filled`: the persona texts its init
     /// writes, `0x007989AA`) and puts them on the layout; the root.
     pub(crate) fn wol_welcome_sync(
@@ -722,7 +715,6 @@ impl App {
                 if let Some(control) = Self::shell_box_pointer(state, &shell_box, &parts, down) {
                     service::box_command(state, control);
                 }
-                state.platform.window.request_redraw();
             }
             return;
         }
@@ -926,7 +918,6 @@ impl App {
         leaf::free_art(state, crate::ui::wol_login::DIALOG);
         state.frontend.shell_route = ShellRoute::Wol;
         Self::open_wol_home(state);
-        state.platform.window.request_redraw();
     }
 
     /// Main Menu's teardown has run (result 0), or `WOL_Main` returned -2

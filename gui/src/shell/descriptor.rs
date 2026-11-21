@@ -150,6 +150,38 @@ pub const MONITOR_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
     dh: 0,
 };
 
+/// A right-panel child with the one-pixel window correction and no fix-up:
+/// the WOL lobby's heading `0x694` (y 7 at 800x600, not the `+1` of
+/// [`LOW_HEADING_ANCHOR`]) and its lobby list.
+pub const PANEL_CHILD_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
+    resource_dw: 1,
+    resource_dh: 1,
+    inset: None,
+    dy: 0,
+    dh: 0,
+};
+
+impl AnchorRule {
+    /// The rule a layout table names (the shell's `shell_layout.ini`).
+    pub fn named(name: &str) -> Option<Self> {
+        Some(match name {
+            "Resource" => Self::Resource,
+            "ChildWindow" => Self::ChildWindow,
+            "StatusLine" => Self::StatusLine,
+            "RightAnchor" => Self::RightAnchor,
+            "Button" => BUTTON,
+            "BackButton" => BACK_BUTTON,
+            "Heading" => HEADING_ANCHOR,
+            "LowHeading" => LOW_HEADING_ANCHOR,
+            "TallHeading" => TALL_HEADING_ANCHOR,
+            "PanelChild" => PANEL_CHILD_ANCHOR,
+            "MapText" => MAP_TEXT_ANCHOR,
+            "Monitor" => MONITOR_ANCHOR,
+            _ => return None,
+        })
+    }
+}
+
 /// Background composition mode (study §C8): mode-1 right-panel shells vs mode-2
 /// SHP modal. Only `RightPanelShell` is exercised this slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

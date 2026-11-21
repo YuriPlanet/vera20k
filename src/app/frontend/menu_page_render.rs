@@ -5,6 +5,7 @@
 //! draws under and over them. [`FamilyPage`] names the pages whose buttons
 //! are `vera20k-gui` nodes (`ui::shell::menu_page`).
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::Instant;
 
 use anyhow::Result;
@@ -67,13 +68,10 @@ impl FamilyPage {
         if state.frontend.fullscreen_movie.is_some() || state.frontend.credits_roll.is_some() {
             return None;
         }
-        let route = state.frontend.shell_route;
-        if route.single_player() {
-            Some(Self::SinglePlayer)
-        } else if route.movies_and_credits() {
-            Some(Self::MoviesAndCredits)
-        } else {
-            None
+        match state.frontend.shell_route {
+            ShellRoute::SinglePlayer => Some(Self::SinglePlayer),
+            ShellRoute::MoviesAndCredits => Some(Self::MoviesAndCredits),
+            _ => None,
         }
     }
 

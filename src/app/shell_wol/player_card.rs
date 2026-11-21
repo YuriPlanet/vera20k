@@ -315,7 +315,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) -> bool {
     }
     if let Some(list) = country_list(state) {
         countries_mouse(state, list, pressed);
-        state.platform.window.request_redraw();
         return true;
     }
     let (x, y) = state.match_state.input.cursor_px();
@@ -367,7 +366,6 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
             if let Some(card) = card_mut(state) {
                 card.close_countries();
             }
-            state.platform.window.request_redraw();
         } else {
             close(state);
         }

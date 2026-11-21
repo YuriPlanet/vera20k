@@ -71,7 +71,6 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     info.stats = answer
         .inspect_err(|error| log::info!("The lobby's counts are unavailable: {error:#}"))
         .ok();
-    state.platform.window.request_redraw();
     None
 }
 

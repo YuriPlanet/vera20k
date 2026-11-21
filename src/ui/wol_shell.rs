@@ -14,11 +14,12 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{RectPx, ScaledRects, ShellScale, child_window};
-use crate::ui::shell::layout::Placer;
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{
-    self, MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
+    MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
 use crate::ui::shell::modal::{BoxForm, BoxSlot, ShellBox};
 
@@ -129,13 +130,12 @@ pub fn action_for_control(id: u16) -> Option<WolWelcomeAction> {
 
 /// A kind-0 text static of the left side, painted at once without a reveal:
 /// its control id (the id-less captions get [`CAPTION_IDS`] + n), caption
-/// key, template rect, alignment (`SS_LEFT` / `SS_CENTER` / `SS_RIGHT`) and
-/// status help (`0x006040B0`).
+/// key, alignment (`SS_LEFT` / `SS_CENTER` / `SS_RIGHT`) and status help
+/// (`0x006040B0`). The rects are `shell_layout.ini`'s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolTextStatic {
     pub id: u16,
     pub key: &'static str,
-    pub dlu: (i32, i32, i32, i32),
     pub align: ShellAlign,
     pub help: Option<&'static str>,
 }
@@ -149,14 +149,12 @@ const R: ShellAlign = ShellAlign::H_RIGHT;
 const fn text(
     id: u16,
     key: &'static str,
-    dlu: (i32, i32, i32, i32),
     align: ShellAlign,
     help: Option<&'static str>,
 ) -> WolTextStatic {
     WolTextStatic {
         id,
         key,
-        dlu,
         align,
         help,
     }
@@ -169,26 +167,26 @@ const fn text(
 #[rustfmt::skip]
 pub const WOL_TEXT_STATICS: [WolTextStatic; 20] = [
     // The persona heading: centred (`0x50020001`), empty caption.
-    text(0x06EF, "", (86, 41, 254, 12), C, None),
-    text(CAPTION_IDS, "GUI:IconGlossary", (60, 167, 308, 13), C, None),
-    text(CAPTION_IDS + 1, "GUI:LadderWins", (87, 63, 115, 12), R, None),
-    text(CAPTION_IDS + 2, "GUI:LadderLosses", (87, 79, 115, 12), R, None),
-    text(CAPTION_IDS + 3, "GUI:Disconnects", (87, 95, 115, 12), R, None),
-    text(CAPTION_IDS + 4, "GUI:LadderRank", (87, 111, 115, 12), R, None),
-    text(CAPTION_IDS + 5, "GUI:LadderPoints", (87, 127, 115, 12), R, None),
-    text(0x06F0, "GUI:UnknownStats", (214, 63, 110, 12), L, Some("STT:WOLMyInformationWins")),
-    text(0x06F1, "GUI:UnknownStats", (214, 79, 110, 12), L, Some("STT:WOLMyInformationLosses")),
-    text(0x0701, "GUI:UnknownStats", (214, 95, 110, 12), L, Some("STT:WOLMyInformationDisconnects")),
-    text(0x06F4, "GUI:UnknownStats", (214, 111, 110, 12), L, Some("STT:WOLMyInformationRank")),
-    text(0x06F5, "GUI:UnknownStats", (214, 127, 110, 12), L, Some("STT:WOLMyInformationPoints")),
-    text(0x0797, "GUI:Blank", (95, 143, 229, 12), C, Some("STT:WelcomeUpdate")),
-    text(0x074C, "GUI:NormalGameIconDesc", (89, 200, 257, 12), L, None),
-    text(0x074E, "GUI:ClanGameIconDesc", (89, 215, 257, 12), L, None),
-    text(0x074F, "GUI:ResolutionLimitIconDesc", (89, 230, 257, 12), L, None),
-    text(0x0750, "GUI:ObserverAllowedIconDesc", (89, 245, 257, 12), L, None),
-    text(0x0753, "GUI:PasswordIconDesc", (89, 260, 257, 12), L, None),
-    text(CAPTION_IDS + 6, "GUI:LatencyIconDesc", (103, 275, 243, 12), L, None),
-    text(CAPTION_IDS + 7, "GUI:BadgesOfHonor", (113, 290, 221, 12), L, None),
+    text(0x06EF, "", C, None),
+    text(CAPTION_IDS, "GUI:IconGlossary", C, None),
+    text(CAPTION_IDS + 1, "GUI:LadderWins", R, None),
+    text(CAPTION_IDS + 2, "GUI:LadderLosses", R, None),
+    text(CAPTION_IDS + 3, "GUI:Disconnects", R, None),
+    text(CAPTION_IDS + 4, "GUI:LadderRank", R, None),
+    text(CAPTION_IDS + 5, "GUI:LadderPoints", R, None),
+    text(0x06F0, "GUI:UnknownStats", L, Some("STT:WOLMyInformationWins")),
+    text(0x06F1, "GUI:UnknownStats", L, Some("STT:WOLMyInformationLosses")),
+    text(0x0701, "GUI:UnknownStats", L, Some("STT:WOLMyInformationDisconnects")),
+    text(0x06F4, "GUI:UnknownStats", L, Some("STT:WOLMyInformationRank")),
+    text(0x06F5, "GUI:UnknownStats", L, Some("STT:WOLMyInformationPoints")),
+    text(0x0797, "GUI:Blank", C, Some("STT:WelcomeUpdate")),
+    text(0x074C, "GUI:NormalGameIconDesc", L, None),
+    text(0x074E, "GUI:ClanGameIconDesc", L, None),
+    text(0x074F, "GUI:ResolutionLimitIconDesc", L, None),
+    text(0x0750, "GUI:ObserverAllowedIconDesc", L, None),
+    text(0x0753, "GUI:PasswordIconDesc", L, None),
+    text(CAPTION_IDS + 6, "GUI:LatencyIconDesc", L, None),
+    text(CAPTION_IDS + 7, "GUI:BadgesOfHonor", L, None),
 ];
 
 /// `0x10E`'s widgets: the buttons in Z-order with their status help, then
@@ -225,86 +223,54 @@ pub fn spec(filled: &[(u16, String)]) -> NodeSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolIcon {
     pub id: u16,
-    pub dlu: (i32, i32, i32, i32),
     pub file: &'static str,
 }
 
-const fn icon(id: u16, dlu: (i32, i32, i32, i32), file: &'static str) -> WolIcon {
-    WolIcon { id, dlu, file }
+const fn icon(id: u16, file: &'static str) -> WolIcon {
+    WolIcon { id, file }
 }
 
-/// The glossary icons: template rect and PCX. `0x79F` is shifted one pixel
-/// right by `0x0060C002`.
+/// The glossary icons and their PCX. `0x79F` is shifted one pixel right by
+/// `0x0060C002`.
 #[rustfmt::skip]
 pub const WOL_ICONS: [WolIcon; 13] = [
-    icon(0x0746, (67, 200, 18, 12), "gt18.pcx"),
-    icon(0x0748, (67, 215, 18, 12), "wolclan.pcx"),
-    icon(0x0749, (67, 230, 18, 12), "wolreslk.pcx"),
-    icon(0x074A, (67, 245, 18, 12), "wolob.pcx"),
-    icon(0x0752, (67, 260, 18, 12), "wolpriv.pcx"),
-    icon(0x075C, (67, 275, 10, 12), "pingg.pcx"),
-    icon(0x075D, (79, 275, 10, 12), "pingy.pcx"),
-    icon(0x075E, (91, 275, 10, 12), "pingr.pcx"),
-    icon(0x079E, (67, 290, 6, 12), "number1.pcx"),
-    icon(0x079F, (72, 290, 6, 12), "number0.pcx"),
-    icon(0x07A0, (77, 290, 6, 12), "number0.pcx"),
-    icon(0x07A1, (84, 290, 12, 12), "cooperat.pcx"),
-    icon(0x07A2, (96, 290, 12, 12), "comchief.pcx"),
+    icon(0x0746, "gt18.pcx"),
+    icon(0x0748, "wolclan.pcx"),
+    icon(0x0749, "wolreslk.pcx"),
+    icon(0x074A, "wolob.pcx"),
+    icon(0x0752, "wolpriv.pcx"),
+    icon(0x075C, "pingg.pcx"),
+    icon(0x075D, "pingy.pcx"),
+    icon(0x075E, "pingr.pcx"),
+    icon(0x079E, "number1.pcx"),
+    icon(0x079F, "number0.pcx"),
+    icon(0x07A0, "number0.pcx"),
+    icon(0x07A1, "cooperat.pcx"),
+    icon(0x07A2, "comchief.pcx"),
 ];
 
 /// The two group boxes (`BS_GROUPBOX`): ladder stats and icon glossary.
-pub const WOL_GROUP_BOXES: [(i32, i32, i32, i32); 2] = [(81, 52, 255, 106), (61, 186, 289, 126)];
+pub const GROUP_BOXES: [u16; 2] = [0xFF10, 0xFF11];
 
 /// `0x10E` at the current screen: the family right panel, and the left-side
 /// children at their template places (`0x0060C0C0` keeps them at every size).
 #[derive(Debug, Clone)]
 pub struct WolWelcomeLayout {
     pub page: MenuPageLayout,
-    /// Status line `0x695`: the template is 316 DLU wide here.
-    pub status_help: RectPx,
-    pub texts: Vec<(WolTextStatic, RectPx)>,
-    pub icons: Vec<(&'static str, RectPx)>,
-    pub group_boxes: Vec<RectPx>,
+    pub rects: RectTable,
 }
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
-    let mut page = menu_page::compute_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
-    // The heading template is 108x11 DLU here (the family's is 108x10): the
-    // relayout keeps the family place and the window is one row taller.
-    let place = Placer::new(screen_w as i32, screen_h as i32);
-    page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
-    // The left-side children stay at their template places.
-    let px = |(x, y, w, h)| child_window(x, y, w, h);
-    let icon = |icon: &WolIcon| {
-        let mut window = child_window(icon.dlu.0, icon.dlu.1, icon.dlu.2, icon.dlu.3);
-        window.x += i32::from(icon.id == 0x079F);
-        (icon.file, window)
-    };
-    WolWelcomeLayout {
-        page,
-        status_help: place.at(AnchorRule::StatusLine, 2, 355, 316, 12),
-        texts: WOL_TEXT_STATICS
-            .iter()
-            .map(|text| (*text, px(text.dlu)))
-            .collect(),
-        icons: WOL_ICONS.iter().map(icon).collect(),
-        group_boxes: WOL_GROUP_BOXES.into_iter().map(px).collect(),
+    let (w, h) = (screen_w as i32, screen_h as i32);
+    let (page, mut rects) =
+        layout_data::menu_page(&WOL_WELCOME_PAGE, "0x10E", ShellScale::RETAIL, w, h);
+    if let Some(rect) = rects.get(0x079F) {
+        rects.insert(0x079F, rect.translate(1, 0));
     }
+    WolWelcomeLayout { page, rects }
 }
 
-impl ScaledRects for WolTextStatic {
-    fn scaled_rects(&self, _: ShellScale) -> Self {
-        *self
-    }
-}
-
-vera20k_gui::scaled_rects!(WolWelcomeLayout {
-    page,
-    status_help,
-    texts,
-    icons,
-    group_boxes
-});
+vera20k_gui::scaled_rects!(WolWelcomeLayout { page, rects });
 
 impl WolWelcomeLayout {
     pub fn page_spec(&self) -> &'static MenuPageSpec {
@@ -313,8 +279,18 @@ impl WolWelcomeLayout {
 
     /// Where control `id` of [`spec`] sits.
     pub fn rect_of(&self, id: u16) -> Option<RectPx> {
-        let text = self.texts.iter().find(|(text, _)| text.id == id);
-        self.page.button_rect(id).or(text.map(|(_, rect)| *rect))
+        self.page.button_rect(id).or_else(|| self.rects.get(id))
+    }
+
+    /// The glossary icons' PCX and windows.
+    pub fn icons(&self) -> impl Iterator<Item = (&'static str, RectPx)> + '_ {
+        WOL_ICONS
+            .iter()
+            .filter_map(|icon| Some((icon.file, self.rects.get(icon.id)?)))
+    }
+
+    pub fn group_boxes(&self) -> impl Iterator<Item = RectPx> + '_ {
+        GROUP_BOXES.iter().filter_map(|id| self.rects.get(*id))
     }
 
     /// The buttons whose faces show, in Z-order. Siblings do not clip each
@@ -394,7 +370,11 @@ impl WolWaitBox {
             .button(WAIT_CHECK_STATUS, BoxSlot::CheckStatus, check_status)
             .form(BoxForm::Wait);
         let opened_at = crate::util::time::Instant::now();
-        Self { shell_box, opened_at, shown: false }
+        Self {
+            shell_box,
+            opened_at,
+            shown: false,
+        }
     }
 
     pub fn reveal_at(&self) -> crate::util::time::Instant {
@@ -540,7 +520,7 @@ mod tests {
                 (MAIN_MENU, RectPx::new(644, 535, 156, 42)),
             ]
         );
-        assert_eq!(layout.status_help, RectPx::new(10, 578, 475, 21));
+        assert_eq!(layout.page.status_help, RectPx::new(10, 578, 475, 21));
         // The executed relayout of heading 0x694 (dlu 423,4,108,11).
         assert_eq!(layout.page.title, RectPx::new(635, 9, 163, 19));
         assert_eq!(
@@ -556,23 +536,26 @@ mod tests {
     #[test]
     fn left_children_keep_their_template_places() {
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.group_boxes[0], RectPx::new(122, 85, 384, 173));
-        assert_eq!(layout.group_boxes[1], RectPx::new(92, 302, 435, 206));
-        let wins = layout
-            .texts
-            .iter()
-            .find(|(text, _)| text.key == "GUI:LadderWins")
-            .unwrap();
-        assert_eq!(wins.1, RectPx::new(131, 102, 174, 21));
+        let boxes: Vec<_> = layout.group_boxes().collect();
+        assert_eq!(
+            boxes,
+            [
+                RectPx::new(122, 85, 384, 173),
+                RectPx::new(92, 302, 435, 206)
+            ]
+        );
+        assert_eq!(
+            layout.rect_of(CAPTION_IDS + 1),
+            Some(RectPx::new(131, 102, 174, 21))
+        );
         // The executed kind-2 placement: gt18 at (108, 328), the second
         // number0 (0x79F, +1 x) at (110, 473).
-        let (_, gt18) = layout.icons[0];
-        assert_eq!(centred_in_window(gt18, 14, 14), (108, 328));
-        let (_, number0) = layout.icons[9];
-        assert_eq!(centred_in_window(number0, 8, 16), (110, 473));
+        let icons: Vec<_> = layout.icons().collect();
+        assert_eq!(centred_in_window(icons[0].1, 14, 14), (108, 328));
+        assert_eq!(centred_in_window(icons[9].1, 8, 16), (110, 473));
         // 1024x768 leaves them at their 800x600 places.
         let wide = compute_layout(1024, 768);
-        assert_eq!(wide.group_boxes, layout.group_boxes);
+        assert!(wide.group_boxes().eq(layout.group_boxes()));
     }
 
     #[test]
@@ -581,41 +564,28 @@ mod tests {
         // Identity at the authored size, where the retail layout is used.
         let same = fit_window(800, 600, compute_layout);
         assert_eq!(same.page.title, base.page.title);
-        assert_eq!(same.status_help, base.status_help);
-        assert_eq!(same.group_boxes, base.group_boxes);
+        assert_eq!(same.rects, base.rects);
         let scale = ShellScale::from_screen(1600, 1200);
         let scaled = fit_window(1600, 1200, compute_layout);
         assert_eq!(scaled.page.scale, scale);
         assert_eq!(scaled.page.title, RectPx::new(1270, 18, 326, 38));
-        assert_eq!(scaled.status_help, RectPx::new(20, 1156, 950, 42));
-        assert_eq!(scaled.group_boxes[0], RectPx::new(244, 170, 768, 346));
-        assert_eq!(scaled.group_boxes[1], RectPx::new(184, 604, 870, 412));
+        assert_eq!(scaled.page.status_help, RectPx::new(20, 1156, 950, 42));
+        let boxes: Vec<_> = scaled.group_boxes().collect();
         assert_eq!(
-            base.texts
-                .iter()
-                .map(|(text, window)| (*text, scale.scale_rect(*window)))
-                .collect::<Vec<_>>(),
-            scaled.texts
+            boxes,
+            [
+                RectPx::new(244, 170, 768, 346),
+                RectPx::new(184, 604, 870, 412)
+            ]
         );
         assert_eq!(
-            base.icons
-                .iter()
-                .map(|(file, window)| (*file, scale.scale_rect(*window)))
-                .collect::<Vec<_>>(),
-            scaled.icons
+            scaled.rect_of(CAPTION_IDS + 1),
+            Some(RectPx::new(262, 204, 348, 42))
         );
-        let wins = scaled
-            .texts
-            .iter()
-            .find(|(text, _)| text.key == "GUI:LadderWins")
-            .unwrap();
-        assert_eq!(wins.1, RectPx::new(262, 204, 348, 42));
         assert_eq!(
             scaled.page.button_rect(MAIN_MENU),
             Some(RectPx::new(1288, 1070, 312, 84))
         );
-        assert_eq!(scaled.texts.len(), base.texts.len());
-        assert_eq!(scaled.icons.len(), base.icons.len());
     }
 
     /// The control under `(x, y)` once the page's widgets are on the

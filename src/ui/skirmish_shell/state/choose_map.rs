@@ -182,9 +182,6 @@ pub struct ChooseMapModalState {
     /// [`ChooseMapContext::official_only`].
     official_only: bool,
     pub filtered_record_indices: Vec<usize>,
-    /// The map list was rebuilt, which drops a hold on its scrollbar
-    /// ([`super::super::choose_map_page::take_rebuild`]).
-    pub map_list_rebuilt: bool,
     /// Favorites and Online Maps only: the game type each row's map is
     /// played with, the first listed one that admits it.
     row_modes: Vec<SkirmishModeSelection>,
@@ -306,7 +303,6 @@ impl ChooseMapModalState {
                 .collect(),
             selected_mode: selected_mode_id.into(),
             random_maps_allowed: false,
-            map_list_rebuilt: false,
             official_only: context.official_only(),
             filtered_record_indices: Vec::new(),
             row_modes: Vec::new(),
@@ -475,7 +471,6 @@ impl ChooseMapModalState {
             }
             (self.filtered_record_indices, self.row_modes) = rows.into_iter().unzip();
             self.random_maps_allowed = false;
-            self.map_list_rebuilt = true;
             return;
         }
         let mode = self.selected_mode.resolve(modes);
@@ -487,7 +482,6 @@ impl ChooseMapModalState {
             .filter(|index| !records[*index].is_online() && self.matches_search(&records[*index]))
             .collect();
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
-        self.map_list_rebuilt = true;
     }
 
     /// `LB_SETTOPINDEX(selection)`, clamped by the list.
@@ -808,6 +802,7 @@ impl ChooseMapModalState {
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;
+    use crate::ui::shell::page::PageCue;
     use crate::ui::skirmish_shell::choose_map_page::{self, ChooserInput};
     use crate::ui::skirmish_shell::compute_choose_map_modal_layout;
     use crate::ui::skirmish_shell::page::Pointer;
@@ -864,7 +859,7 @@ mod tests {
         let on_list = [layout.mode_list, layout.map_list]
             .iter()
             .any(|list| list_surface(*list).contains(point.0, point.1));
-        if input.row_click {
+        if input.cues.contains(&PageCue::ListClick) {
             ChooseMapListPress::RowClicked {
                 rebuilt: input.rebuilt,
             }
@@ -904,10 +899,18 @@ mod tests {
         let at = |modal: &mut ChooseMapModalState, pointer| {
             drive(modal, &layout, (&modes, &[]), &mut None, pointer, random)
         };
-        assert!(!at(&mut modal, Pointer::Down).button_press);
+        assert!(
+            !at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
         assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         assert!(modal.select_mode(1, &modes, &[], &layout));
-        assert!(at(&mut modal, Pointer::Down).button_press);
+        assert!(
+            at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
         assert!(modal.select_mode(9, &modes, &[], &layout));
         assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         let mut records = Vec::new();

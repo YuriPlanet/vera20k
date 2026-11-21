@@ -9,15 +9,18 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::lan_shell::LanChatLine;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 
 pub(crate) const DIALOG: DialogId = DialogId(0x0117);
 pub(crate) const CANCEL: u16 = 0x05C0;
 pub(crate) const TRANSCRIPT: u16 = 0x053F;
+/// The "Match Status" caption (template static `0xFFFF`).
+pub(crate) const CAPTION: u16 = 0xFF00;
 
 /// RT_DIALOG `0x117`: no stacked buttons, Cancel on the bottom row. Help
 /// keys from the executed `0x006040B0`; Cancel's `WOL:WDTMatchBack`
@@ -56,8 +59,7 @@ pub(crate) fn spec() -> NodeSpec {
             NodeSpec::new(NodeKind::List)
                 .id(TRANSCRIPT.into())
                 .tooltip(TRANSCRIPT_HELP)
-                .with(Prop::RowCount, Value::Int(0))
-                .with(Prop::ListWindow, Value::Bool(true)),
+                .with(Prop::RowCount, Value::Int(0)),
         )
 }
 
@@ -91,34 +93,18 @@ impl WolQuickMatchPage {
 #[derive(Debug, Clone)]
 pub(crate) struct WolQuickMatchLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    pub(crate) caption: RectPx,
-    pub(crate) transcript: RectPx,
+    pub(crate) rects: RectTable,
 }
 
 impl WolQuickMatchLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
-        // Heading 0x694 is 106x11 DLU, centred by 0x0060B1D0 where the
-        // family's sits and one row taller.
-        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 106, 11);
-        let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
-        Self {
-            page,
-            status_help,
-            caption: px([7, 9, 146, 13]),
-            transcript: px([22, 26, 377, 297]),
-        }
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x117", scale, width, height);
+        Self { page, rects }
     }
 
     /// Where control `id` sits.
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
-        match id {
-            TRANSCRIPT => Some(self.transcript),
-            id => self.page.button_rect(id),
-        }
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -149,11 +135,11 @@ mod tests {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
-                    "0x53F" => layout.transcript,
+                    "0x695" => layout.page.status_help,
+                    "0x53F" => layout.rect_of(TRANSCRIPT).unwrap(),
                     "0xFFFF" => {
                         assert_eq!(child["caption"].as_str(), Some(MATCH_STATUS_KEY));
-                        layout.caption
+                        layout.rect_of(CAPTION).unwrap()
                     }
                     "0x5C0" => layout.page.button_rect(CANCEL).unwrap(),
                     other => panic!("{size} {other}"),

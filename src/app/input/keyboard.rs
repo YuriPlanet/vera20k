@@ -499,7 +499,7 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
     } else if hovered == Some(KeyboardControl::Commands.id()) {
         let list = dialog.list();
         let metrics = crate::ui::shell::list::ListMetrics::scaled(layout.scale);
-        let max_top = list.window_geometry(layout.commands, metrics).max_top;
+        let max_top = list.geometry(layout.commands, metrics).max_top;
         let top = (list.top as i32 - (lines * 3.0) as i32).clamp(0, max_top as i32);
         dialog.set_top(top as usize);
     }
@@ -573,7 +573,6 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
         dialog.captured = captured;
         dialog.current_owner_visible = true;
         dialog.error = None;
-        state.platform.window.request_redraw();
     }
 }
 

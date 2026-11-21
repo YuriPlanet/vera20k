@@ -2,6 +2,7 @@ use super::*;
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
+use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::page::PageCue;
 use crate::util::time::{Duration, Instant};
 
@@ -688,7 +689,6 @@ impl App {
                 if let Some(page) = state.frontend.score_page.as_mut() {
                     page.change_page(id == NEXT_PAGE, Instant::now());
                 }
-                state.platform.window.request_redraw();
             }
             _ => {}
         }
@@ -820,7 +820,7 @@ impl App {
             crate::app::shell_network_setup::return_after_match(state);
             return;
         }
-        if state.frontend.shell_route.skirmish() {
+        if state.frontend.shell_route == ShellRoute::Skirmish {
             Self::enter_native_skirmish_from_single_player(state);
         }
     }
@@ -841,7 +841,7 @@ impl App {
         // a queued Back/Escape can otherwise return to 0xE2 before 0x100 draws
         // and incorrectly preserve the old main-menu movie timeline.
         Self::destroy_current_shell_dialog(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::SinglePlayer;
+        state.frontend.shell_route = ShellRoute::SinglePlayer;
         // A new 0x100 instance starts with no press or hover.
         state.frontend.shell_controller.reset_to(
             crate::ui::single_player_shell::SINGLE_PLAYER_PAGE.dialog,
@@ -855,7 +855,7 @@ impl App {
         // 0xE2. Clear immediately so a same-event-loop round trip cannot reuse
         // the source dialog's movie session.
         Self::destroy_current_shell_dialog(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        state.frontend.shell_route = ShellRoute::MainMenu;
     }
 
     /// A new `0x102` from Single Player's Skirmish or, after a Skirmish game,
@@ -882,7 +882,7 @@ impl App {
         // constructing 0x102. Drop the hidden Rust session as well so returning
         // to 0x100 cannot continue the pre-Skirmish RA2TS timeline.
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Skirmish;
+        state.frontend.shell_route = ShellRoute::Skirmish;
         // A fresh `0x102`: its widgets build on the first sync.
         state
             .frontend
@@ -908,7 +908,7 @@ impl App {
     }
 
     pub(super) fn return_from_skirmish_to_single_player_shell(state: &mut AppState) {
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
+        state.frontend.shell_route = ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_shell_state.choose_map_modal = None;
         state.frontend.skirmish_shell_state.validation_modal = None;
@@ -1052,7 +1052,7 @@ impl App {
                     .map(str::to_owned)
             });
         // VERA's Esc menu opens Options over a page: the button returns there.
-        if state.frontend.shell_route != crate::app::shell_route::ShellRoute::MainMenu {
+        if state.frontend.shell_route != ShellRoute::MainMenu {
             labels.set("GUI:MainMenu", state.csf_label("GUI:Back", "Back"));
         }
         labels
@@ -1224,7 +1224,6 @@ impl App {
         }
         let output = dialog.drain_output();
         Self::dispatch_launcher_options_output(state, dialog, output);
-        state.platform.window.request_redraw();
     }
 
     /// Pump-terminal completion enters the same always-apply parent transaction
@@ -1408,12 +1407,6 @@ impl App {
         Self::handle_family_page_mouse(state, FamilyPage::MainMenu, down);
     }
 
-    pub(super) fn handle_menu_page_mouse(state: &mut AppState, down: Option<bool>) {
-        if let Some(page) = FamilyPage::menu_page(state) {
-            Self::handle_family_page_mouse(state, page, down);
-        }
-    }
-
     /// A press (`down`) or release on the open box, after the update offer's
     /// change list and the Esc menu's settings (a press either takes is
     /// theirs). The box (`0x005D3490`, proc `0x005D36A0`) subclasses its
@@ -1567,7 +1560,9 @@ impl App {
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
         crate::app::input::pause_menu::on_match_end(state);
-        if Self::native_skirmish_shell_active(state) {
+        if crate::app::input::precedence::route_page(state)
+            == crate::app::input::precedence::ScreenPage::Skirmish
+        {
             // A terminal exit has no Start/Back transaction, so pack the
             // page's current controls into the durable record first. The
             // pack spends no `Scenario` draw: Random markers keep the
@@ -1751,7 +1746,7 @@ impl App {
         event: &winit::event::KeyEvent,
     ) -> bool {
         if state.frontend.screen != GameScreen::MainMenu
-            || state.frontend.shell_route != crate::app::shell_route::ShellRoute::MainMenu
+            || state.frontend.shell_route != ShellRoute::MainMenu
             || state.frontend.main_menu_shell_error.is_some()
         {
             return false;
@@ -1788,7 +1783,6 @@ impl App {
         // 0x0052FEC0`, DL=1) and nothing invalidates 0xE2 afterwards, so
         // retail may briefly show shuttered buttons on a match. VERA redraws
         // the whole menu.
-        state.platform.window.request_redraw();
         true
     }
 
@@ -1987,7 +1981,6 @@ impl App {
         // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
         // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.
         Self::resolve_shell_message_box(state, crate::ui::shell::modal::ModalResult::MessageBox(1));
-        state.platform.window.request_redraw();
         true
     }
 

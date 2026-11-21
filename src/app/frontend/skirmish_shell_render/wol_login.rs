@@ -21,8 +21,8 @@ use crate::ui::wol_account::{
     FIRST_CAPTION, FORM_CANCEL, FORM_OK, FORM_STATUS, POPUP, WolAccountForm,
 };
 use crate::ui::wol_login::{
-    CAPTIONS_TEXT, COUNTS_TEXT, DIALOG, HEADING_TEXT, LABELS, NICKNAME, NICKNAME_DROP, STATUS_TEXT,
-    WolLoginLayout, WolLoginState,
+    CAPTIONS_TEXT, COUNTS_TEXT, DIALOG, HEADING_TEXT, LABEL_KEYS, LABELS, NICKNAME, NICKNAME_DROP,
+    STATUS_TEXT, WolLoginLayout, WolLoginState,
 };
 
 /// The disabled color of a disabled owner-draw label (`0x00612F5F`).
@@ -51,7 +51,7 @@ pub(crate) fn paint_wol_login_children(
         let id = u16::try_from(id).ok()?;
         let at = |ids: [u16; 2]| ids.iter().position(|other| *other == id);
         if let Some(index) = at(LABELS) {
-            return Some(label(layout.labels[index].0));
+            return Some(label(LABEL_KEYS[index]));
         }
         let form = login.form.as_ref()?;
         if let Some(index) = at(CAPTIONS_TEXT) {
@@ -81,7 +81,7 @@ pub(crate) fn paint_wol_login_children(
         rows_of: Some(&rows_of),
         ..Default::default()
     };
-    if layout.online.is_some() && login.form.is_some() {
+    if layout.policy == crate::ui::wol_login::LoginPolicy::Online && login.form.is_some() {
         // VERA online: the welcome, the sign-in form and the counts, straight
         // over the art.
         return gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
@@ -142,7 +142,7 @@ pub(crate) fn paint_wol_account_form(
     ) else {
         return paint;
     };
-    let style = GuiStyle::popup(atlas);
+    let style = GuiStyle::popup();
     let background = atlas
         .ra2_dialog_background
         .or_else(|| atlas.mode_two_dialog_background(None));

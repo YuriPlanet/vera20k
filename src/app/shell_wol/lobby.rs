@@ -23,6 +23,7 @@
 //! [`Runner::QuickMatch`]) likewise keeps its lobby, game channel and users
 //! here, with the native mode 1-3 branches of the shared sinks.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
@@ -971,7 +972,6 @@ pub(super) fn replace_box_body(state: &mut AppState, body: &str) -> bool {
         return false;
     };
     message.body = body.to_owned();
-    state.platform.window.request_redraw();
     true
 }
 
@@ -1012,7 +1012,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         visit.page = WolPage::Backdrop { wait: None };
         super::leaf::free_art(state, DIALOG);
         state.match_state.session.leave_network();
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+        state.frontend.shell_route = ShellRoute::Wol;
         service::begin_flow(state);
         return;
     }
@@ -1026,7 +1026,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     // Disjoint from the visit's borrow.
     let login = crate::ui::wol_login::DIALOG;
     state.frontend.wol_art.retain(|(id, _)| *id != login);
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+    state.frontend.shell_route = ShellRoute::WolLobby;
     state
         .frontend
         .shell_controller
@@ -1057,7 +1057,6 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         lobby.step = Step::Ready;
         refill_players(state);
         switch_lobby(state);
-        state.platform.window.request_redraw();
         return;
     }
     visit.lobby = Some(new_runner(
@@ -1091,7 +1090,6 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     } else {
         list_lobbies(state);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The MOTD's transcript rows (runner `0x00787770`, `[0xB73AE0]`): one per
@@ -1126,7 +1124,8 @@ fn await_room(state: &mut AppState) {
     let cancel = state.csf_text("GUI:Cancel");
     if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
         wait.shell_box.body = crate::i18n::tr("VERA:ReturningToRoom");
-        wait.shell_box.set_caption(crate::ui::wol_shell::WAIT_DISCONNECT, cancel);
+        wait.shell_box
+            .set_caption(crate::ui::wol_shell::WAIT_DISCONNECT, cancel);
     }
 }
 
@@ -1464,7 +1463,6 @@ fn show_visit(state: &mut AppState) {
     }
     refill_players(state);
     request_games(state);
-    state.platform.window.request_redraw();
 }
 
 /// Whether the selected game row admits Join, as a player or a spectator.
@@ -1508,7 +1506,6 @@ fn visit_failed(state: &mut AppState) {
     };
     runner.step = Step::Ready;
     message_line(state, crate::i18n::tr("VERA:VisitFailed"));
-    state.platform.window.request_redraw();
 }
 
 /// Ends the visit with its room, as leaving it or the runner's close does:
@@ -1558,7 +1555,6 @@ fn visit_settles(state: &mut AppState, line: String) {
     }
     refill_players(state);
     message_line(state, line);
-    state.platform.window.request_redraw();
 }
 
 /// Another user joined the lobby this player visits: its list takes them,
@@ -1645,11 +1641,10 @@ pub(super) fn open_runner(state: &mut AppState, runner: Runner) {
             .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
     super::leaf::free_art(state, crate::ui::wol_login::DIALOG);
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    state.frontend.shell_route = ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
 }
 
 /// `0x00788800` for the Quick Match lobby (stage 2): a lobby already
@@ -3016,7 +3011,6 @@ pub(super) fn begin_create(state: &mut AppState) {
         .reset_to(CREATE_DIALOG, false);
     // Its widgets on their layout before it paints.
     sync(state);
-    state.platform.window.request_redraw();
 }
 
 fn dispatch(state: &mut AppState, action: WolLobbyAction) {
@@ -3158,7 +3152,6 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         }
         WolLobbyAction::Popup(action) => popup_action(state, action),
     }
-    state.platform.window.request_redraw();
 }
 
 /// A lobby box or wait-box button released.
@@ -3656,7 +3649,6 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
                 lobby.games = channels.clone();
                 super::quick_match::games_listed(state, &channels);
-                state.platform.window.request_redraw();
                 return;
             }
             if kind == GAME_CHANNEL {
@@ -3671,7 +3663,6 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     close_wait(state);
                     super::buddy::game_listed(state, &name, true);
                 }
-                state.platform.window.request_redraw();
                 return;
             }
             lobby.set_lobbies(channels);
@@ -3806,14 +3797,15 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         WolServiceEvent::WatchRefused(code) => watch_refused(state, code),
         other => log::debug!("WOL event not for the lobby: {other:?}"),
     }
-    state.platform.window.request_redraw();
 }
 
 /// The runner is in a game channel with C2/C9 open over the hidden `0x113`,
 /// or with Quick Match's setup under `0x117`.
 fn in_setup_channel(state: &AppState) -> bool {
     // A visitor's room goes on while the lobby page shows.
-    (state.frontend.shell_route.network_setup() || setup::quick_match(state) || visiting(state))
+    (state.frontend.shell_route == ShellRoute::NetworkSetup
+        || setup::quick_match(state)
+        || visiting(state))
         && lobby(state)
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
@@ -3908,7 +3900,9 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     if visit && !visiting(state) {
         return;
     }
-    let room = !visit && (state.frontend.shell_route.network_setup() || visiting(state));
+    let room = !visit
+        && (state.frontend.shell_route == ShellRoute::NetworkSetup
+            || visiting(state));
     let in_game = state
         .frontend
         .wol
@@ -3947,7 +3941,6 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
             visit,
         },
     );
-    state.platform.window.request_redraw();
 }
 
 /// The find sink `0x007A9970` for a locate this user sent (`[0xB76E28]`),
@@ -3961,7 +3954,6 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
 pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
     // 0x007A9986: a pending buddy locate takes any answer first.
     if super::buddies::located(state, &result) {
-        state.platform.window.request_redraw();
         return;
     }
     // 0x007A997A: with 0xCF in the stack its status takes the answer.
@@ -4005,7 +3997,6 @@ pub(super) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.locate_name = None;
     }
-    state.platform.window.request_redraw();
 }
 
 /// The page-send result sink `0x007A9800`: success writes `TXT_PAGESENT`
@@ -4029,7 +4020,6 @@ pub(super) fn page_result(state: &mut AppState, result: Result<(), u32>) {
     } else {
         super::page::current_window_line(state, line);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The NetStatus sink `0x007AA6D0` outside the server-list wait: only
@@ -4085,24 +4075,22 @@ pub(super) fn net_status(state: &mut AppState, status: u32) {
         // 0x7AA7E3: TXT_YOURE_DISCON needs 0x113 open; the Quick Match
         // runner only takes event 0, and its exit has no channel to leave.
         super::quick_match::exit(state);
-        state.platform.window.request_redraw();
         return;
     }
     if lobby.runner == Runner::Buddy {
         // The Buddy List runner's pump takes event 0: 0x116 ends without a
         // slide and TXT_YOURE_DISCON shows before the welcome. Over C2/C9
         // the setup is dropped first, as for the lobby.
-        if state.frontend.shell_route.network_setup() {
+        if state.frontend.shell_route == ShellRoute::NetworkSetup {
             crate::app::shell_network_setup::abandon_for_wol_runner(state);
         }
         super::buddy::dialog_ended(state);
         show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
-        state.platform.window.request_redraw();
         return;
     }
-    if state.frontend.shell_route.network_setup() {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup {
         crate::app::shell_network_setup::abandon_for_wol_runner(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+        state.frontend.shell_route = ShellRoute::WolLobby;
         if let Some(lobby) = lobby_mut(state) {
             lobby.shown = true;
             lobby.covered = false;
@@ -4112,7 +4100,6 @@ pub(super) fn net_status(state: &mut AppState, status: u32) {
     // The records are zeroed without a list refill; the box shows over the
     // lists as they were, and the runner then closes.
     show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
-    state.platform.window.request_redraw();
 }
 
 /// The kick sink `0x007AB670` in a chat lobby; nothing while a match runs.
@@ -4154,7 +4141,9 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
             visit_settles(state, text);
             return;
         }
-        if !state.frontend.shell_route.network_setup() && !visiting(state) {
+        if state.frontend.shell_route != ShellRoute::NetworkSetup
+            && !visiting(state)
+        {
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
@@ -4212,7 +4201,6 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
         }
         refill_players(state);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The ban sink `0x007AB3C0`: outside a match, `TXT_CHAN_BAN` or
@@ -4236,7 +4224,6 @@ pub(super) fn channel_ban(state: &mut AppState, name: &str, banned: bool) {
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     message_line(state, text);
-    state.platform.window.request_redraw();
 }
 
 /// The page sinks after their gates: the ANSI one (`0x007A9200`) keeps the
@@ -4257,7 +4244,7 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
             state,
             &from,
             &text,
-            state.frontend.shell_route.network_setup(),
+            state.frontend.shell_route == ShellRoute::NetworkSetup,
         )
     {
         return;
@@ -4293,7 +4280,7 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
         // (also while Options `0x2BC` hides it), C2/C9's, or `0x11E`'s.
         let route = state.frontend.shell_route;
         let transcript = super::page::page_received(state).is_none()
-            && (route.network_setup()
+            && (route == ShellRoute::NetworkSetup
                 || lobby_dialog(state).is_some()
                 || super::quick_match::page_open(state));
         if transcript {
@@ -4346,7 +4333,8 @@ pub(crate) fn sync(state: &mut AppState) {
 /// (`app::input::ime`): `handle_wol_key` reaches [`key_press`] with the lobby
 /// page up, no page dialog and no popup.
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
-    let routed = App::wol_active(state)
+    let routed = crate::app::input::precedence::route_page(state)
+        == crate::app::input::precedence::ScreenPage::Wol
         && !shell_transition::blocks_shell_input(state)
         && !App::wol_quick_match_verify(state)
         && !super::page::open(state)
@@ -4355,7 +4343,11 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .filter(|lobby| {
             routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
         })
-        .map(|_| layout(state).chat)
+        .map(|_| {
+            layout(state)
+                .control_rect(crate::ui::wol_lobby::CHAT)
+                .unwrap_or_default()
+        })
 }
 
 /// What the lobby's widgets did: their cues, a player card opened and the
@@ -4370,7 +4362,6 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
         }
     }
     state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -4471,10 +4462,11 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     // Every pass polls: build the layout only while a lobby runs.
     lobby(state)?;
     let now = Instant::now();
-    let mut redraw = false;
     let page_open = super::page::page_dialog(state).is_some();
     let lobby = lobby_mut(state)?;
-    redraw |= lobby.wait.as_mut().is_some_and(|wait| wait.poll(now));
+    if let Some(wait) = lobby.wait.as_mut() {
+        wait.poll(now);
+    }
     if let Some(request_id) = lobby
         .step
         .online_request()
@@ -4489,7 +4481,6 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             request(state, WolServiceRequest::LeaveChannel);
         }
         online_request_failed(state, request_id, 0x8000_4005);
-        state.platform.window.request_redraw();
         return None;
     }
     match lobby.step {
@@ -4506,19 +4497,16 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             } else {
                 show_box(state, "TXT_CANT_CONNECT", false, BoxThen::Close);
             }
-            state.platform.window.request_redraw();
             return None;
         }
         Step::FindingGame { deadline, .. } if now >= deadline => {
             lobby.step = Step::Ready;
             close_wait(state);
             super::buddy::stopped(state);
-            state.platform.window.request_redraw();
             return None;
         }
         Step::Leaving { deadline, .. } if now >= deadline => {
             leave_finished(state, false);
-            state.platform.window.request_redraw();
             return None;
         }
         _ => {}
@@ -4542,7 +4530,6 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         if now >= at {
             lobby.refresh_at = None;
             lobby.ui.set_enabled(REFRESH, true);
-            redraw = true;
         } else {
             deadlines.push(at);
         }
@@ -4568,15 +4555,10 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         deadlines.push(lobby.games_at);
         deadlines.push(lobby.lobbies_at);
         // A held scroll arrow's repeat.
-        let repeat = lobby.ui.poll();
-        redraw |= repeat.is_some();
-        deadlines.extend(repeat);
+        deadlines.extend(lobby.ui.poll());
     }
     for request in requests {
         self::request(state, request);
-    }
-    if redraw {
-        state.platform.window.request_redraw();
     }
     deadlines.into_iter().min()
 }

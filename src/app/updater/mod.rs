@@ -345,7 +345,6 @@ pub(crate) fn cancel_check(state: &mut AppState) {
     if let Phase::Checking { asked, .. } = &mut state.frontend.updater.phase {
         *asked = false;
     }
-    state.platform.window.request_redraw();
 }
 
 /// The online lobby says this version is behind the newest release: its 426
@@ -430,7 +429,6 @@ pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
         }
         _ => {}
     }
-    state.platform.window.request_redraw();
 }
 
 fn download(state: &mut AppState, package: Package, release: Release) {
@@ -501,7 +499,6 @@ pub(crate) fn cancel_download(state: &mut AppState) {
     }
     progress.cancel.store(true, Ordering::Relaxed);
     log::info!("Updater: download cancelled");
-    state.platform.window.request_redraw();
 }
 
 fn progress_text(version: Version, received: u64, size: u64) -> String {

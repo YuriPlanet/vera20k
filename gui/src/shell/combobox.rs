@@ -1,9 +1,11 @@
 //! Shared ComboDropWin (0060E0C0) popup presentation and pointer capture.
 //! The item's identity and selected value remain with each control's owner.
 
-use super::combo_scroll::ScrollModel;
 use super::geom::{RectPx, ShellScale};
-use super::list::{ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry};
+use super::list::{
+    ListMetrics, ListScrollInteraction, ListScrollPart, ShellListGeometry, scrollbar_thumb_y,
+    thumb_height,
+};
 use crate::time::Instant;
 
 pub const COMBO_FACE_H: i32 = 24;
@@ -155,18 +157,25 @@ impl ComboPopup {
             )
         })
     }
+    /// The shared scrollbar child's metrics (ComboDropWin 0060E72F creates
+    /// it, 0060E745 subclasses it to 0061C690).
+    fn metrics(&self) -> ListMetrics {
+        let metrics = DropdownMetrics::scaled(self.scale);
+        ListMetrics {
+            row_h: self.row_height,
+            scrollbar_w: metrics.scrollbar_w,
+            arrow_h: metrics.button_h,
+            min_thumb_h: metrics.min_thumb_h,
+        }
+    }
     pub fn thumb(&self) -> Option<RectPx> {
         let bar = self.scrollbar()?;
-        let model = ScrollModel::combo_at(
-            self.visible_rows as i32,
-            DropdownMetrics::scaled(self.scale),
-        );
-        let height = model.thumb_height(self.visible_rows, self.total, bar.h);
-        let y = model.thumb_y(bar, height, self.first, self.total - self.visible_rows);
+        let (metrics, max_top) = (self.metrics(), self.total - self.visible_rows);
+        let height = thumb_height(bar.h, max_top, metrics);
+        let y = scrollbar_thumb_y(bar, height, self.first, max_top, metrics);
         Some(RectPx::new(bar.x + 1, y, bar.w - 2, height))
     }
     pub fn scroll_geometry(&self) -> ShellListGeometry {
-        let metrics = DropdownMetrics::scaled(self.scale);
         ShellListGeometry {
             outer: self.rect,
             content: self.content(),
@@ -174,12 +183,7 @@ impl ComboPopup {
             thumb: self.thumb(),
             visible_rows: self.visible_rows,
             max_top: self.total - self.visible_rows,
-            metrics: ListMetrics {
-                row_h: self.row_height,
-                scrollbar_w: metrics.scrollbar_w,
-                arrow_h: metrics.button_h,
-                min_thumb_h: metrics.min_thumb_h,
-            },
+            metrics: self.metrics(),
         }
     }
     pub fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {

@@ -49,7 +49,6 @@ pub(crate) fn press_on_box(state: &mut AppState, preview_box: RectPx) -> bool {
         opened_at: Some((x, y)),
         ..PreviewZoom::default()
     });
-    state.platform.window.request_redraw();
     true
 }
 

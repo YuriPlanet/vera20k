@@ -65,12 +65,6 @@ impl App {
         ready
     }
 
-    pub(super) fn campaign_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.campaign()
-            && state.frontend.campaign.is_some()
-    }
-
     /// Whether Back holds the mouse since a press on it.
     fn campaign_back_pressed(state: &AppState) -> bool {
         crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, CAMPAIGN_DIALOG)
@@ -109,7 +103,6 @@ impl App {
         }
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
-        state.platform.window.request_redraw();
     }
 
     pub(super) fn handle_campaign_mouse_down(state: &mut AppState) {
@@ -315,25 +308,20 @@ impl App {
             .is_some_and(|sfx| sfx.owner_sound_live(CAMPAIGN_VOICE_OWNER))
     }
 
-    /// The dialog loop's hover voice and the emblem timers. Returns the next
-    /// wake deadline.
+    /// The dialog loop's hover voice and the emblem timers while the page
+    /// shows. Returns the next wake deadline.
     pub(super) fn poll_campaign(state: &mut AppState) -> Option<Instant> {
-        if !Self::campaign_active(state)
-            || crate::app::frontend::shell_transition::shell_slide_running(state)
-        {
+        if crate::app::frontend::shell_transition::shell_slide_running(state) {
             return None;
         }
         let now = Instant::now();
         let frame_counts = crate::app::frontend::campaign_shell_render::emblem_frame_counts(state);
         let campaign = state.frontend.campaign.as_mut()?;
         let voice = campaign.take_due_voice(now);
-        let changed = campaign.advance_emblems(now, frame_counts);
+        campaign.advance_emblems(now, frame_counts);
         let deadline = campaign.next_deadline();
         if let Some(voice) = voice {
             Self::play_campaign_voice(state, voice);
-        }
-        if changed {
-            state.platform.window.request_redraw();
         }
         deadline
     }

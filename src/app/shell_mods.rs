@@ -47,7 +47,9 @@ impl App {
     /// Folder showed: list what `Mods` holds now. The picked row stays
     /// picked while its folder is there.
     pub(super) fn refresh_mods_page(state: &mut AppState) {
-        if !Self::mods_page_active(state) {
+        if crate::app::input::precedence::route_page(state)
+            != crate::app::input::precedence::ScreenPage::Mods
+        {
             return;
         }
         let rows = Self::installed_mods(state);
@@ -65,7 +67,6 @@ impl App {
         *page = rows;
         // The top stays where it was, within the new range.
         Self::update_mods_list(state, selected, |top, (_, last)| top.min(last));
-        state.platform.window.request_redraw();
     }
 
     /// The list's tops for `rows` rows with `selected`: the one that shows
@@ -99,12 +100,6 @@ impl App {
         set_family_list(controller.gui_mut(), node, rows, selected, top);
     }
 
-    pub(super) fn mods_page_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.mods()
-            && state.frontend.mods.page.is_some()
-    }
-
     /// Binds the controller to the page and keeps its `List` node, which a
     /// new instance builds with the row in use selected and in view (a hover
     /// target for status help, never a button press); the layout.
@@ -120,7 +115,7 @@ impl App {
         controller.ensure_active(mods_shell::DIALOG, false);
         controller.set_scale(layout.page.scale);
         if let Some(list) = in_use {
-            family_list_node(controller, mods_shell::DIALOG, layout.list, list, false);
+            family_list_node(controller, mods_shell::DIALOG, layout.list, list);
         }
         layout
     }
@@ -132,7 +127,6 @@ impl App {
         Self::update_mods_list(state, selected, |top, (_, last)| {
             (top as i32 - (lines * 3.0) as i32).clamp(0, last as i32) as usize
         });
-        state.platform.window.request_redraw();
     }
 
     /// One pointer message (`down`: `None` moves), as in the movie list; the
@@ -351,7 +345,6 @@ impl App {
     /// stops the reading; the offer's first button writes the folder's files
     /// as the mod's list, and says what came of it.
     pub(super) fn answer_mod_files(state: &mut AppState, which: ModFilesBox, confirmed: bool) {
-        state.platform.window.request_redraw();
         let Some(check) = state.frontend.mods.files_check.take() else {
             return;
         };
@@ -452,7 +445,6 @@ impl App {
     /// New Mod's box: Open Folder shows the new mod's folder, or says where it
     /// is when no file manager starts.
     pub(super) fn answer_mod_made(state: &mut AppState, dir: &std::path::Path, open: bool) {
-        state.platform.window.request_redraw();
         if open && !crate::app::web_link::open_folder(dir) {
             Self::open_shell_notice(
                 state,
@@ -510,7 +502,6 @@ impl App {
             Some(config) => state.frontend.mods.keep_choice(&config.paths, folder),
             None => Err(std::io::Error::other("no config was read")),
         };
-        state.platform.window.request_redraw();
         let Err(error) = kept else {
             return true;
         };
@@ -530,7 +521,6 @@ impl App {
     /// this copy is gone (`app::restart`).
     pub(super) fn answer_mod_restart(state: &mut AppState, folder: Option<String>, restart: bool) {
         if !restart {
-            state.platform.window.request_redraw();
             return;
         }
         if Self::keep_mod_choice(state, folder.as_deref()) {

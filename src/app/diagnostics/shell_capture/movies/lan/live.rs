@@ -975,14 +975,24 @@ impl LiveLanCapture {
             }
             Phase::Lobby if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
                 let name = if self.host() { HOST_NAME } else { GUEST_NAME };
-                lobby_click(state, lobby::layout(state).name);
+                lobby_click(
+                    state,
+                    lobby::layout(state)
+                        .rect(crate::ui::lan_shell::NAME)
+                        .unwrap_or_default(),
+                );
                 lobby::key_press(state, Some(KeyCode::Home), None);
                 for _ in 0..32 {
                     lobby::key_press(state, Some(KeyCode::Delete), None);
                 }
                 lobby::key_press(state, None, Some(name));
                 if state.frontend.multiplayer_shell_runtime.lan_observer() {
-                    lobby_click(state, lobby::layout(state).observer_toggle);
+                    lobby_click(
+                        state,
+                        lobby::layout(state)
+                            .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                            .unwrap_or_default(),
+                    );
                 }
                 self.event(frame, "BB name entered through normal input");
                 if self.host() {
@@ -1009,7 +1019,7 @@ impl LiveLanCapture {
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
                     let top = lobby::list_top(state, crate::ui::lan_shell::GAMES);
                     let geometry = crate::ui::shell::list::ShellListGeometry::new(
-                        layout.games,
+                        layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
                         lobby_state.game_count(),
                         top,
                         crate::ui::shell::list::ListMetrics::scaled(layout.page.scale),

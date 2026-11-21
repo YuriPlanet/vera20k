@@ -129,15 +129,16 @@ pub(crate) fn paint_wol_lobby_children(
             RectPx::new(row.x + x, row.y, w, row.h)
         })
     };
-    for (key, rect) in layout.labels {
+    let rect_of = |id| layout.control_rect(id).unwrap_or_default();
+    for (id, key) in LABELS {
         paint.texts.push(text(
             &state.csf_text(key),
-            rect,
+            rect_of(id),
             ShellAlign::NONE,
             SHELL_LABEL_TEXT_RGB,
         ));
     }
-    if let Some(rect) = layout.observer_caption {
+    if let Some(rect) = layout.control_rect(OBSERVER_CAPTION) {
         paint.texts.push(text(
             &state.csf_text("GUI:Observe"),
             rect,
@@ -148,10 +149,8 @@ pub(crate) fn paint_wol_lobby_children(
 
     // The image buttons' faces and the text sort buttons' captions.
     for (id, rect) in layout
-        .sort_buttons
-        .iter()
-        .copied()
-        .chain([(REFRESH, layout.refresh), (EMOTE, layout.emote)])
+        .sort_buttons()
+        .chain([(REFRESH, rect_of(REFRESH)), (EMOTE, rect_of(EMOTE))])
     {
         let pressed = ui.pressed(id);
         match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
@@ -196,7 +195,7 @@ pub(crate) fn paint_wol_lobby_children(
         &mut paint.controls,
         &atlas.control_chrome(),
         ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
+            rect: rect_of(OBSERVER_TOGGLE),
             checked: ui.observer(),
         },
         scale,
@@ -205,7 +204,7 @@ pub(crate) fn paint_wol_lobby_children(
         push_flag_entry_clipped_centered(
             &mut paint.controls,
             entry,
-            layout.observer_image,
+            rect_of(OBSERVER_IMAGE),
             scale,
             SHELL_CONTROL_DEPTH,
         );
@@ -225,7 +224,7 @@ pub(crate) fn paint_wol_lobby_children(
             .platform
             .ime
             .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
-        layout.chat,
+        rect_of(CHAT),
         ui.caret_visible(),
         SHELL_LABEL_TEXT_RGB,
         SHELL_CONTROL_TEXT_DEPTH,
@@ -255,10 +254,22 @@ pub(crate) fn paint_wol_lobby_children(
         }
         (geometry, top)
     };
-    let (lobbies, lobby_top) = list(LOBBIES, layout.lobbies, ui.lobby_rows.len(), true, !modern);
-    let (games, game_top) = list(GAMES, layout.games, ui.game_rows.len(), true, true);
-    let (players, player_top) = list(PLAYERS, layout.players, ui.player_rows.len(), false, true);
-    let (chat, chat_top) = list(CHAT_LOG, layout.chat_log, ui.chat.lines.len(), false, true);
+    let (lobbies, lobby_top) = list(
+        LOBBIES,
+        rect_of(LOBBIES),
+        ui.lobby_rows.len(),
+        true,
+        !modern,
+    );
+    let (games, game_top) = list(GAMES, rect_of(GAMES), ui.game_rows.len(), true, true);
+    let (players, player_top) = list(PLAYERS, rect_of(PLAYERS), ui.player_rows.len(), false, true);
+    let (chat, chat_top) = list(
+        CHAT_LOG,
+        rect_of(CHAT_LOG),
+        ui.chat.lines.len(),
+        false,
+        true,
+    );
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
         if let Some(visible) = row.checked_sub(player_top)
@@ -543,7 +554,7 @@ pub(crate) fn paint_wol_lobby_popup(
         text_of: Some(&text_of),
         enabled_of: Some(&enabled_of),
         caret_of: Some(&caret_of),
-        ..GuiStyle::popup(atlas)
+        ..GuiStyle::popup()
     };
     let boxes = BOXES.map(|(id, _)| id);
     let sprites = [POPUP_OK, POPUP_CANCEL, CREATE_PLAYERS]

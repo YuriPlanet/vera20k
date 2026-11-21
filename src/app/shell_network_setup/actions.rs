@@ -181,7 +181,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 ui.map_offer = None;
                 apply_action(state, SetupAction::Back);
             }
-            state.platform.window.request_redraw();
             Ok(())
         }
         SetupAction::Page => {
@@ -211,7 +210,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     if let Err(error) = result {
         log::warn!("network setup command refused: {error:#}");
     }
-    state.platform.window.request_redraw();
 }
 
 pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {

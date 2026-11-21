@@ -7,24 +7,23 @@
 //! Each node paints in tree order, its sprites before its text, so a tree
 //! in the order a screen drew lays its draws down in that order. A node's
 //! own props choose its text: `Color` and `DisabledColor`, `Align`,
-//! `TextInset`; the host's [`GuiStyle`] the depth of every text, the
-//! buttons' art and the texts and rows it keeps itself.
+//! `TextInset`; the host's [`GuiStyle`] the buttons' art and the texts and
+//! rows it keeps itself.
 
 use vera20k_gui::{Gui, NodeId, NodeKind, Prop, Value};
 
 use super::controls::{ControlPaint, dropdown_scroll_part, paint_control, push_popup_instances};
 use super::text::{
-    button_label_rect_px, combo_dropdown_text_fit_width,
-    combo_dropdown_text_rect_for_current_renderer, combo_face_text_color,
+    button_label_rect_px, combo_dropdown_text_fit_width, combo_face_text_color,
     combo_face_text_draw_rect, combo_face_text_fit_width, fit_owner_draw_label, rect_to_text_rect,
 };
 use super::{
-    SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_DEPTH,
-    SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
+    COMBODROPWIN_TEXT_INSET_X, SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
+    SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_paint::{self, ModalButton, ModalButtonFrames, ModalDepths};
+use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
@@ -44,17 +43,31 @@ pub(crate) struct GuiPaint {
 /// `00BBGGRR` colour (`u32::MAX` for the node's own).
 pub(crate) type HostRows = Vec<(String, u32)>;
 
+/// How a dialog's buttons paint.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ButtonArt {
+    /// Not at all: the host paints them, or a slide's column covers them.
+    Host,
+    /// The right panel's owner-draw type-1 buttons (`0x00612B70`, SDBTNANM),
+    /// pushed while their press holds them (under the pointer or not), with
+    /// the type-1 caption, or one in their rect in their own `Align`.
+    Panel,
+    /// Owner-draw type-3 buttons (MNBTTN), pushed under the pointer, with
+    /// their caption centred.
+    Modal,
+    /// A framed plate with its caption in its `Align` (VERA's Extras rows).
+    Plate,
+}
+
 /// What a dialog's widgets take from their host rather than their props.
 #[derive(Clone, Copy)]
 pub(crate) struct GuiStyle<'a> {
-    /// The depth of every caption, value and row (an open list's excepted).
-    pub(crate) text_depth: f32,
     /// A focused edit shows the open IME composition.
     pub(crate) ime: bool,
-    /// Buttons paint as owner-draw buttons (`0x00612B70`) of these frames at
-    /// this depth, captioned with their `Label` or `Text`; without, the host
-    /// paints them.
-    pub(crate) buttons: Option<(ModalButtonFrames, f32)>,
+    /// The buttons' art and caption.
+    pub(crate) buttons: ButtonArt,
+    /// A button's own art by its `Id`, in place of `buttons`.
+    pub(crate) art_of: Option<&'a dyn Fn(i32) -> Option<ButtonArt>>,
     /// The host's text for a node by its `Id` (a status, a name), in place
     /// of its `Label` or `Text`.
     pub(crate) text_of: Option<&'a dyn Fn(i32) -> Option<String>>,
@@ -69,6 +82,8 @@ pub(crate) struct GuiStyle<'a> {
     /// frame, selection, the control scrollbar) rather than as the WOL
     /// pages' over their art ([`super::list::paint_list`]).
     pub(crate) control_lists: bool,
+    /// Combo faces wear the owner-draw two-pixel bevel (`0x105`'s).
+    pub(crate) framed: bool,
     /// An edit's caret shows (it has the focus, in its blink) by the host's
     /// word, for a tree the shell controller does not own.
     pub(crate) caret_of: Option<&'a dyn Fn(NodeId) -> bool>,
@@ -77,42 +92,33 @@ pub(crate) struct GuiStyle<'a> {
     pub(crate) text_factor: Option<f32>,
     /// The colour of a text with no `Color` (VERA's room's green).
     pub(crate) rgb: [f32; 3],
-    /// Without `buttons`, the host paints the buttons' art and they show
-    /// only their `Label` or `Text`: as the owner-draw type-1 button
-    /// (`0x00612B70`) captions it, moved while the press holds it (under
-    /// the pointer or not), or, for a button with its own `Align`, in its
-    /// rect in that alignment.
-    pub(crate) captions: bool,
 }
 
 impl Default for GuiStyle<'_> {
     fn default() -> Self {
         GuiStyle {
-            text_depth: SHELL_CONTROL_TEXT_DEPTH,
             ime: true,
-            buttons: None,
+            buttons: ButtonArt::Host,
+            art_of: None,
             text_of: None,
             rows_of: None,
             enabled_of: None,
             control_lists: false,
+            framed: false,
             caret_of: None,
             text_factor: None,
             rgb: SHELL_LABEL_TEXT_RGB,
-            captions: false,
         }
     }
 }
 
 impl GuiStyle<'_> {
-    /// The WOL and online boxes': MNBTTN buttons and texts at the popups'
-    /// depths, edits without the IME composition.
-    pub(crate) fn popup(atlas: &SkirmishShellChromeAtlas) -> Self {
-        let depths = super::wol_lobby::POPUP_DEPTHS;
-        let buttons = Some((super::type3_button_frames(atlas), depths.button));
+    /// The WOL and online boxes': MNBTTN buttons, the shell dialogs'
+    /// lists, edits without the IME composition.
+    pub(crate) fn popup() -> Self {
         GuiStyle {
-            text_depth: depths.text,
             ime: false,
-            buttons,
+            buttons: ButtonArt::Modal,
             control_lists: true,
             ..Default::default()
         }
@@ -316,7 +322,8 @@ pub(crate) fn paint_gui_with(
 ) -> GuiPaint {
     let mut paint = GuiPaint::default();
     let chrome = atlas.control_chrome();
-    let depth = style.text_depth;
+    // Shell passes draw in queue order (no depth test).
+    let depth = SHELL_CONTROL_TEXT_DEPTH;
     let glyph = style.text_factor.unwrap_or(scale.factor());
     // The pushed button of the dialog `root` belongs to.
     let mut dialog_root = root;
@@ -359,10 +366,64 @@ pub(crate) fn paint_gui_with(
         };
         let align = ShellAlign(int(gui, node, Prop::Align, ShellAlign::V_CENTER.0 as i32) as u8);
         match kind {
-            NodeKind::Button if style.buttons.is_none() => {
-                let Some(label) =
-                    caption(node).filter(|t| style.captions && !covered && !t.is_empty())
-                else {
+            NodeKind::Button => {
+                let art = style
+                    .art_of
+                    .zip(id(node))
+                    .and_then(|(art_of, id)| art_of(id))
+                    .unwrap_or(style.buttons);
+                let pressed = match art {
+                    ButtonArt::Modal => held,
+                    _ => captured,
+                } == Some(node);
+                match art {
+                    ButtonArt::Host => continue,
+                    ButtonArt::Panel => super::chrome::push_right_panel_button_shp(
+                        &mut paint.controls,
+                        atlas,
+                        rect,
+                        pressed,
+                        !enabled,
+                        SHELL_CONTROL_DEPTH,
+                    ),
+                    ButtonArt::Modal => {
+                        let button = ModalButton {
+                            rect,
+                            pressed,
+                            enabled,
+                        };
+                        let depths = ModalDepths {
+                            background: SHELL_CONTROL_DEPTH,
+                            button: SHELL_CONTROL_DEPTH,
+                            text: depth,
+                        };
+                        paint.controls.extend(shell_paint::paint_modal_sprites(
+                            None,
+                            super::type3_button_frames(atlas),
+                            rect,
+                            &[button],
+                            scale,
+                            depths,
+                        ));
+                    }
+                    ButtonArt::Plate => {
+                        let out = &mut paint.controls;
+                        super::chrome::push_solid_rect(
+                            out,
+                            atlas,
+                            rect,
+                            SHELL_MODAL_PANEL_RGB,
+                            SHELL_CONTROL_DEPTH,
+                        );
+                        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+                            out,
+                            atlas,
+                            rect,
+                            SHELL_CONTROL_DEPTH,
+                        );
+                    }
+                }
+                let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) else {
                     continue;
                 };
                 let rgb = text_rgb(
@@ -372,61 +433,22 @@ pub(crate) fn paint_gui_with(
                     style.rgb,
                     Some(shell_paint::SHELL_TEXT_RGB_DISABLED),
                 );
-                let (at, align) = match gui.get(node, Prop::Align).ok().flatten() {
-                    Some(_) => (rect, align),
-                    None => (
-                        button_label_rect_px(rect, captured == Some(node), scale),
+                let (at, align) = match (art, gui.get(node, Prop::Align).ok().flatten()) {
+                    (ButtonArt::Modal, _) => (
+                        crate::app::frontend::shell_pass::owner_draw_button_label_rect(
+                            rect, pressed,
+                        ),
+                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                    ),
+                    (_, Some(_)) => (rect, align),
+                    (_, None) => (
+                        button_label_rect_px(rect, pressed, scale),
                         ShellAlign::BUTTON_CAPTION,
                     ),
                 };
                 paint
                     .texts
                     .push(text(state, &label, at, align, glyph, rgb, depth));
-            }
-            NodeKind::Button => {
-                let Some((frames, button_depth)) = style.buttons else {
-                    continue;
-                };
-                let pressed = held == Some(node);
-                let button = ModalButton {
-                    rect,
-                    pressed,
-                    enabled,
-                };
-                let depths = ModalDepths {
-                    background: button_depth,
-                    button: button_depth,
-                    text: depth,
-                };
-                paint.controls.extend(shell_paint::paint_modal_sprites(
-                    None,
-                    frames,
-                    rect,
-                    &[button],
-                    scale,
-                    depths,
-                ));
-                if let Some(label) = caption(node).filter(|_| !covered) {
-                    let at = crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                        rect, pressed,
-                    );
-                    let rgb = text_rgb(
-                        gui,
-                        node,
-                        enabled,
-                        style.rgb,
-                        Some(shell_paint::SHELL_TEXT_RGB_DISABLED),
-                    );
-                    paint.texts.push(text(
-                        state,
-                        &label,
-                        at,
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                        glyph,
-                        rgb,
-                        depth,
-                    ));
-                }
             }
             NodeKind::Checkbox => {
                 let checked = flag(gui, node, Prop::Checked, false);
@@ -508,6 +530,15 @@ pub(crate) fn paint_gui_with(
                     .and(style.rows_of)
                     .zip(id(node))
                     .and_then(|(rows_of, id)| rows_of(id));
+                if style.framed {
+                    let out = &mut paint.controls;
+                    super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+                        out,
+                        atlas,
+                        rect,
+                        SHELL_CONTROL_DEPTH,
+                    );
+                }
                 paint_combo(
                     &mut paint, state, atlas, gui, node, rect, enabled, scale, depth, host_rows,
                 );
@@ -531,10 +562,7 @@ pub(crate) fn paint_gui_with(
                 };
                 let mut metrics = crate::ui::shell::list::ListMetrics::scaled(scale);
                 metrics.row_h = int(gui, node, Prop::RowHeight, metrics.row_h);
-                let geometry = match gui.get(node, Prop::ListWindow).ok().flatten() {
-                    Some(Value::Bool(true)) => view.window_geometry(rect, metrics),
-                    _ => view.geometry(rect, metrics),
-                };
+                let geometry = view.geometry(rect, metrics);
                 let selected = view
                     .selected
                     .filter(|_| !flag(gui, node, Prop::NoSelectionFill, false));
@@ -580,15 +608,9 @@ pub(crate) fn paint_gui_with(
                             [c as u8, (c >> 8) as u8, (c >> 16) as u8].map(|c| f32::from(c) / 255.0)
                         }
                     };
-                    paint.texts.push(text(
-                        state,
-                        row,
-                        at,
-                        ShellAlign::V_CENTER,
-                        glyph,
-                        rgb,
-                        depth,
-                    ));
+                    paint
+                        .texts
+                        .push(text(state, row, at, align, glyph, rgb, depth));
                 }
             }
             // NewEdit `0x00614B30` as `push_new_edit` paints it; the open IME
@@ -670,10 +692,9 @@ fn paint_combo(
         scale,
     );
     let items = items(gui, node, Prop::Items);
-    // A host caption (`Text`) stands in for the selected row's; `Truncate`
-    // cuts captions to gamemd's arrow and scrollbar reserves (`0x00617250`,
+    // A host caption (`Text`) stands in for the selected row's; captions are
+    // cut to gamemd's arrow and scrollbar reserves (`0x00617250`,
     // `0x0060DF38`), squeezed first.
-    let truncate = flag(gui, node, Prop::Truncate, false);
     let face = match gui.get(node, Prop::Text).ok().flatten() {
         Some(Value::Text(face)) => Some(face),
         _ => selected.and_then(|row| items.get(row)),
@@ -687,21 +708,8 @@ fn paint_combo(
     );
     let font = &state.renderer.bit_font;
     if let Some(face) = face {
-        if truncate {
-            let at = combo_face_text_draw_rect(rect, scale);
-            fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
-                paint.texts.push(text(
-                    state,
-                    face,
-                    at,
-                    ShellAlign::V_CENTER,
-                    scale.factor(),
-                    rgb,
-                    depth,
-                ));
-            });
-        } else {
-            let at = crate::ui::skirmish_shell::combo_text_rect(rect, scale);
+        let at = combo_face_text_draw_rect(rect, scale);
+        fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
             paint.texts.push(text(
                 state,
                 face,
@@ -711,11 +719,10 @@ fn paint_combo(
                 rgb,
                 depth,
             ));
-        }
+        });
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
-    let own_scrollbar = flag(gui, node, Prop::ComboScrollbar, false);
     push_popup_instances(
         &mut paint.popup,
         atlas,
@@ -727,14 +734,7 @@ fn paint_combo(
             });
             Some((at, swatch(row)?))
         }),
-        // The combo's own scrollbar draws its thumb across the bar.
-        popup
-            .scrollbar()
-            .zip(popup.thumb())
-            .map(|(bar, thumb)| match own_scrollbar {
-                true => (bar, RectPx::new(bar.x, thumb.y, bar.w, thumb.h)),
-                false => (bar, thumb),
-            }),
+        popup.scrollbar().zip(popup.thumb()),
         drop_down.pressed_part.map(dropdown_scroll_part),
         scale,
         SHELL_DROPDOWN_DEPTH - 0.00002,
@@ -749,38 +749,23 @@ fn paint_combo(
         let (Some(at), Some(item)) = (popup.row_rect(row), rows.get(row).copied()) else {
             continue;
         };
-        if !truncate {
-            let at = scale.derive_rect(at, |r| RectPx::new(r.x + 3, r.y, r.w - 6, r.h));
-            paint.popup_texts.push(text(
-                state,
-                item,
-                at,
-                ShellAlign::V_CENTER,
-                scale.factor(),
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_DROPDOWN_TEXT_DEPTH,
-            ));
-            continue;
-        }
-        if item.is_empty() {
-            continue;
-        }
-        // Cut to the row less the scrollbar reserve (`0x0060DF38`).
-        let at = combo_dropdown_text_rect_for_current_renderer(content, row - popup.first, scale);
+        // `ComboDropWin` draws from x+3, the caption cut to the row less the
+        // scrollbar reserve (`0x0060DF38`).
+        let inset = COMBODROPWIN_TEXT_INSET_X;
+        let at = scale.derive_rect(at, |r| RectPx::new(r.x + inset, r.y, r.w - 2 * inset, r.h));
         fit_owner_draw_label(
             font,
             item,
             combo_dropdown_text_fit_width(content, scale),
             |item| {
-                paint.popup_texts.push(shell_text::draw_in_rect_scaled(
-                    font,
+                paint.popup_texts.push(text(
+                    state,
                     item,
                     at,
-                    SHELL_LABEL_TEXT_RGB,
                     ShellAlign::V_CENTER,
-                    [0.0; 2],
-                    SHELL_DROPDOWN_TEXT_DEPTH,
                     scale.factor(),
+                    SHELL_LABEL_TEXT_RGB,
+                    SHELL_DROPDOWN_TEXT_DEPTH,
                 ));
             },
         );

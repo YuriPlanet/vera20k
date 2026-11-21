@@ -73,7 +73,6 @@ pub(crate) fn commit_open(state: &mut AppState) {
     super::leaf::open_art(state, crate::ui::wol_options::DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
     sync_gui(state);
-    state.platform.window.request_redraw();
 }
 
 /// `0x2BC`'s teardown has run (`CloseAndPop`). The caller re-shows the
@@ -120,7 +119,6 @@ pub(crate) fn commit_close(
             .persist_observer_mode();
     }
     apply_wol_preferences(state);
-    state.platform.window.request_redraw();
 }
 
 /// `0x2BC` has slid out for Sound Options: the art, then `0x6B6230` runs
@@ -139,7 +137,6 @@ pub(crate) fn commit_open_sound(state: &mut AppState) {
         .shell_controller
         .reset_to(SHELL_SOUND_PAGE.dialog, false);
     sync_gui(state);
-    state.platform.window.request_redraw();
 }
 
 /// `0xD6`'s teardown has run: `ShowWindow(0x2BC, 5)` (it slides in again)
@@ -151,7 +148,6 @@ pub(crate) fn commit_sound_back(state: &mut AppState) {
     }
     state.frontend.shell_controller.reset_to(DIALOG, false);
     sync_gui(state);
-    state.platform.window.request_redraw();
 }
 
 fn dispatch(state: &mut AppState, action: WolOptionsAction) {
@@ -305,7 +301,6 @@ pub(super) fn cursor_moved(state: &mut AppState) {
     state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
     state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
@@ -318,7 +313,6 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         controller.on_pointer_up(x, y);
     }
     handle_events(state);
-    state.platform.window.request_redraw();
 }
 
 /// Escape closes the open translation list, without a cue.

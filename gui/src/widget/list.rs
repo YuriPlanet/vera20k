@@ -2,13 +2,11 @@
 //! with its scrollbar child `0x0061C690`), driven through the shared list
 //! substrate in `shell::list` exactly as the Movies and Mods pages drive it.
 //!
-//! The node's props hold what the host sees: `Rect` (the list window, the
-//! scrollbar included), `Items` or `RowCount`, `Selected` (`-1` or absent =
-//! none), `Top` and `DoubleClick` (default on: the second press of a
-//! double-click only reports it; off, every press selects, as VERA's Mods
-//! page does). The scrollbar capture and the double-click timing stay in the
-//! node's `WidgetState::List`; the limits are the GUI's
-//! ([`crate::Gui::set_double_click`]).
+//! The node's props hold what the host sees: `Rect` (the list's paint
+//! surface, frame and scrollbar included), `Items` or `RowCount`, `Selected`
+//! (`-1` or absent = none) and `Top`. The scrollbar capture and the
+//! double-click timing stay in the node's `WidgetState::List`; the limits are
+//! the GUI's ([`crate::Gui::set_double_click`]).
 
 use std::sync::OnceLock;
 
@@ -16,9 +14,7 @@ use super::{Capture, Ctx, WidgetState};
 use crate::Rect;
 use crate::gui::{UiEvent, UiMs};
 use crate::node::{Node, NodeId, Prop, Tree, Value};
-use crate::shell::list::{
-    ListBoxState, ListMetrics, ListScrollPart, ShellListGeometry, list_box_geometry,
-};
+use crate::shell::list::{ListBoxState, ListMetrics, ListScrollPart, ShellListGeometry};
 use crate::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -66,13 +62,8 @@ pub struct ListView {
 }
 
 impl ListView {
-    /// The list box geometry in window `list` ([`list_box_geometry`]).
+    /// The list's geometry on its paint surface `list` (its `Rect`).
     pub fn geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
-        list_box_geometry(list, self.rows, self.top, metrics)
-    }
-
-    /// The geometry of a `ListWindow` list: `list` is its paint surface.
-    pub fn window_geometry(&self, list: Rect, metrics: ListMetrics) -> ShellListGeometry {
         ShellListGeometry::new(list, self.rows, self.top, metrics)
     }
 }
@@ -87,9 +78,6 @@ fn row_count(n: &Node) -> usize {
 pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
     let n = tree.node(node).ok()?;
     let pressed = match &n.state {
-        WidgetState::List(state) if n.bool_prop(Prop::HeldArrow, false) => {
-            state.list.scroll.captured_part().filter(|p| matches!(p, ListScrollPart::Up | ListScrollPart::Down))
-        }
         WidgetState::List(state) => state.list.scroll.pressed_part(),
         _ => None,
     };
@@ -108,15 +96,11 @@ fn with_list<R>(
     node: NodeId,
     f: impl FnOnce(&mut ListState, Rect, ListMetrics, &mut Vec<UiEvent>) -> R,
 ) -> Option<R> {
-    let mut rect = ctx.tree.screen_rect(node).ok()?;
+    let rect = ctx.tree.screen_rect(node).ok()?;
     let mut metrics = ListMetrics::scaled(ctx.scale);
     let n = ctx.tree.node_mut(node).ok()?;
     if let Some(Value::Int(row_h)) = n.props.get(&Prop::RowHeight) {
         metrics.row_h = (*row_h).max(1);
-    }
-    if n.bool_prop(Prop::ListWindow, false) {
-        // The substrate grows its window by one: hand it one less.
-        rect = Rect::new(rect.x, rect.y, rect.w - 1, rect.h - 1);
     }
     let count = row_count(n);
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
@@ -159,11 +143,9 @@ pub(crate) fn cancel_scroll(tree: &mut Tree, node: NodeId) {
     }
 }
 
-/// A press on another node ends the list's double-click sequence, unless
-/// the list keeps it (`DoubleClickAcross`).
+/// A press on another node ends the list's double-click sequence.
 pub(crate) fn forget_press(tree: &mut Tree, node: NodeId) {
     if let Ok(n) = tree.node_mut(node)
-        && !n.bool_prop(Prop::DoubleClickAcross, false)
         && let WidgetState::List(state) = &mut n.state
     {
         state.list.last_press = None;
@@ -174,80 +156,28 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     let now = instant(ctx.now);
     let (ms, w, h) = ctx.double_click;
     let limits = (Duration::from_millis(ms), w, h);
-    let double_click = ctx
-        .tree
-        .node(node)
-        .is_ok_and(|n| n.bool_prop(Prop::DoubleClick, true));
-    let n = ctx.tree.node(node).ok();
-    let prop = |prop| n.is_some_and(|n| n.bool_prop(prop, false));
-    let (window, area, content_only) =
-        (prop(Prop::ListWindow), prop(Prop::AreaDoubleClick), prop(Prop::ContentDoubleClick));
     with_list(ctx, node, |s, rect, metrics, events| {
         s.pointer = (x, y);
         // The scrollbar child (0x0061C690) captures its own presses and
         // plays no sound: arrow step, track jump or thumb capture.
         if s.list.scroll_press(rect, metrics, x, y, now) {
-            if content_only {
-                s.list.last_press = None;
-            }
             return Capture::Yes;
-        }
-        if window && area {
-            // Any press in the rows' area counts toward a double-click,
-            // below the last row too; the second only reports it.
-            let geometry = s.list.geometry(rect, metrics);
-            if content_only && !geometry.content.contains(x, y) {
-                s.list.last_press = None;
-                return Capture::No;
-            }
-            let row = geometry.row_at(s.list.rows, s.list.top, x, y);
-            if double_click && s.list.is_double_click(now, x, y, limits) {
-                if let Some(row) = s.list.selected {
-                    events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
-                }
-            } else if let Some(row) = row {
-                s.list.selected = Some(row);
-                events.push(UiEvent::ListSelected { node, row: row as u32 });
-            }
-            return Capture::No;
-        }
-        if window {
-            // The screen's own list: rows hit inside the frame, and only a
-            // press on a row selects it and counts toward a double-click
-            // (LBN_SELCHANGE, then LBN_DBLCLK).
-            let geometry = s.list.geometry(rect, metrics);
-            let Some(row) = geometry.row_at(s.list.rows, s.list.top, x, y) else {
-                return Capture::No;
-            };
-            s.list.selected = Some(row);
-            let row = row as u32;
-            events.push(if double_click && s.list.is_double_click(now, x, y, limits) {
-                UiEvent::ListDoubleClicked { node, row }
-            } else {
-                UiEvent::ListSelected { node, row }
-            });
-            return Capture::No;
         }
         // CS_DBLCLKS: the second press only forwards LBN_DBLCLK
         // (0x0061A904..0x0061A945), wherever it landed; the host opens the
         // current selection.
-        if double_click && s.list.is_double_click(now, x, y, limits) {
+        if s.list.is_double_click(now, x, y, limits) {
             if let Some(row) = s.list.selected {
-                events.push(UiEvent::ListDoubleClicked {
-                    node,
-                    row: row as u32,
-                });
+                events.push(UiEvent::ListDoubleClicked { node, row: row as u32 });
             }
             return Capture::No;
         }
         // 0x0061A948: a press selects the row under it (the host plays
         // GenericClick); presses below the last row are ignored.
-        if let Some(row) = s.list.row_at(rect, metrics, x, y) {
+        let geometry = s.list.geometry(rect, metrics);
+        if let Some(row) = geometry.row_at(s.list.rows, s.list.top, x, y) {
             s.list.selected = Some(row);
-            events.push(UiEvent::ListSelected {
-                node,
-                row: row as u32,
-            });
+            events.push(UiEvent::ListSelected { node, row: row as u32 });
         }
         Capture::No
     })
@@ -283,15 +213,9 @@ pub(crate) fn wheel(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) -> bool {
 /// Timers (scroll-arrow repeat): the next time the list wants a poll.
 pub(crate) fn poll(ctx: &mut Ctx<'_>, node: NodeId) -> Option<UiMs> {
     let now = instant(ctx.now);
-    let held = ctx.tree.node(node).is_ok_and(|n| n.bool_prop(Prop::HeldArrow, false));
     with_list(ctx, node, |s, rect, metrics, _| {
         let (x, y) = s.pointer;
-        if held {
-            let geometry = s.list.geometry(rect, metrics);
-            s.list.scroll.poll_held(geometry.max_top, &mut s.list.top, now);
-        } else {
-            s.list.scroll_poll(rect, metrics, x, y, now);
-        }
+        s.list.scroll_poll(rect, metrics, x, y, now);
         s.list.scroll.repeat_at().map(ui_ms)
     })
     .flatten()
@@ -302,10 +226,9 @@ mod tests {
     use crate::Rect;
     use crate::gui::{DialogKind, Gui, InputEvent, MouseButton, UiEvent};
     use crate::node::{NodeId, NodeKind, Prop, Value};
-    use crate::shell::list::ShellListGeometry;
 
     /// A retail 400x255 list at (10, 20): 13 rows show; with 60 rows the
-    /// scrollbar sits at x 390..410 and the top ranges over 0..=47.
+    /// scrollbar sits at x 389..409 and the top ranges over 0..=47.
     fn list_page(rows: Value) -> (Gui, NodeId) {
         let mut g = Gui::new(8);
         let root = g.create(NodeKind::Dialog, None).unwrap();
@@ -363,72 +286,14 @@ mod tests {
             click(&mut g, 50, row1, 400),
             vec![UiEvent::ListSelected { node: list, row: 1 }]
         );
-        // Below the last row: no selection change.
+        // Below the last row: no selection change, but a second press there
+        // still opens the selection.
         assert_eq!(click(&mut g, 50, 20 + 19 * 5, 2000), vec![]);
+        assert_eq!(
+            click(&mut g, 51, 20 + 19 * 5, 2100),
+            vec![UiEvent::ListDoubleClicked { node: list, row: 1 }]
+        );
         assert_eq!(g.get(list, Prop::Selected).unwrap(), Some(&Value::Int(1)));
-    }
-
-    #[test]
-    fn a_list_window_hits_rows_inside_its_frame_and_doubles_only_on_a_row() {
-        let (mut g, list) = list_page(Value::Int(3));
-        g.set(list, Prop::ListWindow, Value::Bool(true)).unwrap();
-        let view = g.list_view(list).unwrap();
-        let rect = Rect::new(10, 20, 400, 255);
-        let metrics = crate::shell::list::ListMetrics::RETAIL;
-        let geometry = view.window_geometry(rect, metrics);
-        let own = ShellListGeometry::new(rect, 3, 0, metrics);
-        assert_eq!((geometry.outer, geometry.content), (own.outer, own.content));
-        // The frame row hits nothing; rows start one pixel down.
-        assert_eq!(click(&mut g, 50, 20, 0), vec![]);
-        assert_eq!(click(&mut g, 50, 21 + 19, 2000), vec![UiEvent::ListSelected { node: list, row: 1 }]);
-        // A second press below the last row is no double-click, nor is the
-        // next one on a row after it.
-        let below = 21 + 19 * 4;
-        assert_eq!(click(&mut g, 50, below, 4000), vec![]);
-        assert_eq!(click(&mut g, 50, 21 + 19, 4100), vec![UiEvent::ListSelected { node: list, row: 1 }]);
-        assert_eq!(click(&mut g, 51, 21 + 19, 4200), vec![UiEvent::ListDoubleClicked { node: list, row: 1 }]);
-    }
-
-    #[test]
-    fn an_area_list_doubles_below_its_rows_and_a_content_list_ends_on_its_scrollbar() {
-        // The LAN players list: a press below the last row counts too, and the
-        // second press only reports the selection.
-        let (mut g, list) = list_page(Value::Int(3));
-        g.set(list, Prop::ListWindow, Value::Bool(true)).unwrap();
-        g.set(list, Prop::AreaDoubleClick, Value::Bool(true)).unwrap();
-        let (row1, below) = (21 + 19, 21 + 19 * 4);
-        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
-        assert_eq!(click(&mut g, 50, below, 2000), vec![]);
-        assert_eq!(click(&mut g, 51, below, 2100), vec![UiEvent::ListDoubleClicked { node: list, row: 1 }]);
-        assert_eq!(g.get(list, Prop::Selected).unwrap(), Some(&Value::Int(1)));
-        // Choose Map's lists: a press on the scrollbar ends the sequence.
-        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
-        for prop in [Prop::ListWindow, Prop::AreaDoubleClick, Prop::ContentDoubleClick] {
-            g.set(list, prop, Value::Bool(true)).unwrap();
-        }
-        assert_eq!(click(&mut g, 50, row1, 0), vec![UiEvent::ListSelected { node: list, row: 1 }]);
-        click(&mut g, 400, 150, 100);
-        g.drain_events();
-        let after = click(&mut g, 51, row1, 200);
-        assert!(matches!(after[..], [UiEvent::ListSelected { .. }]), "{after:?}");
-        // A rebuilt list drops its scrollbar hold.
-        g.input(InputEvent::PointerDown { x: 400, y: 270, button: MouseButton::Left }, 5000);
-        assert_eq!(g.pressed(), Some(list));
-        g.cancel_list_scroll(list);
-        assert_eq!((g.pressed(), g.list_view(list).unwrap().pressed), (None, None));
-    }
-
-    #[test]
-    fn with_double_click_off_every_press_selects() {
-        let (mut g, list) = list_page(Value::Int(3));
-        g.set(list, Prop::DoubleClick, Value::Bool(false)).unwrap();
-        let row1 = 20 + 19 + 5;
-        for now in [0, 300] {
-            assert_eq!(
-                click(&mut g, 50, row1, now),
-                vec![UiEvent::ListSelected { node: list, row: 1 }]
-            );
-        }
     }
 
     #[test]
@@ -465,25 +330,10 @@ mod tests {
         );
         assert_eq!(g.poll(600), None);
         assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(2)));
-    }
-
-    #[test]
-    fn a_held_arrow_list_steps_off_the_pointer_and_pairs_across_other_presses() {
-        let (mut g, list) = list_page(Value::Items(vec![String::new(); 60]));
-        g.set(list, Prop::HeldArrow, Value::Bool(true)).unwrap();
-        g.set(list, Prop::DoubleClickAcross, Value::Bool(true)).unwrap();
-        g.input(InputEvent::PointerMove { x: 400, y: 270 }, 0);
-        g.input(InputEvent::PointerDown { x: 400, y: 270, button: MouseButton::Left }, 0);
-        g.input(InputEvent::PointerMove { x: 50, y: 50 }, 10);
-        assert_eq!(g.list_view(list).unwrap().pressed, Some(crate::shell::list::ListScrollPart::Down));
-        g.poll(500);
-        assert_eq!(g.get(list, Prop::Top).unwrap(), Some(&Value::Int(2)));
-        g.input(InputEvent::PointerUp { x: 50, y: 50, button: MouseButton::Left }, 510);
-        // Row, a press on nothing, the row again: still a double-click.
-        let row = 20 + 19 + 5;
-        click(&mut g, 50, row, 2000);
-        click(&mut g, 600, 500, 2100);
-        assert_eq!(click(&mut g, 50, row, 2200), vec![UiEvent::ListDoubleClicked { node: list, row: 3 }]);
+        // Losing the pointer lets go of a hold as the release does.
+        g.input(InputEvent::PointerDown { x, y, button: MouseButton::Left }, 700);
+        g.cancel_pointer();
+        assert_eq!((g.poll(1300), g.list_view(list).unwrap().pressed), (None, None));
     }
 
     #[test]

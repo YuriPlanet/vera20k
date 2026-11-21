@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::app::App;
+use crate::app::shell_route::ShellRoute;
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1003,7 +1004,7 @@ impl SkirmishCapture {
             }
             (Phase::SinglePlayer, PresentedShell::SinglePlayer) => {
                 ensure!(
-                    state.frontend.shell_route.single_player(),
+                    state.frontend.shell_route == ShellRoute::SinglePlayer,
                     "Single Player route changed"
                 );
                 ensure!(
@@ -1482,7 +1483,7 @@ impl SkirmishCapture {
     fn settled(&self, state: &AppState) -> Result<bool> {
         self.guard(state)?;
         ensure!(
-            state.frontend.shell_route.skirmish(),
+            state.frontend.shell_route == ShellRoute::Skirmish,
             "skirmish capture did not reach the Skirmish shell"
         );
         ensure!(

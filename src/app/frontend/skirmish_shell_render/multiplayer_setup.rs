@@ -208,7 +208,7 @@ pub(crate) fn render_multiplayer_setup(
     let page_root = controller.root_in(view.page().dialog);
     let text_of = |id: i32| widget_text(state, &view, id);
     let room_style = GuiStyle {
-        buttons: Some((type3_button_frames(atlas), SHELL_CONTROL_DEPTH)),
+        buttons: super::gui_paint::ButtonArt::Modal,
         text_of: Some(&text_of),
         ..GuiStyle::default()
     };
@@ -805,7 +805,7 @@ pub(crate) fn render_multiplayer_setup(
                 .collect();
             let style = GuiStyle {
                 text_of: Some(&text_of),
-                ..GuiStyle::popup(atlas)
+                ..GuiStyle::popup()
             };
             let widgets = paint_ids(controller.root_in(GAME_OPTIONS_BOX), &ids, scale, style);
             overlay.controls.extend(widgets.controls);
@@ -859,7 +859,7 @@ pub(crate) fn render_multiplayer_setup(
             let style = GuiStyle {
                 text_of: Some(&text_of),
                 enabled_of: Some(&enabled_of),
-                ..GuiStyle::popup(atlas)
+                ..GuiStyle::popup()
             };
             let ids = [MAP_OFFER_BODY, MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE];
             let widgets = paint_ids(
@@ -895,7 +895,10 @@ pub(crate) fn render_multiplayer_setup(
         let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
         let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
         let size = (width as i32, height as i32);
-        let (sprites, texts) = (Some(&mut overlay.controls), Some((&mut overlay.texts, false)));
+        let (sprites, texts) = (
+            Some(&mut overlay.controls),
+            Some((&mut overlay.texts, false)),
+        );
         super::shell_box::push_skirmish_box(state, size, notice, pressed, box_look, sprites, texts);
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).

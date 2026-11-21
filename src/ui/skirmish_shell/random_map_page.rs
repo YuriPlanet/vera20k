@@ -413,9 +413,7 @@ fn handle(
     let mut activated = None;
     for event in events {
         match event {
-            PageEvent::Cue(cue @ (PageCue::Button | PageCue::ComboOpen | PageCue::ComboClose)) => {
-                sounds.push(cue)
-            }
+            PageEvent::Cue(cue) => sounds.push(cue),
             PageEvent::Activated(id) => activated = control_of(modal, id),
             PageEvent::Picked(id, row) => {
                 let Some(combo) = control_of(modal, id).and_then(SetupCombo::from_control) else {
@@ -500,20 +498,7 @@ pub fn pointer(
         sounds.extend(paged.then_some(PageCue::ListClick));
         return (sounds, None);
     }
-    match at {
-        Pointer::Down => controller.on_pointer_down(x, y),
-        Pointer::Move => controller.on_pointer_move(x, y),
-        Pointer::Up => {
-            let held = slider_held(controller.gui());
-            controller.on_pointer_up(x, y);
-            // The freed hit test sees the pointer where it let go.
-            if held {
-                controller.on_pointer_move(x, y);
-            }
-        }
-    }
-    let raw = controller.drain_events();
-    let events = page::page_events(controller.gui(), raw);
+    let events = super::page::route(controller, at, x, y, false);
     let activated = handle(modal, events, &mut sounds);
     (sounds, activated)
 }
@@ -529,16 +514,6 @@ fn shown(controller: &DialogController) -> Option<&Gui> {
 pub fn holding(controller: &DialogController, modal: &RandomMapSetupModalState) -> bool {
     modal.advanced_scroll_hold
         || shown(controller).is_some_and(|gui| gui.popup().is_some() || slider_held(gui))
-}
-
-/// The status help of the control under the pointer.
-pub fn hovered_help(
-    controller: &DialogController,
-    modal: &RandomMapSetupModalState,
-) -> Option<&'static str> {
-    let gui = shown(controller)?;
-    let id = u16::try_from(gui.id_of(gui.hovered()?)?).ok()?;
-    Some(help(modal, control_of(modal, id)?))
 }
 
 /// What the paint reads of the widgets: the combo whose list is open and

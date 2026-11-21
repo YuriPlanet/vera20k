@@ -41,12 +41,6 @@ impl App {
         Self::open_single_player_shell(state);
     }
 
-    pub(super) fn load_saved_game_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.load_saved_game()
-            && state.frontend.load_saved_game.is_some()
-    }
-
     /// One pointer message on the page (`down`: `None` moves).
     fn load_saved_game_pointer(state: &mut AppState, down: Option<bool>) {
         let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
@@ -70,7 +64,6 @@ impl App {
         Self::load_saved_game_pointer(state, None);
         // Every hover message repaints the status line (0x00615EF7).
         state.frontend.shell_status_line.repaint();
-        state.platform.window.request_redraw();
     }
 
     /// VERA's Esc menu (`app::shell_menu`): the error box keeps Esc.
@@ -91,11 +84,8 @@ impl App {
         }
     }
 
-    /// Scrollbar arrow repeat (`0x0061C690`), each frame.
-    pub(super) fn update_load_saved_game_scroll(state: &mut AppState, _pointer_moved: bool) {
-        if !Self::load_saved_game_active(state) {
-            return;
-        }
+    /// Scrollbar arrow repeat (`0x0061C690`), each frame the page shows.
+    pub(super) fn update_load_saved_game_scroll(state: &mut AppState) {
         let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
         let extent = (
             state.renderer.gpu.config.width,
@@ -170,7 +160,6 @@ impl App {
         match result {
             Ok(()) => {
                 state.frontend.load_saved_game = None;
-                state.platform.window.request_redraw();
                 return;
             }
             Err(error) => log::warn!("Load Saved Game: {}: {error}", path.display()),

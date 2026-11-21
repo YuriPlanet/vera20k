@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::match_runtime::sim_host::SimWrite;
+use crate::app::shell_route::ShellRoute;
 use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
 
 /// Description the setup dialog stamps onto a randomized configuration; it also
@@ -1299,7 +1300,7 @@ impl App {
         );
         // Reset668B8E reads the committed Session mode. ChooseMap only
         // commits its draft after UseMap5E7367; RMG runs before that call.
-        let network = state.frontend.shell_route.network_setup();
+        let network = state.frontend.shell_route == ShellRoute::NetworkSetup;
         let mode_file = if network {
             state
                 .match_state
@@ -1738,26 +1739,20 @@ impl App {
         Ok(())
     }
 
-    fn skirmish_random_map_setup_layout(
-        state: &AppState,
-    ) -> crate::ui::skirmish_shell::RandomMapSetupLayout {
-        crate::app::frontend::shell_layout::random_map_setup_layout(state)
-    }
-
     /// The pointer on `0x105`'s widgets: their cues play; the button the
     /// user activated.
     fn random_map_pointer(
         state: &mut AppState,
         at: crate::ui::skirmish_shell::page::Pointer,
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
-        let layout = Self::skirmish_random_map_setup_layout(state);
+        let layout = crate::app::frontend::shell_layout::random_map_setup_layout(state);
         let (x, y) = state.match_state.input.cursor_px();
         let modal = state
             .frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_mut()?;
-        let (sounds, activated) = crate::ui::skirmish_shell::random_map_page::pointer(
+        let (cues, activated) = crate::ui::skirmish_shell::random_map_page::pointer(
             &mut state.frontend.shell_controller,
             modal,
             &layout,
@@ -1765,15 +1760,13 @@ impl App {
             x,
             y,
         );
-        for cue in sounds {
-            Self::play_page_cue(state, cue);
-        }
+        Self::play_cues(state, cues);
         state.platform.window.request_redraw();
         activated
     }
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
-        let layout = Self::skirmish_random_map_setup_layout(state);
+        let preview = crate::app::frontend::shell_layout::random_map_setup_layout(state).preview;
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
@@ -1783,15 +1776,9 @@ impl App {
             .random_map_setup_modal
             .as_ref()
             .is_some_and(|modal| {
-                !modal.generating
-                    && crate::ui::skirmish_shell::random_map_page::view(
-                        &state.frontend.shell_controller,
-                        modal,
-                    )
-                    .0
-                    .is_none()
+                !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
             });
-        if !(resting && crate::app::frontend::preview_zoom::press_on_box(state, layout.preview)) {
+        if !(resting && crate::app::frontend::preview_zoom::press_on_box(state, preview)) {
             Self::random_map_pointer(state, crate::ui::skirmish_shell::page::Pointer::Down);
         }
         true
@@ -1812,18 +1799,16 @@ impl App {
     fn update_random_map_status_help(state: &mut AppState) {
         use crate::ui::skirmish_shell::random_map_page;
         let controller = &state.frontend.shell_controller;
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .as_ref()
-        else {
+        let shell = &state.frontend.skirmish_shell_state;
+        let Some(modal) = shell.random_map_setup_modal.as_ref() else {
             return;
         };
         if random_map_page::holding(controller, modal) {
             return;
         }
-        let help = random_map_page::hovered_help(controller, modal)
+        let help = (controller.top_id() == Some(random_map_page::DIALOG))
+            .then(|| crate::ui::shell::page::hovered_key(controller.gui()))
+            .flatten()
             .map(|key| Self::localized_status_help_text(state, key))
             .unwrap_or_default();
         if let Some(setup) = state

@@ -12,11 +12,11 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use crate::ui::chat_translation::{ChatLanguage, ChatTranslation};
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{
-    RectPx, ShellScale, child_window, };
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageEvent};
 
 pub(crate) const DIALOG: DialogId = DialogId(0x02BC);
@@ -85,64 +85,40 @@ impl Default for WolPreferences {
 }
 
 /// One of the nine auto-checkboxes (style `0x50008003`, placed by
-/// `0x0060B950`), in template order. Help keys from the executed `0x006040B0`.
+/// `0x0060B950`; rects in `shell_layout.ini`), in template order. Help keys
+/// from the executed `0x006040B0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OptionCheckbox {
     pub(crate) id: u16,
     pub(crate) csf_key: &'static str,
     pub(crate) help_key: &'static str,
-    /// Template DLU `(x, y, w, h)`.
-    dlu: (i32, i32, i32, i32),
 }
 
 pub(crate) const CHECKBOXES: [OptionCheckbox; 9] = [
-    checkbox(PAGES, "GUI:AllowPages", "STT:WOLOptionsPage", 68),
-    checkbox(
-        LANGUAGE,
-        "GUI:FilterBadLan",
-        "STT:WOLOptionsLanguageFilter",
-        86,
-    ),
-    checkbox(FIND, "GUI:AllowFinding", "STT:WOLOptionsFind", 104),
-    checkbox(MUSIC, "GUI:PlayMusic", "STT:WOLOptionsMusic", 121),
+    checkbox(PAGES, "GUI:AllowPages", "STT:WOLOptionsPage"),
+    checkbox(LANGUAGE, "GUI:FilterBadLan", "STT:WOLOptionsLanguageFilter"),
+    checkbox(FIND, "GUI:AllowFinding", "STT:WOLOptionsFind"),
+    checkbox(MUSIC, "GUI:PlayMusic", "STT:WOLOptionsMusic"),
     checkbox(
         SHOW_ALL,
         "GUI:ShowAllInLobby",
         "STT:WOLOptionsShowAllInLobby",
-        140,
     ),
-    checkbox(
-        ASIAN,
-        "GUI:FilterAsianMessages",
-        "STT:WOLOptionFilterAsian",
-        158,
-    ),
+    checkbox(ASIAN, "GUI:FilterAsianMessages", "STT:WOLOptionFilterAsian"),
     checkbox(
         LATIN,
         "GUI:FilterNonAsianMessages",
         "STT:WOLOptionFilterNonAsian",
-        176,
     ),
-    checkbox(
-        BUDDIES,
-        "GUI:FilterBuddies",
-        "STT:WOLOptionFilterBuddies",
-        194,
-    ),
-    checkbox(CLAN, "GUI:FilterClan", "STT:WOLOptionFilterClan", 212),
+    checkbox(BUDDIES, "GUI:FilterBuddies", "STT:WOLOptionFilterBuddies"),
+    checkbox(CLAN, "GUI:FilterClan", "STT:WOLOptionFilterClan"),
 ];
 
-const fn checkbox(
-    id: u16,
-    csf_key: &'static str,
-    help_key: &'static str,
-    dlu_top: i32,
-) -> OptionCheckbox {
+const fn checkbox(id: u16, csf_key: &'static str, help_key: &'static str) -> OptionCheckbox {
     OptionCheckbox {
         id,
         csf_key,
         help_key,
-        dlu: (97, dlu_top, 221, 15),
     }
 }
 
@@ -252,7 +228,6 @@ pub(crate) fn spec(
     let checkbox = |id, key, on| {
         control(NodeKind::Checkbox, id)
             .label(key)
-            .with(Prop::ActivateOnPress, Value::Bool(true))
             .with(Prop::Checked, Value::Bool(on))
     };
     let rows = translate_rows()
@@ -316,44 +291,21 @@ pub(crate) fn action(gui: &Gui, root: NodeId, event: &PageEvent) -> Option<WolOp
     }
 }
 
-/// VERA's translation controls under Play Music, on the modern page only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TranslateLayout {
-    pub(crate) caption: RectPx,
-    pub(crate) list: RectPx,
-    /// The Translate in Matches checkbox row.
-    pub(crate) in_matches: RectPx,
-}
-
 /// `0x2BC` at the current screen: the family right panel and the checkbox
 /// column at the executed relayout places (`0x0060C0C0` keeps them at every
 /// size).
 #[derive(Debug, Clone)]
 pub(crate) struct WolOptionsLayout {
     pub(crate) page: MenuPageLayout,
-    /// Status line `0x695`: the template is 316 DLU wide here.
-    pub(crate) status_help: RectPx,
-    /// Template order, as [`CHECKBOXES`]; `None` for a box the page hides.
-    pub(crate) checkboxes: [Option<RectPx>; 9],
-    pub(crate) translate: Option<TranslateLayout>,
+    /// The checkboxes, without those the page hides, and VERA's translation
+    /// controls.
+    pub(crate) rects: RectTable,
 }
 
 impl WolOptionsLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
-        // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
-        Self {
-            page,
-            status_help,
-            checkboxes: CHECKBOXES.map(|checkbox| {
-                let (x, y, w, h) = checkbox.dlu;
-                Some(scale.scale_rect(child_window(x, y, w, h)))
-            }),
-            translate: None,
-        }
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x2BC", scale, width, height);
+        Self { page, rects }
     }
 
     /// The modern page keeps Play Music alone, in the first row; the other
@@ -365,47 +317,39 @@ impl WolOptionsLayout {
     /// Music, and Translate in Matches under them. Native diagnostics keep
     /// the retail page through the same layout and state owners.
     pub(crate) fn modern(mut self) -> Self {
-        let first_row = self.checkboxes[0];
-        for (checkbox, rect) in CHECKBOXES.iter().zip(&mut self.checkboxes) {
-            *rect = if checkbox.id == MUSIC {
-                first_row
-            } else {
-                None
-            };
+        let first_row = self.rects.get(CHECKBOXES[0].id);
+        for checkbox in CHECKBOXES {
+            self.rects.remove(checkbox.id);
         }
-        let (x, y, w, h) = CHECKBOXES[0].dlu;
-        let row = child_window(x, y, w, h);
+        if let Some(rect) = first_row {
+            self.rects.insert(MUSIC, rect);
+        }
+        let Some(row) = layout_data::entry_of("0x2BC", CHECKBOXES[0].id).map(|e| e.rect) else {
+            return self;
+        };
+        let row = child_window(row.x, row.y, row.w, row.h);
         let caption = RectPx::new(row.x, row.y + row.h + 10, row.w, 17);
         let list = RectPx::new(row.x, caption.y + caption.h, 180, 24);
         let in_matches = RectPx::new(row.x, list.y + list.h + 10, row.w, row.h);
         let scale = self.page.scale;
-        self.translate = Some(TranslateLayout {
-            caption: scale.scale_rect(caption),
-            list: scale.scale_rect(list),
-            in_matches: scale.scale_rect(in_matches),
-        });
+        for (id, rect) in [
+            (TRANSLATE_CAPTION, caption),
+            (TRANSLATE, list),
+            (TRANSLATE_MATCHES, in_matches),
+        ] {
+            self.rects.insert(id, scale.scale_rect(rect));
+        }
         self
     }
 
     /// Control `id`'s rect, `None` for one the page hides.
     pub(crate) fn rect(&self, id: u16) -> Option<RectPx> {
-        match id {
-            TRANSLATE_CAPTION => self.translate.map(|t| t.caption),
-            TRANSLATE => self.translate.map(|t| t.list),
-            _ => self.page.button_rect(id).or_else(|| self.checkbox_rect(id)),
-        }
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 
     /// A checkbox row, Translate in Matches's included.
     pub(crate) fn checkbox_rect(&self, id: u16) -> Option<RectPx> {
-        if id == TRANSLATE_MATCHES {
-            return self.translate.map(|translate| translate.in_matches);
-        }
-        CHECKBOXES
-            .iter()
-            .zip(self.checkboxes)
-            .find(|(checkbox, _)| checkbox.id == id)
-            .and_then(|(_, rect)| rect)
+        self.rects.get(id)
     }
 }
 
@@ -427,7 +371,11 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x2BC"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolOptionsLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
+            let layout = WolOptionsLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                ShellScale::RETAIL,
+            );
             for (key, child) in case["controls"].as_object().unwrap() {
                 let id = u16::from_str_radix(&key[2..], 16).unwrap();
                 let actual = match id {
@@ -436,7 +384,7 @@ mod tests {
                     // The monitor is the shared family placement.
                     0x71C => layout.page.warning_monitor,
                     0x694 => layout.page.title,
-                    0x695 => layout.status_help,
+                    0x695 => layout.page.status_help,
                     _ => layout
                         .checkbox_rect(id)
                         .or_else(|| layout.page.button_rect(id))
@@ -512,7 +460,8 @@ mod tests {
     #[test]
     fn modern_page_keeps_only_play_music() {
         let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
-        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+        let modern =
+            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
         assert_eq!(modern.checkbox_rect(MUSIC), retail.checkbox_rect(PAGES));
         for checkbox in CHECKBOXES.iter().filter(|checkbox| checkbox.id != MUSIC) {
             assert_eq!(modern.checkbox_rect(checkbox.id), None);
@@ -534,9 +483,12 @@ mod tests {
     fn modern_page_picks_the_chat_translation_language_and_ok_hands_it_back() {
         use crate::ui::shell::page::PageCue;
         let retail = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200));
-        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
-        assert_eq!(retail.translate, None);
-        let list = modern.translate.expect("the modern page has the list").list;
+        let modern =
+            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+        assert_eq!(retail.rect(TRANSLATE), None);
+        let list = modern
+            .rect(TRANSLATE)
+            .expect("the modern page has the list");
         let music = modern.checkbox_rect(MUSIC).unwrap();
         assert!(list.y > music.y + music.h, "the list sits under Play Music");
         let mut page = Page::new(&modern, &WolPreferences::default());
@@ -590,10 +542,11 @@ mod tests {
     #[test]
     fn translate_in_matches_sits_under_the_list_and_ok_hands_back_its_state() {
         use crate::ui::shell::page::PageCue;
-        let modern = WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
-        let translate = modern.translate.unwrap();
+        let modern =
+            WolOptionsLayout::new(1600, 1200, ShellScale::from_screen(1600, 1200)).modern();
+        let list = modern.rect(TRANSLATE).unwrap();
         let row = modern.checkbox_rect(TRANSLATE_MATCHES).unwrap();
-        assert!(row.y > translate.list.y + translate.list.h);
+        assert!(row.y > list.y + list.h);
         let mut page = Page::new(&modern, &WolPreferences::default());
         assert_eq!(
             page.hover(row.x + 2, row.y + row.h / 2),

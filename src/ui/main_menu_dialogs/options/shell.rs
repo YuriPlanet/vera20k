@@ -1280,7 +1280,6 @@ impl OptionsDialogState {
                     Prop::Text,
                     Value::Text(self.shell_checkbox_face_text(layout, id).into_owned()),
                 ),
-                (Prop::ActivateOnPress, Value::Bool(true)),
             ];
             if let OptionsSurface::EscMenu(body) = layout.surface {
                 // The label and the Yes/No value are both part of this row.

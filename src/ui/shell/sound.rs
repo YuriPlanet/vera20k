@@ -125,14 +125,10 @@ impl SoundState {
                 SoundControl::Button(_) => NodeSpec::new(NodeKind::Button),
                 SoundControl::Slider(slider) => trackbar(slider, positions, true),
                 // The proc toggles the box on the press of its icon.
-                SoundControl::Shuffle | SoundControl::Repeat => {
-                    NodeSpec::new(NodeKind::Checkbox).with(Prop::ActivateOnPress, Value::Bool(true))
-                }
+                SoundControl::Shuffle | SoundControl::Repeat => NodeSpec::new(NodeKind::Checkbox),
                 // Every press on a row selects it (no double-click case).
                 SoundControl::List => NodeSpec::new(NodeKind::List)
                     .with(Prop::RowCount, Value::Int(rows.len() as i32))
-                    .with(Prop::ListWindow, Value::Bool(true))
-                    .with(Prop::DoubleClick, Value::Bool(false))
                     .with(Prop::Selected, row(selected))
                     .with(Prop::Top, row(Some(top))),
             };
@@ -274,31 +270,18 @@ pub fn shell_sound_volume(event: &super::page::PageEvent) -> Option<(SoundSlider
 #[derive(Debug, Clone)]
 pub struct ShellSoundLayout {
     pub page: super::menu_page::MenuPageLayout,
-    /// Status line `0x695`: the template is 303 DLU wide here.
-    pub status_help: RectPx,
     pub sliders: [RectPx; 3],
     pub labels: [RectPx; 3],
 }
 impl ShellSoundLayout {
     pub fn new(width: i32, height: i32, scale: geom::ShellScale) -> Self {
-        let page = super::menu_page::compute_layout_for(&SHELL_SOUND_PAGE, scale, width, height);
-        let status_help = geom::layout_on(scale, width, height, |w, h| {
-            super::layout::status_line_rect(RectPx::new(2, 355, 303, 12), w, h)
-        });
-        let px = |x, y, w, h| scale.scale_rect(geom::child_window(x, y, w, h));
+        let (page, rects) =
+            super::layout_data::menu_page(&SHELL_SOUND_PAGE, "0xD6", scale, width, height);
+        let rect = |id| rects.get(id).unwrap_or_default();
         Self {
             page,
-            status_help,
-            sliders: [
-                px(178, 141, 173, 13),
-                px(178, 164, 173, 13),
-                px(178, 186, 173, 13),
-            ],
-            labels: [
-                px(84, 140, 87, 15),
-                px(84, 163, 87, 15),
-                px(84, 185, 87, 15),
-            ],
+            sliders: SHELL_SOUND_SLIDERS.map(rect),
+            labels: SHELL_SOUND_LABELS.map(rect),
         }
     }
     pub fn back(&self) -> RectPx {
@@ -333,28 +316,19 @@ pub struct SoundLayout {
 }
 impl SoundLayout {
     pub fn new(width: i32, height: i32, shell: InGameShellLayout, button_size: [i32; 2]) -> Self {
-        let dlu = |x, y, w, h| {
-            in_game_shell::ordinary_child_rect(geom::dlu_rect(x, y, w, h), width, height)
-        };
+        let rects = super::layout_data::in_game("0xB8", &shell, width, height, button_size);
+        let rect = |control: SoundControl| rects.get(control.id()).unwrap_or_default();
         Self {
             title: in_game_shell::right_panel_title_rect(width),
-            back: shell.lower_button_rect(width, button_size),
+            back: rect(SoundControl::Button(SoundButton::Back)),
             footer: in_game_shell::status_line_rect(height),
-            sliders: [
-                dlu(157, 60, 175, 13),
-                dlu(157, 82, 175, 13),
-                dlu(157, 104, 175, 13),
-            ],
-            labels: [
-                dlu(61, 59, 90, 15),
-                dlu(61, 81, 90, 15),
-                dlu(61, 103, 90, 15),
-            ],
-            list: dlu(157, 129, 175, 99),
-            play: dlu(81, 246, 83, 15),
-            stop: dlu(249, 246, 83, 15),
-            shuffle: dlu(81, 187, 70, 14),
-            repeat: dlu(81, 214, 70, 14),
+            sliders: SoundSlider::ALL.map(|slider| rect(SoundControl::Slider(slider))),
+            labels: SHELL_SOUND_LABELS.map(|id| rects.get(id).unwrap_or_default()),
+            list: rect(SoundControl::List),
+            play: rect(SoundControl::Button(SoundButton::Play)),
+            stop: rect(SoundControl::Button(SoundButton::Stop)),
+            shuffle: rect(SoundControl::Shuffle),
+            repeat: rect(SoundControl::Repeat),
         }
     }
     pub fn button(self, id: SoundButton) -> RectPx {
@@ -407,7 +381,7 @@ mod tests {
                     "0xFFFF#2" => layout.labels[2],
                     "0x686" => layout.back(),
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
+                    "0x695" => layout.page.status_help,
                     "0x71C" => layout.page.warning_monitor,
                     other => panic!("{other}"),
                 };

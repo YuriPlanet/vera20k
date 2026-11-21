@@ -11,6 +11,7 @@ use crate::app::match_runtime::session::{
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::shell_lan::{self as lobby, LanJoinAcceptance, LanServiceEvent, LanServiceRequest};
 use crate::app::shell_network_setup::{self as setup, NetworkSetupEvent, NetworkSetupRequest};
+use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::*;
 use crate::ui::lan_shell::{LanChatLine, LanGameRow, LanPlayerRow};
 use crate::ui::shell::geom::RectPx;
@@ -530,9 +531,9 @@ impl LanCapture {
     }
     fn settle(&mut self, state: &mut AppState) {
         MoviesCapture::restore_neutral_pointer(state);
-        if state.frontend.shell_route.lan_lobby() {
+        if state.frontend.shell_route == ShellRoute::LanLobby {
             lobby::cursor_moved(state);
-        } else if state.frontend.shell_route.network_setup() {
+        } else if state.frontend.shell_route == ShellRoute::NetworkSetup {
             setup_input::cursor_moved(state);
         }
         self.phase = LanPhase::Settle(SETTLE_FRAMES);
@@ -1057,7 +1058,9 @@ impl LanCapture {
                     "BB acquired a competing setup"
                 );
                 let name = self.human(!self.target.guest())?.name;
-                let rect = lobby::layout(state).name;
+                let rect = lobby::layout(state)
+                    .rect(crate::ui::lan_shell::NAME)
+                    .unwrap_or_default();
                 lobby_click(state, rect);
                 lobby::key_press(state, Some(KeyCode::Home), None);
                 for _ in 0..32 {
@@ -1076,7 +1079,9 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer())
                 {
-                    let rect = lobby::layout(state).observer_toggle;
+                    let rect = lobby::layout(state)
+                        .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                        .unwrap_or_default();
                     lobby_click(state, rect);
                     if want_observer
                         && !state
@@ -1084,7 +1089,9 @@ impl LanCapture {
                             .multiplayer_shell_runtime
                             .lan_create_observer()
                     {
-                        let rect = lobby::layout(state).observer_toggle;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                            .unwrap_or_default();
                         lobby_click(state, rect);
                     }
                 }
@@ -1099,7 +1106,9 @@ impl LanCapture {
                         self.phase = LanPhase::MainReturn;
                     }
                     LanTarget::Chat => {
-                        let rect = lobby::layout(state).chat;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::CHAT)
+                            .unwrap_or_default();
                         lobby_click(state, rect);
                         lobby::key_press(state, None, Some("Hello"));
                         lobby::key_press(state, Some(KeyCode::Enter), None);
@@ -1144,7 +1153,9 @@ impl LanCapture {
                                 open: true,
                             }]),
                         );
-                        let rect = lobby::layout(state).games;
+                        let rect = lobby::layout(state)
+                            .rect(crate::ui::lan_shell::GAMES)
+                            .unwrap_or_default();
                         lobby_click(state, RectPx::new(rect.x + 8, rect.y + 26, 4, 4));
                         lobby::service_event(
                             state,
@@ -1551,7 +1562,7 @@ impl LanCapture {
                                 "removed peer remains in the rendered BC projection"
                             );
                             ensure!(
-                                state.frontend.shell_route.network_setup()
+                                state.frontend.shell_route == ShellRoute::NetworkSetup
                                     && state
                                         .frontend
                                         .multiplayer_setup

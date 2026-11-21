@@ -234,7 +234,8 @@ pub(crate) fn family_list_view(
     let view = controller
         .gui()
         .list_view(find_family_list(controller, dialog)?)?;
-    Some((view.geometry(list, ListMetrics::scaled(scale)), view))
+    let rect = crate::ui::shell::list::list_box_rect(list);
+    Some((view.geometry(rect, ListMetrics::scaled(scale)), view))
 }
 
 /// Whether the pointer is over the family page `dialog`'s list, its status

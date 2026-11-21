@@ -179,7 +179,6 @@ fn popup_spec(create: bool, online: bool) -> NodeSpec {
             .id(id.into())
             .label(caption(id))
             .with(Prop::DisabledColor, grey.clone())
-            .with(Prop::ActivateOnPress, Value::Bool(true))
     };
     let button = |id: u16, key: &str| NodeSpec::new(NodeKind::Button).id(id.into()).label(key);
     let field = if online {

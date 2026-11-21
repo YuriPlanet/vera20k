@@ -6,6 +6,7 @@
 //! The architecture guards keep unrelated flat fields from returning.
 
 use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
+use crate::app::shell_route::ShellRoute;
 
 mod platform;
 
@@ -291,7 +292,7 @@ impl AppState {
     pub(crate) fn main_menu_at_rest(&self) -> bool {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
         input_layer(self) == InputLayer::Screen(ScreenPage::MainMenu)
-            && self.frontend.shell_route == crate::app::shell_route::ShellRoute::MainMenu
+            && self.frontend.shell_route == ShellRoute::MainMenu
             && self.frontend.startup_splash.is_none()
             && !self.main_menu_dialog_open()
     }
@@ -365,7 +366,9 @@ impl AppState {
     pub(crate) fn rules(&self) -> Option<&crate::rules::ruleset::RuleSet> {
         let route = self.frontend.shell_route;
         if self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && (route.wol_visit() || route.lan_lobby() || route.network_setup())
+            && (matches!(route, ShellRoute::Wol | ShellRoute::WolLobby)
+                || route == ShellRoute::LanLobby
+                || route == ShellRoute::NetworkSetup)
         {
             // Network choices must agree before loading. Keep the old world's
             // Rules with its objects, but don't offer its map's colors or Types

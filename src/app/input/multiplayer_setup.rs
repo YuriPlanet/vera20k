@@ -2,6 +2,7 @@
 //! MatchSession and the setup lifecycle adapter decide admission and effects.
 
 use crate::app::frontend::{shell_layout, shell_transition};
+use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::LanEditKey;
 use crate::ui::multiplayer_setup::*;
@@ -151,7 +152,7 @@ pub(crate) fn leaves_escape(state: &AppState) -> bool {
 /// verify box, page dialog, notice or ChooseMap over the dialog.
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route.network_setup()
+        && state.frontend.shell_route == ShellRoute::NetworkSetup
         && state
             .frontend
             .skirmish_shell_state
@@ -238,7 +239,6 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The room's view and layout, its widgets synced to them; with

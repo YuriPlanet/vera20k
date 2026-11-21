@@ -7,6 +7,7 @@
 //! misaligns clicks by the scale factor.
 
 use crate::app::AppState;
+use crate::app::shell_route::ShellRoute;
 use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout};
 use crate::ui::shell::geom::{ScaledRects, ShellScale, fit_window};
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
@@ -51,8 +52,9 @@ pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
         1.0
     };
     let route = state.frontend.shell_route;
-    let vera_online = (route.wol_lobby() && crate::app::shell_wol::lobby::modern_lobby(state))
-        || (route.network_setup() && {
+    let vera_online = (route == ShellRoute::WolLobby
+        && crate::app::shell_wol::lobby::modern_lobby(state))
+        || (route == ShellRoute::NetworkSetup && {
             let dialog = crate::app::shell_network_setup::dialog(state);
             dialog.wol() && dialog.modern
         });

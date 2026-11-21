@@ -12,11 +12,11 @@ use vera20k_gui::{Gui, InputEvent, Key, NodeId, NodeKind, NodeSpec, Prop, Value}
 
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{
-    RectPx, ShellScale, child_window, };
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 use crate::ui::wol_lobby::{AdmissionContext, LOBBY_PREFIX, WolChannel, WolLobbyRow, admit};
 
@@ -93,16 +93,20 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     back: button(BACK, 256, "GUI:Back", "STT:WOLBuddyBack"),
 };
 
-/// The captions: the two column headers, then the statistics' labels.
-pub(crate) const LABELS: [(&str, [i32; 4]); 7] = [
-    ("GUI:BuddyName", [27, 9, 135, 11]),
-    ("GUI:Status", [177, 9, 100, 11]),
-    ("GUI:LadderWins", [89, 237, 115, 13]),
-    ("GUI:LadderLosses", [89, 255, 115, 13]),
-    ("GUI:Disconnects", [89, 273, 115, 13]),
-    ("GUI:LadderRank", [89, 290, 115, 13]),
-    ("GUI:LadderPoints", [89, 309, 115, 13]),
+/// The captions: the two column headers, then the statistics' labels (ids
+/// `0xFF00..`; their rects are `shell_layout.ini`'s).
+pub(crate) const LABELS: [&str; 7] = [
+    "GUI:BuddyName",
+    "GUI:Status",
+    "GUI:LadderWins",
+    "GUI:LadderLosses",
+    "GUI:Disconnects",
+    "GUI:LadderRank",
+    "GUI:LadderPoints",
 ];
+
+/// The statistics' group box (template static `0xFFFF#2`).
+pub(crate) const GROUP_BOX: u16 = 0xFF07;
 
 /// The statistics' template caption, kept until the first fill.
 pub(crate) const UNKNOWN_STATS_KEY: &str = "GUI:UnknownStats";
@@ -553,59 +557,20 @@ impl WolBuddyPage {
 #[derive(Debug, Clone)]
 pub(crate) struct WolBuddyLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    /// [`LABELS`] order.
-    pub(crate) labels: [RectPx; 7],
-    pub(crate) list: RectPx,
-    pub(crate) refresh: RectPx,
-    pub(crate) heading: RectPx,
-    pub(crate) group_box: RectPx,
-    /// [`STATS`] order.
-    pub(crate) stats: [RectPx; 5],
-    pub(crate) observer_image: RectPx,
-    pub(crate) observer_toggle: RectPx,
+    pub(crate) rects: RectTable,
 }
 
 impl WolBuddyLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
-        // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
-        let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
-        Self {
-            page,
-            status_help,
-            labels: LABELS.map(|(_, rect)| px(rect)),
-            list: px([6, 22, 408, 182]),
-            refresh: px([5, 6, 17, 14]),
-            heading: px([80, 213, 255, 15]),
-            group_box: px([80, 227, 255, 97]),
-            stats: [237, 255, 273, 290, 309].map(|top| px([216, top, 110, 13])),
-            observer_image: px([395, 8, 18, 12]),
-            observer_toggle: px([383, 9, 10, 10]),
-        }
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x116", scale, width, height);
+        Self { page, rects }
     }
 
     /// Where control `id` sits.
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
-        if let Some(index) = STATS.iter().position(|stat| *stat == id) {
-            return Some(self.stats[index]);
-        }
-        match id {
-            LIST => Some(self.list),
-            REFRESH => Some(self.refresh),
-            OBSERVER_TOGGLE => Some(self.observer_toggle),
-            HEADING => Some(self.heading),
-            id if id >= LABEL_IDS => self.labels.get(usize::from(id - LABEL_IDS)).copied(),
-            id => self.page.button_rect(id),
-        }
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
-
-/// The captions' ids in [`LABELS`] order (statics without ids).
-const LABEL_IDS: u16 = 0xFF00;
 
 /// `0x116`'s widgets: the column's buttons, Refresh (its picture is the
 /// page's to paint), the list (its rows too), the observer box (toggled on
@@ -622,27 +587,26 @@ pub(crate) fn spec() -> NodeSpec {
             None => node,
         }
     };
-    let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
+    let labels = LABELS.iter().enumerate().map(|(index, key)| {
         let a = if index < 2 {
             ShellAlign::NONE
         } else {
             ShellAlign::H_RIGHT
         };
         NodeSpec::new(NodeKind::Text)
-            .id(i32::from(LABEL_IDS) + index as i32)
+            .id(0xFF00 + index as i32)
             .label(key)
             .with(Prop::Align, align(a))
     });
     let observer =
-        help(NodeKind::Checkbox, OBSERVER_TOGGLE).with(Prop::ActivateOnPress, Value::Bool(true));
+        help(NodeKind::Checkbox, OBSERVER_TOGGLE);
     NodeSpec::new(NodeKind::Dialog)
         .children(page::menu_buttons(&PAGE))
         .child(help(NodeKind::Button, REFRESH))
         .child(observer)
         .child(
             help(NodeKind::List, LIST)
-                .with(Prop::RowCount, Value::Int(0))
-                .with(Prop::ListWindow, Value::Bool(true)),
+                .with(Prop::RowCount, Value::Int(0)),
         )
         .children(labels)
         .child(help(NodeKind::Text, HEADING).with(Prop::Align, align(ShellAlign::H_CENTER)))
@@ -674,18 +638,17 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x116"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolBuddyLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
+            let layout = WolBuddyLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                ShellScale::RETAIL,
+            );
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
-                    "0x6EF" => layout.heading,
-                    "0x689" => layout.list,
-                    "0x704" => layout.refresh,
-                    "0x75F" => layout.observer_image,
-                    "0x760" => layout.observer_toggle,
-                    "0xFFFF#2" => layout.group_box,
+                    "0x695" => layout.page.status_help,
+                    "0xFFFF#2" => layout.rect_of(GROUP_BOX).unwrap(),
                     key if key.starts_with("0xFFFF") => {
                         let index = key
                             .strip_prefix("0xFFFF#")
@@ -693,20 +656,14 @@ mod tests {
                         let index = if index > 2 { index - 1 } else { index };
                         assert_eq!(
                             child["caption"].as_str(),
-                            Some(LABELS[index].0),
+                            Some(LABELS[index]),
                             "{size} {key}"
                         );
-                        layout.labels[index]
+                        layout.rect_of(0xFF00 + index as u16).unwrap()
                     }
                     key => {
                         let id = u16::from_str_radix(&key[2..], 16).unwrap();
-                        match STATS.iter().position(|s| *s == id) {
-                            Some(index) => layout.stats[index],
-                            None => layout
-                                .page
-                                .button_rect(id)
-                                .unwrap_or_else(|| panic!("{size} {key}")),
-                        }
+                        layout.rect_of(id).unwrap_or_else(|| panic!("{size} {key}"))
                     }
                 };
                 assert_eq!(actual, rect(&child["rect"]), "{size} {control}");

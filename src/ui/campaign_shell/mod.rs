@@ -17,7 +17,8 @@
 use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, dlu_rect};
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{
     self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec, hover_target,
 };
@@ -178,32 +179,28 @@ const OVERRIDE_MIN_WIDTH: u32 = 800;
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
     let page = menu_page::compute_layout(&CAMPAIGN_PAGE, screen_w, screen_h);
-    if screen_w < OVERRIDE_MIN_WIDTH {
-        return CampaignLayout {
-            page,
-            allied: dlu_rect(125, 34, 174, 87),
-            soviet: dlu_rect(125, 216, 173, 86),
-            allied_caption: dlu_rect(4, 123, 415, 13),
-            soviet_caption: dlu_rect(3, 304, 420, 13),
-            slider: dlu_rect(137, 140, 140, 14),
-            difficulty_label: dlu_rect(137, 167, 75, 12),
-            difficulty_value: dlu_rect(203, 167, 75, 12),
-            scale: ShellScale::RETAIL,
-        };
-    }
-    let dx = center_offset(screen_w as i32, 800);
-    let dy = center_offset(screen_h as i32, 600);
-    let at = |x: i32, y: i32, w: i32, h: i32| RectPx::new(x + dx, y + dy, w, h);
-    // 0x00608564..0x006086CF.
+    // `[0x94.Wide]`: 0x00608564..0x006086CF.
+    let section = if screen_w < OVERRIDE_MIN_WIDTH {
+        "0x94"
+    } else {
+        "0x94.Wide"
+    };
+    let rects = layout_data::place(
+        section,
+        ShellScale::RETAIL,
+        screen_w as i32,
+        screen_h as i32,
+    );
+    let rect = |id| rects.get(id).unwrap_or_default();
     CampaignLayout {
         page,
-        allied: at(141, 58, 348, 136),
-        soviet: at(141, 364, 348, 136),
-        allied_caption: at(10, 198, 610, 20),
-        soviet_caption: at(10, 505, 610, 20),
-        slider: at(177, 265, 272, 22),
-        difficulty_label: at(177, 291, 141, 20),
-        difficulty_value: at(309, 291, 141, 20),
+        allied: rect(ALLIED_EMBLEM),
+        soviet: rect(SOVIET_EMBLEM),
+        allied_caption: rect(0x7A7),
+        soviet_caption: rect(0x7A8),
+        slider: rect(DIFFICULTY_SLIDER),
+        difficulty_label: rect(0xFF00),
+        difficulty_value: rect(0xFF01),
         scale: ShellScale::RETAIL,
     }
 }
@@ -519,7 +516,10 @@ mod tests {
         let wide = compute_layout(1024, 768);
         assert_eq!(wide.soviet, RectPx::new(141 + 112, 364 + 84, 348, 136));
         let small = compute_layout(640, 480);
-        assert_eq!(small.slider, dlu_rect(137, 140, 140, 14));
+        assert_eq!(
+            small.slider,
+            crate::ui::shell::geom::dlu_rect(137, 140, 140, 14)
+        );
     }
 
     #[test]

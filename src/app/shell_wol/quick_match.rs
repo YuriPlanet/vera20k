@@ -251,9 +251,21 @@ fn with_transcript(
 ) {
     let layout = layout(state);
     let scale = layout.page.scale;
-    let width = scale.base_rect(layout.transcript).w;
+    let width = scale
+        .base_rect(
+            layout
+                .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
+                .unwrap_or_default(),
+        )
+        .w;
     let visible = LanListState::default()
-        .geometry(layout.transcript, 0, scale)
+        .geometry(
+            layout
+                .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
+                .unwrap_or_default(),
+            0,
+            scale,
+        )
         .visible_rows;
     let root = sync(state);
     let gui = state.frontend.shell_controller.gui_mut();
@@ -304,7 +316,6 @@ fn with_transcript(
 /// A line for `0x117`'s transcript (`0x005E2700` with `0x117` on top).
 pub(crate) fn append_line(state: &mut AppState, line: LanChatLine) {
     with_transcript(state, |ui, add| add(ui, line));
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
@@ -477,7 +488,6 @@ fn open_dialog(state: &mut AppState) {
     let _ = App::ensure_skirmish_shell_chrome(state);
     super::leaf::open_art(state, DIALOG);
     state.frontend.shell_controller.reset_to(DIALOG, false);
-    state.platform.window.request_redraw();
 }
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins
@@ -675,7 +685,6 @@ pub(super) fn ansi_message(
         return;
     }
     matchbot_text(state, text, private, options);
-    state.platform.window.request_redraw();
 }
 
 /// `_strnicmp` of `text` against `prefix`.
@@ -1443,7 +1452,6 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 )
             })
         });
-        state.platform.window.request_redraw();
     }
     let stage_deadline = globals(state).and_then(|globals| globals.deadline(now_seconds()));
     [stage_deadline, search, dot_at, repeat]

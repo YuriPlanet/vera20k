@@ -11,11 +11,11 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::descriptor::{AnchorRule, DialogId, TALL_HEADING_ANCHOR};
-use crate::ui::shell::geom::{
-    RectPx, ShellScale, child_window, };
-use crate::ui::shell::layout::Placer;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page;
 use crate::ui::skirmish_shell::{COMBO_DROPDOWN_ROW_H, COMBO_FACE_H};
 
@@ -72,19 +72,22 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
 };
 
 /// The right-aligned captions of the combos and the statistics, in
-/// template order.
-pub(crate) const LABELS: [(&str, [i32; 4]); 10] = [
-    ("GUI:LoginName", [47, 49, 118, 13]),
-    ("GUI:PreferredServer", [47, 71, 118, 13]),
-    ("GUI:Locale", [47, 93, 118, 13]),
-    ("GUI:PreferredCountry", [47, 115, 118, 13]),
-    ("GUI:PreferredColor", [47, 136, 118, 13]),
-    ("GUI:LadderWins", [87, 222, 115, 13]),
-    ("GUI:LadderLosses", [87, 240, 115, 13]),
-    ("GUI:Disconnects", [87, 258, 115, 13]),
-    ("GUI:LadderRank", [87, 276, 115, 13]),
-    ("GUI:LadderPoints", [87, 294, 115, 13]),
+/// template order (ids `0xFF00..`; their rects are `shell_layout.ini`'s).
+pub(crate) const LABELS: [&str; 10] = [
+    "GUI:LoginName",
+    "GUI:PreferredServer",
+    "GUI:Locale",
+    "GUI:PreferredCountry",
+    "GUI:PreferredColor",
+    "GUI:LadderWins",
+    "GUI:LadderLosses",
+    "GUI:Disconnects",
+    "GUI:LadderRank",
+    "GUI:LadderPoints",
 ];
+
+/// The statistics' group box (template static `0xFFFF#10`).
+pub(crate) const GROUP_BOX: u16 = 0xFF0A;
 
 /// The statistics' value statics (left aligned), in template order.
 pub(crate) const STATS: [u16; 5] = [WINS, LOSSES, DISCONNECTS, RANK, POINTS];
@@ -497,8 +500,8 @@ pub(crate) fn spec() -> NodeSpec {
         Some(key) => node.id(id.into()).tooltip(key),
         None => node.id(id.into()),
     };
-    let labels = LABELS.iter().enumerate().map(|(index, (key, _))| {
-        let id = LABEL_IDS + index as u16;
+    let labels = LABELS.iter().enumerate().map(|(index, key)| {
+        let id = 0xFF00 + index as u16;
         NodeSpec::new(NodeKind::Text)
             .id(id.into())
             .label(key)
@@ -515,7 +518,6 @@ pub(crate) fn spec() -> NodeSpec {
     .map(|(id, key)| {
         help(NodeSpec::new(NodeKind::Checkbox), id)
             .label(key)
-            .with(Prop::ActivateOnPress, Value::Bool(true))
     });
     let texts = [
         (HEADING, ShellAlign::H_CENTER),
@@ -532,9 +534,6 @@ pub(crate) fn spec() -> NodeSpec {
         .children(texts)
 }
 
-/// The captions' ids in [`LABELS`] order (statics without ids).
-const LABEL_IDS: u16 = 0xFF00;
-
 /// The drop list's rows: country `0x4DE(0, 7)` (`0x004E3A36`), colour
 /// `0x4DE(0, 9)` (`0x004E45E5`); the others as many as the template's
 /// 143-DLU window holds below the face.
@@ -543,8 +542,9 @@ pub(crate) fn visible_rows(control: u16) -> usize {
         COUNTRY => 7,
         COLOR => 9,
         _ => {
-            let base = child_window(177, 49, 156, 143);
-            ((base.h - COMBO_FACE_H - 1) / COMBO_DROPDOWN_ROW_H).max(1) as usize
+            let base = layout_data::entry_of("0x114", control)
+                .map_or(0, |e| child_window(0, 0, 0, e.rect.h).h);
+            ((base - COMBO_FACE_H - 1) / COMBO_DROPDOWN_ROW_H).max(1) as usize
         }
     }
 }
@@ -554,65 +554,18 @@ pub(crate) fn visible_rows(control: u16) -> usize {
 #[derive(Debug, Clone)]
 pub(crate) struct WolMyInfoLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    /// [`LABELS`] order.
-    pub(crate) labels: [RectPx; 10],
-    /// [`COMBOS`] order: the whole window (checked against the oracle) and
-    /// its closed face.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) combos: [RectPx; 5],
-    pub(crate) faces: [RectPx; 5],
-    pub(crate) auto_login: RectPx,
-    pub(crate) match_same_res: RectPx,
-    pub(crate) heading: RectPx,
-    pub(crate) group_box: RectPx,
-    /// [`STATS`] order.
-    pub(crate) stats: [RectPx; 5],
-    pub(crate) update: RectPx,
+    pub(crate) rects: RectTable,
 }
 
 impl WolMyInfoLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
-        let place = Placer::on(scale, width, height);
-        let mut page = menu_page::compute_layout_for(&PAGE, scale, width, height);
-        let status_help = place.at(AnchorRule::StatusLine, 2, 355, 316, 12);
-        // Heading 0x694 is 108x11 DLU, one row taller than the family's.
-        page.title = place.at(TALL_HEADING_ANCHOR, 425, 1, 108, 11);
-        let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
-        let combo_tops = [49, 71, 93, 115, 137];
-        let combos = combo_tops.map(|top| child_window(177, top, 156, 143));
-        Self {
-            page,
-            status_help,
-            labels: LABELS.map(|(_, rect)| px(rect)),
-            combos: combos.map(|rect| scale.scale_rect(rect)),
-            faces: combos
-                .map(|rect| scale.scale_rect(RectPx::new(rect.x, rect.y, rect.w, COMBO_FACE_H))),
-            auto_login: px([139, 160, 187, 10]),
-            match_same_res: px([139, 175, 187, 10]),
-            heading: px([78, 196, 255, 16]),
-            group_box: px([78, 209, 255, 115]),
-            stats: [222, 240, 258, 276, 294].map(|top| px([214, top, 110, 13])),
-            update: px([86, 310, 237, 8]),
-        }
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x114", scale, width, height);
+        Self { page, rects }
     }
 
-    /// Where control `id` sits.
+    /// Where control `id` sits (a combo: its closed face).
     pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
-        if let Some(index) = combo_index(id) {
-            return Some(self.faces[index]);
-        }
-        if let Some(index) = STATS.iter().position(|stat| *stat == id) {
-            return Some(self.stats[index]);
-        }
-        match id {
-            AUTO_LOGIN => Some(self.auto_login),
-            MATCH_SAME_RES => Some(self.match_same_res),
-            HEADING => Some(self.heading),
-            UPDATE => Some(self.update),
-            id if id >= LABEL_IDS => self.labels.get(usize::from(id - LABEL_IDS)).copied(),
-            id => self.page.button_rect(id),
-        }
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -634,40 +587,37 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x114"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolMyInfoLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL);
+            let layout = WolMyInfoLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                ShellScale::RETAIL,
+            );
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
-                    "0x6EF" => layout.heading,
-                    "0x797" => layout.update,
-                    "0x6FF" => layout.auto_login,
-                    "0x773" => layout.match_same_res,
-                    "0xFFFF#10" => layout.group_box,
+                    "0x695" => layout.page.status_help,
                     key if key.starts_with("0xFFFF") => {
                         // Keys sort as text: #1, #10 (the box), #2 .. #9.
                         let index = key
                             .strip_prefix("0xFFFF#")
-                            .map_or(0, |n| n.parse::<usize>().unwrap());
-                        assert_eq!(
-                            child["caption"].as_str(),
-                            Some(LABELS[index].0),
-                            "{size} {key}"
-                        );
-                        layout.labels[index]
+                            .map_or(0, |n| n.parse::<u16>().unwrap());
+                        if let Some(caption) = LABELS.get(usize::from(index)) {
+                            assert_eq!(child["caption"].as_str(), Some(*caption), "{size} {key}");
+                        }
+                        layout.rect_of(0xFF00 + index).unwrap()
                     }
                     key => {
                         let id = u16::from_str_radix(&key[2..], 16).unwrap();
-                        if let Some(index) = combo_index(id) {
-                            layout.combos[index]
-                        } else if let Some(index) = STATS.iter().position(|s| *s == id) {
-                            layout.stats[index]
+                        let rect = layout.rect_of(id).unwrap_or_else(|| panic!("{size} {key}"));
+                        if combo_index(id).is_some() {
+                            // The oracle holds the whole window; the face is its top.
+                            assert_eq!(rect.h, COMBO_FACE_H);
+                            let entry = layout_data::entry_of("0x114", id).unwrap().rect;
+                            let h = child_window(entry.x, entry.y, entry.w, entry.h).h;
+                            RectPx { h, ..rect }
                         } else {
-                            layout
-                                .page
-                                .button_rect(id)
-                                .unwrap_or_else(|| panic!("{size} {key}"))
+                            rect
                         }
                     }
                 };

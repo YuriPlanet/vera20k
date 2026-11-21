@@ -137,6 +137,56 @@ impl Placer {
     }
 }
 
+/// A dialog's placed controls: each control's pixel rect by resource id, in
+/// table order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RectTable(Vec<(u16, RectPx)>);
+
+impl RectTable {
+    /// Control `id`'s rect.
+    pub fn get(&self, id: u16) -> Option<RectPx> {
+        self.0.iter().find(|(c, _)| *c == id).map(|(_, rect)| *rect)
+    }
+
+    /// Puts control `id` on `rect`, replacing its earlier rect.
+    pub fn insert(&mut self, id: u16, rect: RectPx) {
+        match self.0.iter_mut().find(|(c, _)| *c == id) {
+            Some(entry) => entry.1 = rect,
+            None => self.0.push((id, rect)),
+        }
+    }
+
+    /// Drops control `id`, which then shows nowhere.
+    pub fn remove(&mut self, id: u16) {
+        self.0.retain(|(c, _)| *c != id);
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (u16, RectPx)> + '_ {
+        self.0.iter().copied()
+    }
+}
+
+impl FromIterator<(u16, RectPx)> for RectTable {
+    fn from_iter<I: IntoIterator<Item = (u16, RectPx)>>(iter: I) -> Self {
+        let mut table = Self::default();
+        for (id, rect) in iter {
+            table.insert(id, rect);
+        }
+        table
+    }
+}
+
+impl geom::ScaledRects for RectTable {
+    fn scaled_rects(&self, scale: geom::ShellScale) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(id, rect)| (*id, scale.scale_rect(*rect)))
+                .collect(),
+        )
+    }
+}
+
 /// Resolve one control's pixel rect by re-anchor rule. `dlu` is the raw DLU
 /// resource rect; the snapped owner-draw rule consumes only `dlu.y`, while the
 /// bottom-row rule is derived entirely from the resolved panel geometry.

@@ -6,6 +6,7 @@
 //! answer instead.
 
 use super::*;
+use crate::app::shell_route::ShellRoute;
 use crate::app::shell_wol::quick_match::{self as qm, MatchTransport, stage};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::ui::wol_lobby::EX_INFO_VERSION;
@@ -433,7 +434,7 @@ impl WolCapture {
             crate::app::shell_network_setup::quick_match(state)
                 && state.match_state.session.host()
                 && qm::dialog(state).is_some()
-                && !state.frontend.shell_route.network_setup(),
+                && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the create did not run the host's nodes headless under 0x117"
         );
         if self.target == WolTarget::QmHostWaiting {
@@ -691,7 +692,7 @@ impl WolCapture {
                 && crate::app::shell_network_setup::quick_match(state)
                 && !state.match_state.session.host()
                 && qm::dialog(state).is_some()
-                && !state.frontend.shell_route.network_setup(),
+                && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the join did not run the guest's nodes headless under 0x117 at stage 9"
         );
         let opened = setup_requests(state);

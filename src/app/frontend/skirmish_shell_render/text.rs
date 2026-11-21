@@ -15,16 +15,16 @@ use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
-    COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalLayout, DropdownMetrics,
-    RandomMapSetupLayout, RectPx, SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId,
-    SkirmishComboItem, SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellState,
-    combo_text_rect, player_name_edit_text_rect, random_map_setup_dropdown_rect,
+    COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalLayout, RandomMapSetupLayout, RectPx,
+    SavedSeedLayout, SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboItem,
+    SkirmishCountryChoice, SkirmishShellLayout, SkirmishShellState, combo_text_rect,
+    player_name_edit_text_rect, random_map_setup_dropdown_rect,
 };
 
+use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
 use super::{
-    COMBODROPWIN_TEXT_INSET_X, COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX,
-    SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
-    SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
+    COMBODROPWIN_TEXT_TRUNCATION_SCROLLBAR_RESERVE_PX, SHELL_CONTROL_TEXT_DEPTH,
+    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 
 pub(super) fn checkbox_label(id: SkirmishCheckboxId) -> (&'static str, &'static str) {
@@ -209,24 +209,6 @@ pub(super) fn rect_to_text_rect(rect: RectPx) -> TextRect {
     }
 }
 
-pub(super) fn combo_dropdown_text_rect_for_current_renderer(
-    content: RectPx,
-    visible_row: usize,
-    scale: ShellScale,
-) -> TextRect {
-    // `ComboDropWin` draws from x+3 to the row right edge. The row is on the
-    // grid the highlight and the pointer hit tests use, so the caption fills the
-    // same band a click selects.
-    let row = crate::ui::skirmish_shell::combo_dropdown_row_rect(content, scale, visible_row);
-    let inset_x = (COMBODROPWIN_TEXT_INSET_X as f32 * scale.factor()).round() as i32;
-    TextRect {
-        x: row.x + inset_x,
-        y: row.y,
-        w: (row.w - inset_x).max(0) as u32,
-        h: row.h.max(0) as u32,
-    }
-}
-
 pub(super) fn combo_dropdown_text_fit_width(content: RectPx, scale: ShellScale) -> u32 {
     // As on the combo face: the truncation test runs on gamemd's glyph metrics,
     // so the stretched row's width goes back to the units the caption draws in.
@@ -243,12 +225,6 @@ fn list_text_inset(scale: ShellScale) -> i32 {
 }
 
 const LIST_TEXT_INSET: i32 = 2;
-
-/// A list row's caption alignment. The owner-draw list (`0x00618D40`) draws a
-/// plain row with `Shell__DrawTextAligned` (`0x006211D0`) and flags 0: top-left,
-/// not centred, so a name too wide for the row keeps its first line in the row
-/// and the row clip hides the wrapped rest.
-const LIST_ROW_TEXT_ALIGN: ShellAlign = ShellAlign::NONE;
 
 pub(super) fn combo_face_text_fit_width(rect: RectPx, scale: ShellScale) -> u32 {
     // The truncation test runs on gamemd's glyph metrics, so the stretched face's
@@ -381,11 +357,11 @@ pub(super) fn paint_skirmish_statics(
         .skirmish_shell_state
         .statics
         .paint(crate::util::time::Instant::now(), sliding);
-    let text = &layout.right_panel_text;
+    use crate::ui::skirmish_shell::{GAME_TYPE_STATIC, MAP_LABEL_STATIC, TITLE_STATIC};
     [
-        (shown.heading, text.title),
-        (shown.game_type, text.game_type),
-        (shown.map_label, text.map_label),
+        (shown.heading, layout.static_rect(TITLE_STATIC)),
+        (shown.game_type, layout.static_rect(GAME_TYPE_STATIC)),
+        (shown.map_label, layout.static_rect(MAP_LABEL_STATIC)),
     ]
     .into_iter()
     .filter_map(|(shown, rect)| shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER)))
@@ -534,24 +510,22 @@ pub(crate) fn skirmish_labels(state: &AppState) -> crate::ui::skirmish_shell::pa
     }
 }
 
-/// Text of the random-map dialog `0x105`: its widgets' words ([`crate::ui::skirmish_shell::random_map_page::show_texts`]),
-/// an open list's rows over everything else, then its heading and status
-/// line.
-pub(super) fn random_map_text_draws(
+/// The random-map dialog `0x105`'s widgets
+/// ([`crate::ui::skirmish_shell::random_map_page`]) with their words, an
+/// open list over the dialog, then its heading and status line.
+pub(super) fn random_map_paint(
     state: &mut AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &RandomMapSetupLayout,
     sliding: bool,
-) -> Vec<ShellTextDraw> {
+) -> Option<GuiPaint> {
     use crate::ui::skirmish_shell::random_map_page;
+    use crate::ui::skirmish_shell::{RandomMapSetupControl as C, SetupCombo};
     let frontend = &mut state.frontend;
-    let Some(modal) = frontend
+    let modal = frontend
         .skirmish_shell_state
         .random_map_setup_modal
-        .as_mut()
-    else {
-        return Vec::new();
-    };
+        .as_mut()?;
     // The heading and status line, revealed from the entry slide's end.
     let statics = dialog_statics_labels(
         &mut modal.statics,
@@ -561,9 +535,7 @@ pub(super) fn random_map_text_draws(
     );
     let modal = &*modal;
     let controller = &mut frontend.shell_controller;
-    let Some(root) = random_map_page::sync_page(controller, modal, layout) else {
-        return Vec::new();
-    };
+    let root = random_map_page::sync_page(controller, modal, layout)?;
     let csf = state.process_assets.csf.as_ref();
     random_map_page::show_texts(controller, modal, sliding, &|key, fallback| {
         crate::i18n::label(csf, key, fallback)
@@ -573,80 +545,86 @@ pub(super) fn random_map_text_draws(
         .frontend
         .skirmish_shell_state
         .random_map_setup_modal
-        .as_ref()
-        .expect("synced above");
-    let (open, _) = random_map_page::view(&state.frontend.shell_controller, modal);
-    // An open list covers the faces and the trackbar under it; each ends in
-    // the gap above a row, so a covered text is covered whole.
-    let list = open.map(|combo| {
-        random_map_setup_dropdown_rect(layout, combo.row(), modal.combo_items(combo).len())
-    });
-    let style = super::gui_paint::GuiStyle {
-        captions: true,
+        .as_ref()?;
+    let combo = |id: i32| {
+        let control = match id {
+            0x405 => C::MapType0x405,
+            0x3EA => C::Time0x3ea,
+            0x407 => C::Theater0x407,
+            0x406 => C::Size0x406,
+            0x408 => C::Resources0x408,
+            _ => return None,
+        };
+        SetupCombo::from_control(control)
+    };
+    let rows_of = |id| {
+        let items = modal.combo_items(combo(id)?).iter();
+        Some(
+            items
+                .map(|item| (state.csf_label(item.key, item.fallback), u32::MAX))
+                .collect(),
+        )
+    };
+    // Surprise Me and Generate are owner-draw type 3 (MNBTTN); VERA's Extras
+    // rows are framed plates; Ares' Urban Areas box paints as a checkbox.
+    let art_of = |id: i32| match id {
+        0x621 | 0x620 => Some(ButtonArt::Modal),
+        5000 => Some(ButtonArt::Host),
+        0x7420..0x7427 => Some(match modal.extras_row((id - 0x7420) as usize) {
+            Some(_) => ButtonArt::Plate,
+            None => ButtonArt::Host,
+        }),
+        _ => None,
+    };
+    let style = GuiStyle {
+        // The right column shows while no slide runs.
+        buttons: if sliding {
+            ButtonArt::Host
+        } else {
+            ButtonArt::Panel
+        },
+        art_of: Some(&art_of),
+        rows_of: Some(&rows_of),
+        framed: true,
         ..Default::default()
     };
     let gui = state.frontend.shell_controller.gui();
-    let overlays: Vec<RectPx> = list.into_iter().collect();
-    let mut out =
-        super::gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &overlays, style)
-            .texts;
+    let mut paint = paint_gui_with(state, atlas, gui, root, layout.scale, &[], style);
     // The open list never covered Ares' Urban Areas caption: it still paints
     // over a list that reaches it.
+    let (open, _) = random_map_page::view(&state.frontend.shell_controller, modal);
+    let list = open.map(|combo| {
+        random_map_setup_dropdown_rect(layout, combo.row(), modal.combo_items(combo).len())
+    });
     if let Some(urban) = gui.find_id(root, random_map_page::URBAN_CAPTION.into())
         && gui
             .tree()
             .screen_rect(urban)
-            .is_ok_and(|r| text_covered_by_overlay(r, &overlays))
+            .is_ok_and(|r| text_covered_by_overlay(r, list.as_slice()))
     {
-        let paint =
-            super::gui_paint::paint_gui_with(state, atlas, gui, urban, layout.scale, &[], style);
-        out.extend(paint.texts);
+        let over = paint_gui_with(state, atlas, gui, urban, layout.scale, &[], style);
+        paint.popup_texts.extend(over.texts);
     }
-    // The sprite pass draws the open list over everything else.
-    if let (Some(combo), Some(list)) = (open, list) {
-        let row_h = DropdownMetrics::scaled(layout.scale).row_h;
-        let inset = (COMBO_TEXT_LEFT_INSET as f32 * layout.scale.factor()).round() as i32;
-        for (index, entry) in modal.combo_items(combo).iter().enumerate() {
-            let row = RectPx::new(
-                list.x + inset,
-                list.y + row_h * index as i32,
-                list.w - inset,
-                row_h,
-            );
-            push_text_draw(
-                &mut out,
-                state,
-                &state.csf_label(entry.key, entry.fallback),
-                rect_to_text_rect(row),
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::V_CENTER,
-                SHELL_DROPDOWN_TEXT_DEPTH - 0.00011,
-                layout.scale.factor(),
-            );
-        }
-    }
-    out.extend(super::paint_map_dialog_statics(
+    paint.texts.extend(super::paint_map_dialog_statics(
         &state.renderer.bit_font,
         &statics,
         layout.scale,
     ));
-    out
+    Some(paint)
 }
 
-/// Text of Choose Map `0x6B`: its widgets' words
-/// ([`crate::ui::skirmish_shell::choose_map_page::show_texts`]), the lists'
-/// rows, the search box, then its heading and status line.
-pub(super) fn choose_map_text_draws(
+/// Choose Map `0x6B`'s widgets
+/// ([`crate::ui::skirmish_shell::choose_map_page`]) with their words and
+/// rows, the search box's text, then its heading and status line.
+pub(super) fn choose_map_paint(
     state: &mut AppState,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
     sliding: bool,
-) -> Vec<ShellTextDraw> {
+) -> Option<GuiPaint> {
     use crate::ui::skirmish_shell::choose_map_page;
     let frontend = &mut state.frontend;
-    let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
-        return Vec::new();
-    };
+    let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;
     // The heading and status line, revealed from the entry slide's end; a
     // hidden chooser shows neither.
     let statics = match modal.is_hidden() {
@@ -660,9 +638,7 @@ pub(super) fn choose_map_text_draws(
     };
     let modal = &*modal;
     let controller = &mut frontend.shell_controller;
-    let Some(root) = choose_map_page::sync_page(controller, modal, layout) else {
-        return Vec::new();
-    };
+    let root = choose_map_page::sync_page(controller, modal, layout)?;
     let csf = state.process_assets.csf.as_ref();
     let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
     choose_map_page::show_texts(
@@ -673,119 +649,106 @@ pub(super) fn choose_map_text_draws(
         &label,
     );
     let state = &*state;
-    let style = super::gui_paint::GuiStyle {
-        captions: true,
+    let modal = state
+        .frontend
+        .skirmish_shell_state
+        .choose_map_modal
+        .as_ref()?;
+    let rows_of = |id| Some(choose_map_rows(state, modal, layout, id == 0x6EB));
+    let style = GuiStyle {
+        // The right column shows while no slide runs.
+        buttons: if sliding {
+            ButtonArt::Host
+        } else {
+            ButtonArt::Panel
+        },
+        rows_of: Some(&rows_of),
         ..Default::default()
     };
     let gui = state.frontend.shell_controller.gui();
-    let mut out =
-        super::gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], style).texts;
-    push_choose_map_list_text_draws(&mut out, state, layout);
-    out.extend(super::paint_map_dialog_statics(
+    let mut paint = paint_gui_with(state, atlas, gui, root, layout.scale, &[], style);
+    push_choose_map_search_text(&mut paint.texts, state, modal, layout);
+    paint.texts.extend(super::paint_map_dialog_statics(
         &state.renderer.bit_font,
         &statics,
         layout.scale,
     ));
-    out
+    Some(paint)
 }
 
-fn push_choose_map_list_text_draws(
+/// The chooser's game-type rows (`modes`) or map rows by their names; only
+/// the rows the list shows are named.
+fn choose_map_rows(
+    state: &AppState,
+    modal: &crate::ui::skirmish_shell::ChooseMapModalState,
+    layout: &ChooseMapModalLayout,
+    modes: bool,
+) -> HostRows {
+    let (count, top, shown) = match modes {
+        true => (
+            modal.mode_rows().len(),
+            modal.mode_top_index,
+            modal.mode_geometry(layout).visible_rows,
+        ),
+        false => (
+            modal.filtered_record_indices.len(),
+            modal.map_top_index,
+            modal.map_geometry(layout).visible_rows,
+        ),
+    };
+    let name = |row: usize| -> Option<String> {
+        if modes {
+            let chosen = modal.mode_rows().get(row)?;
+            return Some(if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
+                tr("VERA:OnlineMaps")
+            } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
+                tr("VERA:Favorites")
+            } else {
+                let mode = chosen.resolve(&state.frontend.skirmish_modes)?;
+                state.csf_label(&mode.ui_name_key, &mode.ui_name_key)
+            });
+        }
+        if let Some(labels) = &modal.row_labels {
+            return labels.get(row).cloned();
+        }
+        let record = state
+            .frontend
+            .scenario_catalog
+            .records()
+            .get(*modal.filtered_record_indices.get(row)?)?;
+        // Starred maps carry a star, except under Favorites, where every
+        // map is one.
+        Some(
+            match !modal.favorites_selected() && modal.is_favorite(record) {
+                true => format!("* {}", record.display_name),
+                false => record.display_name.clone(),
+            },
+        )
+    };
+    (0..count)
+        .map(|row| {
+            let shown = (top..top + shown).contains(&row);
+            (
+                shown.then(|| name(row)).flatten().unwrap_or_default(),
+                u32::MAX,
+            )
+        })
+        .collect()
+}
+
+/// VERA: an empty Online Maps or Favorites list's reason, wrapped down the
+/// list, and the search box over the map list (typing anywhere fills it). An
+/// empty box says so in the label colour: the disabled red does not read
+/// over the chooser's background.
+fn push_choose_map_search_text(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
+    modal: &crate::ui::skirmish_shell::ChooseMapModalState,
     layout: &ChooseMapModalLayout,
 ) {
-    let Some(modal) = state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()
-    else {
-        return;
-    };
     let scale = layout.scale;
-    let geometry = modal.mode_geometry(layout);
-    for (visible, chosen) in modal
-        .mode_rows()
-        .iter()
-        .skip(modal.mode_top_index)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let label = if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
-            tr("VERA:OnlineMaps")
-        } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
-            tr("VERA:Favorites")
-        } else {
-            let Some(mode) = chosen.resolve(&state.frontend.skirmish_modes) else {
-                continue;
-            };
-            state.csf_label(&mode.ui_name_key, &mode.ui_name_key)
-        };
-        let row = geometry.row(visible);
-        push_text_draw(
-            out,
-            state,
-            &label,
-            rect_to_text_rect(RectPx::new(
-                row.x + list_text_inset(scale),
-                row.y,
-                row.w - list_text_inset(scale),
-                row.h,
-            )),
-            SHELL_LABEL_TEXT_RGB,
-            LIST_ROW_TEXT_ALIGN,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
-            scale.factor(),
-        );
-    }
+    let depth = SHELL_DROPDOWN_TEXT_DEPTH - 0.00009;
     let geometry = modal.map_geometry(layout);
-    for (visible, (index, record_idx)) in modal
-        .filtered_record_indices
-        .iter()
-        .enumerate()
-        .skip(modal.map_top_index)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let label = match &modal.row_labels {
-            Some(labels) => labels.get(index).cloned(),
-            None => state
-                .frontend
-                .scenario_catalog
-                .records()
-                .get(*record_idx)
-                .map(|record| {
-                    // Starred maps carry a star, except under Favorites,
-                    // where every map is one.
-                    if !modal.favorites_selected() && modal.is_favorite(record) {
-                        format!("* {}", record.display_name)
-                    } else {
-                        record.display_name.clone()
-                    }
-                }),
-        };
-        let Some(label) = label else {
-            continue;
-        };
-        let row = geometry.row(visible);
-        push_text_draw(
-            out,
-            state,
-            &label,
-            rect_to_text_rect(RectPx::new(
-                row.x + list_text_inset(scale),
-                row.y,
-                row.w - list_text_inset(scale),
-                row.h,
-            )),
-            SHELL_LABEL_TEXT_RGB,
-            LIST_ROW_TEXT_ALIGN,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
-            scale.factor(),
-        );
-    }
-    // VERA: an empty Online Maps or Favorites list says why, wrapped down
-    // the list.
     let empty = if !modal.filtered_record_indices.is_empty() {
         None
     } else if modal.online_maps_selected() {
@@ -801,25 +764,26 @@ fn push_choose_map_list_text_draws(
     };
     if let Some(empty) = empty {
         let row = geometry.row(0);
+        let inset = list_text_inset(scale);
+        let rect = RectPx::new(
+            row.x + inset,
+            row.y,
+            row.w - inset,
+            geometry.content.y + geometry.content.h - row.y,
+        );
+        let rgb = SHELL_LABEL_TEXT_RGB;
+        let (align, factor) = (ShellAlign::NONE, scale.factor());
         push_text_draw(
             out,
             state,
             &empty,
-            rect_to_text_rect(RectPx::new(
-                row.x + list_text_inset(scale),
-                row.y,
-                row.w - list_text_inset(scale),
-                geometry.content.y + geometry.content.h - row.y,
-            )),
-            SHELL_LABEL_TEXT_RGB,
-            LIST_ROW_TEXT_ALIGN,
-            SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
-            scale.factor(),
+            rect_to_text_rect(rect),
+            rgb,
+            align,
+            depth,
+            factor,
         );
     }
-    // VERA: the search box over the map list; typing anywhere fills it. An
-    // empty box says so in the label colour: the disabled red does not read
-    // over the chooser's background.
     let field = scale.derive_rect(layout.map_search, |rect| {
         RectPx::new(
             rect.x + LIST_TEXT_INSET,
@@ -830,22 +794,21 @@ fn push_choose_map_list_text_draws(
     });
     let display_search = map_search_display(state, &modal.search);
     let hint;
-    let (search, rgb) = if display_search.is_empty() {
+    let search = if display_search.is_empty() {
         hint = tr("VERA:MapSearchHint");
-        (&*hint, SHELL_LABEL_TEXT_RGB)
+        &*hint
     } else {
         let box_w = scale.base_rect(layout.map_search).w;
-        let (tail, _) = map_search_tail(&state.renderer.bit_font, &display_search, box_w);
-        (tail, SHELL_LABEL_TEXT_RGB)
+        map_search_tail(&state.renderer.bit_font, &display_search, box_w).0
     };
     push_text_draw(
         out,
         state,
         search,
         rect_to_text_rect(field),
-        rgb,
+        SHELL_LABEL_TEXT_RGB,
         ShellAlign::V_CENTER,
-        SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
+        depth,
         scale.factor(),
     );
 }
@@ -1288,9 +1251,6 @@ mod tests {
         );
         let content = RectPx::new(100, 50, 40, COMBO_DROPDOWN_ROW_H);
 
-        let rect = combo_dropdown_text_rect_for_current_renderer(content, 0, ShellScale::RETAIL);
-        assert_eq!(rect.x, 103);
-        assert_eq!(rect.w, 37);
         assert_eq!(
             combo_dropdown_text_fit_width(content, ShellScale::RETAIL),
             20
@@ -1349,36 +1309,6 @@ mod tests {
             map_search_caret_rect(&font, "", field, ShellScale::RETAIL),
             None
         );
-    }
-
-    /// A map name wider than its row (a file name with no description) used to
-    /// be centred as two lines, so half of each spilled past the row clip.
-    #[test]
-    fn a_list_row_too_narrow_for_its_name_keeps_the_first_line_in_the_row() {
-        let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
-        let row = TextRect {
-            x: 10,
-            y: 40,
-            w: 60,
-            h: 19,
-        };
-        let draw = crate::render::shell_text::draw_in_rect_scaled(
-            &font,
-            &"a".repeat(20),
-            row,
-            SHELL_LABEL_TEXT_RGB,
-            LIST_ROW_TEXT_ALIGN,
-            [0.0, 0.0],
-            0.5,
-            1.0,
-        );
-        let top = draw
-            .instances
-            .iter()
-            .map(|glyph| glyph.position[1])
-            .fold(f32::INFINITY, f32::min);
-        assert_eq!(top, row.y as f32);
-        assert_eq!((draw.scissor.y, draw.scissor.h), (40, 19));
     }
 
     /// VERA: Choose Map credits a map's author, and draws nothing for a map

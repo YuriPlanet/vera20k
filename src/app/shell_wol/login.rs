@@ -25,7 +25,9 @@ pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
     } else {
         LoginPolicy::Legacy
     };
-    shell_layout::on(state, |w, h, scale| WolLoginLayout::new(w, h, scale, policy))
+    shell_layout::on(state, |w, h, scale| {
+        WolLoginLayout::new(w, h, scale, policy)
+    })
 }
 
 /// The open popup's rects on the login page's shell mapping.
@@ -69,7 +71,6 @@ pub(super) fn open(state: &mut AppState) {
     super::leaf::open_art(state, DIALOG);
     let _ = App::ensure_skirmish_shell_chrome(state);
     sync(state);
-    state.platform.window.request_redraw();
 }
 
 /// The login page and what it works on; what the tree shows from the model
@@ -142,7 +143,6 @@ fn finish(state: &mut AppState, action: Option<WolLoginAction>) {
     if let Some(action) = action {
         dispatch(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 fn dispatch(state: &mut AppState, action: WolLoginAction) {
@@ -292,4 +292,3 @@ fn page_open(state: &AppState) -> bool {
         Some(WolPage::Login(_))
     )
 }
-

@@ -8,7 +8,6 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::shell::list::ListScrollInteraction;
-use crate::ui::shell::page::PageCue;
 
 use super::super::SkirmishStatics;
 use super::super::layout::shown_player_rows;
@@ -413,7 +412,6 @@ pub struct SkirmishShellState {
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
     pub game_options: Option<crate::ui::skirmish_shell::game_options::GameOptionsBox>,
-    pub pending_ui_sounds: Vec<PageCue>,
     /// The kind-1 statics; the status line holds the hover help.
     pub(crate) statics: SkirmishStatics,
 }
@@ -505,7 +503,6 @@ impl Default for SkirmishShellState {
             setups_browser: None,
             validation_modal: None,
             game_options: None,
-            pending_ui_sounds: Vec::new(),
             statics: SkirmishStatics::default(),
         }
     }
@@ -528,18 +525,6 @@ impl SkirmishShellState {
         self.crates = options.crates;
         self.mcv_redeploy = options.mcv_redeploy;
         self.launch_options_base = SkirmishLaunchOptions::from_game_options(options);
-    }
-
-    pub(crate) fn push_ui_sound(&mut self, sound: PageCue) {
-        self.pending_ui_sounds.push(sound);
-    }
-
-    pub fn pending_ui_sounds(&self) -> &[PageCue] {
-        &self.pending_ui_sounds
-    }
-
-    pub fn drain_pending_ui_sounds(&mut self) -> Vec<PageCue> {
-        std::mem::take(&mut self.pending_ui_sounds)
     }
 
     /// The row slot (`0..shown`, [`SkirmishShellLayout::shown_rows`])
@@ -576,26 +561,6 @@ impl SkirmishShellState {
                 .map(|opponent| (slot, row, opponent))
         })
     }
-}
-
-/// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
-/// whether the help changed.
-pub fn set_status_help_text(state: &mut SkirmishShellState, text: impl Into<String>) -> bool {
-    state
-        .statics
-        .hover(&text.into(), crate::util::time::Instant::now())
-}
-
-pub fn clear_status_help_text(state: &mut SkirmishShellState) -> bool {
-    set_status_help_text(state, String::new())
-}
-
-pub fn dismiss_validation_modal(state: &mut SkirmishShellState) -> bool {
-    state.validation_modal.take().is_some()
-}
-
-pub fn drain_pending_ui_sounds(state: &mut SkirmishShellState) -> Vec<PageCue> {
-    state.drain_pending_ui_sounds()
 }
 
 pub(super) fn inactive_ai_team_default(state: &SkirmishShellState) -> i32 {

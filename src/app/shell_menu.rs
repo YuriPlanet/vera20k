@@ -41,7 +41,6 @@ impl App {
         if !Self::close_page_dropdown(state, screen) {
             Self::open_shell_menu(state);
         }
-        state.platform.window.request_redraw();
         true
     }
 
@@ -170,7 +169,6 @@ impl App {
             }
             crate::app::persistence::options::persist_options_profile(state);
         }
-        state.platform.window.request_redraw();
     }
 
     /// The menu's box shows what the window is. A change is written once the
@@ -215,7 +213,6 @@ impl App {
             }
             _ => {}
         }
-        state.platform.window.request_redraw();
     }
 
     /// A match is launching under the menu, because a room's host started it.

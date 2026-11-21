@@ -129,7 +129,6 @@ fn refresh_rows(state: &mut AppState, ai_rows: bool) -> anyhow::Result<()> {
         .match_state
         .session
         .reset_network_countries(country, ai_rows)?;
-    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -482,7 +481,6 @@ pub(super) fn guest_joined(state: &mut AppState) -> anyhow::Result<()> {
             {
                 modal.push_row(record, label);
             }
-            state.platform.window.request_redraw();
         }
     }
     Ok(())
@@ -540,7 +538,6 @@ pub(super) fn guest_left(state: &mut AppState) -> anyhow::Result<()> {
             {
                 modal.pop_row();
             }
-            state.platform.window.request_redraw();
         }
         SavedCampaignLeave::Scenario(token) => {
             let index = scenario_files(state).into_iter().find_map(|(index, file)| {

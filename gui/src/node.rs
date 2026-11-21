@@ -84,8 +84,6 @@ pub enum Prop {
     Min,
     Max,
     Step,
-    /// Checkbox: toggle on the press instead of the release (§8.2).
-    ActivateOnPress,
     /// List, Combo: the rows' texts (§5.1, §5.3).
     Items,
     /// List, Combo: the row count when the host paints its own rows.
@@ -113,15 +111,9 @@ pub enum Prop {
     Align,
     /// Trackbar: the value plaque at the right end (default on).
     ShowValue,
-    /// List: a second press within the double-click limits only reports
-    /// `ListDoubleClicked` (default on); off, every press selects.
-    DoubleClick,
     /// Combo: a press anywhere on the face opens the list, not only on the
     /// arrow (VERA's own Options lists).
     OpenAnywhere,
-    /// Combo: the arrow opens the list even without rows, an empty list
-    /// that the next press closes (the WOL login's nickname combo).
-    OpenEmpty,
     /// Combo: the drop-down rises to end at or above this y, but not above
     /// the window top (VERA's Esc menu keeps its list above the box's footer).
     PopupBottom,
@@ -131,10 +123,6 @@ pub enum Prop {
     HitRect,
     Color,
     Font,
-    /// List: `Rect` is the list's whole paint surface (no list-box grow);
-    /// rows hit inside its frame, and a second press counts as a double-click
-    /// only on a row (the WOL pages' owner-draw lists).
-    ListWindow,
     /// Combo: each row's colour swatch for the host to paint in place of its
     /// text (a palette index in decimal; empty for a text row).
     Swatches,
@@ -144,32 +132,14 @@ pub enum Prop {
     /// Combo: when the drop-down would end below this y it opens above the
     /// face instead (VERA's longer Skirmish player list).
     PopupFlipBelow,
-    /// Combo: the face and row captions are cut to gamemd's arrow and
-    /// scrollbar reserves (`0x00617250`, `0x0060DF38`) rather than clipped.
-    Truncate,
     /// Combo: the open list's whole rect, when the host lays it out (the
     /// random-map dialog's lists hang flush under the face and may run past
     /// their rows); a press past the rows dismisses.
     PopupRect,
-    /// Combo: the open list's scrollbar is the owner-draw combo's own (the
-    /// Skirmish page's lists): its thumb spans the bar, its arrows take the
-    /// art's height of the bar and its left column, and a held part keeps its
-    /// pushed look off the pointer.
-    ComboScrollbar,
-    /// List (`ListWindow`): any press in the rows' area, below the last row
-    /// too, counts toward a double-click, whose second press only reports it;
-    /// off, only a press on a row counts.
-    AreaDoubleClick,
-    /// List (`ListWindow`): only a press in the rows' area (inside the frame,
-    /// off the scrollbar) continues a double-click sequence; a press on the
-    /// frame or the scrollbar ends it (Choose Map's lists).
-    ContentDoubleClick,
-    /// Combo: the drop-down's rows are this many px tall (VERA's roster,
-    /// whose rows are smaller than the shell's).
-    PopupRowHeight,
-    /// List: rows this many px tall, not the shell's (VERA's room's chat at
-    /// its smaller text). With `VisibleRows`, the scrollbar ranges over the
-    /// tops that keep that many rows showing (VERA's roster).
+    /// List, Combo drop-down: rows this many px tall, not the shell's
+    /// (VERA's room: its chat at its smaller text, its roster's lists).
+    /// With a List's `VisibleRows`, the scrollbar ranges over the tops that
+    /// keep that many rows showing (VERA's roster).
     RowHeight,
     /// Trackbar: hits and drags at `ShellScale::from_screen` of this rect's
     /// size, not its dialog's scale (VERA's team bar, drawn at 78%).
@@ -182,16 +152,6 @@ pub enum Prop {
     /// and then shows again as it was (VERA's room hides a list whose row
     /// moved away).
     PopupHidden,
-    /// List: a held scrollbar arrow keeps its pushed look and its repeat off
-    /// the pointer, and the track takes no hold (the saved-file browser's
-    /// own scrollbar, 0x00558DD0).
-    HeldArrow,
-    /// List: a press on another control or on nothing keeps the list's
-    /// double-click sequence (the saved-file browser's).
-    DoubleClickAcross,
-    /// Edit: the caret blinks from this UI time, not from the focus (the
-    /// saved-file browser's, from its opening).
-    CaretFrom,
     /// The text colour while the node is disabled, in place of its kind's.
     DisabledColor,
     /// Text, List rows: the caption's insets from the node's rect (or a
@@ -232,22 +192,12 @@ impl Prop {
             | Prop::Enabled
             | Prop::Toggled
             | Prop::Checked
-            | Prop::ActivateOnPress
             | Prop::Open
             | Prop::ShowValue
-            | Prop::DoubleClick
             | Prop::OpenAnywhere
-            | Prop::OpenEmpty
-            | Prop::ListWindow
             | Prop::Password
-            | Prop::Truncate
-            | Prop::ComboScrollbar
-            | Prop::AreaDoubleClick
-            | Prop::ContentDoubleClick
             | Prop::PressThrough
             | Prop::PopupHidden
-            | Prop::HeldArrow
-            | Prop::DoubleClickAcross
             | Prop::NoSelectionFill
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches => ValueType::Items,
@@ -280,9 +230,7 @@ impl Prop {
             | Prop::PopupBottom
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
-            | Prop::PopupRowHeight
             | Prop::RowHeight
-            | Prop::CaretFrom
             | Prop::Font => ValueType::Int,
         }
     }
@@ -291,24 +239,16 @@ impl Prop {
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
             Prop::Command | Prop::Toggled => kind == NodeKind::Button,
-            Prop::Checked | Prop::ActivateOnPress => kind == NodeKind::Checkbox,
-            Prop::DoubleClick | Prop::ListWindow => kind == NodeKind::List,
+            Prop::Checked => kind == NodeKind::Checkbox,
             Prop::OpenAnywhere
-            | Prop::OpenEmpty
             | Prop::PopupBottom
             | Prop::Swatches
             | Prop::PopupWiden
             | Prop::PopupFlipBelow
-            | Prop::Truncate
-            | Prop::ComboScrollbar
-            | Prop::PopupRowHeight
             | Prop::PopupRect => kind == NodeKind::Combo,
-            Prop::RowHeight | Prop::NoSelectionFill => kind == NodeKind::List,
+            Prop::NoSelectionFill => kind == NodeKind::List,
+            Prop::RowHeight => matches!(kind, NodeKind::List | NodeKind::Combo),
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
-            Prop::AreaDoubleClick | Prop::ContentDoubleClick | Prop::HeldArrow | Prop::DoubleClickAcross => {
-                kind == NodeKind::List
-            }
-            Prop::CaretFrom => kind == NodeKind::Edit,
             Prop::Min | Prop::Max | Prop::Step => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
             _ => true,
         }

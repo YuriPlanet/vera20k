@@ -198,7 +198,6 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
         Some(node) => node,
         None => gui.create(NodeKind::List, Some(root)).ok()?,
     };
-    let _ = gui.set(node, Prop::ListWindow, Value::Bool(true));
     let _ = gui.set(node, Prop::RowCount, Value::Int(rows));
     let _ = gui.set(node, Prop::Rect, Value::Rect(geometry.outer));
     let _ = gui.set(
@@ -222,15 +221,10 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     {
         return;
     }
-    let shown = |state: &AppState| view(state).map(|(_, top, pressed)| (top, pressed));
-    let before = shown(state);
     let (x, y) = state.match_state.input.cursor_px();
     let controller = &mut state.frontend.shell_controller;
     controller.on_pointer_move(x, y);
     controller.drain_events();
-    if shown(state) != before {
-        state.platform.window.request_redraw();
-    }
 }
 
 /// Three rows a wheel notch, as the other shell lists scroll. The open offer
@@ -246,7 +240,6 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
             .shell_controller
             .gui_mut()
             .set(node, Prop::Top, Value::Int(to));
-        state.platform.window.request_redraw();
     }
     true
 }
@@ -255,7 +248,10 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) -> bool {
 pub(super) fn poll_scroll(state: &mut AppState) -> Option<Instant> {
     sync(state)?;
     let window = &state.platform.window;
-    state.frontend.shell_controller.poll_then(|| window.request_redraw())
+    state
+        .frontend
+        .shell_controller
+        .poll_then(|| window.request_redraw())
 }
 
 #[cfg(all(test, tests_app))]

@@ -5,6 +5,7 @@
 //! module routes their input, sends what they ask and writes their
 //! transcripts.
 
+use crate::app::shell_route::ShellRoute;
 use winit::keyboard::KeyCode;
 
 use super::leaf::{self, Pointer};
@@ -319,7 +320,7 @@ pub(super) fn current_window_line(state: &mut AppState, line: LanChatLine) -> bo
         crate::app::input::messages::post_wol_result_row(state, &text);
         return true;
     }
-    if state.frontend.shell_route.network_setup() || App::wol_page_is_lobby(state) {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup || App::wol_page_is_lobby(state) {
         crate::app::shell_lan::append_chat(state, line);
         return true;
     }

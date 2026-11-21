@@ -16,7 +16,7 @@ use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use super::button::CheckboxFace;
 use super::descriptor::DialogId;
-use super::geom::{self, RectPx};
+use super::geom::RectPx;
 use super::in_game_shell::{self, InGameShellLayout};
 
 pub const DIALOG: DialogId = DialogId(0x73);
@@ -24,57 +24,9 @@ pub const DIALOG: DialogId = DialogId(0x73);
 /// Physical row slots. VERA pages the same slots when more Houses are shown.
 pub const DIPLOMACY_ROWS: usize = 8;
 
-/// Template rects, in dialog units, of each row's controls (0x8391FC,
-/// 0x83921C, 0x83923C, 0x83925C id tables; insignia 0x004E3320 -> 0x6DA+row).
-const NAME_DLU: [RectPx; DIPLOMACY_ROWS] = [
-    RectPx::new(111, 68, 110, 10),
-    RectPx::new(111, 88, 110, 10),
-    RectPx::new(111, 108, 110, 9),
-    RectPx::new(111, 128, 110, 8),
-    RectPx::new(111, 148, 110, 8),
-    RectPx::new(111, 168, 110, 8),
-    RectPx::new(111, 188, 110, 8),
-    RectPx::new(111, 208, 110, 9),
-];
-const KILLS_DLU: [RectPx; DIPLOMACY_ROWS] = [
-    RectPx::new(316, 68, 41, 10),
-    RectPx::new(316, 88, 41, 10),
-    RectPx::new(316, 108, 41, 9),
-    RectPx::new(316, 128, 41, 8),
-    RectPx::new(316, 148, 41, 8),
-    RectPx::new(316, 168, 41, 8),
-    RectPx::new(316, 188, 41, 8),
-    RectPx::new(316, 208, 41, 9),
-];
-const INSIGNIA_DLU: [RectPx; DIPLOMACY_ROWS] = [
-    RectPx::new(69, 66, 32, 12),
-    RectPx::new(69, 86, 32, 12),
-    RectPx::new(69, 106, 32, 12),
-    RectPx::new(69, 126, 32, 12),
-    RectPx::new(69, 146, 32, 12),
-    RectPx::new(69, 166, 32, 12),
-    RectPx::new(69, 186, 32, 12),
-    RectPx::new(69, 206, 32, 12),
-];
-/// Rows 1..=7; row 0 (the local player) has no Allies or Chat box.
-const ALLIES_DLU: [RectPx; DIPLOMACY_ROWS - 1] = [
-    RectPx::new(226, 88, 10, 10),
-    RectPx::new(226, 108, 10, 9),
-    RectPx::new(226, 128, 10, 8),
-    RectPx::new(226, 148, 10, 10),
-    RectPx::new(226, 168, 10, 8),
-    RectPx::new(226, 188, 10, 8),
-    RectPx::new(226, 208, 10, 9),
-];
-const CHAT_DLU: [RectPx; DIPLOMACY_ROWS - 1] = [
-    RectPx::new(271, 88, 10, 10),
-    RectPx::new(271, 108, 10, 10),
-    RectPx::new(271, 128, 10, 10),
-    RectPx::new(271, 148, 10, 10),
-    RectPx::new(271, 168, 10, 10),
-    RectPx::new(271, 188, 10, 8),
-    RectPx::new(271, 208, 10, 10),
-];
+/// Each row's control ids (0x8391FC, 0x83921C, 0x83923C, 0x83925C id
+/// tables; insignia 0x004E3320 -> 0x6DA+row). The rects are
+/// `shell_layout.ini`'s.
 const NAME_IDS: [u16; DIPLOMACY_ROWS] = [0x411, 0x412, 0x413, 0x414, 0x415, 0x416, 0x417, 0x418];
 const KILLS_IDS: [u16; DIPLOMACY_ROWS] = [0x419, 0x41A, 0x41B, 0x41C, 0x41D, 0x41E, 0x41F, 0x420];
 const ALLIES_IDS: [u16; DIPLOMACY_ROWS - 1] = [0x6CF, 0x6D0, 0x6D1, 0x6D2, 0x6D3, 0x6D4, 0x6D5];
@@ -100,22 +52,10 @@ impl DiplomacyHeader {
             Self::Kills => ("GUI:Kills", "Kills"),
         }
     }
-
-    const fn dlu(self) -> RectPx {
-        match self {
-            Self::Player => RectPx::new(111, 53, 110, 10),
-            Self::Allies => RectPx::new(226, 53, 35, 10),
-            Self::Chat => RectPx::new(271, 53, 35, 10),
-            Self::Kills => RectPx::new(316, 53, 60, 10),
-        }
-    }
 }
 
 pub const TITLE_LABEL: (&str, &str) = ("GUI:DiplomacyMenu", "Diplomacy");
 pub const RETURN_LABEL: (&str, &str) = ("GUI:Return", "Return");
-const TAUNTS_DLU: RectPx = RectPx::new(69, 232, 227, 15);
-const MODE_NAME_DLU: RectPx = RectPx::new(69, 247, 263, 10);
-const MAP_NAME_DLU: RectPx = RectPx::new(69, 262, 263, 10);
 
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,37 +168,25 @@ pub fn diplomacy_layout(
     shell: InGameShellLayout,
     button_size: [i32; 2],
 ) -> DiplomacyLayout {
-    let ordinary = |dlu: RectPx| {
-        in_game_shell::ordinary_child_rect(
-            geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
-            width,
-            height,
-        )
-    };
-    let boxes = |table: &[RectPx; DIPLOMACY_ROWS - 1]| {
-        std::array::from_fn(|row| {
-            if row == 0 {
-                let first = table[0];
-                ordinary(RectPx::new(first.x, first.y - 20, first.w, 10))
-            } else {
-                ordinary(table[row - 1])
-            }
-        })
-    };
+    let rects = super::layout_data::in_game("0x73", &shell, width, height, button_size);
+    let rect = |control: DiplomacyControl| rects.get(control.id()).unwrap_or_default();
+    let rows =
+        |control: fn(usize) -> DiplomacyControl| std::array::from_fn(|row| rect(control(row)));
+    let return_button = rect(DiplomacyControl::Return);
     DiplomacyLayout {
         title: in_game_shell::right_panel_title_rect(width),
-        return_button: shell.lower_button_rect(width, button_size),
-        paging: super::paging::button_rects(shell.lower_button_rect(width, button_size)),
+        return_button,
+        paging: super::paging::button_rects(return_button),
         status_line: in_game_shell::status_line_rect(height),
-        headers: DiplomacyHeader::ALL.map(|header| ordinary(header.dlu())),
-        insignia: INSIGNIA_DLU.map(ordinary),
-        names: NAME_DLU.map(ordinary),
-        kills: KILLS_DLU.map(ordinary),
-        allies: boxes(&ALLIES_DLU),
-        chat: boxes(&CHAT_DLU),
-        taunts: ordinary(TAUNTS_DLU),
-        mode_name: ordinary(MODE_NAME_DLU),
-        map_name: ordinary(MAP_NAME_DLU),
+        headers: DiplomacyHeader::ALL.map(|header| rect(DiplomacyControl::Header(header))),
+        insignia: rows(DiplomacyControl::Insignia),
+        names: rows(DiplomacyControl::Name),
+        kills: rows(DiplomacyControl::Kills),
+        allies: rows(DiplomacyControl::Allies),
+        chat: rows(DiplomacyControl::Chat),
+        taunts: rect(DiplomacyControl::Taunts),
+        mode_name: rect(DiplomacyControl::ModeName),
+        map_name: rect(DiplomacyControl::MapName),
     }
 }
 
@@ -360,7 +288,7 @@ pub fn spec() -> NodeSpec {
             .id(control.id().into())
             .tooltip(control.help_key().unwrap_or_default());
         match kind {
-            NodeKind::Checkbox => node.with(Prop::ActivateOnPress, Value::Bool(true)),
+            NodeKind::Checkbox => node,
             _ => node,
         }
     }))

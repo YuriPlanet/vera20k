@@ -26,11 +26,12 @@ use vera20k_gui::{
 use crate::ui::lan_shell::{
     LanChatState, PlayerNameMatch, apply_chat_length_limit, saved_player_name_matches,
 };
-use crate::ui::shell::descriptor::{AnchorRule, DialogId};
+use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::layout::Placer;
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
 use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 use crate::util::time::Instant;
@@ -259,101 +260,38 @@ pub(crate) fn tooltip_key(control: u16, page: &MenuPageSpec) -> Option<&'static 
     })
 }
 
-/// Heading `0x694` and the chat-lobby list `0x53D`: `0x0060B1D0`'s
-/// right-panel anchor of the window one pixel wider and taller than its
-/// conversion. The executed heading sits at y 7 (800x600), not the +1 of
-/// [`crate::ui::shell::descriptor::LOW_HEADING_ANCHOR`].
-const RIGHT_PANEL_CHILD_ANCHOR: AnchorRule = AnchorRule::RightAnchorRuntimeAdjust {
-    resource_dw: 1,
-    resource_dh: 1,
-    inset: None,
-    dy: 0,
-    dh: 0,
-};
+/// The list headings `GUI:OpenGames` and `GUI:Players` (template statics
+/// `0xFFFF`), and the modern lobby's right-aligned `GUI:Observe` before the
+/// checkbox; the retail dialog has no caption there.
+pub(crate) const LABELS: [(u16, &str); 2] = [(0xFF00, "GUI:OpenGames"), (0xFF01, "GUI:Players")];
+pub(crate) const OBSERVER_CAPTION: u16 = 0xFF02;
 
+/// `0x113`'s executed relayout (`0x60AAB0 -> 0x60C540 -> 0x60C4A0 ->
+/// 0x60C0C0`, `tools/storage_oracle/wol_shell.json`): the body keeps its
+/// template windows at every size; heading, lobby list and status line
+/// anchor.
 #[derive(Debug, Clone)]
 pub(crate) struct WolLobbyLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) lobbies: RectPx,
-    pub(crate) games: RectPx,
-    pub(crate) players: RectPx,
-    pub(crate) chat_log: RectPx,
-    /// The chat NewEdit after its init inset (`0x00614CCF`).
-    pub(crate) chat: RectPx,
-    pub(crate) emote: RectPx,
-    pub(crate) refresh: RectPx,
-    pub(crate) sort_buttons: Vec<(u16, RectPx)>,
-    pub(crate) observer_image: RectPx,
-    pub(crate) observer_toggle: RectPx,
-    /// The modern lobby's right-aligned `GUI:Observe` before the checkbox;
-    /// the retail dialog has no caption there.
-    pub(crate) observer_caption: Option<RectPx>,
-    pub(crate) labels: [(&'static str, RectPx); 2],
+    pub(crate) rects: RectTable,
 }
 
 impl WolLobbyLayout {
     pub(crate) fn new(width: i32, height: i32, scale: ShellScale, spec: &MenuPageSpec) -> Self {
-        let mut page = menu_page::compute_layout_for(spec, scale, width, height);
-        // Executed relayout 0x60AAB0 -> 0x60C540 -> 0x60C4A0 -> 0x60C0C0
-        // (tools/storage_oracle/wol_shell.json): the body keeps its template
-        // windows at every size; heading, lobby list and status line anchor.
-        let place = Placer::on(scale, width, height);
-        page.title = place.at(RIGHT_PANEL_CHILD_ANCHOR, 423, 4, 108, 11);
-        page.status_help = place.at(AnchorRule::StatusLine, 1, 351, 316, 12);
-        // The body's executed windows (identical at every size); the chat
-        // NewEdit is inset +1/-2 by 0x00614CCF.
-        let px = |x, y, w, h| place.px(x, y, w, h);
-        Self {
-            page,
-            lobbies: place.at(RIGHT_PANEL_CHILD_ANCHOR, 428, 22, 103, 73),
-            games: px(11, 57, 301, 307),
-            players: px(321, 57, 301, 307),
-            chat_log: px(11, 369, 611, 160),
-            chat: px(12, 534, 578, 22),
-            emote: px(596, 533, 27, 24),
-            refresh: px(12, 10, 27, 24),
-            sort_buttons: [
-                (SORT_GAMETYPE, px(12, 34, 15, 21)),
-                (SORT_PASSWORD, px(28, 34, 18, 21)),
-                (SORT_RESLOCK, px(45, 34, 18, 21)),
-                (SORT_ALPHA, px(63, 37, 148, 17)),
-                (SORT_PING, px(210, 37, 100, 17)),
-                (PLAYER_SORT_ALPHA, px(398, 37, 93, 17)),
-                (PLAYER_SORT_CLAN, px(491, 37, 69, 17)),
-                (PLAYER_SORT_RANK, px(560, 37, 61, 17)),
-            ]
-            .into(),
-            observer_image: px(594, 10, 28, 21),
-            observer_toggle: px(576, 13, 16, 17),
-            observer_caption: None,
-            labels: [
-                ("GUI:OpenGames", px(50, 10, 201, 17)),
-                ("GUI:Players", px(324, 10, 157, 17)),
-            ],
-        }
+        let (page, rects) = layout_data::menu_page(spec, "0x113", scale, width, height);
+        Self { page, rects }
     }
 
     /// The child's window; a child the page hides has none.
     pub(crate) fn control_rect(&self, id: u16) -> Option<RectPx> {
-        if let Some(rect) = self.page.button_rect(id) {
-            return Some(rect);
-        }
-        if let Some((_, rect)) = self.sort_buttons.iter().find(|(known, _)| *known == id) {
-            return Some(*rect);
-        }
-        Some(match id {
-            REFRESH => self.refresh,
-            EMOTE => self.emote,
-            OBSERVER_TOGGLE => self.observer_toggle,
-            OBSERVER_IMAGE => self.observer_image,
-            LOBBIES => self.lobbies,
-            GAMES => self.games,
-            PLAYERS => self.players,
-            CHAT_LOG => self.chat_log,
-            CHAT => self.chat,
-            _ => return None,
-        })
-        .filter(|rect| rect.w > 0)
+        self.page.button_rect(id).or_else(|| self.rects.get(id))
+    }
+
+    /// The header buttons the page shows, with their windows.
+    pub(crate) fn sort_buttons(&self) -> impl Iterator<Item = (u16, RectPx)> + '_ {
+        SORT_BUTTONS
+            .iter()
+            .filter_map(|(id, _)| Some((*id, self.rects.get(*id)?)))
     }
 }
 
@@ -576,17 +514,11 @@ impl std::fmt::Debug for WolLobbyState {
 /// paints (the game list's second press is LBN_DBLCLK) and the chat NewEdit.
 fn page_spec() -> NodeSpec {
     let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
-    let checkbox = |id: u16| {
-        NodeSpec::new(NodeKind::Checkbox)
-            .id(id.into())
-            .with(Prop::ActivateOnPress, Value::Bool(true))
-    };
+    let checkbox = |id: u16| NodeSpec::new(NodeKind::Checkbox).id(id.into());
     let list = |id: u16| {
         NodeSpec::new(NodeKind::List)
             .id(id.into())
             .with(Prop::RowCount, Value::Int(0))
-            .with(Prop::ListWindow, Value::Bool(true))
-            .with(Prop::DoubleClick, Value::Bool(id == GAMES))
     };
     NodeSpec::new(NodeKind::Dialog)
         .children(
@@ -762,29 +694,9 @@ impl WolLobbyState {
     pub(crate) fn layout(&self, width: i32, height: i32, scale: ShellScale) -> WolLobbyLayout {
         let mut layout = WolLobbyLayout::new(width, height, scale, self.page_spec());
         if self.modern {
-            layout
-                .sort_buttons
-                .retain(|(id, _)| !LEGACY_CONTROLS.contains(id));
-            let scale = layout.page.scale;
-            for (id, rect) in &mut layout.sort_buttons {
-                match *id {
-                    SORT_ALPHA => *rect = scale.scale_rect(RectPx::new(12, 37, 198, 17)),
-                    PLAYER_SORT_ALPHA => *rect = scale.scale_rect(RectPx::new(322, 37, 299, 17)),
-                    _ => {}
-                }
-            }
-            // The retail checkbox and eye image sit on two centre lines below
-            // the Players heading, with no caption. Here the checkbox trails
-            // that heading: its 18x18 plate is the control (the plate alone
-            // toggles, as on every shell checkbox), flush with the list's
-            // right edge and centred on the heading's capitals (rows 14..22),
-            // and a caption on the heading's baseline names it. It shows the
-            // state, so the eye image is gone.
-            layout.observer_toggle = scale.scale_rect(RectPx::new(604, 10, 18, 18));
-            layout.observer_caption = Some(scale.scale_rect(RectPx::new(484, 10, 114, 17)));
-            layout.observer_image = RectPx::new(0, 0, 0, 0);
-            // One chat lobby, so no lobby list.
-            layout.lobbies = RectPx::new(0, 0, 0, 0);
+            // `[0x113.Modern]`: the legacy columns and the lobby list go, the
+            // Observe checkbox trails the Players heading.
+            layout_data::overlay(&mut layout.rects, "0x113.Modern", scale, width, height);
         }
         layout
     }
@@ -928,12 +840,6 @@ impl WolLobbyState {
     /// hover ends (a held scroll arrow lets go).
     pub(crate) fn cancel_pointer(&mut self) {
         self.release_buttons();
-        // The lists forget a pending double-click too.
-        for list in [LOBBIES, GAMES, PLAYERS, CHAT_LOG] {
-            if let Some(node) = self.gui.find_id(self.page_root(), list.into()) {
-                self.gui.reset_widget(node);
-            }
-        }
         if let Some(card) = self.card.as_mut() {
             card.country_list.cancel_pointer();
         }
@@ -1438,13 +1344,17 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x113"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout =
-                WolLobbyLayout::new(width.parse().unwrap(), height.parse().unwrap(), ShellScale::RETAIL, &PAGE);
+            let layout = WolLobbyLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                ShellScale::RETAIL,
+                &PAGE,
+            );
             for (key, child) in case["controls"].as_object().unwrap() {
                 let mut native = rect(&child["rect"]);
                 let actual = match key.as_str() {
-                    "0xFFFF" => layout.labels[0].1,
-                    "0xFFFF#1" => layout.labels[1].1,
+                    "0xFFFF" => layout.control_rect(LABELS[0].0).unwrap(),
+                    "0xFFFF#1" => layout.control_rect(LABELS[1].0).unwrap(),
                     "0x694" => layout.page.title,
                     "0x695" => layout.page.status_help,
                     _ => {
@@ -1522,7 +1432,7 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = lobby.layout(800, 600, ShellScale::RETAIL);
         let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
-        let headers: Vec<_> = layout.sort_buttons.iter().map(|(id, _)| *id).collect();
+        let headers: Vec<_> = layout.sort_buttons().map(|(id, _)| id).collect();
         assert_eq!(headers, [SORT_ALPHA, SORT_PING, PLAYER_SORT_ALPHA]);
         for id in [
             SORT_GAMETYPE,
@@ -1575,23 +1485,21 @@ mod tests {
         let mut lobby = WolLobbyState::new(false, true);
         let layout = lobby.layout(800, 600, ShellScale::RETAIL);
         let legacy = WolLobbyState::new(false, false).layout(800, 600, ShellScale::RETAIL);
-        let (_, heading) = layout.labels[1];
-        let plate = crate::ui::skirmish_shell::checkbox_icon_rect(
-            layout.observer_toggle,
-            layout.page.scale,
-        );
-        assert_eq!(plate, layout.observer_toggle);
+        let rect = |id| layout.control_rect(id).unwrap();
+        let (heading, toggle, players) = (rect(LABELS[1].0), rect(OBSERVER_TOGGLE), rect(PLAYERS));
+        let plate = crate::ui::skirmish_shell::checkbox_icon_rect(toggle, layout.page.scale);
+        assert_eq!(plate, toggle);
         assert_eq!(plate.y, heading.y);
-        assert_eq!(plate.x + plate.w, layout.players.x + layout.players.w);
-        let caption = layout.observer_caption.expect("caption");
+        assert_eq!(plate.x + plate.w, players.x + players.w);
+        let caption = rect(OBSERVER_CAPTION);
         assert_eq!(caption.y, heading.y);
         assert!(heading.x + heading.w <= caption.x && caption.x + caption.w < plate.x);
-        let eye = legacy.observer_image;
+        let eye = legacy.control_rect(OBSERVER_IMAGE).unwrap();
         assert_eq!(
             control_at(&mut lobby, &layout, eye.x + 2, eye.y + eye.h / 2),
             None
         );
-        assert_eq!(legacy.observer_caption, None);
+        assert_eq!(legacy.control_rect(OBSERVER_CAPTION), None);
     }
 
     #[test]
@@ -1618,7 +1526,8 @@ mod tests {
 
         // A pointer resting on the second row keeps it hot across a refill.
         let layout = lobby.layout(800, 600, ShellScale::RETAIL);
-        let list = lobby.shown_geometry(GAMES, layout.games, 2, layout.page.scale);
+        let games = layout.control_rect(GAMES).unwrap();
+        let list = lobby.shown_geometry(GAMES, games, 2, layout.page.scale);
         let (x, y) = (list.content.x + 1, list.content.y + list.metrics.row_h + 1);
         lobby.replace_games(vec![row("a"), row("b")]);
         assert_eq!(lobby.hot_game, None);
@@ -1653,45 +1562,6 @@ mod tests {
 
         lobby.replace_players(vec![player("y")]);
         assert!(lobby.private_targets().is_empty());
-    }
-
-    /// A box over the lobby ends a pending double-click: the next press on
-    /// the same game row selects it again instead of joining.
-    #[test]
-    fn a_box_resets_the_game_lists_double_click() {
-        let row = |name: &str| WolGameRow {
-            record: 0,
-            name: name.into(),
-            text: name.into(),
-            greyed: false,
-            kind: GameTypeIcon::Plain,
-            keyed: false,
-            limit_icon: None,
-            ping: -1,
-            tag: None,
-            watch: false,
-        };
-        let mut lobby = WolLobbyState::new(false, false);
-        lobby.replace_games(vec![row("a"), row("b")]);
-        let layout = lobby.layout(800, 600, ShellScale::RETAIL);
-        lobby.sync(&layout);
-        let list = lobby.shown_geometry(GAMES, layout.games, 2, layout.page.scale);
-        let (x, y) = (list.content.x + 5, list.content.y + 5);
-        let mut click = |lobby: &mut WolLobbyState| {
-            let mut effects = lobby.pointer(x, y, Some(true));
-            effects.extend(lobby.pointer(x, y, Some(false)));
-            effects.into_iter().find_map(|effect| match effect {
-                WolLobbyEffect::Action(WolLobbyAction::SelectGame { double, .. }) => Some(double),
-                _ => None,
-            })
-        };
-        assert_eq!(click(&mut lobby), Some(false));
-        lobby.cancel_pointer();
-        assert_eq!(
-            click(&mut lobby),
-            Some(false),
-            "the box forgot the first press"
-        );
     }
 
     /// VERA's lobby opens a player's card where the classic page selects the

@@ -5,6 +5,7 @@
 use super::{App, AppState};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::match_runtime::session::NetworkReturnContext;
+use crate::app::shell_route::ShellRoute;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::room_limits::RoomLimits;
@@ -236,10 +237,9 @@ impl App {
         crate::util::lan_network::acquire();
         crate::app::lan_service::open(state);
         App::destroy_current_shell_dialog(state);
-        let route = crate::app::shell_route::ShellRoute::LanLobby;
+        let route = ShellRoute::LanLobby;
         App::show_shell_page(state, route, PAGE.dialog);
         state.frontend.shell_first_paint_slide = None;
-        state.platform.window.request_redraw();
     }
 
     /// Called only after BB's ordinary teardown slide finishes.
@@ -259,7 +259,6 @@ impl App {
             .shell_controller
             .reset_to(DialogId(0xE2), false);
         state.frontend.shell_first_paint_slide = None;
-        state.platform.window.request_redraw();
     }
 
     /// After a match: a new BB as always, which the host of VERA's room
@@ -432,12 +431,18 @@ pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
 pub(crate) fn append_chat_sent_at(state: &mut AppState, line: LanChatLine, sent_at: Option<u64>) {
     let route = state.frontend.shell_route;
     // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
-    if route.wol() && crate::app::shell_wol::quick_match::page_open(state) {
+    if route == ShellRoute::Wol && crate::app::shell_wol::quick_match::page_open(state) {
         crate::app::shell_wol::quick_match::append_line(state, line);
         return;
     }
-    let setup = route == crate::app::shell_route::ShellRoute::NetworkSetup;
-    append_chat_to(state, setup, !setup && route.wol_lobby(), line, sent_at);
+    let setup = route == ShellRoute::NetworkSetup;
+    append_chat_to(
+        state,
+        setup,
+        !setup && route == ShellRoute::WolLobby,
+        line,
+        sent_at,
+    );
 }
 
 /// [`append_chat`] for a line of the game room's: VERA keeps a lobby
@@ -494,10 +499,17 @@ fn append_chat_to(
         (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
         let layout = crate::app::shell_wol::lobby::layout(state);
-        (layout.chat_log, layout.page.scale, 1.0)
+        let chat_log = layout.control_rect(crate::ui::wol_lobby::CHAT_LOG);
+        (chat_log.unwrap_or_default(), layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
-        (layout.chat_log, layout.page.scale, 1.0)
+        (
+            layout
+                .rect(crate::ui::lan_shell::CHAT_LOG)
+                .unwrap_or_default(),
+            layout.page.scale,
+            1.0,
+        )
     };
     let chat = if setup {
         state
@@ -691,14 +703,13 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .push(LanServiceRequest::SelectGame { game_id, change });
         }
     }
-    state.platform.window.request_redraw();
 }
 
 /// Only declared service events mutate discovery/request state. Accepted data
 /// is moved into the transition and then MatchSession, never cached as a second
 /// participant table. Stale replies cannot accept a different pending game.
 pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
-    if state.frontend.shell_route != crate::app::shell_route::ShellRoute::LanLobby {
+    if state.frontend.shell_route != ShellRoute::LanLobby {
         return;
     }
     let Some(runtime) = state.frontend.lan.as_mut() else {
@@ -776,7 +787,6 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             }
         }
     }
-    state.platform.window.request_redraw();
 }
 
 /// VERA: a returning guest joins its host's room as soon as it is listed.
@@ -893,7 +903,6 @@ fn close_create_box(state: &mut AppState, confirmed: bool) {
     } else if let Some(runtime) = state.frontend.lan.as_mut() {
         runtime.lobby.set_enabled(true);
     }
-    state.platform.window.request_redraw();
 }
 
 fn acknowledge(state: &mut AppState) {
@@ -902,7 +911,6 @@ fn acknowledge(state: &mut AppState) {
         runtime.modal_body = None;
     }
     state.frontend.shell_controller.pop();
-    state.platform.window.request_redraw();
 }
 
 /// VERA's Esc menu (`app::shell_menu`): the create box and notices keep Esc.
@@ -929,7 +937,7 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
 /// plain key text.
 pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-        && state.frontend.shell_route.lan_lobby()
+        && state.frontend.shell_route == ShellRoute::LanLobby
         && !shell_transition::blocks_shell_input(state);
     state
         .frontend
@@ -942,7 +950,11 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
                 && runtime.lobby.enabled
                 && runtime.lobby.focused_control == CHAT
         })
-        .map(|_| layout(state).chat)
+        .map(|_| {
+            layout(state)
+                .rect(crate::ui::lan_shell::CHAT)
+                .unwrap_or_default()
+        })
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -987,7 +999,6 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     for action in actions {
         dispatch(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// Builds BB's widgets once and puts them on the layout and on the lobby:
@@ -1025,17 +1036,26 @@ pub(crate) fn sync_gui(state: &mut AppState) {
     for (id, rect, count, selected) in [
         (
             GAMES,
-            layout.games,
+            layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
             lobby.game_count(),
             Some(lobby.selected_game),
         ),
         (
             PLAYERS,
-            layout.players,
+            layout
+                .rect(crate::ui::lan_shell::PLAYERS)
+                .unwrap_or_default(),
             lobby.players.len(),
             lobby.selected_player,
         ),
-        (CHAT_LOG, layout.chat_log, lobby.chat.lines.len(), None),
+        (
+            CHAT_LOG,
+            layout
+                .rect(crate::ui::lan_shell::CHAT_LOG)
+                .unwrap_or_default(),
+            lobby.chat.lines.len(),
+            None,
+        ),
     ] {
         let top = match id {
             CHAT_LOG => lobby.chat.list.top_index,
@@ -1056,8 +1076,14 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         }
     }
     for (edit, rect) in [
-        (&mut lobby.name, layout.name),
-        (&mut lobby.chat.edit, layout.chat),
+        (
+            &mut lobby.name,
+            layout.rect(crate::ui::lan_shell::NAME).unwrap_or_default(),
+        ),
+        (
+            &mut lobby.chat.edit,
+            layout.rect(crate::ui::lan_shell::CHAT).unwrap_or_default(),
+        ),
     ] {
         edit.scroll_to_caret(
             (layout.page.scale.base_rect(rect).w - 3).max(0) as u32,
@@ -1110,7 +1136,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
     state.frontend.shell_controller.on_pointer_move(x, y);
     handle_events(state);
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
@@ -1118,9 +1143,11 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     }
     sync_gui(state);
-    state.platform.window.request_redraw();
     let (x, y) = state.match_state.input.cursor_px();
-    let observer_image = layout(state).observer_image.contains(x, y);
+    let observer_image = layout(state)
+        .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
+        .unwrap_or_default()
+        .contains(x, y);
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);
@@ -1222,7 +1249,6 @@ fn handle_events(state: &mut AppState) {
             _ => {}
         }
     }
-    state.platform.window.request_redraw();
 }
 
 /// Service timeout and the lists' scrollbar repeats; the caller schedules

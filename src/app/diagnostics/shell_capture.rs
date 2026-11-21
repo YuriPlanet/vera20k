@@ -5,6 +5,7 @@
 //! shell in a second renderer. It waits for the production main-menu dispatcher
 //! to reach one ordinary steady frame, then records the final swapchain bytes.
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
@@ -2050,8 +2051,8 @@ impl MainMenuCaptureSnapshot {
             height: state.renderer.gpu.config.height,
             main_menu_screen: state.frontend.screen == GameScreen::MainMenu,
             shell_failed: state.frontend.main_menu_shell_error.is_some(),
-            single_player_active: state.frontend.shell_route.single_player(),
-            skirmish_active: state.frontend.shell_route.skirmish(),
+            single_player_active: state.frontend.shell_route == ShellRoute::SinglePlayer,
+            skirmish_active: state.frontend.shell_route == ShellRoute::Skirmish,
             // The legacy skirmish-setup flag was write-dead (never set after
             // startup); the capture snapshot keeps the field as literal false.
             legacy_skirmish_setup_active: false,

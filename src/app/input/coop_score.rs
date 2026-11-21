@@ -100,7 +100,6 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     if let Some(action) = action {
         crate::app::cooperative_round::apply_action(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// One pointer message (`down`: `None` moves) on the page's nodes: hover
@@ -133,7 +132,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         .list
         .scroll
         .pointer_moved(geometry, &mut ui.chat.list.top_index, x, y);
-    state.platform.window.request_redraw();
 }
 
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
@@ -188,7 +186,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if let Some(action) = action {
         crate::app::cooperative_round::apply_action(state, action);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The chat list's scrollbar repeat timer.
