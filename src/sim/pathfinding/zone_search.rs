@@ -51,10 +51,6 @@
 //! with matching zones falls back to the plain A*, and one with differing
 //! zones returns `None`. What is missing:
 //!
-//! - **`IsTrain=` stays unmodelled.** The `allowHS` term for the INI key behind
-//!   `TechnoTypeClass+0xC94` (string `0x008444BC`, stored at `0x00712284`) is
-//!   absent from stock `rulesmd.ini`, so it never fires. The `0x004DA1D0` term
-//!   is `Simulation::foot_search_allows_hierarchy`.
 //! - **Without blocker counts there is no hierarchy search.** The one
 //!   production search, the live Foot search in `movement_tick`, supplies
 //!   blocker counts, and every `ZoneGrid` carries levels 0/1/2. A caller
@@ -433,9 +429,9 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
     allow_zone_hierarchy: bool,
     playfield_bounds: Option<PlayfieldBounds>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
-    // `AStar @ 0x0042CAD6` admits hierarchy only while the mover's stored
-    // TechnoClass+0x3D5 byte is true. False is not a hard failure: it bypasses
-    // zone/hierarchy admission and runs the ordinary cell A*.
+    // AStar_pathfind_search 0x0042CACC..0x0042CAEC bypasses the
+    // hierarchy for trains, an unset Techno+0x3D5 byte or a Foot that may
+    // leave the playfield. The Foot search supplies that decision.
     let entry = prepare_native_path_entry(
         zone_grid,
         resolved_terrain,

@@ -691,7 +691,13 @@ impl Simulation {
         &mut self,
         request: &FootPathRequest,
         goal: DriveCoord,
+        rules: &RuleSet,
     ) -> Option<Result<Vec<i32>, MovePathFailure>> {
+        // Only ordinary zero-prefix requests register with the batch. A
+        // train extending its last queued step has a different search origin.
+        if request.retain_head {
+            return None;
+        }
         let id = request.entity_id;
         if !self
             .path_batch
@@ -702,7 +708,7 @@ impl Simulation {
         {
             return None;
         }
-        let key = self.foot_search_key(request, goal)?;
+        let key = self.foot_search_key(request, goal, rules)?;
         let batch = self.path_batch.as_mut()?;
         let slot = batch.ready.get_mut(&id)?;
         if slot.answer.as_ref()?.key != key {
@@ -1060,7 +1066,7 @@ impl Simulation {
             return None;
         }
         Some(BatchedSearch {
-            key: self.foot_search_key(&request, goal)?,
+            key: self.foot_search_key(&request, goal, rules)?,
             found,
         })
     }
@@ -1102,6 +1108,7 @@ impl Simulation {
         &self,
         request: &FootPathRequest,
         goal: DriveCoord,
+        rules: &RuleSet,
     ) -> Option<FootSearchKey> {
         let actor = self.substrate.entities.get(request.entity_id)?;
         let snap = request.snapshot();
@@ -1124,7 +1131,10 @@ impl Simulation {
             movement_zone: snap.movement_zone,
             crushers: (snap.regular_crusher, snap.omni_crusher),
             locomotor: snap.locomotor_kind,
-            allow_zone_hierarchy: self.foot_search_allows_hierarchy(request),
+            allow_zone_hierarchy: self.foot_search_allows_hierarchy(
+                request,
+                self.interner.object_type(actor.type_ref(), rules)?.is_train,
+            ),
             threat_coefficient: self.foot_path_threat_coefficient(request.entity_id).bits(),
             owner: actor.owner(),
             veterancy: actor.veterancy.rank(),

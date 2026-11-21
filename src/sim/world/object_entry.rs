@@ -1095,7 +1095,7 @@ fn full_foot_entry<'a>(
     let boundary_refused = !live.sim.object_placement_scope_active()
         && (!infantry || e.in_playfield())
         && !target.in_playfield(live)
-        && !live.sim.foot_allows_outside_playfield(id)?;
+        && !live.sim.foot_allows_outside_playfield(id, obj.is_train)?;
     if boundary_refused && e.in_playfield() {
         return Ok(7);
     }

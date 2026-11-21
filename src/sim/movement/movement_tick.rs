@@ -135,6 +135,7 @@ impl WalkAdmissionRequest {
             entity_id: self.entity_id,
             destination,
             urgency,
+            retain_head: false,
             visit,
         }
     }
@@ -146,13 +147,17 @@ pub(crate) struct FootPathRequest {
     /// Find_Path's third argument: 0 for an ordinary request, 1 or 2 from the
     /// Drive/Ship code-2 ladder (0x4B3A0E), read by the edge cost (+3C).
     pub(crate) urgency: u8,
+    /// Drive/Ship's last train word: preserve one step and extend the path
+    /// from its endpoint (Find_Path argument 2 at 0x004B3F07).
+    pub(super) retain_head: bool,
     visit: OrdinaryMoverVisit,
 }
 
 /// The start and goal cells of `actor`'s core search toward `goal`
 /// ([`FootPathRequest::search`]). Run_AStar `0x004CBBA0` starts at the cell of
 /// Foot vt+0x4C (`0x004DBDF0`), the live head before the Foot's own
-/// coordinates: Walk searches with no head, Drive and Ship at a head they have
+/// coordinates. A train continuation then walks its retained direction from
+/// this cell. Walk searches with no head, Drive and Ship at a head they have
 /// reached, and only a Hover (Process `0x0051448A`) can still be short of its.
 pub(super) fn core_search_cells(
     actor: &crate::sim::game_entity::GameEntity,
@@ -217,6 +222,7 @@ impl FootPathRequest {
             entity_id,
             destination,
             urgency,
+            retain_head: false,
             visit: OrdinaryMoverVisit {
                 snap,
                 walk_position_before_step: None,
@@ -262,9 +268,24 @@ impl FootPathRequest {
         foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
         allow_zone_hierarchy: bool,
     ) -> Result<Vec<i32>, super::movement_path::MovePathFailure> {
+        use super::movement_path::MovePathFailure;
         let snap = &self.visit.snap;
         let actor = entities.get(self.entity_id).expect("live suspended mover");
-        let (start, goal) = core_search_cells(actor, goal, ctx.resolved_terrain);
+        let (mut start, goal) = core_search_cells(actor, goal, ctx.resolved_terrain);
+        if self.retain_head {
+            // Run_AStar @ 0x004CBBA0 walks Find_Path's retained prefix
+            // from the live navigation coordinate before starting at 42C900.
+            let terrain = ctx.resolved_terrain.ok_or(MovePathFailure::MissingGrid)?;
+            let first = actor
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .first()
+                .map_or(-1, |&d| i32::from(d));
+            start = terrain
+                .walk_native_path(start, &[first])
+                .map_err(|_| MovePathFailure::UnrepresentedPrefix)?;
+        }
         // AStar 0x00429A90 takes the start height from the Foot's OnBridge
         // byte (+0x8C): the cell level, +4 on a bridge. No path layer.
         let layer = if actor.on_bridge() {
@@ -475,6 +496,7 @@ fn advance_ordinary_mover(
             entity_id,
             destination,
             urgency: 0,
+            retain_head: false,
             visit,
         });
         return;

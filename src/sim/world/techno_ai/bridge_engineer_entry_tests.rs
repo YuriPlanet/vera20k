@@ -147,7 +147,7 @@ fn capture_probe(
         "team_present":sim.team_script_vm.team_for_member(engineer).is_some(),
         "navigation_coord":navigation_coord, "destination_coord":destination,
         "current_coord":crate::sim::movement::ground_pose::position_world_coord(&actor.position),
-        "allow_destination_fringe":sim.foot_allows_outside_playfield(engineer).unwrap(),
+        "allow_destination_fringe":sim.foot_allows_outside_playfield(engineer, object.is_train).unwrap(),
     });
     eprintln!("BRIDGE_ENGINEER_PROBE {name}: {query}");
     let before = sim
