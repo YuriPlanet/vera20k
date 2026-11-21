@@ -383,11 +383,14 @@ impl SimHost {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
-            && let Some(runtime) = self.runtime.as_mut()
+            && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
+            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
+            // before drawing. Sort while the Ground objects are still attached.
+            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();

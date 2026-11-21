@@ -955,6 +955,64 @@ mod tests {
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
 
     #[test]
+    fn band_selection_before_drawing_uses_the_lent_frames_display_order() {
+        use crate::app::match_runtime::sim_host::SimHost;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("MTNK");
+        for id in [2, 1] {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            entity.lifecycle.set_in_limbo_for_test(true);
+            sim.entities_mut_for_test().insert(entity);
+            sim.reveal(id);
+        }
+
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        let sim = &host.presentation().unwrap().simulation;
+        let frame = host.frame().unwrap();
+        let bounds = (-10_000.0, -10_000.0, 10_000.0, 10_000.0);
+
+        // Box-release preflight can be the first consumer of this frame.
+        let candidates = compose_tactical_screen_entity_encounter_order(
+            sim,
+            frame,
+            bounds,
+            Some(owner),
+            sim.fog(),
+            true,
+            0,
+            true,
+        );
+        assert_eq!(candidates, [2, 1]);
+        let drawn: Vec<_> = frame
+            .display_members(sim)
+            .objects()
+            .iter()
+            .map(|member| member.id)
+            .collect();
+        assert_eq!(drawn, candidates);
+        assert!(host.take_job_result().is_some());
+    }
+
+    #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
         let mut sim = crate::sim::world::Simulation::new();
         *sim.fog_mut_for_test() = FogState::new(32, 32);

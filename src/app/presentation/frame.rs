@@ -316,6 +316,8 @@ pub(crate) struct Place {
     pub(crate) contact0: Option<Contact>,
     /// `presentation::lighting::body_extra_light`.
     pub(crate) extra_light: i32,
+    /// Infantry5192C9 reads the navigation cell for top lighting.
+    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
@@ -465,6 +467,15 @@ impl Place {
             ),
             moving: crate::sim::movement::motion_query::is_moving(entity),
             center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
+            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
+                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
+                .flatten()
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
@@ -1175,7 +1186,7 @@ pub(crate) struct PresentationFrame {
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
-    /// the first draw that asks ([`Self::display_order`]). The frame is
+    /// the first live-world read or before publishing a detached copy. The frame is
     /// dropped before that world can change, so every later draw of it reads
     /// the same order.
     display_order: crate::util::sync::OnceLock<
