@@ -22,7 +22,7 @@
 | 项 | 结果 |
 |---|---|
 | `--profile fast` 构建 | 通过，`vera20k.exe` 约 91 MB |
-| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **173 passed** |
+| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **175 passed** |
 | 改名 `retail` → `assist` | 无行为改动，构建与测试通过 |
 | 会话重构（`AutoplaySession`） | 行为保持：同一 host 调用、同一 take_back、同一顺序 |
 | 上游合并 `0e831f2c3` | 上游 377 提交并入，冲突四处，测试通过 |
@@ -44,6 +44,25 @@
 
 读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
 两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
+
+### 防守上限 8 → 12（这条留下来了，第一次两局都赢）
+
+`DEFEND_MAX`（`src/sim/strategy/assist/squads.rs`）是 Defend 支队的人数上限——「够挡下袭击」
+的那个数。八个人在 Death.mmx seed 19 上不够：那局的 rings 里长期有 14 个敌人
+（`threat=[14,7,2,...]`），八个防守队员被二比一压过，fist 出门以后袭击队就在家里拆房子。
+
+实测（Death.mmx，america，normal，36000 帧，跑两遍逐字节一致）：
+
+| seed | 8（基线） | 12 |
+|---|---|---|
+| 24301 | won 35276 own=158 army=86 lost=52:112 | **won 29484** own=154 army=79 lost=33:96 |
+| 19 | timeout own=126 enemy=70 army=66 lost=52:43 | timeout own=158 enemy=75 army=90 idle=82 lost=47:46 |
+| 10 | timeout own=147 enemy=10 army=82 lost=58:114 | **won 35820** own=157 army=93 lost=55:124 |
+
+第一场胜利提前了 5792 帧，交换比从 52:112 变成 33:96；最弱的一局从 timeout 变成胜利。
+seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158、army 66→90），
+卡住它的是 `push=outgunned`：军队 90 人却 idle=82，门在军队自己更强的时候把它按在家里。
+那是下一件事。
 
 ### 试过并且更差的（不要重试）
 

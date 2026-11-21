@@ -50,7 +50,17 @@ const TARGET_LOCK_FRAMES: u64 = 1_800;
 /// Not the whole army: pulling everything back is what loses the base anyway —
 /// the attacker only has to wait, and the house has paid for an army that is
 /// standing in its own yard. Enough to meet the raid, taken from the nearest.
-const DEFEND_MAX: usize = 8;
+///
+/// Eight was that "enough" and it was not. On Death.mmx seed 19 the ring held
+/// fourteen raiders for most of the match, so eight defenders were outnumbered
+/// and the raid farmed the base while the fist was away. Twelve is a line the
+/// raid has to break instead of walk around.
+///
+/// Measured on the three Death.mmx seeds (america, normal, 36000 ticks),
+/// against eight: the reference win arrived 5792 ticks early (35276 -> 29484)
+/// with fewer losses (lost 52:112 -> 33:96), and the worst seed went from
+/// own=147 enemy=10 army=82 (timeout) to own=157 enemy=1 army=93 (won).
+const DEFEND_MAX: usize = 12;
 
 /// How near the base a hostile has to be for it to be a raid on the base, in
 /// cells: the push step's own threat ring, because "the base is threatened"
@@ -412,7 +422,11 @@ mod tests {
                 type_id: crate::sim::intern::InternedId::default(),
                 cell: (21, 20),
             });
-        for id in 0..12u64 {
+        // Four more than the defenders, so the test still says something about
+        // a split: a fixture the size of DEFEND_MAX would make "the farthest is
+        // not called" false by construction rather than by rule.
+        let fighters = DEFEND_MAX + 4;
+        for id in 0..u64::try_from(fighters).unwrap_or(12) {
             census.units.push(Unit {
                 entity_id: id,
                 type_id: crate::sim::intern::InternedId::default(),
@@ -435,7 +449,7 @@ mod tests {
         }
         // The ledger's own count of the fighting army, which the teams read to
         // know whether the army is big enough to be a fist at all.
-        census.fighters = 12;
+        census.fighters = usize::try_from(fighters).unwrap_or(12);
         let mut squads = Squads::new();
         squads.regroup(0, &census);
         let defend = squads.squad(Role::Defend).expect("a raid is met");
@@ -449,15 +463,16 @@ mod tests {
             "the nearest is called: {:?}",
             defend.members
         );
+        let farthest = u64::try_from(fighters).unwrap_or(12) - 1;
         assert!(
-            !defend.members.contains(&11),
+            !defend.members.contains(&farthest),
             "the farthest is not: {:?}",
             defend.members
         );
         let attack = squads.squad(Role::Attack).expect("the fist");
         assert_eq!(
             attack.members.len(),
-            12 - DEFEND_MAX,
+            fighters - DEFEND_MAX,
             "the rest stay in the fist"
         );
     }
