@@ -196,7 +196,7 @@ pub(crate) fn paint_wol_lobby_children(
             }
             None => {
                 if let Some((_, key)) = SORT_BUTTONS.iter().find(|(known, _)| *known == id) {
-                    let caption = if modern && matches!(id, SORT_ALPHA | PLAYER_SORT_ALPHA) {
+                    let caption = if modern && id == SORT_ALPHA {
                         crate::i18n::tr("VERA:SortName")
                     } else {
                         label(state, key)

@@ -414,7 +414,7 @@ impl WolLobbyLayout {
 
 /// VERA: the online page's body in `view`. The games fill it down to the
 /// chat edit's foot; or the chat takes its left and the player list its
-/// right, both from the games list's top to above the chat edit. The lists
+/// right, both from under their headings to above the chat edit. The lists
 /// hold whole rows, so the pointer never meets a row that is not drawn.
 /// What the other view shows has no window.
 fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
@@ -450,19 +450,15 @@ fn show_view(layout: &mut WolLobbyLayout, view: LobbyView) {
             }
         }
         LobbyView::Chat => {
-            layout.players = whole_rows(px(441, 57, 181, 0), layout.chat_log.y + layout.chat_log.h);
-            // The chat's box lines up with the players' box under the
-            // headings' row; the players' Name header has no partner.
+            // Neither box has a header, so both start on the games' header
+            // row, under their headings, and end together. The players stay
+            // in name order.
+            layout.players = whole_rows(px(441, 37, 181, 0), layout.chat_log.y + layout.chat_log.h);
             layout.chat_log = RectPx {
                 h: layout.players.h,
-                ..px(11, 57, 421, 0)
+                ..px(11, 37, 421, 0)
             };
-            layout
-                .sort_buttons
-                .retain(|(id, _)| *id == PLAYER_SORT_ALPHA);
-            for (_, rect) in &mut layout.sort_buttons {
-                *rect = px(442, 37, 179, 17);
-            }
+            layout.sort_buttons.clear();
             layout.labels = [
                 ("VERA:LobbyChat", px(14, 10, 201, 17)),
                 ("GUI:Players", px(444, 10, 157, 17)),
@@ -1242,10 +1238,7 @@ mod tests {
                 &layout,
                 &[SORT_ALPHA, SORT_PING, REFRESH, GAMES, OBSERVER_TOGGLE][..],
             ),
-            (
-                &chat,
-                &[PLAYER_SORT_ALPHA, EMOTE, PLAYERS, CHAT_LOG, CHAT][..],
-            ),
+            (&chat, &[EMOTE, PLAYERS, CHAT_LOG, CHAT][..]),
         ] {
             for &id in ids {
                 let rect = layout.control_rect(id).expect("useful control");
@@ -1285,12 +1278,20 @@ mod tests {
         assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
         let chat = ui.layout(800, 600, false);
         assert_eq!(chat.control_at(x, y), Some(CHAT_LOG));
-        // The chat's and players' boxes start where the games list did and
+        // Neither box has a header: both start on the games' header row and
         // end together.
         let span = |rect: RectPx| (rect.y, rect.y + rect.h);
         assert_eq!(span(chat.chat_log), span(chat.players));
-        assert_eq!(chat.chat_log.y, games.games.y);
-        for id in [GAMES, SORT_ALPHA, SORT_PING, REFRESH, OBSERVER_TOGGLE] {
+        let header = games.control_rect(SORT_ALPHA).expect("games header");
+        assert_eq!(chat.chat_log.y, header.y);
+        for id in [
+            GAMES,
+            SORT_ALPHA,
+            SORT_PING,
+            PLAYER_SORT_ALPHA,
+            REFRESH,
+            OBSERVER_TOGGLE,
+        ] {
             assert_eq!(chat.control_rect(id), None);
         }
         assert_eq!(ui.activate(VIEW), Some(WolLobbyAction::View));
