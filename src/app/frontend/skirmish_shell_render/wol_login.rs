@@ -23,16 +23,12 @@ use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::list_frame_lines;
 use crate::ui::shell::modal::WolAccountFormLayout;
-use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, FormKind, WolAccountForm};
+use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
 use crate::ui::wol_login::{PLAY_AS_GUEST, SIGN_IN_AND_PLAY, WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
 /// VERA online's status line and counts, beside the shell's yellow captions.
 const ONLINE_TEXT_RGB: [f32; 3] = [0.80, 0.80, 0.80];
-/// An info panel ([`push_info_panel`]) sits over a page's art, under its
-/// popups.
-const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
-const INFO_FRAME_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00002;
 /// The panel darkens the art behind it, which still shows through.
 const INFO_FILL_ALPHA: f32 = 0.82;
 
@@ -78,9 +74,12 @@ pub(crate) fn paint_wol_login_children(
     let label = |key: &str| csf_label(state, key);
     if let Some(choice) = layout.entry_choice() {
         let dialog = choice.dialog;
-        // Fit the complete original mode-2 message-box picture, including
-        // its frame. Stock modal paint instead crops at the client edges.
-        if let Some(background) = atlas.mode_two_dialog_background(None) {
+        // Use Create Room's original Red Alert 2 picture of the Tesla Trooper.
+        // The regular mode-2 picture covers installs without that RA2 art.
+        let background = atlas
+            .ra2_dialog_background
+            .or_else(|| atlas.mode_two_dialog_background(None));
+        if let Some(background) = background {
             super::chrome::push_entry_fitted(
                 &mut paint.popup,
                 background,
@@ -89,16 +88,27 @@ pub(crate) fn paint_wol_login_children(
                 POPUP_DEPTHS.background,
             );
         } else {
-            push_info_panel(&mut paint.popup, atlas, dialog);
+            super::chrome::push_solid_rect(
+                &mut paint.popup,
+                atlas,
+                dialog,
+                super::SHELL_MODAL_PANEL_RGB,
+                POPUP_DEPTHS.background,
+            );
         }
+        push_info_panel(&mut paint.popup, atlas, choice.info);
         let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-        for (key, rect, rgb) in [
-            ("VERA:OnlineTitle", choice.heading, SHELL_LABEL_TEXT_RGB),
-            ("VERA:EntryChoicePrompt", choice.prompt, ONLINE_TEXT_RGB),
+        for (key, rect) in [
+            ("VERA:OnlineTitle", choice.heading),
+            ("VERA:EntryChoicePrompt", choice.prompt),
         ] {
-            paint
-                .popup_texts
-                .push(text(&label(key), rect, centre, rgb, POPUP_DEPTHS.text));
+            paint.popup_texts.push(text(
+                &label(key),
+                rect,
+                centre,
+                SHELL_LABEL_TEXT_RGB,
+                POPUP_DEPTHS.text,
+            ));
         }
         for (id, key, rect) in [
             (PLAY_AS_GUEST, "VERA:PlayAsGuest", choice.guest),
@@ -134,11 +144,7 @@ pub(crate) fn paint_wol_login_children(
         // The chosen route, its fields and the lobby activity over the login art.
         let centred = ShellAlign::H_CENTER;
         paint.texts.push(text(
-            &label(if form.kind == FormKind::Guest {
-                "VERA:PlayAsGuest"
-            } else {
-                "VERA:SignInAndPlay"
-            }),
+            &label("VERA:SignInAndPlay"),
             online.heading,
             centred,
             SHELL_LABEL_TEXT_RGB,
@@ -345,11 +351,7 @@ pub(crate) fn paint_wol_login_children(
 }
 
 /// A panel's darkened backing and a list's two frame rings around it.
-pub(super) fn push_info_panel(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    panel: RectPx,
-) {
+fn push_info_panel(out: &mut Vec<SpriteInstance>, atlas: &SkirmishShellChromeAtlas, panel: RectPx) {
     let Some(pixel) = atlas.white_pixel else {
         return;
     };
@@ -369,14 +371,14 @@ pub(super) fn push_info_panel(
         RectPx::new(panel.x + 1, panel.y + 1, panel.w - 2, panel.h - 2),
         super::SHELL_MODAL_PANEL_RGB,
         INFO_FILL_ALPHA,
-        INFO_FILL_DEPTH,
+        POPUP_DEPTHS.button,
     );
     for (rect, tone) in list_frame_lines(panel) {
         push(
             rect,
             tone.rgb().map(|channel| f32::from(channel) / 255.0),
             1.0,
-            INFO_FRAME_DEPTH,
+            POPUP_DEPTHS.button,
         );
     }
 }

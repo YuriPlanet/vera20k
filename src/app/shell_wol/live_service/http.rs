@@ -130,6 +130,8 @@ pub(super) enum Request {
 pub(super) enum Credential {
     /// No password: a guest, or `name_claimed` for an account's name.
     Guest,
+    /// A name assigned by Play as Guest, which may be replaced on a collision.
+    GeneratedGuest,
     /// The typed password; `remember` asks for a `sign_in_token`.
     Password { password: String, remember: bool },
     /// The `sign_in_token` this computer remembers for the name.
@@ -140,7 +142,7 @@ pub(super) enum Credential {
 fn session_body(nickname: &str, credential: &Credential) -> Value {
     let mut body = json!({"nickname": nickname, "protocol": 4});
     match credential {
-        Credential::Guest => {}
+        Credential::Guest | Credential::GeneratedGuest => {}
         Credential::Password { password, remember } => {
             body["password"] = json!(password);
             body["remember"] = json!(remember);
@@ -332,6 +334,7 @@ pub(super) enum Response {
     },
     Authenticated {
         attempt: u64,
+        generated_guest: bool,
         player_id: String,
         nickname: String,
         motd: Option<String>,
@@ -456,6 +459,10 @@ fn sign_in_headers(changes: &str) -> [(&'static str, String); 7] {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RequestFailure {
     Status(u16),
+    /// A session nickname is in use (409), or belongs to an account
+    /// (403, with its localized message). Neither error created a session.
+    SessionNameInUse,
+    SessionNameClaimed(String),
     LostCursor,
     ChannelRejected {
         status: u16,
@@ -497,12 +504,13 @@ enum RequestFailure {
 /// including a 401 or 403 without the lobby's code.
 fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
     match failure {
-        RequestFailure::Status(409) => Response::LoginFailed {
+        RequestFailure::SessionNameInUse | RequestFailure::Status(409) => Response::LoginFailed {
             attempt,
             code: 0x8004_0064,
         },
         RequestFailure::UpgradeRequired(message) => Response::UpgradeRequired { attempt, message },
-        error @ (RequestFailure::Maintenance(_)
+        error @ (RequestFailure::SessionNameClaimed(_)
+        | RequestFailure::Maintenance(_)
         | RequestFailure::Full(_)
         | RequestFailure::Account { .. }
         | RequestFailure::Status(429)) => {
@@ -533,7 +541,9 @@ fn sign_in_refusal(failure: RequestFailure) -> String {
         RequestFailure::Full(message) => {
             message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineFull"))
         }
-        RequestFailure::Account { message, .. } => message,
+        RequestFailure::SessionNameClaimed(message) | RequestFailure::Account { message, .. } => {
+            message
+        }
         _ => crate::i18n::tr("VERA:OnlineBusy"),
     }
 }
@@ -645,8 +655,8 @@ impl RequestFailure {
     /// carry their message, since `name_unavailable` there names an account,
     /// and so do a sign-in's wrong passwords from one network and its
     /// accounts being unavailable. A sign-in's `name_unavailable` is a name
-    /// already online or reserved: the plain 409 that [`sign_in_failure`]
-    /// shows as the name in use, not a room's code. A 401 on any path is the
+    /// already online or reserved, while `name_claimed` is an account's name.
+    /// Only these two replies let the game draw another guest name. A 401 on any path is the
     /// bearer the lobby no longer knows (`session_failed`).
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
         if status == 401 {
@@ -656,8 +666,16 @@ impl RequestFailure {
         let code = value
             .as_ref()
             .and_then(|value| value["error"]["code"].as_str());
-        if path == "/v1/sessions" && status == 409 && code == Some("name_unavailable") {
-            return Self::Status(409);
+        if path == "/v1/sessions" {
+            match (status, code) {
+                (409, Some("name_unavailable")) => return Self::SessionNameInUse,
+                (403, Some("name_claimed")) => {
+                    let message = plain_message(value.as_ref())
+                        .unwrap_or_else(|| crate::i18n::tr("VERA:NameHasAccount"));
+                    return Self::SessionNameClaimed(message);
+                }
+                _ => {}
+            }
         }
         let sign_in = path == "/v1/sessions"
             && matches!(
@@ -715,9 +733,12 @@ impl RequestFailure {
     fn status(&self) -> u16 {
         match self {
             Self::Status(status) | Self::ChannelRejected { status, .. } => *status,
-            Self::LostCursor | Self::AlreadyFinished | Self::MatchActive | Self::StaleRevision => {
-                409
-            }
+            Self::SessionNameClaimed(_) => 403,
+            Self::SessionNameInUse
+            | Self::LostCursor
+            | Self::AlreadyFinished
+            | Self::MatchActive
+            | Self::StaleRevision => 409,
             Self::InvalidOptions => 400,
             Self::UpgradeRequired(_) => 426,
             Self::Maintenance(_) | Self::Full(_) => 503,
@@ -1039,6 +1060,32 @@ mod map_io;
 macro_rules! serial_driver {
     ($($asynchronous:tt)?) => {
         impl Client {
+    /// Retry only explicit collisions for a name this game assigned. A network
+    /// failure could already have created a session under the first name.
+    $($asynchronous)? fn open_session(
+        &self, attempt: u64, mut nickname: String, credential: &Credential,
+        mut superseded: impl FnMut() -> bool,
+    ) -> Result<Session, Response> {
+        let mut retries_left = 3;
+        loop {
+            let body = session_body(&nickname, credential);
+            let answer = platform_await!(self.request("/v1/sessions", Some(&body)));
+            match answer {
+                Err(RequestFailure::SessionNameInUse | RequestFailure::SessionNameClaimed(_))
+                    if matches!(credential, Credential::GeneratedGuest) => {}
+                other => return other.and_then(|value| decode_session(value, &nickname))
+                    .map_err(|error| sign_in_failure(attempt, error)),
+            }
+            if retries_left == 0 || self.stopping.load(Ordering::Acquire) || superseded() {
+                return Err(Response::SignInRefused {
+                    attempt, message: crate::i18n::tr("VERA:GuestNameBusy"), bad_credential: false,
+                });
+            }
+            retries_left -= 1;
+            nickname = crate::ui::wol_account::guest_nickname();
+        }
+    }
+
     /// One translation job, under the bearer it carries.
     $($asynchronous)? fn translate(&mut self, (id, token, text, target): TranslateJob) -> Response {
         self.token = Some(token);
@@ -1285,9 +1332,11 @@ macro_rules! serial_driver {
                     continue;
                 }
                 client.cursor = 0;
-                let result = platform_await!(client
-                    .request("/v1/sessions", Some(&session_body(&nickname, &credential))))
-                    .and_then(|value| decode_session(value, &nickname));
+                let result = platform_await!(client.open_session(attempt, nickname, &credential, || {
+                    queue_arrivals(&input, None, &mut queued);
+                    queued.iter().any(|request| matches!(request,
+                        Request::Abandon | Request::OpenSession { .. } | Request::Command { operation: "logout", .. }))
+                }));
                 match result {
                     Ok(session) => {
                         client.token = Some(session.token);
@@ -1295,6 +1344,7 @@ macro_rules! serial_driver {
                         if output
                             .send(Response::Authenticated {
                                 attempt,
+                                generated_guest: matches!(credential, Credential::GeneratedGuest),
                                 player_id: session.player_id,
                                 nickname: session.nickname,
                                 motd: session.motd,
@@ -1309,8 +1359,8 @@ macro_rules! serial_driver {
                             break;
                         }
                     }
-                    Err(failure) => {
-                        let _ = output.send(sign_in_failure(attempt, failure));
+                    Err(refusal) => {
+                        let _ = output.send(refusal);
                     }
                 }
             }
@@ -1968,6 +2018,81 @@ mod tests {
             *seen.lock().unwrap(),
             ["/v1/events?after=0", "/v1/events?after=1"]
         );
+    }
+
+    #[test]
+    fn only_generated_names_retry_collisions_and_they_stop_after_four_attempts() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::{TcpListener, TcpStream};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let lobby = std::thread::spawn(move || {
+            let mut bodies = Vec::new();
+            for socket in listener.incoming() {
+                let mut socket = socket.unwrap();
+                let mut request = Vec::new();
+                // Session entry sends one flat JSON object.
+                if BufReader::new(&socket)
+                    .read_until(b'}', &mut request)
+                    .unwrap()
+                    == 0
+                {
+                    break;
+                }
+                let (_, body) = std::str::from_utf8(&request)
+                    .unwrap()
+                    .split_once("\r\n\r\n")
+                    .unwrap();
+                bodies.push(serde_json::from_str::<Value>(body).unwrap());
+                let (status, code) = if bodies.len() % 2 == 0 {
+                    (403, "name_claimed")
+                } else {
+                    (409, "name_unavailable")
+                };
+                let reply = json!({"error":{"code":code}}).to_string();
+                write!(
+                    socket,
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                )
+                .unwrap();
+            }
+            bodies
+        });
+        let client = Client::new(
+            Arc::new(AtomicBool::new(false)),
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build()
+                .into(),
+            format!("http://{address}"),
+        );
+        let named = client.open_session(1, "Guest00001".into(), &Credential::Guest, || false);
+        assert!(matches!(
+            named,
+            Err(Response::LoginFailed {
+                code: 0x8004_0064,
+                ..
+            })
+        ));
+        let automatic =
+            client.open_session(2, "Guest00002".into(), &Credential::GeneratedGuest, || {
+                false
+            });
+        assert!(
+            matches!(automatic, Err(Response::SignInRefused { message, .. })
+            if message == crate::i18n::tr("VERA:GuestNameBusy"))
+        );
+        drop(TcpStream::connect(address).unwrap());
+        let bodies = lobby.join().unwrap();
+        assert_eq!(bodies.len(), 5);
+        for body in bodies {
+            let name = body["nickname"].as_str().unwrap();
+            let digits = name.strip_prefix("Guest").unwrap();
+            assert_eq!(digits.len(), 5);
+            assert!(digits.bytes().all(|b| b.is_ascii_digit()));
+            assert_eq!(body, json!({"nickname":name,"protocol":4}));
+        }
     }
 
     /// A bearer the shell stopped logging out (Back in an outage, or a

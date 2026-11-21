@@ -941,12 +941,12 @@ that name enters as a guest. A lobby without accounts set up refuses a password 
 503 `accounts_unavailable`.
 
 Opening VERA Online offers **Play as Guest** and **Sign In and Play**. Guest entry
-asks for a nickname and sends no credentials, even when this computer remembers an
-account. A registered nickname requires the account path. Account sign-in takes a
-username and password or the remembered sign-in for that username. Enter submits either
-form, and Back returns to the choice. The page shows the players online and the last 24
-hours' games (`GET /v1/stats`, read each time the page opens), leaving out a count of
-none. The account path also offers registration, recovery and deletion.
+immediately requests a session under a temporary name such as `Guest04219`, with no
+credentials. If the lobby says the name is in use or registered, the game tries up to
+three more names. It keeps the last account username for the next sign-in. The account
+path takes a username and password or the remembered sign-in for that username.
+The page shows players online and the last 24 hours' games (`GET /v1/stats`, read
+each time the page opens), leaving out a count of none. The account path also offers registration, recovery and deletion.
 Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
 code, then asks for it and a new password, and signs in. Delete Account accepts the

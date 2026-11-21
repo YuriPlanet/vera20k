@@ -1693,6 +1693,7 @@ fn online_exit_owner_retries_logout_after_the_visit_is_dropped_and_ignores_old_c
         output
             .send(http::Response::Authenticated {
                 attempt: 0,
+                generated_guest: false,
                 player_id: "old-player".into(),
                 nickname: "OldVisit".into(),
                 motd: None,

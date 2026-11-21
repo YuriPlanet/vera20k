@@ -44,7 +44,7 @@ pub enum WolTarget {
     /// Its sign-in form with a username and password typed and Remember
     /// password ticked; nothing is sent.
     ModernLogin,
-    /// Its guest form with a nickname typed; nothing is sent.
+    /// The account form with only a username typed: Sign In stays disabled.
     ModernUsername,
     /// Create Account's popup, filled in; nothing is sent.
     ModernCreateAccount,

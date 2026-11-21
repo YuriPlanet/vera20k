@@ -1,5 +1,5 @@
 //! VERA: the online login page's forms (docs/lobby-protocol.md "Accounts"):
-//! the nickname-only guest form, account sign-in, and the account popups:
+//! account sign-in and the account popups:
 //! Create Account and the mailed code that confirms it, Forgot
 //! Password's username and then its code and new password, and Delete
 //! Account's username or email and password. gamemd has no such dialog; the popups
@@ -30,6 +30,23 @@ const CODE_LENGTH: usize = 6;
 /// What Login's password field holds for this computer's remembered sign-in
 /// of the typed username: masked, it shows that Login needs no password.
 const REMEMBERED_PLACEHOLDER: [u16; 8] = [b'*' as u16; 8];
+
+/// The temporary display name of an in-game guest. Presentation randomness
+/// lives outside the simulation. Keep the five digits on hosts without an
+/// OS random source too, including when two attempts occur in one clock tick.
+pub(crate) fn guest_nickname() -> String {
+    let number = getrandom::u32().unwrap_or_else(|_| {
+        use crate::util::time::{SystemTime, UNIX_EPOCH};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        time.subsec_nanos()
+            .wrapping_add(NEXT.fetch_add(1, Ordering::Relaxed))
+    });
+    format!("Guest{:05}", number % 100_000)
+}
 
 /// A lobby player name: 1 to 24 letters, digits, `_` or `-`. The one
 /// owner of the rule: names also become persona INI section names.
@@ -155,7 +172,6 @@ impl FieldKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormKind {
-    Guest,
     /// An account password or this computer's remembered sign-in.
     SignIn,
     Register,
@@ -352,16 +368,6 @@ impl WolAccountForm {
                 .set_units_limited(name.encode_utf16(), NAME_LIMIT);
             self.focus(1);
         }
-    }
-
-    pub(crate) fn guest(nickname: &str) -> Self {
-        let mut form = Self::with_fields(
-            FormKind::Guest,
-            vec![AccountField::new(FieldKind::Name, "GUI:Nickname")],
-            StatusText::new("VERA:GuestNicknamePrompt"),
-        );
-        form.prefill_name(nickname);
-        form
     }
 
     /// The sign-in form, its username prefilled. While the username is
@@ -603,39 +609,29 @@ impl WolAccountForm {
                         password,
                     })
             }
-            FormKind::Guest | FormKind::SignIn | FormKind::Deleted => None,
+            FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 
-    /// Guest entry and account sign-in share the session request. Only the
-    /// guest form may submit an empty password without a remembered sign-in.
     fn sign_in_action(&self) -> Option<AccountFormAction> {
         let name = self.text(FieldKind::Name);
-        if !valid_name(&name) {
-            return None;
-        }
-        let password = match self.kind {
-            FormKind::Guest => String::new(),
-            FormKind::SignIn if self.remembered => String::new(),
-            FormKind::SignIn => {
-                let password = self.text(FieldKind::Password);
-                if !valid_password(&password) {
-                    return None;
-                }
-                password
-            }
-            _ => return None,
+        let password = if self.remembered {
+            String::new()
+        } else {
+            self.text(FieldKind::Password)
         };
-        Some(AccountFormAction::SignIn {
-            sign_in: AccountSignIn { name, password },
-            remember: self.remember == Some(true),
+        (valid_name(&name) && (self.remembered || valid_password(&password))).then(|| {
+            AccountFormAction::SignIn {
+                sign_in: AccountSignIn { name, password },
+                remember: self.remember == Some(true),
+            }
         })
     }
 
     pub(crate) fn ok_enabled(&self) -> bool {
         match self.kind {
             FormKind::Deleted => true,
-            FormKind::Guest | FormKind::SignIn => self.sign_in_action().is_some(),
+            FormKind::SignIn => self.sign_in_action().is_some(),
             _ => !self.busy && self.request().is_some(),
         }
     }
@@ -702,9 +698,7 @@ impl WolAccountForm {
     pub(crate) fn activate(&mut self, control: u16) -> Option<AccountFormAction> {
         match control {
             FORM_OK if self.kind == FormKind::Deleted => Some(AccountFormAction::Close),
-            FORM_OK if matches!(self.kind, FormKind::Guest | FormKind::SignIn) => {
-                self.sign_in_action()
-            }
+            FORM_OK if self.kind == FormKind::SignIn => self.sign_in_action(),
             FORM_OK => {
                 let request = self.request().filter(|_| !self.busy)?;
                 match &request {
@@ -829,7 +823,7 @@ impl WolAccountForm {
                 }
                 None
             }
-            FormKind::Guest | FormKind::SignIn | FormKind::Deleted => None,
+            FormKind::SignIn | FormKind::Deleted => None,
         }
     }
 }
@@ -1033,14 +1027,6 @@ mod tests {
         assert!(!form.ok_enabled(), "six characters are no account password");
         form.insert_text("-pw");
         assert_eq!(form.activate(FORM_OK), sign_in("tanya", "s3cret-pw", false));
-        let mut guest = WolAccountForm::guest("");
-        assert!(!guest.ok_enabled());
-        assert_eq!((guest.fields.len(), guest.remember), (1, None));
-        guest.insert_text("Boris");
-        assert_eq!(
-            guest.edit_key(WolEditKey::Enter),
-            sign_in("Boris", "", false)
-        );
         // Another username is another account: the placeholder goes.
         let mut form = WolAccountForm::sign_in("Tanya", Some("Tanya"));
         form.focus(0);

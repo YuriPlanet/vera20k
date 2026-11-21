@@ -61,18 +61,29 @@ pub(super) fn apply_response(
         }
         http::Response::Authenticated {
             attempt,
+            generated_guest,
             player_id,
             nickname,
             motd,
             sign_in_token,
             lobby_visits,
             campaign_rooms,
-        } if attempt == service.auth_attempt => {
-            // `http::decode_session` admitted this identity.
-            if let Some(token) = sign_in_token {
-                remember_sign_in(settings_dir(state), service, &nickname, token);
+        } if attempt == service.auth_attempt
+            && state.frontend.wol.as_ref().is_some_and(|visit| {
+                matches!(
+                    visit.awaiting,
+                    crate::app::shell_wol::service::Awaiting::Connect { .. }
+                )
+            }) =>
+        {
+            // The wait may have ended before its queued CancelWait reaches the worker.
+            // Only a still-awaited session can set the current name or saved credentials.
+            if !generated_guest {
+                if let Some(token) = sign_in_token {
+                    remember_sign_in(settings_dir(state), service, &nickname, token);
+                }
+                remember_online_name(state, &nickname);
             }
-            remember_online_name(state, &nickname);
             service.player_id = player_id;
             service.campaign_rooms = campaign_rooms;
             state.frontend.wol_account.nickname = nickname;

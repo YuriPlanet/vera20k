@@ -600,29 +600,20 @@ impl LiveRoundFlow {
                     .entry_choice()
                     .context("online entry chooser")?;
                 click(state, chooser.guest);
-                // The guest form can start with the last nickname: replace it.
-                let username = crate::app::shell_wol::login_layout(state)
-                    .online
-                    .context("the online guest form")?
-                    .fields[0]
-                    .1;
-                click(state, username);
-                App::handle_wol_key(state, Some(KeyCode::Home), true, None);
-                for _ in 0..32 {
-                    App::handle_wol_key(state, Some(KeyCode::Delete), true, None);
-                }
-                App::handle_wol_key(state, None, true, Some(&self.online_config().account));
+                // The live clients locate each other's games by their agreed
+                // command-line names. Set that fixture identity before the
+                // normal slide-out commits the guest's Connect request.
                 ensure!(
-                    state
-                        .frontend
-                        .wol
-                        .as_ref()
-                        .and_then(|visit| visit.login())
-                        .is_some_and(|login| login.button_enabled(crate::ui::wol_login::PLAY)),
-                    "the online username did not enable Play"
+                    state.frontend.shell_exit.is_some(),
+                    "Play as Guest did not start the login slide-out"
                 );
-                App::handle_wol_key(state, Some(KeyCode::Enter), true, None);
-                self.record(frame, "Guest nickname submitted through Join Lobby");
+                let identity = &mut state.frontend.wol_account;
+                identity.nickname.clone_from(&self.online_config().account);
+                identity.generated_guest = false;
+                self.record(
+                    frame,
+                    "Play as Guest selected; using coordinated capture nickname",
+                );
                 self.phase = RoundPhase::Lobby;
             }
             RoundPhase::Lobby if lobby_ready(state, rendered) => {

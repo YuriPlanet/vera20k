@@ -230,6 +230,7 @@ impl WolCapture {
                                         password: PASSWORD.into(),
                                         changed: false,
                                         remember: false,
+                                        generated_guest: false,
                                     }],
                             "AutoLogin did not connect the stored account to the persona's server: {requests:?}"
                         );
@@ -320,14 +321,9 @@ impl WolCapture {
                             self.settle();
                             return Ok(());
                         }
-                        welcome_click(
-                            state,
-                            if target == WolTarget::ModernUsername {
-                                choice.guest
-                            } else {
-                                choice.account
-                            },
-                        );
+                        // These are visual-only captures. Play as Guest joins
+                        // the live lobby immediately, so they use the account form.
+                        welcome_click(state, choice.account);
                         let layout = crate::app::shell_wol::login_layout(state);
                         if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
                             let online = layout.online.context("the online sign-in form")?;
@@ -350,9 +346,10 @@ impl WolCapture {
                             ensure!(
                                 login.online_name() == "Player"
                                     && login.button_enabled(crate::ui::wol_login::PLAY)
+                                        == (target == WolTarget::ModernLogin)
                                     && login.form.as_ref().and_then(|form| form.remember)
-                                        == (target == WolTarget::ModernLogin).then_some(true),
-                                "the typed sign-in did not enable Play"
+                                        == Some(target == WolTarget::ModernLogin),
+                                "the sign-in form has the wrong submit or remember state"
                             );
                             self.event(frame, "the sign-in form filled in");
                         } else {
@@ -440,6 +437,7 @@ impl WolCapture {
                             password: PASSWORD.into(),
                             changed: true,
                             remember: false,
+                            generated_guest: false,
                         }],
                     "Login did not connect to the selected record"
                 );

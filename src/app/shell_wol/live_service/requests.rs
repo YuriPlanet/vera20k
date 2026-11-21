@@ -30,12 +30,16 @@ pub(super) fn request_service(
             nickname,
             password,
             remember,
+            generated_guest,
             ..
         } => {
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
-            let Some(credential) =
+            let credential = if generated_guest {
+                Some(http::Credential::GeneratedGuest)
+            } else {
                 sign_in_credential(settings_dir(state), service, &nickname, password, remember)
-            else {
+            };
+            let Some(credential) = credential else {
                 super::apply_response(
                     state,
                     service,
