@@ -275,9 +275,19 @@ impl Squads {
                 })
                 .collect();
             nearest.sort_by_key(|unit| (squared_distance(unit.cell, cell), unit.entity_id));
+            // Enough to meet the raid: the raid's own size, with DEFEND_MAX as
+            // the floor and half the army as the ceiling. Twelve was measured
+            // against a ring of fourteen and was short; a fixed number is the
+            // wrong shape for this, because the raid is not fixed.
+            let raiders = census
+                .base_cell
+                .map_or(0, |home| census.enemies_near(home, HOME_THREAT_CELLS));
+            let want = raiders
+                .max(DEFEND_MAX)
+                .min((census.fighters / 2).max(DEFEND_MAX));
             let members: BTreeSet<u64> = nearest
                 .into_iter()
-                .take(DEFEND_MAX)
+                .take(want)
                 .map(|unit| unit.entity_id)
                 .collect();
             taken.extend(members.iter().copied());
@@ -410,6 +420,63 @@ mod tests {
     }
 
     /// A hostile in the base calls some of the army home — and only some,
+    /// A raid bigger than the floor gets the defenders it needs, not the floor.
+    /// The floor stays a floor: at or below it the squad is DEFEND_MAX, so the
+    /// twelve that were measured are never taken away again.
+    #[test]
+    fn a_raid_bigger_than_the_floor_calls_more_than_the_floor() {
+        let mut census = Census::default();
+        census.base_cell = Some((20, 20));
+        census
+            .enemies
+            .push(crate::sim::control::observation::EnemyEntity {
+                entity_id: 999,
+                type_id: crate::sim::intern::InternedId::default(),
+                cell: (21, 20),
+            });
+        // Nineteen more inside the ring, so the raid is twenty strong and the
+        // floor of twelve is not what the house is facing.
+        for id in 1_000..1_019_u64 {
+            census
+                .enemies
+                .push(crate::sim::control::observation::EnemyEntity {
+                    entity_id: id,
+                    type_id: crate::sim::intern::InternedId::default(),
+                    cell: (22, 20),
+                });
+        }
+        let fighters = 30_u64;
+        for id in 0..fighters {
+            census.units.push(Unit {
+                entity_id: id,
+                type_id: crate::sim::intern::InternedId::default(),
+                cell: (20 + u16::try_from(id).unwrap_or(0), 30),
+                health_permille: 1_000,
+                points: 100,
+                mission: crate::sim::mission::MissionId::from_known(
+                    crate::sim::mission::MissionType::Guard,
+                ),
+                orderable: true,
+                hand: false,
+                slot: crate::sim::strategy::assist::census::Slot::Infantry,
+                tier: 0,
+                traits: crate::sim::strategy::assist::census::Traits {
+                    combat: true,
+                    armed: true,
+                    ..Default::default()
+                },
+            });
+        }
+        census.fighters = usize::try_from(fighters).unwrap_or(30);
+        let mut squads = Squads::new();
+        squads.regroup(0, &census);
+        let defend = squads.squad(Role::Defend).expect("a raid is met");
+        assert_eq!(
+            defend.members.len(),
+            15,
+            "half the army meets a raid of twenty, and twelve would not"
+        );
+    }
     /// because pulling the whole army back is how the base is lost anyway.
     #[test]
     fn a_raid_on_the_base_calls_the_nearest_few_home() {

@@ -49,8 +49,9 @@
 ### 防守上限 8 → 12（这条留下来了，第一次两局都赢）
 
 `DEFEND_MAX`（`src/sim/strategy/assist/squads.rs`）是 Defend 支队的人数上限——「够挡下袭击」
-的那个数。八个人在 Death.mmx seed 19 上不够：那局的 rings 里长期有 14 个敌人
-（`threat=[14,7,2,...]`），八个防守队员被二比一压过，fist 出门以后袭击队就在家里拆房子。
+的那个数。八个人在 Death.mmx seed 19 上不够，fist 出门以后袭击队就在家里拆房子。
+（更正：`threat=[14,7,2,...]` 是**全图**敌方按兵种计数，见 `census.rs:840-851` 的 `counter(ty)`，
+不是 rings 内的数量。ring 内的数量是 `enemies_near(base_cell, THREAT_RADIUS)`，逐帧都在变。）
 
 实测（Death.mmx，america，normal，36000 帧，跑两遍逐字节一致）：
 
@@ -65,6 +66,20 @@ seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158
 卡住它的是 `push=outgunned`：军队 90 人却 idle=82，门在军队自己更强的时候把它按在家里。
 那是下一件事。
 
+### 防守队按突袭规模给（测过，三局都没有收益，留下了）
+
+`squads.rs` 的 Defend 支队原来是固定 `.take(DEFEND_MAX)`：来 3 个敌人也是 12 个人去，
+来 20 个也是 12 个人去。现在 `want = raiders.max(DEFEND_MAX).min((census.fighters / 2).max(DEFEND_MAX))`，
+即「至少 12，最多突袭规模，且不超过军队的一半」，其中
+`raiders = census.base_cell.map_or(0, |home| census.enemies_near(home, HOME_THREAT_CELLS))`。
+
+实测（Death.mmx，america，normal，36000 帧）：与 defend12 **逐字节一致**——
+24301 won 29484 own=154 army=79 inc=6270；19 timeout own=158 enemy=75 army=90 inc=6742；
+10 won 35820 own=157 enemy=1 army=93 inc=5179。
+原因：加了 `AUTOPLAY_TRACE_SQUADS` 的探针（已删）后看到，三局里 `raiders` 一直在 1..9，
+从没超过 12，所以这条只在突袭大于 12 时才生效。留着是因为地板 12 只对小于 12 的突袭正确，
+而回归测试 `a_raid_bigger_than_the_floor_calls_more_than_the_floor`（20 个敌人、30 个兵 → 15 个防守）
+在去掉这条公式时失败（left: 12, right: 15）。
 ### 试过并且更差的（不要重试）
 
 - **把 `Item::Refinery` 加进 `yard_reserve`**（想让第二个精炼厂也能存钱买到）：
