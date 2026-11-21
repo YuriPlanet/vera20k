@@ -56,7 +56,7 @@
 //! Residuals:
 //! - `Wasm.Tags` on Weapon, Warhead and Projectile sections refuses the start:
 //!   `trigger_bind` has no weapon, warhead or projectile bindings yet.
-//! - `Decide=` is read and refuses the start: no decidable events yet.
+//! - `Decide=Wasm:name` sets the trigger's decision handler (RFC 6f).
 //! - Text parameters (`Log`, stock text actions) refuse the start: a trigger
 //!   keeps no action text.
 //! - Name kinds without a lookup (sounds, animations, particle systems) and
@@ -76,7 +76,6 @@ use vera20k_wasm_ext::{
     TABLE_PROPERTY, TriggerDef,
 };
 
-use super::triggers::RAISED_EVENTS;
 use super::{
     GLOBAL_VARS, LOCAL_VARS, ModuleSource, REF_KIND_SHIFT, REF_WAYPOINT, house_ref, type_ref,
 };
@@ -107,7 +106,8 @@ struct TriggerSpec {
     house: Option<String>,
     difficulty: u8,
     repeat: Repeat,
-    decide: Option<String>,
+    /// `Decide=Wasm:name`: the handler's module (`mod.`/`map.`) and name.
+    decide: Option<(Option<ModuleSource>, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,10 +282,10 @@ impl TriggerSpec {
                     }
                 }
                 TriggerKey::Decide => {
-                    let handler = strip_prefix_ci(value, "Wasm:")
-                        .filter(|handler| !handler.trim().is_empty())
-                        .ok_or_else(|| fail_value("a decision handler is Wasm:name"))?;
-                    spec.decide = Some(handler.trim().to_owned());
+                    spec.decide = match parse_action(value) {
+                        Ok(ActionSpec::Module(source, name)) => Some((source, name)),
+                        _ => return Err(fail_value("a decision handler is Wasm:name")),
+                    };
                 }
                 TriggerKey::House => spec.house = Some(value.to_owned()),
                 TriggerKey::Difficulty => {
@@ -734,11 +734,10 @@ impl Simulation {
         spec: &TriggerSpec,
     ) -> Result<Option<(ModuleSource, TriggerDef)>, String> {
         let section = &spec.section;
-        if spec.decide.is_some() {
-            return Err(format!(
-                "[{section}] Decide: decision handlers are not supported yet"
-            ));
-        }
+        let decide = spec
+            .decide
+            .as_ref()
+            .map(|(source, name)| (source.unwrap_or(ModuleSource::Mod), name.as_str()));
         let modules: Vec<ModuleSource> = spec
             .actions
             .iter()
@@ -746,6 +745,7 @@ impl Simulation {
                 ActionSpec::Module(source, _) => Some(source.unwrap_or(ModuleSource::Mod)),
                 ActionSpec::Kind { .. } => None,
             })
+            .chain(decide.map(|(source, _)| source))
             .collect();
         let source = modules.first().copied().unwrap_or(ModuleSource::Mod);
         if modules.iter().any(|s| *s != source) {
@@ -772,7 +772,9 @@ impl Simulation {
             let fail = |why: String| format!("[{section}] {}: {why}", event.key);
             let kind = vera20k_wasm_ext::event_kind_id(&event.name)
                 .ok_or_else(|| fail(format!("no event kind {}", event.name)))?;
-            if !RAISED_EVENTS.contains(&kind) {
+            if !super::events::raises(kind)
+                && !vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&kind)
+            {
                 return Err(fail(format!("this game does not raise {} yet", event.name)));
             }
             let mut clauses = Vec::with_capacity(event.clauses.len());
@@ -805,6 +807,12 @@ impl Simulation {
                 Err(why) => return Err(format!("[{section}] {key}: {why}")),
             }
         }
+        let decide_key = match decide {
+            Some((source, name)) => self
+                .module_action_key(source, name)
+                .map_err(|why| format!("[{section}] Decide: {why}"))?,
+            None => -1,
+        };
         Ok(Some((
             source,
             TriggerDef {
@@ -812,7 +820,7 @@ impl Simulation {
                 repeat: spec.repeat,
                 difficulty: spec.difficulty,
                 flags: 0,
-                decide_key: -1,
+                decide_key,
                 events,
                 actions,
             },
@@ -872,6 +880,22 @@ impl Simulation {
         })
     }
 
+    /// The dispatch key of `name` in module `source`'s `vera.actions`.
+    fn module_action_key(&self, source: ModuleSource, name: &str) -> Result<i32, String> {
+        let slot = self
+            .ext_modules
+            .slots
+            .iter()
+            .find(|slot| slot.source == source)
+            .ok_or_else(|| match source {
+                ModuleSource::Mod => "the mod has no rules.wasm".to_owned(),
+                ModuleSource::Map => "the map has no rules module".to_owned(),
+            })?;
+        slot.module
+            .action_key(name)
+            .ok_or_else(|| format!("the {source:?} module's vera.actions has no {name}"))
+    }
+
     /// One action as an `ActionDef`; `None` when a `house` parameter names a
     /// country without a house here.
     fn resolve_action(
@@ -882,19 +906,7 @@ impl Simulation {
     ) -> Result<Option<ActionDef>, String> {
         let (name, target, args) = match action {
             ActionSpec::Module(_, name) => {
-                let slot = self
-                    .ext_modules
-                    .slots
-                    .iter()
-                    .find(|slot| slot.source == source)
-                    .ok_or_else(|| match source {
-                        ModuleSource::Mod => "the mod has no rules.wasm".to_owned(),
-                        ModuleSource::Map => "the map has no rules module".to_owned(),
-                    })?;
-                let key = slot
-                    .module
-                    .action_key(name)
-                    .ok_or_else(|| format!("the {source:?} module's vera.actions has no {name}"))?;
+                let key = self.module_action_key(source, name)?;
                 return Ok(Some(ActionDef {
                     kind: ACTION_MODULE,
                     target: ActionTarget::Subject,
@@ -902,6 +914,7 @@ impl Simulation {
                         id: key,
                         ..ActionParams::default()
                     },
+                    text: String::new(),
                 }));
             }
             ActionSpec::Kind { name, target, args } => (name, *target, args),
@@ -916,6 +929,7 @@ impl Simulation {
         }
         let schema = action_params(kind).ok_or_else(|| format!("{name} is not written in INI"))?;
         let mut params = ActionParams::default();
+        let mut text = String::new();
         let mut args = args.iter().map(String::as_str);
         if target == ActionTarget::Cell {
             params.cell = waypoint_ref(args.next().unwrap_or_default())
@@ -940,15 +954,14 @@ impl Simulation {
                     Some(house) => params.house = house,
                     None => return Ok(None),
                 },
-                Param::Text => {
-                    return Err("text parameters are not kept by triggers yet".into());
-                }
+                Param::Text => text = arg.to_owned(),
             }
         }
         Ok(Some(ActionDef {
             kind,
             target,
             params,
+            text,
         }))
     }
 

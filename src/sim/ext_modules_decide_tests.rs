@@ -216,13 +216,9 @@ fn decision_random_leaves_the_main_stream_and_runs_hash_alike() {
         scene.tick();
         let memory = memory(&scene);
         let draws: Vec<u8> = memory[696..708].to_vec();
-        // Module memory, streams and triggers. Residual: the whole
-        // `state_hash` of two such runs in one process differed in an
-        // unexplained way (a run with a non-handling decider too).
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        scene.sim().ext_modules().hash_state(&mut hasher);
-        scene.sim().trigger_runtime.hash_state(&mut hasher);
-        Some((draws, std::hash::Hasher::finish(&hasher)))
+        // The whole simulation hashes alike: the TakeDamage record carries
+        // the warhead index, which follows the [Warheads] registry order.
+        Some((draws, scene.sim().state_hash()))
     };
     let Some((draws, hash)) = run() else {
         return;

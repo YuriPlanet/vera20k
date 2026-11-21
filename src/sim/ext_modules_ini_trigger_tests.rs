@@ -155,12 +155,12 @@ fn e1_trigger(scene: &HeadlessScenario, e1: u64) -> u64 {
         .type_handle("E1")
         .expect("E1")
         .0;
-    let bound =
-        scene
-            .sim()
-            .trigger_runtime
-            .module_triggers()
-            .bound(EVENT_TAKE_DAMAGE, e1, Some(e1_type));
+    let bound = scene.sim().trigger_runtime.module_triggers().bound(
+        EVENT_TAKE_DAMAGE,
+        e1,
+        Some(e1_type),
+        &[],
+    );
     assert_eq!(bound.len(), 1, "one trigger reaches the E1");
     bound[0]
 }

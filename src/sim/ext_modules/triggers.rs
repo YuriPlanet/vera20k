@@ -36,7 +36,6 @@
 //! - The "flag" an event site checks is a per-kind test, then a map lookup
 //!   by subject, not a side column in entity storage (RFC 15.1, item 1).
 
-use vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS;
 use vera20k_wasm_ext::triggers::{
     ACTION_MODULE, ACTION_SET_VAR, ActionDef, ActionTarget, EVENT_TIMER, EventDef,
     FLAG_STARTS_DISABLED, FilterClause, FilterSubject, VarTarget,

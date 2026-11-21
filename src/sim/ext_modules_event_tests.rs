@@ -328,8 +328,8 @@ fn a_self_damaging_trigger_chain_stops_at_its_depth_cap() {
         .runtime
         .resources
         .rules
-        .warhead_index("SA")
-        .expect("SA") as i32;
+        .warhead_index("Super")
+        .expect("Super") as i32;
     let chain = def(
         0,
         2,

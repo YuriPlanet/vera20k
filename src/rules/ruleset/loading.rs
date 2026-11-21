@@ -1719,7 +1719,10 @@ impl RuleSet {
         // the processor's whole Warhead family: the [Warheads] values and
         // every reference-driven allocation, weapons' warheads and the
         // [Radiation] RadSiteWarhead included.
-        let warhead_ids: HashSet<String> = parse_registry(ini, "Warheads").into_iter().collect();
+        // In registry order, so a warhead's index (Wasm modules' Warhead ID)
+        // is the same on every machine; `entry` below drops repeats. A
+        // HashSet here iterated in a per-process random order.
+        let warhead_ids = parse_registry(ini, "Warheads");
         let mut warheads: LookupMap<String, WarheadHandle> = LookupMap::default();
         let mut warhead_types: Vec<WarheadType> = Vec::new();
         for warhead_id in &warhead_ids {
@@ -1740,10 +1743,15 @@ impl RuleSet {
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileHandle> = LookupMap::default();
         let mut projectile_types: Vec<ProjectileType> = Vec::new();
-        let mut projectile_ids: HashSet<String> = HashSet::new();
+        // In weapon order, first reference first, so projectile indices are
+        // the same on every machine (a HashSet iterated randomly).
+        let mut projectile_ids: Vec<String> = Vec::new();
+        let mut seen_projectiles: HashSet<&str> = HashSet::new();
         for weapon in &weapon_types {
-            if let Some(ref proj_id) = weapon.projectile {
-                projectile_ids.insert(proj_id.clone());
+            if let Some(ref proj_id) = weapon.projectile
+                && seen_projectiles.insert(proj_id.as_str())
+            {
+                projectile_ids.push(proj_id.clone());
             }
         }
         for proj_id in &projectile_ids {

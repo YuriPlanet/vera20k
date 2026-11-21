@@ -62,7 +62,6 @@ use vera20k_wasm_ext::decide::{
 };
 use vera20k_wasm_ext::{EventRecord, Export, Invalid, Status, TriggerDef};
 
-use super::triggers::RAISED_EVENTS;
 use super::{ModuleEvent, ModuleSource};
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
@@ -143,7 +142,7 @@ pub(super) fn check_decide_key(def: &TriggerDef) -> Result<Option<Status>, Inval
         )));
     };
     if !DECIDABLE_EVENTS.contains(&event.kind) {
-        return match RAISED_EVENTS.contains(&event.kind) {
+        return match super::events::raises(event.kind) {
             true => Err(Invalid(format!(
                 "event {} has no decision form",
                 event.kind

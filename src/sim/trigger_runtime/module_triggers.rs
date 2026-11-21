@@ -485,7 +485,6 @@ impl ModuleTriggers {
             .into_iter()
             .filter(|handle| self.triggers.get(handle).is_some_and(of_kind))
             .collect()
-
     }
 
     pub(crate) fn has_weapon_bindings(&self) -> bool {
