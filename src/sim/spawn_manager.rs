@@ -1544,16 +1544,16 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let rules = self.context.rules();
         let spawn_type = self.manager().spawn_type;
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
-        let house = self.sim.interner.resolve(owner.owner()).to_string();
+        let house = owner.owner();
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
         let facing = owner.body_facing_byte(self.sim.session.binary_frame());
-        let type_name = self.sim.interner.resolve(spawn_type).to_string();
+        let object = rules.object_in_category(
+            crate::rules::object_type::ObjectCategory::Aircraft,
+            self.sim.interner.resolve(spawn_type),
+        )?;
         self.sim.construct_resolved_object_limbo_at_height(
-            rules.object_in_category(
-                crate::rules::object_type::ObjectCategory::Aircraft,
-                &type_name,
-            )?,
-            &house,
+            object,
+            house,
             rx,
             ry,
             facing,

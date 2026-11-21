@@ -21,8 +21,8 @@ use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_unit_choice::UnitChoiceKind;
 use crate::sim::houses::Houses;
-use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::movement::ground_pose::Position;
 use crate::sim::production::ProductionState;
 use crate::sim::scenario_session::ScenarioSession;
@@ -154,10 +154,10 @@ pub fn enqueue_by_type(
 /// Shared BeginProduction4FA350 body. The native selector is independent
 /// of the type's Naval flag; only exact RTTI7 has the busy-building refusal
 /// at4FA52E. Semantic callers supply that type's ordinary cameo selector.
-pub(crate) fn enqueue_selected(
+pub(crate) fn enqueue_selected<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     selection: super::ProductionSelection,
     effects: &mut FrameEffects<'_>,
     force: bool,
@@ -169,7 +169,7 @@ pub(crate) fn enqueue_selected(
         return false;
     };
     let type_id = obj.id.as_str();
-    let owner_id = sim.interner.intern(owner);
+    let owner_id = sim.interner.intern_key(owner.into());
     // HouseBegin4FA41C clears the local prediction gate before FindFactory
     // can refuse. This fact leaves the cameo request itself with its strip
     // owner. Native: tools/sidebar_oracle/pending_production.md.
@@ -336,12 +336,11 @@ pub(super) fn start_active_production(
     let obj = sim
         .interner
         .object_type_in_category(type_id, category.object_category(), rules)?;
-    let owner = sim.interner.resolve(owner_id).to_string();
     // A factory-held object is still in limbo and has no cell authority. Zero
     // is only inert storage here; the result-bearing Unlimbo later installs the
     // selected delivery/placement coordinate on this same stable identity.
     let stable_id =
-        sim.construct_resolved_object_limbo_at_height(obj, &owner, 0, 0, 0, 0, rules, effects)?;
+        sim.construct_resolved_object_limbo_at_height(obj, owner_id, 0, 0, 0, 0, rules, effects)?;
     // FactoryClass::StartProduction4C9DD3..4C9DED (gamemd): quote the actual
     // constructed Techno's owner once for both debt and its retained +300.
     // Resume and queue append never construct here or replace this quote.
@@ -597,10 +596,10 @@ pub enum ProductionCancellation<'a> {
 /// failed PLACE. The indexed branch prefers a matching queued copy for
 /// BuildCat0; wildcard -1 admits NULL-held cleanup after Completed. One
 /// owner publishes the local prefix, settles and selects queue/delete policy.
-pub fn cancel_production_for_owner(
+pub fn cancel_production_for_owner<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    owner: &str,
+    owner: impl Into<InternKey<'k>>,
     request: ProductionCancellation<'_>,
     all: bool,
     effects: &mut FrameEffects<'_>,
@@ -645,7 +644,7 @@ pub fn cancel_production_for_owner(
         ProductionCancellation::Type { .. } => unreachable!("normalized the type selector above"),
         ProductionCancellation::Category(category) => (category, None, None),
     };
-    let owner_id = sim.interner.intern(owner);
+    let owner_id = sim.interner.intern_key(owner.into());
     let abandonment = HouseFactoryAbandonment::capture(sim, owner_id, category);
     let building_queue = rules.general.building_production_queue;
     let outcome = sim.production.edit_factories().cancel_one(
@@ -719,14 +718,13 @@ pub(super) fn start_next_queued(
         .edit_factories()
         .start_next_queued(owner, category)
     {
-        let owner = sim.interner.resolve(owner).to_owned();
         //4CA5EE..4CA60A reissues the popped type's own RTTI/index/Naval.
         if let Some(object) =
             sim.interner
                 .object_type_in_category(type_id, category.object_category(), rules)
             && let Some(selection) = super::ProductionSelection::for_type(rules, object)
         {
-            let _ = enqueue_selected(sim, rules, &owner, selection, effects, true);
+            let _ = enqueue_selected(sim, rules, owner, selection, effects, true);
         }
     }
 }
@@ -798,8 +796,7 @@ pub(in crate::sim) fn release_delivered_mobile(
         category,
         sim.session.binary_frame(),
     );
-    let owner_name = sim.interner.resolve(owner).to_owned();
-    let _ = cancel_production_for_owner(sim, rules, &owner_name, cancellation, false, effects);
+    let _ = cancel_production_for_owner(sim, rules, owner, cancellation, false, effects);
     // HousePlace4FB66D joins4FB4B4 after Abandon/StartNext, then records the
     // successfully delivered type at4FB4B7. Never score the promoted type.
     if let Some(product) = product {
@@ -906,8 +903,7 @@ pub(super) fn refund_failed_delivery(
     cancellation: ProductionCancellation<'_>,
     effects: &mut FrameEffects<'_>,
 ) {
-    let owner = sim.interner.resolve(owner).to_owned();
-    let _ = cancel_production_for_owner(sim, rules, &owner, cancellation, false, effects);
+    let _ = cancel_production_for_owner(sim, rules, owner, cancellation, false, effects);
 }
 
 /// Matching identity captured by a successful placement admission. The caller
@@ -948,11 +944,10 @@ impl ReadyFactoryObject {
         // HousePlace4FB2C7 retains its original nonnegative index. Let
         // HouseAbandon's shared BuildCat0/NULL-held admission decide retention,
         // including a consumed wall whose entity has already expired.
-        let owner = sim.interner.resolve(self.owner).to_owned();
         let _ = cancel_production_for_owner(
             sim,
             rules,
-            &owner,
+            self.owner,
             ProductionCancellation::Selected(selection),
             false,
             effects,
@@ -1271,11 +1266,10 @@ pub(in crate::sim) fn detach_building_production(
                     })
                 });
             if let Some(selection) = selection {
-                let owner = sim.interner.resolve(owner).to_owned();
                 let _ = cancel_production_for_owner(
                     sim,
                     rules,
-                    &owner,
+                    owner,
                     ProductionCancellation::Selected(selection),
                     false,
                     effects,

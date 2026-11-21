@@ -162,7 +162,7 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         //65D90F..65D970: an empty referenced program gains Guard(0), in
         //that same ScriptType owner. No duplicate fallback Script instance.
@@ -341,7 +341,7 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         let Some(script) = self.team_script_vm.scripts.get_mut(&definition.script_id) else {
             // A missing ScriptType allocation is outside the installed VM's
@@ -600,18 +600,8 @@ impl Simulation {
             log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
             return false;
         }
-        let owner_name = self.interner.resolve(owner).to_string();
         let plane = self.with_object_placement_scope(|sim| {
-            sim.construct_object_limbo_at_height(
-                plane_type,
-                &owner_name,
-                0,
-                0,
-                0,
-                0,
-                rules,
-                effects,
-            )
+            sim.construct_object_limbo_at_height(plane_type, owner, 0, 0, 0, 0, rules, effects)
         });
         let Some(plane) = plane else {
             return false;
@@ -627,7 +617,7 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         let spawn_cell = if metadata.use_transport_origin {
             // GetTransportWaypoint6F18E0: -1 produces the shared zero cell;
@@ -738,14 +728,10 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
-        let entries = self
-            .team_script_vm
-            .task_forces
-            .get(&definition.task_force_id)?
-            .entries
-            .clone();
+        let task_force_id = definition.task_force_id;
+        let entries = &self.team_script_vm.task_forces.get(&task_force_id)?.entries;
         let full_cargo = metadata
             .full
             .then(|| {
@@ -792,6 +778,7 @@ impl Simulation {
         // using the existing aircraft-transport decision6EF470. When any
         // type is Naval, only naval transports enter the carrier chain.
         let air_transports = self.team_air_transports(team, rules);
+        let entries = self.team_script_vm.task_force_entries_of(task_force_id);
         let any_naval = entries.iter().any(|entry| {
             rules
                 .object_in_category(
@@ -805,13 +792,19 @@ impl Simulation {
             .scripts
             .get(&definition.script_id)
             .is_some_and(|script| script.actions.iter().any(|action| action.action_id == 8));
-        let owner_name = self.interner.resolve(owner).to_string();
         let mut members = Vec::new();
         let mut transports = Vec::new();
-        for entry in entries {
-            let type_name = self.interner.resolve(entry.member_type.id).to_string();
-            let Some(object) = rules.object_in_category(entry.member_type.category, &type_name)
-            else {
+        // Walked by index: the constructors and AddMember below take the
+        // whole simulation, and nothing they run writes TaskForce
+        // definitions (only the registry install does).
+        for index in 0..entries.len() {
+            let Some(entry) = self.team_script_vm.task_force_entry(task_force_id, index) else {
+                break;
+            };
+            let Some(object) = rules.object_in_category(
+                entry.member_type.category,
+                self.interner.resolve(entry.member_type.id),
+            ) else {
                 continue;
             };
             let full_storage = if metadata.full {
@@ -824,14 +817,7 @@ impl Simulation {
                 // CreateObject virtual, shared with the existing typed ctor.
                 let member = self.with_object_placement_scope(|sim| {
                     sim.construct_resolved_object_limbo_at_height(
-                        object,
-                        &owner_name,
-                        0,
-                        0,
-                        0,
-                        0,
-                        rules,
-                        effects,
+                        object, owner, 0, 0, 0, 0, rules, effects,
                     )
                 });
                 let Some(member) = member else {

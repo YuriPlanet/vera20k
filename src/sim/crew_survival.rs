@@ -1130,17 +1130,7 @@ impl Simulation {
         z: u8,
         effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
-        let owner_name = self.interner.resolve(owner).to_string();
-        self.construct_object_limbo_at_height(
-            crew,
-            &owner_name,
-            cell.0,
-            cell.1,
-            0,
-            z,
-            rules,
-            effects,
-        )
+        self.construct_object_limbo_at_height(crew, owner, cell.0, cell.1, 0, z, rules, effects)
     }
 
     /// Unlimbo a Foot in limbo as `unlimbo` says; an infantryman takes the

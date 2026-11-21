@@ -460,7 +460,7 @@ impl Simulation {
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
-                    self.interner.resolve(parent.owner()).to_string(),
+                    parent.owner(),
                     (parent.position.rx(), parent.position.ry()),
                     parent.body_facing_byte(self.session.binary_frame()),
                     parent.position.z(),
@@ -473,7 +473,7 @@ impl Simulation {
         for _ in 0..count {
             let slave = self.construct_resolved_object_limbo_at_height(
                 slave_type,
-                &owner,
+                owner,
                 cell.0,
                 cell.1,
                 facing,
@@ -1532,8 +1532,8 @@ impl Simulation {
             self.substrate.entities.get(master).and_then(|m| {
                 let manager = m.slave_manager.as_ref()?;
                 Some((
-                    self.interner.resolve(manager.slave_type).to_string(),
-                    self.interner.resolve(m.owner()).to_string(),
+                    manager.slave_type,
+                    m.owner(),
                     (m.position.rx(), m.position.ry()),
                     m.position.z(),
                 ))
@@ -1542,8 +1542,8 @@ impl Simulation {
             return;
         };
         let slave = self.construct_object_limbo_at_height(
-            &slave_type,
-            &owner,
+            slave_type,
+            owner,
             cell.0,
             cell.1,
             0,

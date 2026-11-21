@@ -149,11 +149,9 @@ impl Simulation {
         }) else {
             return false;
         };
-        let type_id = object.id.clone();
-        let owner_name = self.interner.resolve(owner).to_owned();
         let Some(created) = self.construct_object_limbo_at_height(
-            &type_id,
-            &owner_name,
+            object.id.as_str(),
+            owner,
             0,
             0,
             0,

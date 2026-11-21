@@ -129,7 +129,6 @@ impl Simulation {
         let extra_power = object.extra_power.output() > 0;
         let open_topped = object.open_topped;
         let owner = entity.owner();
-        let owner_name = self.interner.resolve(owner).to_owned();
         let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         let mut context = UninitContext::new(rules).with_effects(effects);
         for (index, reference) in types.iter().enumerate() {
@@ -150,7 +149,7 @@ impl Simulation {
             for _ in 0..count {
                 let Some(payload) = self.construct_resolved_object_limbo_at_height(
                     payload_type,
-                    &owner_name,
+                    owner,
                     0,
                     0,
                     0,

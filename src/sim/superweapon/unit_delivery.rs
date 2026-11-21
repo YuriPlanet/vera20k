@@ -293,10 +293,9 @@ fn place(
     {
         return;
     }
-    let owner_name = sim.interner.resolve(request.owner).to_owned();
     let Some(id) = sim.construct_object_limbo_at_height(
         &payload.id,
-        &owner_name,
+        request.owner,
         request.cell.0,
         request.cell.1,
         0,
