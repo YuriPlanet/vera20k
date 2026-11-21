@@ -600,13 +600,11 @@ pub fn wol_create_game_layout_on(
     }
 }
 
-/// VERA Online's first choice. The caption panel sits to the right of the
-/// Tesla Trooper on the original Create Room picture. The two MNBTTN controls share a wider face
-/// for translated captions; both paint and pointer input use these rects.
+/// VERA Online's welcome and player count are centred on the Create Room art.
+/// The original MNBTTN buttons share their rectangles with pointer input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WolEntryChoiceLayout {
     pub dialog: RectPx,
-    pub info: RectPx,
     pub heading: RectPx,
     pub players_online: RectPx,
     pub guest: RectPx,
@@ -623,14 +621,12 @@ pub(crate) fn wol_entry_choice_layout_on(
     let gap = 16;
     let left = (dialog.w - 2 * button.w - gap) / 2;
     let top = dialog.h - 22 - button.h;
-    let info_x = dialog.w / 2;
-    let info_w = dialog.w - info_x - 22;
-    let info_y = 96;
+    let middle = dialog.h / 2;
+    let line = |y, h| child(20, y, dialog.w - 40, h);
     WolEntryChoiceLayout {
         dialog: scale.scale_rect(dialog),
-        info: child(info_x, info_y, info_w, 72),
-        heading: child(info_x + 10, info_y + 10, info_w - 20, 24),
-        players_online: child(info_x + 10, info_y + 38, info_w - 20, 24),
+        heading: line(middle - 34, 32),
+        players_online: line(middle, 28),
         guest: child(left, top, button.w, button.h),
         account: child(left + button.w + gap, top, button.w, button.h),
     }

@@ -1421,6 +1421,11 @@ mod tests {
         let mut login = WolLoginState::open_online(&mut globals, Some("Tanya"), None);
         let layout = WolLoginLayout::responsive(1280, 720, login.policy);
         let choice = layout.entry_choice().unwrap();
+        let center_x = |rect: RectPx| 2 * rect.x + rect.w;
+        for line in [choice.heading, choice.players_online] {
+            assert!((center_x(line) - center_x(choice.dialog)).abs() <= 2);
+        }
+        assert!(choice.heading.y + choice.heading.h <= choice.players_online.y);
         for (button, rect) in [
             (PLAY_AS_GUEST, choice.guest),
             (SIGN_IN_AND_PLAY, choice.account),
