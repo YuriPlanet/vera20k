@@ -299,7 +299,7 @@ pub(super) fn advance(
     // No exclusion for a unit whose weapon spends it. It was here with a
     // matching errand of its own, and together they cost fourfold on two seeds
     // (see the note where the errand used to be called). The tag itself is
-    /// correct retail data; what measured badly is every policy built on it.
+    // correct retail data; what measured badly is every policy built on it.
     // Which gate holds the army home, for the census line: seven gates that
     // all answer "not this frame" are indistinguishable in a log that only
     // counts what the house has.

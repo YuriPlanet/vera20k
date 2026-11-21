@@ -149,6 +149,39 @@ const STUCK_FRAMES: u64 = 180;
 /// down to a cell grid.
 const SIGHT_CELLS: i32 = 8;
 
+/// The name the status line shows for a type, or `?` when the rules do not
+/// have it.
+fn kind_of(obs: &Observation<'_>, rules: &RuleSet, type_id: InternedId) -> String {
+    obs.object_type(rules, type_id)
+        .map_or_else(|| "?".to_string(), |ty| ty.id.as_str().to_string())
+}
+
+/// The three commonest `type/mission` groups in `units`, largest first.
+///
+/// A count alone cannot say why a unit is standing: the mission it carries is
+/// the difference between a garrison, a rifleman parked on a finished Move,
+/// and a unit whose attack order has nothing left to shoot.
+fn top_groups(units: Vec<(String, crate::sim::mission::MissionId)>) -> Vec<String> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for (kind, mission) in units {
+        let mission = mission.known().map_or_else(
+            || format!("raw:{}", mission.raw()),
+            |mission| format!("{mission:?}"),
+        );
+        *counts.entry(format!("{kind}/{mission}")).or_default() += 1;
+    }
+    let mut counts: Vec<(usize, String)> = counts
+        .into_iter()
+        .map(|(name, count)| (count, name))
+        .collect();
+    counts.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    counts
+        .into_iter()
+        .take(3)
+        .map(|(count, name)| format!("{name}:{count}"))
+        .collect()
+}
+
 /// A type's Sight value in whole cells: leptons divided by the 256 in a cell,
 /// never below one, so a type with a short sight still sees its own cell.
 fn sight_cells(leptons: i32) -> i32 {
@@ -739,35 +772,34 @@ impl Brain for AssistBrain {
             // whether it is garrisoned, still inside its factory, or parked
             // waiting for an exit cell. The mission is the one field the census
             // already carries that separates those.
-            let mut limbo_missions: std::collections::BTreeMap<String, usize> =
-                std::collections::BTreeMap::new();
-            for unit in &self.census.units {
-                if unit.traits.combat && !unit.orderable {
-                    let mission = unit.mission.known().map_or_else(
-                        || format!("raw:{}", unit.mission.raw()),
-                        |mission| format!("{mission:?}"),
-                    );
-                    let kind = obs
-                        .object_type(rules, unit.type_id)
-                        .map_or_else(|| "?".to_string(), |ty| ty.id.as_str().to_string());
-                    *limbo_missions
-                        .entry(format!("{kind}/{mission}"))
-                        .or_default() += 1;
-                }
-            }
-            let mut limbo_missions: Vec<(usize, String)> = limbo_missions
-                .into_iter()
-                .map(|(mission, count)| (count, mission))
-                .collect();
-            limbo_missions
-                .sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-            let limbo_missions: Vec<String> = limbo_missions
-                .into_iter()
-                .take(3)
-                .map(|(count, mission)| format!("{mission}:{count}"))
-                .collect();
+            let limbo_missions = top_groups(
+                self.census
+                    .units
+                    .iter()
+                    .filter(|unit| unit.traits.combat && !unit.orderable)
+                    .map(|unit| (kind_of(obs, rules, unit.type_id), unit.mission))
+                    .collect(),
+            );
+            // And the same question for the units that *can* be ordered: an
+            // idle fighter is one no layer gave a destination or a target, and
+            // the mission it is sitting on is the difference between a unit
+            // waiting for a slot, one parked on a finished Move, and one whose
+            // attack order has nothing left to shoot.
+            let idle_missions = top_groups(
+                self.census
+                    .units
+                    .iter()
+                    .filter(|unit| {
+                        unit.traits.combat
+                            && unit.orderable
+                            && obs.destination(unit.entity_id).is_none()
+                            && obs.attack_target(unit.entity_id).is_none()
+                    })
+                    .map(|unit| (kind_of(obs, rules, unit.type_id), unit.mission))
+                    .collect(),
+            );
             log::info!(
-                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{} limbo_missions=[{}]",
+                "auto play: {} unclaimed={} roster=[{}] crates={}{:?} push={} target={} at {:?} squads={:?} orders={:?} pts={}/{} income={}/min seen={}/{} limbo_missions=[{}] idle_missions=[{}]",
                 self.census.describe(),
                 unclaimed,
                 roster.join(","),
@@ -789,7 +821,8 @@ impl Brain for AssistBrain {
                 budget.income.map_or(-1, |rate| rate),
                 seen,
                 self.census.enemies.len(),
-                limbo_missions.join(",")
+                limbo_missions.join(","),
+                idle_missions.join(",")
             );
         }
         expand::deploy_yard_maker(self, rules, obs, out);

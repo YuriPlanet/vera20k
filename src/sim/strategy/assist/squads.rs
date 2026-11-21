@@ -59,19 +59,17 @@ const DEFEND_MAX: usize = 8;
 /// home, so the raid met an empty yard.
 const HOME_THREAT_CELLS: i32 = super::advance::THREAT_RADIUS;
 
-/// How large the army has to be before the fist is the answer for all of it.
+/// How large the army has to be before the fist can take a base.
 ///
-/// Below this the house cannot take a base yet — an opening force that walks
-/// into a defended one is a house that has traded its army for nothing — but
-/// it can still stop the base being paid for, and standing in its own yard
-/// doing neither is how a match is lost slowly. The surplus goes to
-/// [`Role::Harass`] instead.
+/// Below this an attack on a defended base is a house that has traded its army
+/// for nothing, so the advance step keeps the fist home. The raid does not
+/// wait for it: what the house does while the fist grows is [`Role::Harass`].
 ///
 /// This is the number the advance step gates on too, so it lives here: one
 /// owner for "how big is big enough".
 pub(super) const ARMY_TO_ATTACK: usize = 10;
 
-/// How many go harassing when the army is smaller than that.
+/// How many go harassing, whatever size the army is.
 ///
 /// A few, not the rest: a raid on the ore is worth a handful of units, and the
 /// house still needs something at home for the raid that answers it.
@@ -281,10 +279,17 @@ impl Squads {
             });
         }
 
-        // Too small to take a base yet: the nearest few go at what pays for
-        // the enemy's army. Not the whole army — a raid is worth a handful,
-        // and the house still needs something at home.
-        if census.fighters < crate::sim::strategy::assist::squads::ARMY_TO_ATTACK {
+        // The raid is drawn from what the fist does not need, and the fist
+        // needs the whole army while it is still below the push threshold:
+        // nothing else is going to attack anyway. Once it is big enough to
+        // push, the surplus goes at the enemy's ore — an army that only ever
+        // stands at home while the enemy's economy pays for the defence it
+        // is waiting to meet is the match this lost.
+        //
+        // Not the whole army either way — a raid is worth a handful, and the
+        // house still needs something at home for the raid that answers it.
+        let fist_needs = usize::from(census.fighters >= ARMY_TO_ATTACK) * ARMY_TO_ATTACK;
+        if census.fighters >= taken.len() + fist_needs + HARASS_MAX {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
@@ -565,6 +570,33 @@ mod tests {
                 .map_or(0, |squad| squad.members.len()),
             5 - HARASS_MAX,
             "and the house keeps something at home"
+        );
+    }
+
+    /// An army that is still growing is not an army that should leave the
+    /// enemy's ore alone. The raid is a detachment, so it goes at every size:
+    /// what the fist does while the gate holds it home is what decides whether
+    /// the gate ever opens.
+    #[test]
+    fn a_massing_army_raids_as_well_as_masses() {
+        let mut census = Census::default();
+        census.base_cell = Some((20, 20));
+        for id in 0..30u64 {
+            census.units.push(unit(id, (24, 24)));
+        }
+        census.fighters = 30;
+        let mut squads = Squads::new();
+        squads.regroup(0, &census);
+        let harass = squads
+            .squad(Role::Harass)
+            .expect("an army that is still growing does not leave the ore alone");
+        assert_eq!(harass.members.len(), HARASS_MAX, "a handful, not the rest");
+        assert_eq!(
+            squads
+                .squad(Role::Attack)
+                .map_or(0, |squad| squad.members.len()),
+            30 - HARASS_MAX,
+            "and the fist keeps everything the raid does not take"
         );
     }
 
