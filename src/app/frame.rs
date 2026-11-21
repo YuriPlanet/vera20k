@@ -1152,6 +1152,14 @@ impl App {
         {
             Self::ensure_skirmish_shell_chrome(state);
         }
+        // The main menu's chrome, dropped for the match: back before a shell
+        // screen (the menu pages, the score page) draws or hit-tests with it.
+        if matches!(
+            state.frontend.screen,
+            GameScreen::MainMenu | GameScreen::MissionResult { .. }
+        ) {
+            Self::ensure_main_menu_shell_chrome(state);
+        }
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).
         let (page, screen_page) = crate::app::input::precedence::presented(state);

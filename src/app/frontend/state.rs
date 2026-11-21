@@ -65,6 +65,8 @@ pub(crate) struct FrontendState {
     /// its press/hover state is mirrored back into the per-shell structs above for
     /// the render path (substrate Slice 2).
     pub(crate) shell_controller: crate::ui::shell::controller::DialogController,
+    /// Built at startup, dropped while a match runs and built again for the
+    /// first shell screen after it (`App::ensure_main_menu_shell_chrome`).
     pub(crate) main_menu_shell_chrome:
         Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas>,
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
