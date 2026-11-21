@@ -687,10 +687,12 @@ fn factory_restore_rejects_inconsistent_roots() {
             // The snapshot's saved-id walk refuses an id past the
             // save's name table before the factory checks run.
             Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownSavedId(_)))
-                if matches!(
-                    label,
-                    "idle-owner-index" | "tail-type-index" | "unknown-held-owner"
-                ) => {}
+                if matches!(label, "idle-owner-index" | "tail-type-index") => {}
+            // The held object's owner is checked by the entity walk.
+            Err(PreparedLoadError::Restore(SnapshotRestoreError::UnknownInternedId {
+                field: "owner",
+                ..
+            })) if label == "unknown-held-owner" => {}
             Err(error) => panic!("{label}: unexpected earlier failure {error}"),
             Ok(_) => panic!("{label}: inconsistent factory was admitted"),
         }
