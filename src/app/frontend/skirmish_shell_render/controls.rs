@@ -1573,11 +1573,11 @@ mod tests {
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
                 DIFFICULTY, MultiplayerSetupLayout, ROOM_SIZE, SUPERWEAPON_LIMIT, SetupDialog,
-                SetupFlavor, TEAM_COUNT,
+                SetupFlavor, TEAM_COUNT, TECH_LEVEL,
             };
             // gamemd's setup dialogs and VERA's room, in a centred shell and
-            // one filling the window; only the room paints its Teams count
-            // and Superweapon Limit, and only its host Room size.
+            // one filling the window; only the room paints its Teams count,
+            // Superweapon Limit and Tech Level, and only its host Room size.
             let mut drawn = Vec::new();
             for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
@@ -1600,7 +1600,7 @@ mod tests {
                         .trackbars
                         .into_iter()
                         .filter(|(id, _)| match *id {
-                            TEAM_COUNT | SUPERWEAPON_LIMIT => dialog.modern,
+                            TEAM_COUNT | SUPERWEAPON_LIMIT | TECH_LEVEL => dialog.modern,
                             ROOM_SIZE => dialog.modern && dialog.host,
                             _ => true,
                         })
