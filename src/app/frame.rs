@@ -1126,6 +1126,7 @@ impl App {
         }
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if state.match_state.input.retail_screenshot_requested {
             state
                 .renderer
@@ -1690,8 +1691,12 @@ impl App {
         } else {
             None
         };
-        let retail_screenshot_current_frame =
+        let screenshot_requested =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
+        // Browser capture reads the visible canvas, not the native retained
+        // PCX composition (which requires a synchronous GPU map and std::fs).
+        let retail_screenshot_current_frame = screenshot_requested
+            && !cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"));
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
         // screenshot retains, and neither is the wheel-zoomed battlefield's
@@ -1774,6 +1779,12 @@ impl App {
             .encode_color_vision(&mut encoder, &output.texture);
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        if screenshot_requested {
+            // Browser hand-off submits/presents inline. Ask for the snapshot
+            // now, before the browser can recycle the canvas drawing buffer.
+            crate::web::download_screenshot();
+        }
         if let Some(render_output) = &game_render_output
             && screen_page == ScreenPage::Battlefield
         {
