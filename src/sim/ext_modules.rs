@@ -15,7 +15,8 @@
 //! - names of TechnoTypes, countries and properties (`lookup`, `name_of`);
 //! - reads of the object and house properties [`Host::get`] lists, and
 //!   `find` over objects and houses;
-//! - the atomic `AddMoney` action.
+//! - the atomic `AddMoney` action;
+//! - runtime triggers and `on_events` delivery ([`triggers`]).
 //!
 //! Modules come from the selected mod's folder and the map's
 //! `[VeraWasmRulesPack]` ([`Simulation::install_scenario_ext_modules`]).
@@ -40,8 +41,9 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, Query, SCOPE_HOUSES, SCOPE_OBJECTS, SimHost,
-    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, NAME_WARHEAD, NAME_WEAPON, Query, SCOPE_HOUSES,
+    SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY,
+    TABLE_SCOPE, property_name,
 };
 
 use crate::map::entities::EntityCategory;
@@ -49,6 +51,9 @@ use crate::rules::ruleset::{CountryIdx, RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+
+mod triggers;
+pub(crate) use triggers::ModuleEvent;
 
 /// Operations per `on_frame` call (RFC 15.2 proposes about 2 ms on the
 /// slowest platform; open question 7).
@@ -310,6 +315,7 @@ impl SimHost for Host<'_> {
 
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
         match table {
+            vera20k_wasm_ext::triggers::TABLE_EVENT => triggers::RAISED_EVENTS.contains(&id),
             TABLE_ACTION => id == ACTION_ADD_MONEY,
             TABLE_PROPERTY => property_name(id).is_some_and(|name| READABLE.contains(&name)),
             TABLE_NAME_KIND => matches!(id, NAME_TECHNO_TYPE | NAME_COUNTRY | NAME_PROPERTY),
@@ -322,6 +328,8 @@ impl SimHost for Host<'_> {
         let id = match kind {
             NAME_TECHNO_TYPE => self.rules.type_handle(name).map(|h| h.0 as i32),
             NAME_COUNTRY => self.rules.country_index(name).map(|c| i32::from(c.0)),
+            NAME_WEAPON => self.rules.weapon_index(name).map(|i| i as i32),
+            NAME_WARHEAD => self.rules.warhead_index(name).map(|i| i as i32),
             _ => return Ok((-1, Status::Unsupported)),
         };
         Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
@@ -333,6 +341,14 @@ impl SimHost for Host<'_> {
             NAME_COUNTRY => u16::try_from(id)
                 .ok()
                 .and_then(|id| self.rules.country_name(CountryIdx(id))),
+            NAME_WEAPON => u32::try_from(id)
+                .ok()
+                .and_then(|id| self.rules.weapon_at(id))
+                .map(|weapon| weapon.id.as_str()),
+            NAME_WARHEAD => u32::try_from(id)
+                .ok()
+                .and_then(|id| self.rules.warhead_at(id))
+                .map(|warhead| warhead.id.as_str()),
             _ => return Ok((String::new(), Status::Unsupported)),
         };
         name.map(|name| (name.to_owned(), Status::Ok))
@@ -340,10 +356,16 @@ impl SimHost for Host<'_> {
     }
 
     fn get(&mut self, reference: i64, prop: i32) -> Result<(i64, Status), Invalid> {
+        if let Some(answer) = self.trigger_property(reference, prop, None) {
+            return Ok(answer);
+        }
         self.read(reference, prop)
     }
 
     fn set(&mut self, reference: i64, prop: i32, _value: i64) -> Result<Status, Invalid> {
+        if let Some((_, status)) = self.trigger_property(reference, prop, Some(_value)) {
+            return Ok(status);
+        }
         let name = property_name(prop).unwrap_or_default();
         let (_, status) = self.read(reference, prop)?;
         Ok(match status {
@@ -402,6 +424,25 @@ impl SimHost for Host<'_> {
             }
             _ => Ok((0, Status::Unsupported)),
         }
+    }
+
+    fn trigger_create(
+        &mut self,
+        def: &vera20k_wasm_ext::TriggerDef,
+    ) -> Result<(i64, Status), Invalid> {
+        self.create_trigger(def)
+    }
+
+    fn trigger_remove(&mut self, trigger: i64) -> Result<Status, Invalid> {
+        self.remove_trigger(trigger)
+    }
+
+    fn trigger_bind(&mut self, trigger: i64, reference: i64) -> Result<Status, Invalid> {
+        self.bind_trigger(trigger, reference, true)
+    }
+
+    fn trigger_unbind(&mut self, trigger: i64, reference: i64) -> Result<Status, Invalid> {
+        self.bind_trigger(trigger, reference, false)
     }
 }
 
@@ -775,9 +816,11 @@ impl Simulation {
         &mut self.ext_modules
     }
 
-    /// The module phase: each enabled module in order gets its
-    /// `on_scenario_start` once, then `on_frame`.
+    /// The module phase: `Timer` triggers whose period ends fire, then each
+    /// enabled module in order gets its `on_scenario_start` once, its
+    /// queued event records (`on_events`), then `on_frame`.
     pub(crate) fn run_ext_module_phase(&mut self, rules: &RuleSet) {
+        self.raise_module_timers(rules);
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
@@ -791,6 +834,10 @@ impl Simulation {
                     continue;
                 }
             }
+            if let Err(fault) = self.deliver_ext_module_events(rules, index) {
+                self.disable_ext_module(index, Export::Events, fault);
+                continue;
+            }
             match self.call_ext_module(rules, index, Export::Frame, FRAME_BUDGET) {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
@@ -798,8 +845,7 @@ impl Simulation {
         }
     }
 
-    /// Calls one module. Its slot list is set aside for the call, so the
-    /// host reaches the whole simulation; nothing in a call reads modules.
+    /// Calls one module.
     fn call_ext_module(
         &mut self,
         rules: &RuleSet,
@@ -807,6 +853,21 @@ impl Simulation {
         export: Export,
         budget: u64,
     ) -> Result<u64, Fault> {
+        self.with_ext_module(rules, index, |module, host| {
+            module.call(export, budget, host)
+        })
+    }
+
+    /// Runs `f` on module `index` and its host. The slot list is set aside
+    /// meanwhile, so the host reaches the whole simulation; what a call
+    /// reaches that needs a module's host finds none
+    /// (`triggers::with_module_host`).
+    fn with_ext_module<R>(
+        &mut self,
+        rules: &RuleSet,
+        index: usize,
+        f: impl FnOnce(&mut SimModule, &mut Host<'_>) -> R,
+    ) -> R {
         let mut slots = std::mem::take(&mut self.ext_modules.slots);
         let slot = &mut slots[index];
         let mut host = Host {
@@ -815,7 +876,7 @@ impl Simulation {
             rng: &mut slot.rng,
             source: slot.source,
         };
-        let result = slot.module.call(export, budget, &mut host);
+        let result = f(&mut slot.module, &mut host);
         self.ext_modules.slots = slots;
         result
     }
@@ -831,6 +892,11 @@ impl Simulation {
         log::warn!(target: "ext_module", "{reason}");
         self.ext_modules.log.push(reason.clone());
         slot.disabled = Some(reason.clone());
+        // Its triggers and queued records go with it.
+        let source = slot.source;
+        self.trigger_runtime
+            .module_triggers_mut()
+            .remove_source(source);
         self.publish_trigger_effects([
             crate::sim::trigger_runtime::TriggerEffect::ExtModuleStopped { reason },
         ]);
@@ -840,3 +906,7 @@ impl Simulation {
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_tests.rs"]
 mod tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_trigger_tests.rs"]
+mod trigger_tests;

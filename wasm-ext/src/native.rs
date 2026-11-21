@@ -16,11 +16,17 @@ use wasmtime::{
     StoreLimitsBuilder, Trap, TypedFunc, Val, ValType,
 };
 
+use crate::sections::{Delivery, Sections};
+use crate::triggers::{NAME_MODULE_ACTION, TriggerDef};
 use crate::{
-    ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError,
-    ModuleState, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST, SIM_IMPORT_MODULE,
-    SimHost, Status, property_id, property_name,
+    ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits,
+    LoadError, ModuleState, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST,
+    SIM_IMPORT_MODULE, SimHost, Status, property_id, property_name,
 };
+
+/// Most records one `on_events` call receives (open question 7), within
+/// what the delivery area holds.
+pub const MAX_BATCH: usize = 256;
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
 /// downloaded map's module cannot stall the lobby.
@@ -67,6 +73,10 @@ struct Ctx {
     limits: StoreLimits,
     /// The first invalid argument or budget fault a host call raised.
     fault: Option<Fault>,
+    /// The module's custom sections; `lookup(ModuleAction)` reads them.
+    sections: Sections,
+    /// The export running, for imports unavailable in `vera_init`.
+    export: Option<Export>,
 }
 
 // SAFETY: `host` is non-null only inside `SimModule::call`, which holds the
@@ -83,6 +93,9 @@ pub struct SimModule {
     store: Store<Ctx>,
     memory: Option<Memory>,
     exports: [Option<TypedFunc<(), ()>>; 3],
+    on_events: Option<TypedFunc<(i32, i32), ()>>,
+    /// `vera.delivery`, checked against memory at load.
+    delivery: Option<Delivery>,
     /// Every mutable global, in global index order (exported at load time).
     globals: Vec<Global>,
     /// Their raw bits after the latest call, so a save or hash reads them
@@ -95,6 +108,8 @@ impl SimModule {
     /// modules with a `start` section are rejected.
     pub fn load(bytes: &[u8], limits: Limits) -> Result<Self, LoadError> {
         check(bytes)?;
+        let sections = Sections::read(bytes).map_err(LoadError::Invalid)?;
+        let delivery = sections.delivery;
         let (rewritten, mutable_globals) =
             export_mutable_globals(bytes).map_err(LoadError::Invalid)?;
         let engine = engine();
@@ -109,6 +124,8 @@ impl SimModule {
                 .instances(1)
                 .build(),
             fault: None,
+            sections,
+            export: None,
         };
         let mut store = Store::new(engine, ctx);
         store.limiter(|ctx| &mut ctx.limits);
@@ -125,6 +142,18 @@ impl SimModule {
         for (slot, export) in exports.iter_mut().zip(Export::ALL) {
             *slot = typed_export(&instance, &mut store, export)?;
         }
+        let on_events = match instance.get_func(&mut store, Export::Events.name()) {
+            None => None,
+            Some(func) => Some(func.typed::<(i32, i32), ()>(&store).map_err(|_| {
+                LoadError::Invalid("export on_events must have signature (i32, i32) -> ()".into())
+            })?),
+        };
+        check_delivery(
+            delivery,
+            on_events.is_some(),
+            memory.map_or(0, |m| m.data_size(&store)),
+        )
+        .map_err(LoadError::Invalid)?;
         let globals = mutable_globals
             .iter()
             .map(|index| {
@@ -138,6 +167,8 @@ impl SimModule {
             store,
             memory,
             exports,
+            on_events,
+            delivery,
             globals,
             global_bits: Vec::new(),
         };
@@ -243,20 +274,82 @@ impl SimModule {
     }
 
     pub fn has_export(&self, export: Export) -> bool {
-        self.exports[export as usize].is_some()
+        match export {
+            Export::Events => self.on_events.is_some(),
+            _ => self
+                .exports
+                .get(export as usize)
+                .is_some_and(Option::is_some),
+        }
+    }
+
+    /// How many records one `on_events` call can take: 0 without the export,
+    /// else what `vera.delivery` holds, at most [`MAX_BATCH`].
+    pub fn batch_capacity(&self) -> usize {
+        match (self.on_events.is_some(), self.delivery) {
+            (true, Some(area)) => (area.bytes as usize / EventRecord::SIZE).min(MAX_BATCH),
+            _ => 0,
+        }
     }
 
     /// Calls `export` with `budget` operations. Returns the operations used.
-    /// A missing export costs nothing.
+    /// A missing export costs nothing; [`Export::Events`] goes through
+    /// [`SimModule::deliver`].
     pub fn call(
         &mut self,
         export: Export,
         budget: u64,
         host: &mut dyn SimHost,
     ) -> Result<u64, Fault> {
-        let Some(func) = self.exports[export as usize].clone() else {
+        let Some(func) = self.exports.get(export as usize).cloned().flatten() else {
             return Ok(0);
         };
+        self.run(export, budget, host, |store| func.call(store, ()))
+    }
+
+    /// Writes `records` into the delivery area and calls `on_events` on
+    /// them with `budget` operations. At most [`SimModule::batch_capacity`]
+    /// records; an empty batch makes no call.
+    pub fn deliver(
+        &mut self,
+        records: &[EventRecord],
+        budget: u64,
+        host: &mut dyn SimHost,
+    ) -> Result<u64, Fault> {
+        let (Some(func), Some(area), Some(memory)) =
+            (self.on_events.clone(), self.delivery, self.memory)
+        else {
+            return Ok(0);
+        };
+        if records.is_empty() {
+            return Ok(0);
+        }
+        if records.len() > self.batch_capacity() {
+            return Err(Fault::Invalid(format!(
+                "{} records exceed the delivery area",
+                records.len()
+            )));
+        }
+        let bytes: Vec<u8> = records.iter().flat_map(EventRecord::to_bytes).collect();
+        // `check_delivery` placed the area inside memory at load, and memory
+        // never shrinks.
+        memory
+            .write(&mut self.store, area.offset as usize, &bytes)
+            .map_err(|e| Fault::Trap(format!("delivery area: {e}")))?;
+        let (ptr, count) = (area.offset as i32, records.len() as i32);
+        self.run(Export::Events, budget, host, |store| {
+            func.call(store, (ptr, count))
+        })
+    }
+
+    /// Runs one export call with `host` and `budget`.
+    fn run(
+        &mut self,
+        export: Export,
+        budget: u64,
+        host: &mut dyn SimHost,
+        call: impl FnOnce(&mut Store<Ctx>) -> wasmtime::Result<()>,
+    ) -> Result<u64, Fault> {
         // The store outlives this call but the host does not: erase the
         // borrow's lifetime and clear the pointer before returning.
         let host: NonNull<dyn SimHost + '_> = NonNull::from(host);
@@ -265,13 +358,15 @@ impl SimModule {
         let data = self.store.data_mut();
         data.host = Some(host);
         data.fault = None;
+        data.export = Some(export);
         let fueled = self.store.set_fuel(budget);
         let result = match fueled {
-            Ok(()) => func.call(&mut self.store, ()),
+            Ok(()) => call(&mut self.store),
             Err(e) => Err(e),
         };
         let data = self.store.data_mut();
         data.host = None;
+        data.export = None;
         let fault = data.fault.take();
         let used = budget.saturating_sub(self.store.get_fuel().unwrap_or(0));
         self.read_globals();
@@ -347,6 +442,35 @@ fn check(bytes: &[u8]) -> Result<(), LoadError> {
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+/// `vera.delivery` must hold at least one `EventRecord`, start 8-byte
+/// aligned (records are read in place) and lie inside the initial memory. A
+/// module exporting `on_events` must declare it.
+fn check_delivery(
+    delivery: Option<Delivery>,
+    on_events: bool,
+    memory_bytes: usize,
+) -> Result<(), String> {
+    let Some(area) = delivery else {
+        return match on_events {
+            true => Err("exports on_events without a vera.delivery section".into()),
+            false => Ok(()),
+        };
+    };
+    let end = u64::from(area.offset) + u64::from(area.bytes);
+    if area.offset % 8 != 0 || (area.bytes as usize) < EventRecord::SIZE {
+        return Err(format!(
+            "vera.delivery at {} of {} bytes is unaligned or smaller than one record",
+            area.offset, area.bytes
+        ));
+    }
+    if end > memory_bytes as u64 {
+        return Err(format!(
+            "vera.delivery ends at {end}, past the module's {memory_bytes}-byte memory"
+        ));
     }
     Ok(())
 }
@@ -517,6 +641,11 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                     Invalid(format!("unknown name kind {kind}")),
                 ));
             }
+            // This module's own `vera.actions` answers ModuleAction.
+            let module_action = std::str::from_utf8(&bytes)
+                .ok()
+                .filter(|_| kind == NAME_MODULE_ACTION)
+                .map(|name| caller.data().sections.action_key(name));
             let host = enter(&mut caller, bytes.len() as u64)?;
             // A name that is not UTF-8 names nothing.
             let result = match std::str::from_utf8(&bytes) {
@@ -524,6 +653,9 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                 Ok(name) if kind == NAME_PROPERTY => {
                     Ok(property_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
                 }
+                Ok(_) if kind == NAME_MODULE_ACTION => Ok(module_action
+                    .flatten()
+                    .map_or((-1, Status::NotFound), |key| (key, Status::Ok))),
                 Ok(name) => host.lookup(kind, name),
             };
             let (id, status) = result.map_err(|e| fail(&mut caller, e))?;
@@ -549,8 +681,13 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                     Invalid(format!("unknown name kind {kind}")),
                 ));
             }
+            let module_action = (kind == NAME_MODULE_ACTION)
+                .then(|| caller.data().sections.action_name(id).map(str::to_owned));
             let host = enter(&mut caller, 0)?;
-            let result = if id == -1 {
+            let result = if let Some(name) = module_action {
+                // Any i32 is a dispatch key; one `vera.actions` lacks has no name.
+                Ok(name.map_or((String::new(), Status::NotFound), |n| (n, Status::Ok)))
+            } else if id == -1 {
                 Ok((String::new(), Status::NotFound))
             } else if kind == NAME_PROPERTY {
                 property_name(id)
@@ -679,7 +816,64 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
             Ok(status as i32)
         },
     ));
+    wire(linker.func_wrap(
+        m,
+        "trigger_create",
+        |mut caller: Caller<'_, Ctx>, ptr: i32, len: i32, out: i32| -> wasmtime::Result<i32> {
+            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
+            check_buffer(&mut caller, out, 1, 8).map_err(|e| fail(&mut caller, e))?;
+            let (handle, status) = if in_init(&caller) {
+                (0, Status::Unsupported)
+            } else {
+                let def = TriggerDef::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
+                let result = enter(&mut caller, bytes.len() as u64)?.trigger_create(&def);
+                result.map_err(|e| fail(&mut caller, e))?
+            };
+            let handle = if status == Status::Ok { handle } else { 0 };
+            write_bytes(&mut caller, out, &handle.to_le_bytes())
+                .map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "trigger_remove",
+        |mut caller: Caller<'_, Ctx>, trigger: i64| -> wasmtime::Result<i32> {
+            if in_init(&caller) {
+                return Ok(Status::Unsupported as i32);
+            }
+            let result = enter(&mut caller, 0)?.trigger_remove(trigger);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "trigger_bind",
+        |mut caller: Caller<'_, Ctx>, trigger: i64, reference: i64| -> wasmtime::Result<i32> {
+            if in_init(&caller) {
+                return Ok(Status::Unsupported as i32);
+            }
+            let result = enter(&mut caller, 0)?.trigger_bind(trigger, reference);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "trigger_unbind",
+        |mut caller: Caller<'_, Ctx>, trigger: i64, reference: i64| -> wasmtime::Result<i32> {
+            if in_init(&caller) {
+                return Ok(Status::Unsupported as i32);
+            }
+            let result = enter(&mut caller, 0)?.trigger_unbind(trigger, reference);
+            Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
     linker
+}
+
+/// Triggers are unavailable in `vera_init` (appendix 1.1, "all").
+fn in_init(caller: &Caller<'_, Ctx>) -> bool {
+    caller.data().export == Some(Export::Init)
 }
 
 /// `get_many` (appendix "Other layouts"): `n x m` scalar reads, row-major,

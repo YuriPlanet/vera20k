@@ -53,14 +53,18 @@ unsafe extern "C" {
     ) -> i32;
     pub fn var_get(scope: i64, var: i32, out: *mut i64) -> i32;
     pub fn var_set(scope: i64, var: i32, value: i64) -> i32;
-    pub fn find(query: *const u8, len: i32, out: *mut i64, cap: i32, res: *mut FindResult)
-    -> i32;
+    pub fn find(query: *const u8, len: i32, out: *mut i64, cap: i32, res: *mut FindResult) -> i32;
     pub fn trigger_create(def: *const u8, len: i32, out: *mut i64) -> i32;
     pub fn trigger_remove(trigger: i64) -> i32;
     pub fn trigger_bind(trigger: i64, reference: i64) -> i32;
     pub fn trigger_unbind(trigger: i64, reference: i64) -> i32;
-    pub fn action(kind: i32, target: i64, params: *const ActionParams, len: i32, out: *mut i64)
-    -> i32;
+    pub fn action(
+        kind: i32,
+        target: i64,
+        params: *const ActionParams,
+        len: i32,
+        out: *mut i64,
+    ) -> i32;
     pub fn send_notify(to: i64, id: i32, ptr: *const u8, len: i32) -> i32;
     pub fn order(house: i64, ptr: *const u8, len: i32) -> i32;
 }
@@ -122,9 +126,73 @@ pub struct FindResult {
     pub next: i64,
 }
 
+/// `TriggerDef`, 32 bytes; `event_count` events (each an [`EventDef`] and
+/// its clauses), then `action_count` [`ActionDef`]s follow it.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct TriggerDef {
+    pub house: i64,
+    pub repeat: i32,
+    pub difficulty: i32,
+    pub flags: i32,
+    pub decide_key: i32,
+    pub event_count: i32,
+    pub action_count: i32,
+}
+
+/// `EventDef`, 32 bytes; `clause_count` [`Clause`]s follow it.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct EventDef {
+    pub kind: i32,
+    pub op: i32,
+    pub interval: i32,
+    pub id: i32,
+    pub value: i64,
+    pub clause_count: i32,
+    pub reserved: i32,
+}
+
+/// `ActionDef` with its `ActionParams`, 80 bytes.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ActionDef {
+    pub kind: i32,
+    pub target: i32,
+    pub params: ActionParams,
+}
+
+/// `EventRecord`, 112 bytes, read in place in `on_events`.
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct EventRecord {
+    pub key: i32,
+    pub kind: i32,
+    pub trigger: i64,
+    pub holder: i64,
+    pub subject: i64,
+    pub other: i64,
+    pub house: i64,
+    pub projectile: i64,
+    pub modifier: i64,
+    pub cell: i64,
+    pub value: i64,
+    pub value2: i64,
+    pub id: i32,
+    pub frame: i32,
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub reserved: i32,
+}
+
 const _: () = {
     assert!(size_of::<ActionParams>() == 72);
     assert!(size_of::<Clause>() == 16);
     assert!(size_of::<Query>() == 64);
     assert!(size_of::<FindResult>() == 16);
+    assert!(size_of::<TriggerDef>() == 32);
+    assert!(size_of::<EventDef>() == 32);
+    assert!(size_of::<ActionDef>() == 80);
+    assert!(size_of::<EventRecord>() == 112);
 };

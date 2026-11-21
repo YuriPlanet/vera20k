@@ -2484,6 +2484,33 @@ pub(super) fn emit_admitted_fire(
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
         world.note_disguise_blink_started();
     }
+    // Wasm module `Fire` (RFC 0001 appendix 4.3): after the shot completes,
+    // for a FireAt that launched its bullet.
+    if world
+        .trigger_runtime
+        .module_listens(vera20k_wasm_ext::triggers::EVENT_FIRE)
+    {
+        let target = match snap.target {
+            TargetKind::Entity(id) => id,
+            _ => 0,
+        };
+        world.raise_module_event(
+            rules,
+            crate::sim::ext_modules::ModuleEvent {
+                other: target,
+                projectile: bullet_id,
+                cell: Some((target_rx, target_ry)),
+                value: i64::from(selected.index),
+                id: rules
+                    .weapon_index(selected.weapon_id)
+                    .map_or(-1, |index| index as i32),
+                ..crate::sim::ext_modules::ModuleEvent::new(
+                    vera20k_wasm_ext::triggers::EVENT_FIRE,
+                    snap.stable_id,
+                )
+            },
+        );
+    }
     Some(bullet_id)
 }
 

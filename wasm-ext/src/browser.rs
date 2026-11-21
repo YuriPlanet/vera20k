@@ -43,6 +43,19 @@ impl SimModule {
         Ok(0)
     }
 
+    pub fn batch_capacity(&self) -> usize {
+        0
+    }
+
+    pub fn deliver(
+        &mut self,
+        _records: &[crate::EventRecord],
+        _budget: u64,
+        _host: &mut dyn SimHost,
+    ) -> Result<u64, Fault> {
+        Ok(0)
+    }
+
     pub fn memory(&self) -> &[u8] {
         &[]
     }

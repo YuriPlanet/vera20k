@@ -16,11 +16,18 @@
 #![no_std]
 
 pub mod sys;
+pub mod triggers;
+
+pub use triggers::{
+    ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
+    Target, TimerEvent, Trigger, TriggerRef, actions_section, actions_section_len,
+};
 
 pub mod prelude {
     pub use crate::{
-        Action, Category, Cell, Find, House, NameKind, Op, Prop, Ref, Status, Techno, TypeRef,
-        Var, Waypoint, frame, log, random,
+        Action, ActionDef, Category, Cell, Event, EventRecord, Find, FireEvent, House, KilledEvent,
+        NameKind, Op, Prop, Ref, Status, TakeDamageEvent, Target, Techno, TimerEvent, Trigger,
+        TriggerRef, TypeRef, Var, Waypoint, frame, log, random,
     };
 }
 
@@ -107,6 +114,13 @@ reference!(
     /// A type: kind 1, `name kind << 32 | ID`.
     TypeRef
 );
+
+impl TypeRef {
+    /// TechnoType `name`'s type reference; resolve once, at initialization.
+    pub fn techno_type(name: &str) -> Result<Self> {
+        lookup(NameKind::TechnoType, name).map(|id| Self::new(NameKind::TechnoType, id))
+    }
+}
 
 impl House {
     /// The house at array index `index`. Provisional: the engine preview
@@ -233,7 +247,13 @@ pub fn lookup(kind: NameKind, name: &str) -> Result<i32> {
 pub fn name_of(kind: NameKind, id: i32, buf: &mut [u8]) -> Result<&str> {
     let mut len = 0;
     check(unsafe {
-        sys::name_of(kind as i32, id, buf.as_mut_ptr(), buf.len() as i32, &mut len)
+        sys::name_of(
+            kind as i32,
+            id,
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            &mut len,
+        )
     })?;
     let bytes = buf.get(..len as usize).ok_or(Status::Refused)?;
     core::str::from_utf8(bytes).map_err(|_| Status::Unsupported)
@@ -398,8 +418,8 @@ impl Find {
     /// wrote and where the next page starts (0 on the last page).
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
         self.0.query.after = after;
-        let len = size_of::<sys::Query>()
-            + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        let len =
+            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
         let mut result = sys::FindResult::default();
         let status = unsafe {
             sys::find(

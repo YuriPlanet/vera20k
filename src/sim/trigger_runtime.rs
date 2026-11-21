@@ -319,8 +319,11 @@ mod definitions;
 mod dispatch;
 mod events;
 mod lifecycle;
+mod module_triggers;
 #[cfg(any(test, feature = "dev-overlays"))]
 mod trace;
+
+pub(crate) use module_triggers::{ModuleTrigger, ModuleTriggers};
 
 #[cfg(test)]
 use definitions::event_classification;
@@ -396,6 +399,9 @@ pub struct TriggerRuntime {
     map_cursor: i32,
     definitions_prepared: bool,
     classified: bool,
+    /// Triggers Wasm extension modules made, with their bindings and queued
+    /// records (RFC 0001 section 7). Empty without modules.
+    module: ModuleTriggers,
     /// Scratch for one synchronous Spring call tree. Empty between dispatches;
     /// save/restore and checksums keep only the authoritative trigger state.
     #[serde(skip)]
@@ -452,6 +458,7 @@ impl PartialEq for TriggerRuntime {
             && self.map_cursor == other.map_cursor
             && self.definitions_prepared == other.definitions_prepared
             && self.classified == other.classified
+            && self.module == other.module
     }
 }
 impl Eq for TriggerRuntime {}
@@ -575,6 +582,27 @@ impl TriggerRuntime {
         self.map_cursor.hash(hasher);
         self.definitions_prepared.hash(hasher);
         self.classified.hash(hasher);
+        // Stock play has no module triggers and folds nothing new.
+        if !self.module.is_empty() {
+            b"module-triggers-v1".hash(hasher);
+            self.module.hash(hasher);
+        }
+    }
+
+    /// The module trigger registry (`module_triggers`).
+    pub(crate) fn module_triggers(&self) -> &ModuleTriggers {
+        &self.module
+    }
+
+    pub(crate) fn module_triggers_mut(&mut self) -> &mut ModuleTriggers {
+        &mut self.module
+    }
+
+    /// Whether a module trigger listens for event `kind`: the one check an
+    /// event site makes before it builds a payload (RFC 0001 section 15).
+    #[inline]
+    pub(crate) fn module_listens(&self, kind: i32) -> bool {
+        self.module.listens(kind)
     }
 
     /// VERA-only match-checksum terms
@@ -607,6 +635,7 @@ impl TriggerRuntime {
             checksum.fold_value(tag.type_index as u32);
             checksum.fold_value(u32::from(tag.pending));
         }
+        self.module.fold_match_checksum(checksum);
     }
     fn tag(&self, index: usize) -> Option<&LiveTag> {
         self.tags.get(index)?.as_ref()
@@ -780,6 +809,8 @@ impl TriggerRuntime {
     /// counter write, pending ticket, RNG draw or timer change belongs here.
     pub(crate) fn finalize_object_trigger_tag_attachment(&mut self, object: u64) {
         self.attachments.remove(&TagAttachment::Object(object));
+        // A module trigger binding goes with its object (RFC 0001 section 7).
+        self.module.forget_object(object);
     }
     pub(crate) fn attach_team_member_trigger_tag(&mut self, team: u64, object: u64) {
         // AddMember6EA582..6EA587 skips attachment when Team+70 is NULL,

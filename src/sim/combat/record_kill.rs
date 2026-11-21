@@ -561,6 +561,29 @@ impl crate::sim::world::Simulation {
         if let Some(recipient) = promote_now {
             self.update_ares_veterancy(recipient, false, false, rules, context.effects());
         }
+        // Wasm module `Killed` (RFC 0001 appendix 4.3), after the kill is
+        // recorded. Its lethal warhead is not known here (`id` −1).
+        if matches!(callback, KillCallback::Terminal)
+            && self
+                .trigger_runtime
+                .module_listens(vera20k_wasm_ext::triggers::EVENT_KILLED)
+        {
+            let killer = match source {
+                KillSource::Techno(Some(killer)) => killer,
+                _ => 0,
+            };
+            self.raise_module_event(
+                rules,
+                crate::sim::ext_modules::ModuleEvent {
+                    other: killer,
+                    at_subject: true,
+                    ..crate::sim::ext_modules::ModuleEvent::new(
+                        vera20k_wasm_ext::triggers::EVENT_KILLED,
+                        victim_id,
+                    )
+                },
+            );
+        }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(
             crate::sim::world::LifecycleTestEvent::RecordKillBookkeeping {

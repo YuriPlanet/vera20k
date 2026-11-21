@@ -45,12 +45,33 @@ Build the example: `cd sdk/examples/minimal-rules && cargo build --release`
   `PowerDrain`, `LowPower`, `IsDefeated`, `IsHuman`; TechnoType `Strength`.
 - `lookup`/`name_of`: TechnoType, Country, Property. `find`: Objects, Houses.
 - Rust SDK: raw bindings for all 23 imports, wrappers for the above, export macros.
+- Runtime triggers: `trigger_create/remove/bind/unbind` (`TriggerDef` parsing in
+  `wasm-ext/src/triggers.rs`); the registry lives in the trigger runtime
+  (`src/sim/trigger_runtime/module_triggers.rs`), saved, hashed and checksummed with it;
+  raising, clauses, firing and delivery in `src/sim/ext_modules/triggers.rs`. Events
+  `TakeDamage` (object_health commit), `Killed` (end of `record_the_kill`), `Fire`
+  (end of `emit_admitted_fire`), `Timer` (module phase). Object and TechnoType
+  bindings; filter clauses on Subject/Other/House properties and RA2 variables;
+  immediate `AddMoney` and `SetVar` (RA2 variables) through the host's own `action` and
+  `var_set`; `Module` actions queue `EventRecord`s delivered by `on_events` (sorted by
+  subject, budget- and backlog-limited, dropped for disabled/removed triggers or an
+  ended game). `vera.actions` and `vera.delivery` are read and checked at load;
+  `lookup(ModuleAction)`; trigger `Enabled`/`House`/`Repeat` via `get`/`set`;
+  `lookup`/`name_of` for Weapon and Warhead. SDK: `Trigger` builder, `ActionDef`,
+  event views, `on_events!`, `named_actions!`; example `sdk/examples/panic-triggers`
+  (engine test `a_rust_built_trigger_module_receives_its_records`,
+  `VERA20K_TEST_TRIGGERS_WASM=<path>`).
 
 ## Provisional numbering (open question 5)
 
 - Property IDs: section 7 names in first-appearance order, duplicates merged
   (`vera20k_wasm_ext::PROPERTIES`).
-- Atomic actions from 1000 in appendix 5.3 order (`AddMoney` = 1015).
+- Atomic actions from 1000 in appendix 5.3 order (`AddMoney` = 1015, `SetVar` = 1024,
+  `Module` = 1036).
+- New delivered events from 1000 in appendix 4.3 order (`TakeDamage` = 1000,
+  `Killed` = 1004, `Fire` = 1005, `Timer` = 1023).
+- Weapon/Warhead IDs: position in the rules' weapon/warhead registries.
+- Trigger handles: creation serials from the shared object counter.
 - TechnoType ID: position in the rules object registry; Country ID: `CountryIdx`.
 - References: object = entity `stable_id`; house = bit 47 over the house index (the RFC
   wants houses on the shared creation counter); type `(1<<48)|(kind<<32)|id`;
@@ -58,9 +79,10 @@ Build the example: `cd sdk/examples/minimal-rules && cargo build --release`
 
 ## Remaining in phase 1
 
-1. Triggers: `trigger_create/remove/bind/unbind`, `TriggerDef`/`EventDef`/`ActionDef`,
-   filter clauses, delivery queue and `on_events` with `EventRecord`, `vera.actions`
-   custom section and module-action dispatch, `vera.delivery`, deferred chain triggers.
+1. Triggers, rest: more event kinds (stock 0..61, the other 4.3 events, polling 4.4),
+   weapon/warhead/projectile and cell bindings, stock and other atomic actions in
+   triggers, `vera.vars` clauses and `SetVar`, deferred chain triggers and their caps
+   (open question 17), `Killed` lethal warhead, map `Action=Wasm:name`.
 2. INI bindings: `Wasm.Tags` on TechnoType/Weapon/Warhead/Projectile, tag and trigger
    sections (appendix "INI keys").
 3. Modifiers: `modify`/`unmodify`, the 7.2 multipliers wired into combat/movement,
@@ -82,6 +104,12 @@ Build the example: `cd sdk/examples/minimal-rules && cargo build --release`
 - Every property is read-only; `Health`/`Owner` writes answer `Unsupported`.
 - A type name shared by two categories resolves to the first.
 - Houses queries with area, type or owner answer `Unsupported`.
+- Event sites check a per-kind flag, then a map lookup by subject, not an entity side
+  column (RFC 15.1 item 1).
+- A disabled module's triggers are removed with it.
+- The Rust SDK's delivery area is fixed at address 8 (9 records): `link_section`
+  statics cannot hold an address. A stack within 1 KiB of its 1 MiB limit during
+  `on_events` would overwrite unread records. One `named_actions!` per module.
 
 ## Validation commands
 
@@ -94,5 +122,5 @@ VERA20K_SNAPSHOT_LAYOUT=1 VERA20K_MIN_FREE_GIB=4 python3 -m tools.cargo_run -- \
   check -p vera20k-core --lib --target wasm32-unknown-unknown --features wasm
 ```
 
-Last run (HEAD `15d5881e2`): wasm-ext 9/9, `sim::ext_modules` 7/7, client check and
-wasm32 check Finished.
+Last run (triggers branch): wasm-ext 12/12, `sim::ext_modules::` with
+`sim::trigger_runtime::` 338 passed (5 ignored), client check and wasm32 check Finished.

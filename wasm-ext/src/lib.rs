@@ -3,8 +3,10 @@
 //! A simulation module (`rules.wasm`) is checked, compiled and called under
 //! an operation budget, and reaches the game only through [`SimHost`]. It
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
-//! `get_many`, `set`, `var_get`, `var_set`, `find` and `action`; the other
-//! `vera:sim` imports, the client world and the browser runtime come later.
+//! `get_many`, `set`, `var_get`, `var_set`, `find`, `action` and the four
+//! `trigger_*` imports, and delivers `on_events` batches ([`triggers`]); the
+//! other `vera:sim` imports, the client world and the browser runtime come
+//! later.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -24,6 +26,12 @@ mod browser;
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub use browser::SimModule;
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub mod sections;
+pub mod triggers;
+
+pub use triggers::{EventRecord, TriggerDef};
 
 /// The import module name for API 1.0 (`vera:sim@<major>.<minor>`).
 pub const SIM_IMPORT_MODULE: &str = "vera:sim@1.0";
@@ -56,6 +64,10 @@ pub const IMPORTS: &[(&str, &str)] = &[
         "action",
         "(kind: i32, target: i64, params: ptr, len: i32, out: ptr) -> status",
     ),
+    ("trigger_create", "(def: ptr, len: i32, out: ptr) -> status"),
+    ("trigger_remove", "(t: i64) -> status"),
+    ("trigger_bind", "(t: i64, ref: i64) -> status"),
+    ("trigger_unbind", "(t: i64, ref: i64) -> status"),
 ];
 
 /// Operations charged per value `get_many` reads and per reference `find`
@@ -66,6 +78,8 @@ pub const SCAN_COST: u64 = 2;
 /// Name kinds (appendix 8.1) and their count; `lookup` and `name_of` take
 /// kinds below [`NAME_KINDS`], anything else is invalid.
 pub const NAME_TECHNO_TYPE: i32 = 0;
+pub const NAME_WEAPON: i32 = 1;
+pub const NAME_WARHEAD: i32 = 2;
 pub const NAME_COUNTRY: i32 = 11;
 pub const NAME_PROPERTY: i32 = 19;
 pub const NAME_KINDS: i32 = 23;
@@ -376,7 +390,9 @@ pub enum Status {
 pub struct Invalid(pub String);
 
 /// `ActionParams` (RFC appendix "Fixed layouts"), 72 bytes little endian.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct ActionParams {
     pub id: i32,
     pub arg: i32,
@@ -454,6 +470,20 @@ pub trait SimHost {
         target: i64,
         params: &ActionParams,
     ) -> Result<(i64, Status), Invalid>;
+    /// Creates a trigger (`trigger_create`); returns its handle or 0, and
+    /// the status. A host without triggers answers `Unsupported`.
+    fn trigger_create(&mut self, _def: &TriggerDef) -> Result<(i64, Status), Invalid> {
+        Ok((0, Status::Unsupported))
+    }
+    fn trigger_remove(&mut self, _trigger: i64) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
+    fn trigger_bind(&mut self, _trigger: i64, _reference: i64) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
+    fn trigger_unbind(&mut self, _trigger: i64, _reference: i64) -> Result<Status, Invalid> {
+        Ok(Status::Unsupported)
+    }
 }
 
 /// Size and budget limits for one module (RFC section 15.2, open question 7).
@@ -498,9 +528,12 @@ pub enum Export {
     Init,
     ScenarioStart,
     Frame,
+    /// `on_events(ptr, count)`, called through `SimModule::deliver`.
+    Events,
 }
 
 impl Export {
+    /// The exports of signature `() -> ()`, which `SimModule::call` takes.
     pub const ALL: [Self; 3] = [Self::Init, Self::ScenarioStart, Self::Frame];
 
     pub const fn name(self) -> &'static str {
@@ -508,6 +541,7 @@ impl Export {
             Self::Init => "vera_init",
             Self::ScenarioStart => "on_scenario_start",
             Self::Frame => "on_frame",
+            Self::Events => "on_events",
         }
     }
 }
@@ -524,11 +558,17 @@ pub enum Fault {
     Trap(String),
     /// A host call had invalid arguments.
     Invalid(String),
+    /// More event records waited than the backlog limit allows: the module
+    /// cannot keep up (RFC section 5, "Budgets").
+    Backlog(usize),
 }
 
 impl std::fmt::Display for Fault {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Backlog(records) => {
+                write!(f, "cannot keep up: {records} event records are waiting")
+            }
             Self::Budget => f.write_str("exceeded its operation budget"),
             Self::Trap(why) => write!(f, "trapped: {why}"),
             Self::Invalid(why) => write!(f, "made an invalid call: {why}"),
@@ -538,3 +578,5 @@ impl std::fmt::Display for Fault {
 
 #[cfg(test)]
 mod sandbox_tests;
+#[cfg(test)]
+mod trigger_tests;
