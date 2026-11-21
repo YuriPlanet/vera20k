@@ -665,6 +665,26 @@ struct trace: tick=31999 standing=7 list=[2650:(190,155) 3297:(192,150) 4117:(20
 能集合的与允许集合的两个集合互斥）、重取到达终点的 Move（丢胜局）。下一轮要动的是「一次派出多少人」
 或者「让轻装先到、主力跟上」，不是再改目标。
 
+### 4242 尾段：63 个 fighter 里 26 个是展开状态（本轮测量）
+
+临时在 push 循环的每个 `continue` 上挂计数（已删除，回退后 `git diff` 为空），seed 4242 手动 32000 帧：
+
+```
+budget probe: tick=31800 issued=0 refused=0 fighters=63
+budget probe: tick=31200 issued=1 refused=0 fighters=50
+budget probe: tick=30000 issued=0 refused=0 fighters=43
+```
+
+tick 31800 的构成：18 个在打或在走（attacking/walking）、**26 个 deployed**、0 个被别人占命令、0 个被 tracker 拒；
+push 这一帧发出 0 个命令。`obs.is_deployed` 覆盖步兵的 Doing 27..30（展开动画与展开姿态），
+也就是 micro 让步兵就地展开后的状态；push 循环明确跳过它们（注释：a dug-in unit cannot walk）。
+
+所以 4242 打到最后 7 栋建筑时，实际在推进的只有十八来个单位，另外三分之一是展开的步兵站着不动。
+这不是 bug：展开是对的，但它们既不参与推进、也不会自己收起来，于是「兵力」和「能推进的兵力」差了一大截。
+
+下一轮的靶子：给 deployed 的单位一个条件——在推进方向上、且 fist 需要兵力时，用 toggle 收起（`Goal::Deploy` 是切换命令）
+让它跟上；在家里则保持展开。这一条正对用户 m02257 第 3 条。
+
 ## 5. 结构（改代码前必读）
 
 ```
