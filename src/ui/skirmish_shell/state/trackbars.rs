@@ -263,6 +263,11 @@ pub fn handle_option_mouse_down(
         if checkbox_icon_rect(checkbox.rect, layout.scale).contains(x, y) {
             let value = checkbox_value_mut(state, checkbox.id);
             *value = !*value;
+            // VERA: a short game needs bases, as C2 ticks Bases with Short
+            // Game (`0x0078FB8D..0x0078FBB0`); VERA's Game Options hold Bases.
+            if checkbox.id == SkirmishCheckboxId::ShortGame0x54e && state.short_game {
+                state.session.bases = true;
+            }
             state.push_ui_sound(SkirmishShellUiSound::GuiCheckboxSound);
             return SkirmishShellAction::None;
         }

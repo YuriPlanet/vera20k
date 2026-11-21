@@ -303,6 +303,31 @@ pub(crate) const BUILDING_QUEUE: u16 = 0x7F13;
 /// The room's Superweapon Limit, a trackbar in VERA's Game Options only
 /// ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
+/// The room's Tech Level, a trackbar in VERA's Game Options only; C2's proc
+/// reads no tech level from its dialog.
+pub(crate) const TECH_LEVEL: u16 = 0x7F15;
+/// Game Options' button to its other page.
+pub(crate) const GAME_OPTIONS_PAGE: u16 = 0x7F19;
+/// Four session checkboxes C2's proc (`Dialog0xC2__DlgProc`, 0x0078F7F0)
+/// handles though YR's room shows none of them: Bases (`0x0078FA51`), Fog of
+/// War (`0x0078FC07`), Multi-Engineer (`0x0078FB2B`) and Harvester Truce
+/// (`0x0078FBBB`). VERA's Game Options shows them beside the native five.
+pub(crate) const BASES: u16 = 0x54B;
+pub(crate) const FOG_OF_WAR: u16 = 0x599;
+pub(crate) const MULTI_ENGINEER: u16 = 0x551;
+pub(crate) const HARVESTER_TRUCE: u16 = 0x596;
+pub(crate) const SESSION_CHECKBOXES: [u16; 4] =
+    [BASES, FOG_OF_WAR, MULTI_ENGINEER, HARVESTER_TRUCE];
+/// Their labels in VERA's language files, as Skirmish's Game Options has them.
+pub(crate) const SESSION_CHECKBOX_LABELS: [&str; 4] = {
+    use crate::ui::skirmish_shell::game_options as labels;
+    [
+        labels::BASES_LABEL,
+        labels::FOG_OF_WAR_LABEL,
+        labels::MULTI_ENGINEER_LABEL,
+        labels::HARVESTER_TRUCE_LABEL,
+    ]
+};
 pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     BRIDGES,
     ALLYING,
@@ -787,7 +812,36 @@ const ROW_DRAG_START: i32 = 6;
 /// A box VERA's room opens over itself; it takes the room's input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RoomBox {
+    /// Game Options: the match options gamemd's room keeps.
     GameOptions,
+    /// Its second page: VERA's own rules and bans.
+    MoreOptions,
+}
+
+impl RoomBox {
+    /// The Game Options page [`GAME_OPTIONS_PAGE`] turns to.
+    pub(crate) fn other_page(self) -> Self {
+        match self {
+            Self::GameOptions => Self::MoreOptions,
+            Self::MoreOptions => Self::GameOptions,
+        }
+    }
+}
+
+/// The options a Game Options page holds, besides its page button and OK.
+pub(crate) fn game_options_controls(page: RoomBox) -> Vec<u16> {
+    match page {
+        RoomBox::GameOptions => CHECKBOXES
+            .into_iter()
+            .chain(SESSION_CHECKBOXES)
+            .chain(OPTION_TRACKBARS)
+            .chain([TECH_LEVEL])
+            .collect(),
+        RoomBox::MoreOptions => ROOM_CHECKBOXES
+            .into_iter()
+            .chain([SUPERWEAPON_LIMIT])
+            .collect(),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -805,7 +859,7 @@ pub(crate) struct SetupView {
     pub(crate) dialog: SetupDialog,
     pub(crate) host: bool,
     pub(crate) locked: bool,
-    /// C2's Short Game is held on in a tournament or clan room.
+    /// C2's Short Game and Bases are held on in a tournament or clan room.
     pub(crate) short_game_locked: bool,
     /// The team header `0x794`; hidden in a clan room.
     pub(crate) team_header: bool,
@@ -814,6 +868,8 @@ pub(crate) struct SetupView {
     pub(crate) combos: Vec<SetupCombo>,
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
+    /// [`SESSION_CHECKBOXES`]' states.
+    pub(crate) session_checks: [bool; 4],
     /// [`ROOM_CHECKBOXES`]' states.
     pub(crate) room_checks: [bool; 8],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
@@ -873,6 +929,8 @@ impl SetupView {
             id,
             CHAT | CHAT_LOG | GAME_OPTIONS_OK | MAP_OFFER_DOWNLOAD | MAP_OFFER_LEAVE
         ) || (id == EMOTE && self.dialog.wol())
+            // A campaign room's Game Options holds only its speed.
+            || (id == GAME_OPTIONS_PAGE && !self.campaign)
         {
             return true;
         }
@@ -888,8 +946,11 @@ impl SetupView {
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
-            0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => {
+            0x54E | BASES if self.short_game_locked => false,
+            id if CHECKBOXES.contains(&id)
+                || SESSION_CHECKBOXES.contains(&id)
+                || ROOM_CHECKBOXES.contains(&id) =>
+            {
                 self.host && !self.campaign
             }
             id if team_join_row(id).is_some() => self
@@ -1295,6 +1356,8 @@ impl MultiplayerSetupState {
 pub(crate) struct GameOptionsLayout {
     pub(crate) dialog: RectPx,
     pub(crate) ok: RectPx,
+    /// [`GAME_OPTIONS_PAGE`], left of OK.
+    pub(crate) page: RectPx,
 }
 
 /// Previous and Next under the roster: the size of the MNBTTN art the
@@ -1338,9 +1401,13 @@ pub(crate) struct MultiplayerSetupLayout {
     /// In the room, or in [`Self::game_options`] when it is `Some`, with
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
-    /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
+    /// [`SESSION_CHECKBOXES`], on Game Options' first page.
+    pub(crate) session_checkboxes: [RectPx; 4],
+    /// [`ROOM_CHECKBOXES`], on Game Options' second page.
     pub(crate) room_checkboxes: [RectPx; 8],
-    /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
+    /// [`TECH_LEVEL`]'s label, on Game Options' first page.
+    pub(crate) tech_level_label: RectPx,
+    /// [`SUPERWEAPON_LIMIT`]'s label, on Game Options' second page.
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
     /// host's Room size's, and the host's Quick Team Setup, in a room with
@@ -1350,7 +1417,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) room_size_label: RectPx,
     pub(crate) team_menu: Option<RectPx>,
     pub(crate) seat_menu: Option<RectPx>,
-    pub(crate) trackbars: [(u16, RectPx); 7],
+    pub(crate) trackbars: [(u16, RectPx); 8],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
@@ -1509,7 +1576,9 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
+            session_checkboxes: [RectPx::new(0, 0, 0, 0); 4],
             room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
+            tech_level_label: RectPx::new(0, 0, 0, 0),
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
             teams_label: RectPx::new(0, 0, 0, 0),
@@ -1526,6 +1595,7 @@ impl MultiplayerSetupLayout {
                 ),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
                 (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
+                (TECH_LEVEL, RectPx::new(0, 0, 0, 0)),
                 (ROOM_SIZE, RectPx::new(0, 0, 0, 0)),
             ],
             labels,
@@ -1584,39 +1654,55 @@ impl MultiplayerSetupLayout {
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
             *label = scale.scale_rect(form_row(index).0);
         }
+        // The first page: Tech Level under Unit Count; the second: the
+        // Superweapon Limit at the top.
+        let tech_level = form_row(OPTION_TRACKBARS.len());
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
                 *bar = scale.scale_rect(form_row(index).1);
             }
-            // Superweapon Limit under Unit Count.
-            if *id == SUPERWEAPON_LIMIT {
-                *bar = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).1);
+            match *id {
+                TECH_LEVEL => *bar = scale.scale_rect(tech_level.1),
+                SUPERWEAPON_LIMIT => *bar = scale.scale_rect(form_row(0).1),
+                _ => {}
             }
         }
-        self.superweapon_limit_label = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).0);
-        // Two columns under the trackbars and Superweapon Limit, the left one
-        // over the art: the native five, Destroyable Bridges and Building
-        // Production Queue, then In-game Allying, the four bans and Terrain
-        // Deformation.
-        let row = |index: i32| 154 + 22 * index;
-        let left_option = |index| popup(24, row(index), 185, 17);
-        let right_option = |index| popup(215, row(index), 226, 17);
+        self.tech_level_label = scale.scale_rect(tech_level.0);
+        self.superweapon_limit_label = scale.scale_rect(form_row(0).0);
+        // Two columns of checkboxes on each page, the left one over the art.
+        // The first page has the native five, then beside them the four
+        // C2 keeps hidden, Bases next to Short Game, which it ties to it.
+        let column = |left: bool, top: i32, index: i32| {
+            let y = top + 22 * index;
+            if left {
+                popup(24, y, 185, 17)
+            } else {
+                popup(215, y, 226, 17)
+            }
+        };
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
-            *checkbox = left_option(index as i32);
+            *checkbox = column(true, 154, index as i32);
         }
+        for (index, checkbox) in self.session_checkboxes.iter_mut().enumerate() {
+            *checkbox = column(false, 154, index as i32);
+        }
+        // The second page: Destroyable Bridges, In-game Allying, Terrain
+        // Deformation and Building Production Queue, then the four bans.
+        let more = |left, index| column(left, 70, index);
         self.room_checkboxes = [
-            left_option(5),
-            right_option(0),
-            right_option(1),
-            right_option(2),
-            right_option(3),
-            right_option(4),
-            right_option(5),
-            left_option(6),
+            more(true, 0),
+            more(true, 1),
+            more(false, 0),
+            more(false, 1),
+            more(false, 2),
+            more(false, 3),
+            more(true, 2),
+            more(true, 3),
         ];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, options.w, options.h),
             ok: popup(276, 292, 124, 24),
+            page: popup(51, 292, 124, 24),
         });
         // The roster's column: the labels over its cells, the area it
         // scrolls in and, at its foot, the team bar.
@@ -1813,6 +1899,12 @@ impl MultiplayerSetupLayout {
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
         }
+        if let Some(index) = SESSION_CHECKBOXES
+            .iter()
+            .position(|candidate| *candidate == id)
+        {
+            return Some(self.session_checkboxes[index]);
+        }
         if let Some(index) = ROOM_CHECKBOXES
             .iter()
             .position(|candidate| *candidate == id)
@@ -1833,6 +1925,7 @@ impl MultiplayerSetupLayout {
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            GAME_OPTIONS_PAGE => self.game_options.map(|popup| popup.page),
             CAMPAIGN_SERIES => Some(self.mode_label),
             CAMPAIGN_STAGE => Some(self.map_label),
             TEAM_MENU => self.team_menu,
@@ -1852,19 +1945,14 @@ impl MultiplayerSetupLayout {
         if view.map_offer_open {
             return [MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE].into_iter().find(hit);
         }
-        match view.open_box {
-            Some(RoomBox::GameOptions) => {
-                return CHECKBOXES
-                    .into_iter()
-                    .chain(ROOM_CHECKBOXES)
-                    .chain(OPTION_TRACKBARS)
-                    .chain([SUPERWEAPON_LIMIT, GAME_OPTIONS_OK])
-                    .find(hit);
-            }
-            None => {}
+        if let Some(page) = view.open_box {
+            return game_options_controls(page)
+                .into_iter()
+                .chain([GAME_OPTIONS_PAGE, GAME_OPTIONS_OK])
+                .find(hit);
         }
         let in_room = |id: &u16| {
-            *id != SUPERWEAPON_LIMIT
+            !matches!(*id, SUPERWEAPON_LIMIT | TECH_LEVEL)
                 && (self.game_options.is_none() || !OPTION_TRACKBARS.contains(id))
         };
         let paged = view.pages.len() > 1;
@@ -2082,6 +2170,7 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
+            session_checks: [false; 4],
             room_checks: [false; 8],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
@@ -2437,25 +2526,31 @@ mod tests {
         let popup_layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         let popup = popup_layout.game_options.unwrap();
-        // The checkboxes may cover the art; the trackbars and OK stay right of it.
-        for id in CHECKBOXES
-            .into_iter()
-            .chain(ROOM_CHECKBOXES)
-            .chain(OPTION_TRACKBARS)
-            .chain([GAME_OPTIONS_OK])
-        {
-            let rect = popup_layout.control_rect(id).unwrap();
-            let left = if OPTION_TRACKBARS.contains(&id) || id == GAME_OPTIONS_OK {
-                215
-            } else {
-                0
-            };
-            assert!(
-                rect.x >= popup.dialog.x + left
-                    && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
-                    && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
-                "{id:#x} at {rect:?}"
-            );
+        // The checkboxes may cover the art; the trackbars and OK stay right
+        // of it, and no page's controls overlap each other or its buttons.
+        let overlap = |a: RectPx, b: RectPx| {
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        };
+        for page in [RoomBox::GameOptions, RoomBox::MoreOptions] {
+            let rects: Vec<(u16, RectPx)> = game_options_controls(page)
+                .into_iter()
+                .chain([GAME_OPTIONS_PAGE, GAME_OPTIONS_OK])
+                .map(|id| (id, popup_layout.control_rect(id).unwrap()))
+                .collect();
+            for (index, &(id, rect)) in rects.iter().enumerate() {
+                let bar = OPTION_TRACKBARS.contains(&id)
+                    || matches!(id, TECH_LEVEL | SUPERWEAPON_LIMIT | GAME_OPTIONS_OK);
+                let left = if bar { 215 } else { 0 };
+                assert!(
+                    rect.x >= popup.dialog.x + left
+                        && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
+                        && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
+                    "{id:#x} at {rect:?}"
+                );
+                for &(other, beside) in &rects[index + 1..] {
+                    assert!(!overlap(rect, beside), "{id:#x} overlaps {other:#x}");
+                }
+            }
         }
         let mut view = vera_room_view();
         view.open_box = Some(RoomBox::GameOptions);
@@ -2464,6 +2559,16 @@ mod tests {
         assert_eq!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
         let (x, y) = center(popup_layout.chat);
         assert_eq!(popup_layout.control_at(&view, x, y), None);
+        // Each page takes presses on its own options only.
+        let (x, y) = center(popup_layout.room_checkboxes[0]);
+        assert_eq!(popup_layout.control_at(&view, x, y), None);
+        view.open_box = Some(RoomBox::MoreOptions);
+        assert_eq!(
+            popup_layout.control_at(&view, x, y),
+            Some(ROOM_CHECKBOXES[0])
+        );
+        let (x, y) = center(popup_layout.checkboxes[0]);
+        assert_ne!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
         // The team bar under the roster holds the Teams count, and the
         // host's Room size, Quick Team Setup and Bulk Seat Actions; a guest
         // has neither list.

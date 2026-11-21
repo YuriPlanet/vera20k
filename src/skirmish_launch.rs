@@ -690,6 +690,26 @@ pub struct RoomOptions {
     pub teams: Option<u8>,
 }
 
+/// The session values `[MultiplayerDialogSettings]` seeds that C2's proc
+/// (`Dialog0xC2__DlgProc`, `0x0078F7F0`) handles but YR's skirmish and room
+/// dialogs never show: Tech Level, Bases (`0x00A8B258`), Fog of War
+/// (`0x00A8B31F`), Multi-Engineer (`0x00A8B26C`) and Harvester Truce
+/// (`0x00A8B31D`). VERA's Game Options show them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionOptions {
+    pub tech_level: i32,
+    pub bases: bool,
+    pub fog_of_war: bool,
+    pub multi_engineer: bool,
+    pub harvester_truce: bool,
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        SkirmishLaunchOptions::default().session_options()
+    }
+}
+
 impl SkirmishLaunchOptions {
     pub fn room_options(&self) -> RoomOptions {
         RoomOptions {
@@ -705,6 +725,24 @@ impl SkirmishLaunchOptions {
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
         self.teams = room.teams;
+    }
+
+    pub fn session_options(&self) -> SessionOptions {
+        SessionOptions {
+            tech_level: self.tech_level,
+            bases: self.bases,
+            fog_of_war: self.fog_of_war,
+            multi_engineer: self.multi_engineer,
+            harvester_truce: self.harvester_truce,
+        }
+    }
+
+    pub fn set_session_options(&mut self, session: SessionOptions) {
+        self.tech_level = session.tech_level;
+        self.bases = session.bases;
+        self.fog_of_war = session.fog_of_war;
+        self.multi_engineer = session.multi_engineer;
+        self.harvester_truce = session.harvester_truce;
     }
 }
 

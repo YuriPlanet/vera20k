@@ -55,6 +55,8 @@ pub struct SkirmishSavedSetup {
     pub build_off_ally: bool,
     pub crates: bool,
     pub mcv_redeploy: bool,
+    /// VERA's Game Options.
+    pub session: crate::skirmish_launch::SessionOptions,
 }
 
 impl SkirmishSavedSetup {
@@ -77,6 +79,7 @@ impl SkirmishSavedSetup {
             build_off_ally: state.build_off_ally,
             crates: state.crates,
             mcv_redeploy: state.mcv_redeploy,
+            session: state.session,
         }
     }
 
@@ -132,6 +135,19 @@ impl SkirmishSavedSetup {
         state.build_off_ally = self.build_off_ally;
         state.crates = self.crates;
         state.mcv_redeploy = self.mcv_redeploy;
+        let tech = crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE;
+        state.session = crate::skirmish_launch::SessionOptions {
+            tech_level: if (tech.min..=tech.max).contains(&self.session.tech_level) {
+                self.session.tech_level
+            } else {
+                state.session.tech_level
+            },
+            ..self.session
+        };
+        // Bases off unticks Short Game, as C2 does (`0x0078FAAA..0x0078FAC9`).
+        if !state.session.bases {
+            state.short_game = false;
+        }
     }
 }
 

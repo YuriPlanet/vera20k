@@ -216,12 +216,26 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         .options
         .clone();
     match control {
+        // C2 ties the two (`Dialog0xC2__DlgProc`): Short Game turns Bases on
+        // (0x78FB8D..0x78FBB0), and Bases off turns Short Game off
+        // (0x78FAAA..0x78FAC9).
         0x54E => {
             options.short_game = !options.short_game;
             if options.short_game {
                 options.bases = true;
             }
         }
+        BASES => {
+            options.bases = !options.bases;
+            if !options.bases {
+                options.short_game = false;
+            }
+        }
+        // C2's other hidden session checkboxes: Multi-Engineer (0x78FB2B),
+        // Harvester Truce (0x78FBBB) and Fog of War (0x78FC07).
+        MULTI_ENGINEER => options.multi_engineer = !options.multi_engineer,
+        HARVESTER_TRUCE => options.harvester_truce = !options.harvester_truce,
+        FOG_OF_WAR => options.fog_of_war = !options.fog_of_war,
         0x3E8 => options.mcv_redeploy = !options.mcv_redeploy,
         0x54D => options.crates = !options.crates,
         0x69A => options.super_weapons = !options.super_weapons,
@@ -337,6 +351,7 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                 }
                 options.host_rules.superweapon_limit = limit;
             }
+            TECH_LEVEL => options.tech_level = value,
             _ => anyhow::bail!("unknown setup slider"),
         }
         // A drag sends only when its value moves.
