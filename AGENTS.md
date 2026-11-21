@@ -291,8 +291,9 @@ fix: write it first, or run it once with the fix reverted, and say so in the PR.
 Skip `cargo check` when a planned test answers the same question. A test run does not
 show that the game builds, though: tests switch on core's `test-support` code. When
 production code touches anything behind `test-support` or `#[cfg(test)]`, also run
-`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file listed in
-`.github/workflows/wasm.yml`, the wasm check in the [Wasm guide](docs/wasm.md#checks).
+`python -m tools.cargo_run -- check -p vera20k --lib --bins`; for a file holding a
+browser switch (`feature = "wasm"` or `target_arch = "wasm32"`), the wasm check in the
+[Wasm guide](docs/wasm.md#checks). No pull request builds the browser package.
 
 - Working Rust: start with focused
   `python -m tools.cargo_run -- test -p <crate> --lib <module_path>::`, where `<crate>`
