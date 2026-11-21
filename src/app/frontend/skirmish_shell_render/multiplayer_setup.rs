@@ -572,7 +572,9 @@ pub(crate) fn render_multiplayer_setup(
             );
         }
         for bar in view.trackbars.iter().filter(|bar| {
-            bar.visible && !OPTION_TRACKBARS.contains(&bar.id) && bar.id != SUPERWEAPON_LIMIT
+            bar.visible
+                && !OPTION_TRACKBARS.contains(&bar.id)
+                && !matches!(bar.id, SUPERWEAPON_LIMIT | TECH_LEVEL)
         }) {
             push_trackbar(
                 &mut controls,
@@ -817,7 +819,7 @@ pub(crate) fn render_multiplayer_setup(
         }
         // VERA's Game Options over the room, on the box art the online
         // lobby's popups use: the box and its OK first, then its controls.
-        if view.open_box.is_some()
+        if let Some(page) = view.open_box
             && let Some(popup) = layout.game_options
         {
             let button = |id: u16, rect: RectPx, text: String| {
@@ -841,12 +843,22 @@ pub(crate) fn render_multiplayer_setup(
                     label,
                 )
             };
-            let (buttons, labels): (Vec<_>, Vec<_>) = [button(
-                GAME_OPTIONS_OK,
-                popup.ok,
-                localized_label(state, "GUI:OK", "GUI:OK"),
-            )]
+            // A campaign room has only Speed, so no second page.
+            let page_label = match page {
+                RoomBox::GameOptions => "VERA:MoreOptions",
+                RoomBox::MoreOptions => "VERA:MainOptions",
+            };
+            let (buttons, labels): (Vec<_>, Vec<_>) = [
+                Some(button(
+                    GAME_OPTIONS_OK,
+                    popup.ok,
+                    localized_label(state, "GUI:OK", "GUI:OK"),
+                )),
+                (!view.campaign)
+                    .then(|| button(GAME_OPTIONS_PAGE, popup.page, crate::i18n::tr(page_label))),
+            ]
             .into_iter()
+            .flatten()
             .unzip();
             let draw = shell_paint::paint_modal_shp(
                 font,
@@ -1173,8 +1185,10 @@ fn push_roster_cell(
     ));
 }
 
-/// The game options, in the room or in VERA's Game Options popup: their
-/// labels, the five checkboxes and the trackbars of [`OPTION_TRACKBARS`].
+/// The game options, in the room or on a page of VERA's Game Options popup.
+/// The room and page 1 hold the labels, the five checkboxes and the
+/// trackbars of [`OPTION_TRACKBARS`]; page 1 adds Tech Level and the four
+/// session checkboxes, page 2 VERA's own checkboxes and Superweapon Limit.
 fn push_option_controls(
     controls: &mut Vec<SpriteInstance>,
     texts: &mut Vec<ShellTextDraw>,
@@ -1183,6 +1197,7 @@ fn push_option_controls(
     layout: &MultiplayerSetupLayout,
     text_depth: f32,
 ) {
+    use crate::ui::skirmish_shell::game_options as labels;
     let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
         return;
     };
@@ -1199,83 +1214,98 @@ fn push_option_controls(
             scale.factor(),
         )
     };
-    for (key, rect) in &layout.option_labels {
-        if view.campaign && *key != "GUI:GameSpeed" {
-            continue;
-        }
-        texts.push(text(
-            &localized_label(state, key, key),
-            *rect,
-            ShellAlign::NONE,
-        ));
-    }
-    for (index, key) in [
-        "GUI:ShortGame",
-        "GUI:MCVRepacks",
-        "GUI:CratesAppear",
-        "GUI:SuperWeaponsAllowed",
-        "GUI:BuildOffAlly",
-    ]
-    .into_iter()
-    .enumerate()
-    .filter(|_| !view.campaign)
-    {
-        let rect = layout.checkboxes[index];
+    let mut checkbox = |controls: &mut Vec<SpriteInstance>, rect, checked, label: &str| {
         paint_control(
             controls,
             &atlas.control_chrome(),
-            ControlPaint::Checkbox {
-                rect,
-                checked: view.checks[index],
-            },
+            ControlPaint::Checkbox { rect, checked },
             scale,
         );
         texts.push(text(
-            &localized_label(state, key, key),
+            label,
             crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
             ShellAlign::V_CENTER,
         ));
-    }
-    // VERA's own checkboxes, only in its Game Options.
-    if layout.game_options.is_some() && !view.campaign {
-        for (index, label) in crate::ui::multiplayer_setup::ROOM_CHECKBOX_LABELS
-            .into_iter()
-            .enumerate()
+    };
+    let popup = layout.game_options.is_some() && !view.campaign;
+    if view.open_box == Some(RoomBox::MoreOptions) {
+        if popup {
+            for (index, label) in ROOM_CHECKBOX_LABELS.into_iter().enumerate() {
+                checkbox(
+                    controls,
+                    layout.room_checkboxes[index],
+                    view.room_checks[index],
+                    &crate::i18n::tr(label),
+                );
+            }
+        }
+    } else {
+        for (index, key) in [
+            "GUI:ShortGame",
+            "GUI:MCVRepacks",
+            "GUI:CratesAppear",
+            "GUI:SuperWeaponsAllowed",
+            "GUI:BuildOffAlly",
+        ]
+        .into_iter()
+        .enumerate()
+        .filter(|_| !view.campaign)
         {
-            let rect = layout.room_checkboxes[index];
-            paint_control(
+            checkbox(
                 controls,
-                &atlas.control_chrome(),
-                ControlPaint::Checkbox {
-                    rect,
-                    checked: view.room_checks[index],
-                },
-                scale,
+                layout.checkboxes[index],
+                view.checks[index],
+                &localized_label(state, key, key),
             );
+        }
+        if popup {
+            for (index, label) in SESSION_CHECKBOX_LABELS.into_iter().enumerate() {
+                checkbox(
+                    controls,
+                    layout.session_checkboxes[index],
+                    view.session_checks[index],
+                    &crate::i18n::tr(label),
+                );
+            }
+        }
+    }
+    let page = view.open_box.unwrap_or(RoomBox::GameOptions);
+    if page == RoomBox::GameOptions {
+        for (key, rect) in &layout.option_labels {
+            if view.campaign && *key != "GUI:GameSpeed" {
+                continue;
+            }
             texts.push(text(
-                &crate::i18n::tr(label),
-                crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
-                ShellAlign::V_CENTER,
+                &localized_label(state, key, key),
+                *rect,
+                ShellAlign::NONE,
             ));
         }
-        texts.push(text(
-            &crate::i18n::tr(crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL),
-            layout.superweapon_limit_label,
-            ShellAlign::NONE,
-        ));
-        if let Some(bar) = view
-            .trackbars
-            .iter()
-            .find(|bar| bar.id == SUPERWEAPON_LIMIT)
-        {
-            push_trackbar(controls, texts, state, view, layout, bar, text_depth);
-        }
     }
-    for bar in view
-        .trackbars
-        .iter()
-        .filter(|bar| bar.visible && OPTION_TRACKBARS.contains(&bar.id))
-    {
+    let (label, rect, id) = match page {
+        RoomBox::GameOptions => (
+            labels::TECH_LEVEL_LABEL,
+            layout.tech_level_label,
+            TECH_LEVEL,
+        ),
+        RoomBox::MoreOptions => (
+            labels::SUPERWEAPON_LIMIT_LABEL,
+            layout.superweapon_limit_label,
+            SUPERWEAPON_LIMIT,
+        ),
+    };
+    if popup {
+        texts.push(text(&crate::i18n::tr(label), rect, ShellAlign::NONE));
+    }
+    for bar in view.trackbars.iter().filter(|bar| {
+        bar.visible
+            && match page {
+                RoomBox::GameOptions => {
+                    OPTION_TRACKBARS.contains(&bar.id) || (popup && bar.id == id)
+                }
+                RoomBox::MoreOptions => popup && bar.id == id,
+            }
+    }) {
         push_trackbar(controls, texts, state, view, layout, bar, text_depth);
     }
 }

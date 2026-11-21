@@ -55,6 +55,8 @@ pub struct SkirmishSavedSetup {
     pub build_off_ally: bool,
     pub crates: bool,
     pub mcv_redeploy: bool,
+    /// VERA's Game Options.
+    pub session: crate::skirmish_launch::SessionOptions,
 }
 
 impl SkirmishSavedSetup {
@@ -77,6 +79,7 @@ impl SkirmishSavedSetup {
             build_off_ally: state.build_off_ally,
             crates: state.crates,
             mcv_redeploy: state.mcv_redeploy,
+            session: state.session,
         }
     }
 
@@ -132,6 +135,13 @@ impl SkirmishSavedSetup {
         state.build_off_ally = self.build_off_ally;
         state.crates = self.crates;
         state.mcv_redeploy = self.mcv_redeploy;
+        state.session = crate::skirmish_launch::SessionOptions {
+            tech_level: crate::ui::skirmish_shell::game_options::admitted_tech_level(
+                self.session.tech_level,
+            )
+            .unwrap_or(state.session.tech_level),
+            ..self.session
+        };
     }
 }
 

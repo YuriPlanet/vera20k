@@ -41,7 +41,9 @@ Launch
     │   │   │     Bulk Seat Actions list: Fill with AI (Easy/Normal/Hard/random), Open closed seats, Remove all AI (VERA)
     │   │   ├─ Map preview (click enlarges)
     │   │   ├─ Start Game / Back
-    │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Terrain Deformation【[VERA] TerrainDeformation】, OK
+    │   │   ├─ Game Options box: Superweapon Limit (Off, 2–20)【[VERA] SuperweaponLimit】, Tech Level (1–10), Bases, Fog of War,
+    │   │   │     Multi-Engineer, Harvester Truce【[Skirmish] TechLevel / Bases / FogOfWar / MultiEngineer / HarvesterTruce】,
+    │   │   │     Terrain Deformation【[VERA] TerrainDeformation】, Allow cheat codes【[VERA] SkirmishCheats】, OK
     │   │   └─ Choose Map
     │   │       ├─ Game type list (incl. Favorites), map list, search field, Add/Remove Favorite【MapFavorites.txt】
     │   │       ├─ Use Map / Cancel
@@ -82,9 +84,11 @@ Launch
     │   │     the quick teams), Bulk Seat Actions list (Fill with AI, Close all, Open closed seats, Remove all AI);
     │   │     each group has a Join/Watch/Join Queue button, and the host also gets Add AI
     │   ├─ Co-op difficulty, chat; with a missing map: Download / Leave
-    │   └─ Room Game Options popup: speed, credits, unit count, Superweapon Limit, the five retail checkboxes,
-    │       Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech, Terrain Deformation,
-    │       Building Production Queue
+    │   └─ Room Game Options popup, two pages:
+    │       ├─ speed, credits, unit count, Tech Level, the five retail checkboxes, Bases, Fog of War,
+    │       │     Multi-Engineer, Harvester Truce; More Options
+    │       └─ Superweapon Limit, Destroyable Bridges, In-game Allying, No Yuri, No France, No Spy, No Stolen Tech,
+    │             Terrain Deformation, Building Production Queue; Main Options
     │       【retail items in [LAN] or [WonlinePref]; VERA's additions this run only】
     │
     ├─ Movies & Credits: Sneak Peeks, Play Movies → movie list (Play Movie/Back), View Credits, Main Menu

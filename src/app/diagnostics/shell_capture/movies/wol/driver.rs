@@ -1417,6 +1417,17 @@ impl WolCapture {
                         "Crates did not toggle in Game Options"
                     );
                     self.event(frame, "C2 Game Options: Crates toggled");
+                    setup_click(
+                        state,
+                        layout
+                            .control_rect(crate::ui::multiplayer_setup::GAME_OPTIONS_PAGE)
+                            .context("Game Options page button")?,
+                    );
+                    ensure!(
+                        setup_view(state)?.open_box
+                            == Some(crate::ui::multiplayer_setup::RoomBox::MoreOptions),
+                        "Game Options did not turn to VERA's page"
+                    );
                     let no_france = crate::ui::multiplayer_setup::ROOM_CHECKBOXES
                         .iter()
                         .position(|id| *id == crate::ui::multiplayer_setup::NO_FRANCE)
@@ -1446,6 +1457,19 @@ impl WolCapture {
                         "France stayed in the host's Side list"
                     );
                     self.event(frame, "C2 Game Options: No France toggled");
+                    // Back to the first page, with Tech Level and the
+                    // session checkboxes.
+                    setup_click(
+                        state,
+                        layout
+                            .control_rect(crate::ui::multiplayer_setup::GAME_OPTIONS_PAGE)
+                            .context("Game Options page button")?,
+                    );
+                    ensure!(
+                        setup_view(state)?.open_box
+                            == Some(crate::ui::multiplayer_setup::RoomBox::GameOptions),
+                        "Game Options did not turn back to its first page"
+                    );
                 }
                 if self.target == WolTarget::ModernTeams {
                     use crate::app::input::multiplayer_setup as room_input;

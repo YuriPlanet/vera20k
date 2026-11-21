@@ -67,6 +67,7 @@ pub use state::{
     handle_player_name_tab, hit_test, hit_test_owner_draw_button, hovered_choose_map_modal_control,
     hovered_shell_control, initialize_rows_for_selected_map, insert_player_name_text,
     launch_session, opponent_scroll_deadline, opponent_scroll_geometry, opponent_scroll_held,
+    skirmish_session_options,
     pack_launch_session_without_start_validation, player_name_caret_prefix,
     player_name_edit_rect_hit, player_row_visible, poll_opponent_scroll, selected_player_rows,
     repair_teams_for_selected_mode,
