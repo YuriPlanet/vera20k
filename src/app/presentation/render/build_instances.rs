@@ -732,8 +732,8 @@ pub(super) fn build_world_instances(
     let cell_sparkles: Vec<SpriteInstance> = build_pixel_fx_sparkle_instances(state, sw, sh);
 
     // One-time first-frame statistics.
-    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
         let total_grid: usize = state
             .match_state
             .match_presentation
@@ -750,7 +750,7 @@ pub(super) fn build_world_instances(
                 .map(|layer| layer.instances.len())
                 .sum::<usize>(),
         );
-    }
+    });
 
     WorldInstances {
         terrain,

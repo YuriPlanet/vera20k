@@ -41,6 +41,10 @@ pub fn enable_fatal_messages() {
 
 /// What the last worker thread's panic said, kept for the box the main
 /// thread shows if that panic is re-raised there.
+///
+/// This and the flags above are process-wide statics because the panic hook
+/// ([`report_panic`]) has no receiver and runs on whichever thread panicked;
+/// the lock and atomics are for that thread boundary.
 static WORKER_PANIC: Mutex<Option<String>> = Mutex::new(None);
 
 /// The panic hook's notifier (`util::logging::install_panic_hook`). It runs

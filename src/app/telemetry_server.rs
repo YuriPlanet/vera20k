@@ -133,6 +133,9 @@ struct Client {
     sender: SyncSender<Arc<[u8]>>,
 }
 
+/// What the game thread (publishing frames, draining commands) shares with the
+/// accept thread and one worker thread per connection, each holding an
+/// `Arc<Shared>`: hence the locks and atomics.
 struct Shared {
     clients: Mutex<Vec<Client>>,
     stop: AtomicBool,

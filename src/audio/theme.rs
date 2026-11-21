@@ -993,7 +993,8 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
 
 /// Whether `track_name`'s absence is new to the log. A repeating theme whose
 /// file is missing retries every frame, as gamemd does (`0x00720CF2` ignores
-/// the failed play); one warning per track keeps that out of the log.
+/// the failed play); one warning per track keeps that out of the log. The
+/// list is process-wide, like the log it guards.
 fn first_report_of_missing_track(track_name: &str) -> bool {
     static REPORTED: std::sync::Mutex<std::collections::BTreeSet<String>> =
         std::sync::Mutex::new(std::collections::BTreeSet::new());
