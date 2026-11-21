@@ -719,7 +719,15 @@ pub(super) fn advance(
         // 5.94 down to 5.43, and the seed that matters most fell to a dead-even
         // trade. So the walk stays an `AttackMove` to the target's cell and the
         // stand-off is left on the table until something explains that drop.
-        let (kind, goal) = if engagement == crate::sim::control::observation::Engage::Ready {
+        // A target the gate will refuse is not a target it can shoot: a neutral
+        // block is nobody's and `orders::admits` drops every `Goal::Attack` at
+        // it (measured on seed 4242: 298 refusals, issued 0-1 a frame, the fist
+        // parked in front of it for 7000 ticks). AttackMove is the legal shape of
+        // the same order -- it walks at the block and fires at what the walk
+        // meets -- so the fist keeps moving instead of standing.
+        let shootable = engagement == crate::sim::control::observation::Engage::Ready
+            && obs.is_hostile(target_id);
+        let (kind, goal) = if shootable {
             (super::tracked::TrackedKind::Attack, attack)
         } else {
             (

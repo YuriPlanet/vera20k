@@ -614,6 +614,37 @@ mission 停在 Guard、census 里周围 12 格敌方建筑数为 0（它本来�
 所以**回退**。结论是这一层的取舍未定：瞄准民用块会让 10 提前 9869 帧获胜、让 7 首次获胜，
 但另外四局会被拖进消耗。下一轮要动的是「不瞄民用块时怎么绕过它」，不是目标替换。
 
+### 不许开火的目标就换个合法形状：中立块改发 AttackMove（留下来了）
+
+上一节定位了「拳头停在中立民用块前」：那栋楼是 nobody 的，`orders::admits` 会拒掉每一个 `Goal::Attack`。
+这一轮的修法不去换目标（换目标那一版六局净负，已否决），而是换**命令的形状**：目标不可开火时
+发 `Goal::AttackMove` 到同一个格子 —— 走的还是同一个方向，命令本身合法，路上遇到能打的东西照打。
+
+`src/sim/strategy/assist/advance.rs` 的 Ready 分支：
+
+```rust
+let shootable =
+    engagement == crate::sim::control::observation::Engage::Ready
+        && obs.is_hostile(target_id);
+```
+
+六局（target/autoplay-results/neutral-am.jsonl，第二次 neutral-am2.jsonl 逐字节一致）：
+
+| seed | 改前 | 改后 |
+|---|---|---|
+| 24301 | won 31957 own=121 enemy=1 | **won 27425** own=121 enemy=2（早 4532 帧） |
+| 19 | timeout own=162 enemy=13 | timeout own=162 enemy=13（没变） |
+| 10 | won 33912 own=162 army=86 | won 33824 own=157 army=92 |
+| 7 | timeout own=137 enemy=37 | timeout own=137 enemy=37（没变） |
+| 4242 | timeout own=151 enemy=19 | timeout own=157 enemy=**1**（差一个目标） |
+| 31337 | timeout own=144 enemy=12 | timeout own=157 enemy=**48**（本局变差） |
+
+没有丢任何胜局，参照局快了 4532 帧，4242 从差 19 个目标变成差 1 个。31337 变差（12→48）是本轮唯一的退步，
+按六局标准（own 低于 80 或 lost 高于 110 才算崩）不算崩。
+
+没有单测：fixture 的 Outbox 不会被应用，也无法在行军线上摆一栋 `NEUTRAL_SCAN_CELLS` 内的中立建筑，
+所以这轮的证据是六局基线表本身。
+
 ## 5. 结构（改代码前必读）
 
 ```
