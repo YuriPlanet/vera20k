@@ -279,6 +279,11 @@ struct AllyMatrix {
     allies: Vec<u64>,
 }
 
+// A dense bitmap for 4,096 named houses uses 2 MiB. Larger scenario or
+// saved-game graphs keep their by-name queries instead of allocating quadratically.
+const MAX_MATRIX_ROWS: usize = 4096;
+const _: () = assert!(MAX_MATRIX_ROWS < NO_ROW as usize);
+
 /// An id whose name has no ally and is in no ally set: it is allied with
 /// nobody but itself, and nobody else is allied with it.
 const NO_ROW: u16 = u16::MAX;
@@ -299,7 +304,7 @@ impl AllyMatrix {
             .filter(|(_, allies)| !allies.is_empty())
             .flat_map(|(house, allies)| std::iter::once(house).chain(allies))
             .collect();
-        if names.len() >= usize::from(NO_ROW) {
+        if names.len() > MAX_MATRIX_ROWS {
             return None;
         }
         let words = names.len().div_ceil(64);
