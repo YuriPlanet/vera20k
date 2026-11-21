@@ -516,11 +516,17 @@ pub(super) struct Census {
     pub(super) refineries: usize,
     pub(super) yards: usize,
     pub(super) yard_makers: usize,
-    /// Units that fight, harvesters and engineers aside.
+    /// Units that fight, harvesters and engineers aside: the ones the house
+    /// can actually move. A unit in limbo is stored, tracked and alive, but it
+    /// is not in the playfield — the host's `order_actor_admits` refuses it and
+    /// no player can see it — so it is counted in [`Self::limbo`] instead.
     pub(super) fighters: usize,
     /// Combat units with no order, no destination, no target and no live
-    /// intent: the wishlist's "单位在发呆".
+    /// intent: the wishlist's "单位在发呆". Also orderable only: a limbo unit
+    /// has nothing to be idle about.
     pub(super) idle: usize,
+    /// Combat units the house owns that are not in the playfield.
+    pub(super) limbo: usize,
     /// Fighting units per price band, per pool.
     pub(super) tiers: [[usize; 3]; 5],
     /// Finished buildings waiting for a cell, in factory order.
@@ -680,6 +686,7 @@ impl Census {
         self.yard_makers = 0;
         self.fighters = 0;
         self.idle = 0;
+        self.limbo = 0;
         self.tiers = [[0; 3]; 5];
         self.threat = [0; ROLES.len()];
         self.able = [0; ROLES.len()];
@@ -739,15 +746,27 @@ impl Census {
                 0
             };
             if combat {
-                self.fighters += 1;
-                // Idle: nothing to walk to and nothing to shoot at. The census
-                // runs before the frame's orders, so a unit that was given something
-                // last frame and is executing it is not idle — this is the unit that
-                // the ladder has no entry for.
-                let busy = obs.destination(entity.entity_id).is_some()
-                    || obs.attack_target(entity.entity_id).is_some();
-                if !busy {
-                    self.idle += 1;
+                // A unit in limbo is not in the playfield: it cannot be seen,
+                // shot at, or given an order, and the native gate
+                // (`order_actor_admits`) refuses it. Counting one as army is
+                // how the ledger came to report 106 fighters while 56 of them
+                // were E1s standing in limbo — measured on Death.mmx seed
+                // 24301 at tick 36000. Every "is this enough" gate below read
+                // that number and believed the house was twice as strong as
+                // the force it could actually move.
+                if !entity.orderable {
+                    self.limbo += 1;
+                } else {
+                    self.fighters += 1;
+                    // Idle: nothing to walk to and nothing to shoot at. The census
+                    // runs before the frame's orders, so a unit that was given something
+                    // last frame and is executing it is not idle — this is the unit that
+                    // the ladder has no entry for.
+                    let busy = obs.destination(entity.entity_id).is_some()
+                        || obs.attack_target(entity.entity_id).is_some();
+                    if !busy {
+                        self.idle += 1;
+                    }
                 }
                 self.tiers[slot.index()][tier] += 1;
                 let weights = roles.weights(&ty.id);
@@ -887,6 +906,7 @@ impl Census {
     pub(super) fn army_points(&self) -> i32 {
         self.units
             .iter()
+            .filter(|unit| unit.orderable)
             .fold(0i32, |total, unit| total.saturating_add(unit.points))
     }
 
@@ -967,12 +987,13 @@ impl Census {
             .map(|slot| format!("{}={}", slot.label(), self.slot_count(*slot)))
             .collect();
         format!(
-            "{} harv={} ref={} yard={} fighters={} idle={} threat=[{}] able=[{}]",
+            "{} harv={} ref={} yard={} fighters={} limbo={} idle={} threat=[{}] able=[{}]",
             slots.join(" "),
             self.harvesters,
             self.refineries,
             self.yards,
             self.fighters,
+            self.limbo,
             self.idle,
             self.threat
                 .iter()
