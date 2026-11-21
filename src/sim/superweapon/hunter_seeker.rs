@@ -20,7 +20,7 @@ pub(super) fn launch(
     sw_type: InternedId,
     sw: &SuperWeaponType,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(settings) = sw.hunter_seeker.as_ref() else {
         return false;

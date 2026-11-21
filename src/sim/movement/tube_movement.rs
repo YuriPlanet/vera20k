@@ -201,7 +201,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -246,7 +246,7 @@ impl Simulation {
         tube_id: TubeId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let terrain = self
             .resolved_terrain
@@ -319,7 +319,7 @@ impl Simulation {
         family: TrackFamily,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -526,7 +526,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
@@ -581,7 +581,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let occupants = self
             .substrate
@@ -637,7 +637,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -739,7 +739,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -1115,7 +1115,7 @@ mod tests {
             .unwrap()
             .slope_type = 1;
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         assert_eq!(turn.movement.movers_total, 1);
@@ -1249,7 +1249,7 @@ mod tests {
             .low_bridge_tube_state
             .is_some()
         {
-            sim.tube_object_turn(1, &rules, None, FrameEffects::default())
+            sim.tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .expect("tube turn");
             turns += 1;
             assert!(turns < 1000, "the tube's two steps end");
@@ -1377,7 +1377,13 @@ mod tests {
                 z: 0,
             });
         assert_eq!(
-            sim.track_tube_head(1, TrackFamily::Drive, &rules, None, FrameEffects::default()),
+            sim.track_tube_head(
+                1,
+                TrackFamily::Drive,
+                &rules,
+                None,
+                &mut FrameEffects::default()
+            ),
             Ok(true)
         );
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1452,7 +1458,7 @@ mod tests {
             .unwrap()
             .set_in_playfield(false);
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1493,7 +1499,7 @@ mod tests {
             });
             assert!(!rider.seldom.discovery.discovered_by_current_house());
             let turn = sim
-                .tube_object_turn(1, &rules, None, FrameEffects::default())
+                .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .unwrap();
             assert!(
                 !turn.per_cell_ran,

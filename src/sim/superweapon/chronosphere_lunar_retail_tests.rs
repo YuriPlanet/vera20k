@@ -75,7 +75,7 @@ fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
             &commands,
             22,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .expect("ordinary bound-resource frame");
 }

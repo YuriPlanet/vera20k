@@ -27,7 +27,7 @@ impl Simulation {
         house: crate::sim::intern::InternedId,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if (self.session.binary_frame() as i32) % 8 != 0 {
             return;
@@ -99,7 +99,7 @@ impl Simulation {
         house: crate::sim::intern::InternedId,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.raise_house_tags_forward(
             house,
@@ -122,7 +122,7 @@ impl Simulation {
         input: TagEventInput,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let mut effects = Vec::new();
         let mut slot = 0;
@@ -161,7 +161,7 @@ impl Simulation {
         order: TeamTagOrder,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let mut ordinal = match order {
             TeamTagOrder::Forward => Some(0),
@@ -236,7 +236,7 @@ impl Simulation {
         &mut self,
         subject: u64,
         input: TagEventInput,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) -> bool {
         let Some(&tag) = self
             .trigger_runtime
@@ -271,7 +271,7 @@ impl Simulation {
     pub(crate) fn dispatch_airborne_cell_tag_event(
         &mut self,
         actor: u64,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         if self.session.binary_frame() & 15 != 0 {
             return;
@@ -337,7 +337,7 @@ impl Simulation {
         cell: crate::map::cell_index::NativeCellIdentity,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(&tag) = self.trigger_runtime.cell_tags.get(&cell) else {
             return;
@@ -390,7 +390,7 @@ impl Simulation {
     pub(crate) fn dispatch_foot_cell_tag_events(
         &mut self,
         actor: u64,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(actor) else {
             return;
@@ -648,7 +648,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         //7265C0 deliberately does not call RegisterEvent. Force22 springs
         // directly, but disabled/pending instances still reject it.
@@ -723,7 +723,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         self.trigger_runtime
@@ -970,7 +970,7 @@ impl Simulation {
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Vec<TriggerEffect> {
         let mut effects = Vec::new();
         #[cfg(any(test, feature = "dev-overlays"))]

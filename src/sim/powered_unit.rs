@@ -134,7 +134,7 @@ impl Simulation {
         id: u64,
         operational: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(id) else {
             return;
@@ -170,7 +170,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(id) else {
             return;
@@ -201,7 +201,7 @@ impl Simulation {
         owner: InternedId,
         unit_type: &str,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
@@ -226,7 +226,7 @@ impl Simulation {
         owner: InternedId,
         unit_type: Option<&str>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
@@ -303,7 +303,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -362,7 +362,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -372,8 +372,8 @@ impl Simulation {
             (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
         self.techno_deactivate(id, rules, effects);
         if selected {
-            let context = crate::sim::world::UninitContext::new(rules)
-                .with_effects(effects.without_selection_voice());
+            let mut silent = effects.without_selection_voice();
+            let context = crate::sim::world::UninitContext::new(rules).with_effects(&mut silent);
             self.techno_select(id, context);
         }
         if let Some(focus) = focus
@@ -397,7 +397,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let (offline, powered, operated) = {
             let Some(actor) = self.substrate.entities.get(id) else {
@@ -465,7 +465,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -500,7 +500,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         let Some(foot) = self
@@ -608,7 +608,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

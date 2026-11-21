@@ -72,12 +72,18 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             })
             .unwrap();
         assert!(sim.with_object_placement_scope(|sim| {
-            sim.team_add_member(team, member, false, &rules, super::FrameEffects::default())
+            sim.team_add_member(
+                team,
+                member,
+                false,
+                &rules,
+                &mut super::FrameEffects::default(),
+            )
         }));
         let actor = sim.entities().get(member).unwrap();
         assert!(actor.lifecycle.object_alive() && actor.lifecycle.in_limbo());
@@ -346,7 +352,7 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         &rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let passenger = sim.substrate.entities.get(passenger_id).unwrap();

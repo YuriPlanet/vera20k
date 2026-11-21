@@ -176,7 +176,7 @@ fn receive(sim: &mut Simulation, rules: &RuleSet, id: u64, damage: i32) {
             arg6: false,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(rules, None, hit, &mut FrameEffects::default());
 }
 
 #[test]

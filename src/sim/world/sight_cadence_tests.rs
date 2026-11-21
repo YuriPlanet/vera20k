@@ -484,7 +484,7 @@ fn source_release_retains_its_cached_geometry_until_teardown() {
     // removal or the test-only rules-less flush wrapper.
     restored.process_pending_delete_with(
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         1,
         restored.session.started(),
     );
@@ -530,7 +530,12 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     assert!(admission.latched);
     assert_eq!(admission.radius, -1);
     assert!(admission.cells.is_empty());
-    sim.refresh_object_sight(zero, &rules, 3, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        zero,
+        &rules,
+        3,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(sim.fog.sight_is_latched(zero, owner));
     assert_eq!(
         sim.fog.sight_admissions_for_test()[&(zero, owner)].radius,
@@ -1054,7 +1059,12 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
         let (output, calls) = trace_reveal_calls(|| {
             scene
                 .runtime
-                .advance_frame(commands, 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    commands,
+                    22,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .expect("normal AMCV movement frame")
         });
         assert!(output.tick.frame_committed);
@@ -1313,7 +1323,12 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
         let (output, _calls) = trace_reveal_calls(|| {
             scene
                 .runtime
-                .advance_frame(commands, 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    commands,
+                    22,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .expect("ordinary Stop then idle frame")
         });
         assert!(output.tick.frame_committed);
@@ -1743,7 +1758,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         );
         let config = sim.sight_reveal_config(rules);
         let heights = sim.sight_height_grid(&config);
-        let context = UninitContext::new(rules);
+        let mut context = UninitContext::new(rules);
         let rng = (
             sim.scenario_rng.native_state_hex(),
             sim.main_rng.native_state_hex(),
@@ -1752,7 +1767,8 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         if indexed {
             // Establish the derived index through its production owner. All native
             // input fields and callback history must stay unchanged while priming.
-            let (_, trace) = trace_reveal_calls(|| sim.update_shroud_edges(viewer, context));
+            let (_, trace) =
+                trace_reveal_calls(|| sim.update_shroud_edges(viewer, context.reborrow()));
             assert_eq!(trace.edge_visits, 2 * cells.len());
             assert!(trace.notifications.is_empty());
             for state in expected.values() {
@@ -1794,7 +1810,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
                     Some(&heights),
                     false,
                     &config,
-                    context,
+                    context.reborrow(),
                     vision::MapRevealProjection::Fire,
                     Some(viewer),
                 )
@@ -1820,7 +1836,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
                         viewer,
                         border_origin,
                         radius,
-                        context,
+                        context.reborrow(),
                     )
                 });
                 let border = native["borders"]
@@ -1849,7 +1865,8 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         }
         for frame in [119, 120, 240] {
             sim.session.set_binary_frame_for_test(frame);
-            let (_, trace) = trace_reveal_calls(|| sim.tick_pending_shroud_conceal(context));
+            let (_, trace) =
+                trace_reveal_calls(|| sim.tick_pending_shroud_conceal(context.reborrow()));
             if frame == 120 {
                 if indexed {
                     assert!(
@@ -1934,7 +1951,7 @@ fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
         id,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let mut visits = 0;
     while sim
@@ -1996,7 +2013,12 @@ fn a_reveal_before_navigation_publication_tests_the_cell_heights() {
     assert_ne!(early, flat, "the cliff hides cells before publication");
     let grid = PathGrid::from_resolved_terrain(sim.resolved_terrain.as_ref().unwrap());
     sim.install_fixture_path_grid(Some(&grid));
-    sim.refresh_object_sight(id, &rules, 0, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        id,
+        &rules,
+        0,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.fog.sight_admission(id, owner).unwrap().cells,
         early,
@@ -2028,7 +2050,7 @@ fn an_owner_change_moves_the_sight_to_the_new_owner_within_the_call() {
         .spawn_object("MTNK", "Americans", 16, 16, 0, &rules)
         .unwrap();
     assert!(sim.fog.sight_is_latched(id, americans));
-    sim.change_owner_with_rules(id, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(id, russians, &rules, None, &mut FrameEffects::default());
     assert!(!sim.fog.sight_is_latched(id, americans), "0x0070172F");
     assert!(!sim.fog.is_cell_visible(americans, 16, 16));
     // 0x0070187B's UpdateReveal passes the computer owner to RevealArea,
@@ -2064,7 +2086,12 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         .spawn_object("MTNK", "Russians", 8, 22, 0, &rules)
         .unwrap();
     // The Spy Plane's kind of reveal: a radius that replaces its Sight=.
-    sim.refresh_object_sight(tank, &rules, 7, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        tank,
+        &rules,
+        7,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let tank_source = sim
         .fog
         .source_sight(tank, americans)
@@ -2088,7 +2115,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         americans,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     assert_eq!(
@@ -2130,7 +2157,13 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
     assert!(sim.fog.is_cell_visible(americans, origin.0, origin.1));
 
     let ((), release_trace) = trace_reveal_calls(|| {
-        sim.make_enemy(russians, americans, &rules, FrameEffects::default(), false);
+        sim.make_enemy(
+            russians,
+            americans,
+            &rules,
+            &mut FrameEffects::default(),
+            false,
+        );
     });
     assert!(
         release_trace
@@ -2151,7 +2184,7 @@ fn an_alliance_moves_the_allys_building_sight_within_the_call() {
         americans,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     assert!(
@@ -2195,7 +2228,7 @@ fn an_ex_ally_keeps_a_mobile_footprint_after_its_next_cell_arrival() {
         americans,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     let arrive = |sim: &mut Simulation| {
@@ -2208,7 +2241,7 @@ fn an_ex_ally_keeps_a_mobile_footprint_after_its_next_cell_arrival() {
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     };
@@ -2223,7 +2256,13 @@ fn an_ex_ally_keeps_a_mobile_footprint_after_its_next_cell_arrival() {
     assert!(sim.fog.source_sight_is_latched(tank, americans));
     assert!(sim.fog.is_cell_visible(americans, old_cell.0, old_cell.1));
 
-    sim.make_enemy(russians, americans, &rules, FrameEffects::default(), false);
+    sim.make_enemy(
+        russians,
+        americans,
+        &rules,
+        &mut FrameEffects::default(),
+        false,
+    );
     assert!(
         sim.fog.is_cell_visible(americans, old_cell.0, old_cell.1),
         "MakeEnemy's mobile arm leaves the prior map footprint"
@@ -2322,7 +2361,7 @@ fn an_infantry_arrival_refreshes_its_sight_border() {
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     });
@@ -2359,7 +2398,12 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
             .discovery
             .discovered_by_current_house()
     );
-    sim.refresh_object_sight(id, &rules, 7, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        id,
+        &rules,
+        7,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let before = sim.fog.sight_admission(id, player).unwrap().clone();
     assert_eq!(before.radius, 7);
     sim.substrate
@@ -2368,7 +2412,14 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
         .unwrap()
         .position
         .set_rx_for_test(9);
-    sim.make_ally(other, player, &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        other,
+        player,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
     let refreshed = sim.fog.sight_admission(id, player).unwrap().clone();
     assert_eq!((refreshed.origin.0, refreshed.origin.1), (9, 22));
     assert_eq!(refreshed.radius, rules.object("MTNK").unwrap().sight);
@@ -2379,6 +2430,13 @@ fn make_ally_refreshes_own_sight_after_admission_and_skips_a_refused_repeat() {
         .position
         .set_rx_for_test(10);
     // CanAlly rejects the existing edge before the pre-release visitor.
-    sim.make_ally(other, player, &rules, None, FrameEffects::default(), false);
+    sim.make_ally(
+        other,
+        player,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+        false,
+    );
     assert_eq!(sim.fog.sight_admission(id, player), Some(&refreshed));
 }

@@ -181,7 +181,7 @@ pub(super) fn launch_warp(
     sw_type: InternedId,
     target: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(source) = sim
         .super_weapons
@@ -273,7 +273,7 @@ fn warp_object(
     warp: &ChronoWarpLaunch,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let in_air = |sim: &Simulation, id: u64| {
         sim.substrate.entities.get(id).is_some_and(|entity| {
@@ -375,7 +375,7 @@ fn arm_chrono_warp(
     warp: &ChronoWarpLaunch,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -579,7 +579,7 @@ pub(super) fn ares_launch_warp(
     sw_type: InternedId,
     target: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     use crate::rules::superweapon_type::SuperWeaponKind;
     let Some((source_name, source_sw)) = super::ares_post_click_source(sim, rules, owner) else {
@@ -709,7 +709,7 @@ fn ares_chronoport(
     targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     buildings: &mut Vec<AresChronoWarpBuilding>,
 ) {
     use crate::rules::superweapon_targeting::TargetMask;
@@ -928,7 +928,7 @@ fn ares_begin_building_chronoshift(
     warp: &AresChronoWarp,
     id: u64,
     is_vehicle: bool,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<AresChronoWarpBuilding> {
     sim.stop_all_targeting_on_detach(id, rules, frame_effects);
     sim.lose_projectile_targets(id, rules);
@@ -964,7 +964,7 @@ pub(super) fn ares_tick_chrono_warps(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let machines = std::mem::take(&mut sim.ares_chrono_warps.machines);
     let mut kept = Vec::with_capacity(machines.len());
@@ -1000,7 +1000,7 @@ fn ares_chrono_warp_update(
     rules: &RuleSet,
     machine: &mut AresChronoWarpMachine,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let passed = sim.session.binary_frame().wrapping_sub(machine.start_frame) as i32;
     if passed == 1 {
@@ -1024,9 +1024,9 @@ fn ares_chrono_warp_update(
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         })
         .collect();
-    let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
+    let mut context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
     for item in &buildings {
-        sim.techno_limbo_with_context(item.building, context);
+        sim.techno_limbo_with_context(item.building, context.reborrow());
         if let Some(entity) = sim.substrate.entities.get_mut(item.building) {
             entity.building_art.clear_actually_placed();
         }
@@ -1056,7 +1056,7 @@ fn ares_chrono_warp_put_back(
     item: &AresChronoWarpBuilding,
     blow_unplaceable: bool,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::world::PlacementEvidence;
     let id = item.building;
@@ -1199,7 +1199,7 @@ fn ares_arm_chrono_warp(
     warp: &AresChronoWarp,
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;

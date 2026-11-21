@@ -334,7 +334,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                 rules,
                 "Americans",
                 kind,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 false
             ));
         }
@@ -427,7 +427,7 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
                     naval: false
                 },
                 false,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_eq!(
                 projection.ready_building_tabs(
@@ -564,7 +564,11 @@ fn trigger_duplicate_type_keeps_selected_cameo_kind_through_sidebar_projection()
     sim.session_mut_for_test().set_binary_frame_for_test(123);
     sim.initialize_trigger_definitions(&map, &Default::default(), None, None, None);
     sim.classify_map_triggers(&rules);
-    let effects = sim.advance_triggers(&rules, None, crate::sim::world::FrameEffects::default());
+    let effects = sim.advance_triggers(
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let [
         TriggerEffect::FlashSidebarCameo {
             category,
@@ -1231,7 +1235,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             &rules,
             "Americans",
             "GAPOWR",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         for output in sim.take_lifecycle_outputs_for_test() {
@@ -1297,7 +1301,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
             &rules,
             "Americans",
             "GAPOWR",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         for _ in 0..4096 {
@@ -1307,7 +1311,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                     &rules,
                     67,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             for output in &frame.lifecycle_outputs {
@@ -1350,7 +1354,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                 naval: false
             },
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         for output in sim.take_lifecycle_outputs_for_test() {
             projection.apply_lifecycle_output(&output, Some(owner), ares_way);
@@ -1482,7 +1486,7 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
                         &rules,
                         "Americans",
                         source,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                         false,
                     ),
                     "{control}"
@@ -1948,7 +1952,7 @@ fn the_count_badge_asks_the_primary_factory_not_the_cameo_link() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     // No lifecycle output reaches the projection: the E1 cameo has no link.

@@ -263,7 +263,7 @@ impl Simulation {
         sid: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::building_construction::PackUpFrame;
         let now = self.session.binary_frame() as i32;

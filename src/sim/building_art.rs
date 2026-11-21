@@ -381,7 +381,7 @@ impl Simulation {
         scenario_initialization: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         #[cfg(any(test, feature = "test-support"))]
         GRAND_OPENING_CALLS.with_borrow_mut(|trace| {
@@ -1778,7 +1778,7 @@ mod slot_tests {
         // SetHeight5F5FA0 re-enters BuildingMark43F738 without Unlimbo.
         // Move the retained slot after PlaceDown without restarting it.
         let old_z = sim.anim(replaced).unwrap().world_coord().z;
-        sim.set_object_height(id, 96, &rules, FrameEffects::default());
+        sim.set_object_height(id, 96, &rules, &mut FrameEffects::default());
         assert_eq!(sim.anim(replaced).unwrap().world_coord().z, old_z + 96);
         assert_eq!(
             sim.entities().get(id).unwrap().building_art.anim_slots[3],
@@ -1915,7 +1915,7 @@ mod slot_tests {
                 missing,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             assert!(!sim.anim(missing).unwrap().runtime().first_ai_guard);
@@ -1926,7 +1926,7 @@ mod slot_tests {
                 missing,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             assert!(sim.substrate.pending_delete.contains_object(&missing));
@@ -2076,7 +2076,7 @@ mod slot_tests {
             true,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let old = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
         sim.substrate
@@ -2091,7 +2091,7 @@ mod slot_tests {
             true,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.entities().get(id).unwrap().building_art.anim_slots[3],

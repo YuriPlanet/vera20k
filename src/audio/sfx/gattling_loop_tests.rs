@@ -947,7 +947,7 @@ struct RecordingBoundary<'a> {
 
 impl crate::sim::world::SoundBoundary for RecordingBoundary<'_> {
     fn consume(
-        &self,
+        &mut self,
         sim: &crate::sim::world::Simulation,
         _rules: &crate::rules::ruleset::RuleSet,
         events: &[crate::sim::world::SimSoundEvent],
@@ -1053,7 +1053,8 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     *sim.main_rng_mut_for_test() =
         SimRng::from_native_state_hex_for_test(main_hex(row, &initial["before"]));
     sim.entity_mut_for_test(id).unwrap().gattling = GattlingState::from_fields(0, 0, false);
-    let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
+    let (_, raw) =
+        trace_draws(|| sim.gattling_increase(id, rules, 1, &mut FrameEffects::default()));
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0]["value"], initial["requests"][0]["result"]);
     assert_main(
@@ -1098,7 +1099,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     // charges.
     if !ares_way {
         let (_, raw) =
-            trace_draws(|| sim.gattling_increase(id, rules, 199, FrameEffects::default()));
+            trace_draws(|| sim.gattling_increase(id, rules, 199, &mut FrameEffects::default()));
         assert!(
             raw.is_empty(),
             "original retained latch crosses no new report"
@@ -1114,7 +1115,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
     let transition = recorded_boundary(row, "original_Unit_tail_hard_stage_transition");
     let native_transition_facts = native_gattling_sound_facts(row, transition);
     let transition_prefix = sim.sound_events().len();
-    let hard = RecordingBoundary {
+    let mut hard = RecordingBoundary {
         delivered: std::cell::Cell::new(transition_prefix),
         calls: std::cell::Cell::new(0),
         source: std::cell::RefCell::new(old),
@@ -1125,7 +1126,12 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
         release: false,
     };
     let (_, raw) = trace_draws(|| {
-        sim.gattling_increase(id, rules, transition_ticks, FrameEffects::for_sound(&hard))
+        sim.gattling_increase(
+            id,
+            rules,
+            transition_ticks,
+            &mut FrameEffects::for_sound(&mut hard),
+        )
     });
     assert_eq!(
         hard.calls.get(),
@@ -1173,7 +1179,8 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
             threshold["after"]["gattling"]["value"].as_i64().unwrap()
         );
         let events = sim.sound_events().len();
-        let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
+        let (_, raw) =
+            trace_draws(|| sim.gattling_increase(id, rules, 1, &mut FrameEffects::default()));
         assert!(raw.is_empty(), "the stage-1 latch holds below Stage2");
         assert_eq!(sim.sound_events().len(), events);
     }
@@ -1202,7 +1209,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
         "old source stays cancelled across real Loop2 draws"
     );
     let release = recorded_boundary(row, "original_Unit_no_target_soft_release");
-    let soft = RecordingBoundary {
+    let mut soft = RecordingBoundary {
         delivered: std::cell::Cell::new(sim.sound_events().len()),
         calls: std::cell::Cell::new(0),
         source: std::cell::RefCell::new(new),
@@ -1213,7 +1220,7 @@ fn assert_gattling_stop_and_release_at_native_boundaries(ares_way: bool) {
         release: true,
     };
     let (_, raw) =
-        trace_draws(|| sim.gattling_update(id, rules, 1, FrameEffects::for_sound(&soft)));
+        trace_draws(|| sim.gattling_update(id, rules, 1, &mut FrameEffects::for_sound(&mut soft)));
     assert_eq!(
         soft.calls.get(),
         native_gattling_sound_facts(row, release)
@@ -1267,7 +1274,7 @@ fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
         playback,
         registry.get("GattlingGunAttackLoop2").unwrap(),
     );
-    let boundary = RecordingBoundary {
+    let mut boundary = RecordingBoundary {
         delivered: std::cell::Cell::new(sim.sound_events().len()),
         calls: std::cell::Cell::new(0),
         source: std::cell::RefCell::new(source),
@@ -1281,8 +1288,8 @@ fn production_limbo_preserves_frame_sound_scope_in_a_nested_context() {
     // controls, through a nested context. Limbo6F6C6B's Release
     // before6F6C76 is instruction-established; this is not an executed native
     // comparison of the complete Limbo transaction.
-    let effects = FrameEffects::for_sound(&boundary);
-    let context = UninitContext::new(rules).with_effects(effects);
+    let mut effects = FrameEffects::for_sound(&mut boundary);
+    let context = UninitContext::new(rules).with_effects(&mut effects);
     let (outcome, raw) = trace_draws(|| sim.techno_limbo_with_context(id, context));
     assert_eq!(outcome, ConcealOutcome::Concealed);
     assert!(raw.is_empty());

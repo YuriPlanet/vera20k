@@ -1130,7 +1130,7 @@ mod tests {
         for selected in [true, true] {
             let due = runtime.simulation.take_due_commands();
             runtime
-                .advance_frame(&due, 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&due, 67, TickLane::Ordinary, &mut FrameEffects::default())
                 .expect("ordinary planning-active primary-selection frame");
             assert_eq!(
                 runtime.simulation.production().is_primary_factory(second),

@@ -859,7 +859,7 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
         rules,
         ifv,
         DepartureRoute::Vehicle,
-        |sim, passenger| {
+        |sim, passenger, _| {
             let position = exit_cell_position(sim, passenger, 16, 15, 0);
             reveal_unloaded_passenger(
                 sim,
@@ -869,10 +869,10 @@ fn issued_repair_attack_is_not_readmitted_when_health_or_cargo_changes() {
                 position,
                 crate::sim::world::PlacementEvidence::MarkSucceeded,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         },
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 0);

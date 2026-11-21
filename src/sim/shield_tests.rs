@@ -55,7 +55,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, damage: i32) {
             None,
             warhead,
         )],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -279,11 +279,17 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         .hp = 40;
     super::tick(&mut sim, target, &rules);
     sim.session.set_binary_frame_for_test(30);
-    sim.temporal_initiate_warp(warper, Some(target), &rules, None, FrameEffects::default());
+    sim.temporal_initiate_warp(
+        warper,
+        Some(target),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(sim.substrate.entities.get(target).unwrap().ai_frozen());
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(300);
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         points(&sim),
         40,
@@ -296,7 +302,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         warper,
         rules.ares_form(),
     );
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(359);
     super::tick(&mut sim, target, &rules);
     assert_eq!(points(&sim), 40, "the saved recovery time has not elapsed");
@@ -345,7 +351,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
     super::tick(&mut sim, 1, &rules);
     sim.session.set_binary_frame_for_test(30);
     arm_chrono_warp(&mut sim);
-    sim.process_chrono_warp(1, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(1, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert!(sim.substrate.entities.get(1).unwrap().is_warped_out());
     super::tick(&mut sim, 1, &rules);

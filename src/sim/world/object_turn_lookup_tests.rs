@@ -36,7 +36,7 @@ fn lookups_during(sim: &mut Simulation, turn: impl FnOnce(&mut Simulation)) -> (
 fn a_turn_finds_its_own_object_without_the_id_index() {
     let (mut sim, rules, tank, _) = scene();
     let (lookups, hashed) = lookups_during(&mut sim, |sim| {
-        sim.advance_live_object_turn(tank, &rules, techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(tank, &rules, &mut techno_ai::ObjectAiCtx::default())
             .unwrap();
     });
     assert!(
@@ -54,7 +54,7 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
     use crate::util::save_codec;
     let (mut sim, rules, tank, plant) = scene();
     for id in [tank, plant] {
-        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(id, &rules, &mut techno_ai::ObjectAiCtx::default())
             .unwrap();
     }
     let reloaded = |id| {
@@ -107,7 +107,12 @@ struct Heard {
 }
 
 impl crate::sim::world::SoundBoundary for Heard {
-    fn consume(&self, _: &Simulation, _: &RuleSet, events: &[crate::sim::world::SimSoundEvent]) {
+    fn consume(
+        &mut self,
+        _: &Simulation,
+        _: &RuleSet,
+        events: &[crate::sim::world::SimSoundEvent],
+    ) {
         self.delivered.set(events.len());
     }
 
@@ -116,7 +121,7 @@ impl crate::sim::world::SoundBoundary for Heard {
     }
 
     fn update_looping_sound(
-        &self,
+        &mut self,
         _: &Simulation,
         owner: u64,
         _: crate::sim::anim_class::AnimWorldCoord,
@@ -144,25 +149,26 @@ fn a_buildings_turn_keeps_its_deliveries_and_takes_no_foot_tail() {
     let pending = |sim: &mut Simulation| sim.smudge_grid.as_mut().unwrap().drain_dirty();
 
     let (mut ai_only, rules, plant) = prepared();
-    let heard = Heard::default();
-    let ctx = techno_ai::ObjectAiCtx {
-        effects: crate::sim::world::FrameEffects::for_sound(&heard),
+    let mut heard = Heard::default();
+    let mut ctx = techno_ai::ObjectAiCtx {
+        effects: crate::sim::world::FrameEffects::for_sound(&mut heard),
         overlay_registry: None,
     };
     let (ai_lookups, _) = lookups_during(&mut ai_only, |sim| {
-        sim.object_ai_visit_one_with_effects(plant, &rules, ctx);
+        sim.object_ai_visit_one_with_effects(plant, &rules, &mut ctx);
     });
     assert!(heard.updated.borrow().is_empty());
     assert_eq!(pending(&mut ai_only), [(3, 4)]);
 
     let (mut sim, rules, plant) = prepared();
-    let heard = Heard::default();
-    let ctx = techno_ai::ObjectAiCtx {
-        effects: crate::sim::world::FrameEffects::for_sound(&heard),
+    let mut heard = Heard::default();
+    let mut ctx = techno_ai::ObjectAiCtx {
+        effects: crate::sim::world::FrameEffects::for_sound(&mut heard),
         overlay_registry: None,
     };
     let (turn_lookups, _) = lookups_during(&mut sim, |sim| {
-        sim.advance_live_object_turn(plant, &rules, ctx).unwrap();
+        sim.advance_live_object_turn(plant, &rules, &mut ctx)
+            .unwrap();
     });
     assert_eq!(*heard.updated.borrow(), [plant]);
     assert_eq!(heard.delivered.get(), sim.sound_events.len());
@@ -213,7 +219,7 @@ fn a_fire_visit_without_a_target_keeps_its_deliveries() {
             visit,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!receipt.bridge_state_changed && !receipt.structure_destroyed);
         assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
@@ -232,7 +238,7 @@ fn an_idle_turn_hands_its_object_out_only_on_a_due_timer() {
     let (mut sim, rules, tank, plant) = scene();
     let mut turn = |sim: &mut Simulation, id| {
         let before = sim.substrate.entities.hand_outs();
-        sim.advance_live_object_turn(id, &rules, techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(id, &rules, &mut techno_ai::ObjectAiCtx::default())
             .unwrap();
         sim.substrate.entities.hand_outs() - before
     };

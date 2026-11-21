@@ -454,7 +454,7 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
                     &mut f.sim,
                     actor,
                     &rules,
-                    crate::sim::world::ObjectAiCtx::default(),
+                    &mut crate::sim::world::ObjectAiCtx::default(),
                 )
                 .unwrap();
                 dispatch_count += 1;

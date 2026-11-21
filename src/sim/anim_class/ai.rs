@@ -68,7 +68,7 @@ impl Simulation {
         id: AnimId,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
         // One read serves the visit's prefix and gates: most visits end at a
         // gate, and each step that may write the anim re-reads it (VERA-only,
@@ -190,7 +190,7 @@ impl Simulation {
                 descriptor,
                 world_coord,
                 constructor,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ) {
                 Ok(_) => {}
                 Err(AnimSpawnError::Tiberium(error)) => {
@@ -398,7 +398,7 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let ares = rules.ares_form();
         let Some(anim) = self.anim(id) else {
@@ -564,7 +564,7 @@ impl Simulation {
         damage: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let (Some(warhead), Some(coord)) =
             (weapon.warhead.as_deref(), self.anim_absolute_coord(id))
@@ -642,7 +642,7 @@ impl Simulation {
         make_infantry: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((location, owner)) = self
             .anim(id)
@@ -821,7 +821,7 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
         let ares = rules.ares_form();
         let sound_name = self.anim(id).and_then(|anim| {
@@ -1202,7 +1202,7 @@ impl Simulation {
         next: &str,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
         let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);

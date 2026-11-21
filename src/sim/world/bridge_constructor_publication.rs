@@ -251,7 +251,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             request,
             ground,
             crate::sim::anim_class::AnimConstructorInput::Runtime,
-            self.publication.frame_effects,
+            &mut self.publication.frame_effects,
         )
         .map_err(|error| error.to_string())
     }

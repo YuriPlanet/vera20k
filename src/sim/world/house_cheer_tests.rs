@@ -41,7 +41,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         // Mission/Doing are explicit initialized component inputs. Native

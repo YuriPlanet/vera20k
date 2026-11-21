@@ -158,7 +158,7 @@ fn retail_frame(scenario: &mut HeadlessScenario, orders: Vec<CommandEnvelope>) -
             &orders,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame")
 }

@@ -410,7 +410,7 @@ fn direct_area_damage_applies_the_warhead_attach_effects() {
         warhead,
         false,
         (firer, None, warhead_ref),
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let attached = sim
         .entities()

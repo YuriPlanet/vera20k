@@ -147,7 +147,7 @@ pub(crate) fn tick_terrain_object_ai(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), RuntimeOverlayError> {
     let live = rules.ares_form()
         && sim
@@ -176,7 +176,7 @@ fn tick_terrain_animation(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), RuntimeOverlayError> {
     let Some(cell) = sim
         .terrain_objects
@@ -774,7 +774,7 @@ mod tests {
                     id,
                     &self.rules,
                     Some(&self.registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
                 *state = self.sim.terrain_objects.animations()[&id].clone();
@@ -1156,7 +1156,7 @@ mod tests {
                 he,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, he_ref),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             if id == immune {
                 assert_eq!(sim.terrain_objects.get(id).unwrap().health(), 200);
@@ -1238,7 +1238,7 @@ mod tests {
             warhead,
             true,
             (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for &id in &ids {
             let tree = sim.terrain_objects.get(id).unwrap();
@@ -1256,7 +1256,7 @@ mod tests {
             warhead,
             true,
             (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(2, 2), 0);
@@ -1416,7 +1416,7 @@ mod tests {
             origin,
             None,
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let records: Vec<_> = collected
             .receivers
@@ -1439,7 +1439,7 @@ mod tests {
             &rules,
             Some(&registry),
             &collected.receivers,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let health = sim.terrain_objects.get(id).unwrap().health();
         assert!(health > 0 && health < sim.terrain_objects.get(id).unwrap().max_health());
@@ -1450,7 +1450,7 @@ mod tests {
             Some(&registry),
             secondary,
             false,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(sim.terrain_objects.get(id).unwrap().health() < health);
         let impact = sim.terrain_objects.get(id).unwrap().world_coord();
@@ -1463,7 +1463,7 @@ mod tests {
             he,
             true,
             origin,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         for cell in cells {
             assert_eq!(sim.terrain_objects.id_at(cell), None);
@@ -1478,7 +1478,7 @@ mod tests {
             0
         );
         assert!(sim.substrate.pending_delete.contains_object(&id));
-        sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
+        sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
         assert!(sim.terrain_objects.get(id).is_none());
     }
 
@@ -1560,7 +1560,7 @@ mod tests {
         }
         assert_eq!(restored.terrain_objects.id_at((3, 3)), Some(older));
         assert!(restored.terrain_objects.get(older).unwrap().is_live());
-        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(newer).is_none());
         // Keep the exposed older object live; later native destruction of a
         // foreign direct head is a separate dangling-pointer boundary.
@@ -2026,7 +2026,7 @@ mod tests {
                 warhead,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 restored.substrate.raw_cell_occupation.ground_bits(2, 2),
@@ -2210,7 +2210,7 @@ mod tests {
         );
         restored.dirty_cells.clear_radar_for_test();
         let path = restored.path_grid_snapshot().unwrap();
-        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(std::sync::Arc::ptr_eq(
             &path,
             &restored.path_grid_snapshot().unwrap()
@@ -2366,7 +2366,7 @@ mod tests {
             0
         );
         assert_eq!(restored.terrain_objects.id_at((2, 2)), Some(known_id));
-        restored.process_pending_delete_with(&loaded_rules, Default::default(), 1, true);
+        restored.process_pending_delete_with(&loaded_rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(unknown_id).is_none());
         assert!(restored.terrain_objects.get(known_id).unwrap().is_live());
         assert_eq!(

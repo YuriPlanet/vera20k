@@ -163,7 +163,7 @@ pub(crate) fn drop_payload(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let mut head = None;
     let result = depart_cargo_head(
@@ -171,7 +171,7 @@ pub(crate) fn drop_payload(
         rules,
         id,
         DepartureRoute::Paradrop,
-        |sim, passenger| {
+        |sim, passenger, effects| {
             head = Some(passenger);
             let ammo = add_ammo(&mut sim.substrate, id, -1);
             let landing = drop_passenger(sim, rules, id, passenger, ammo, effects)?;
@@ -218,7 +218,7 @@ fn drop_passenger(
     plane: u64,
     passenger: u64,
     ammo: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<DriveCoord, DepartureFailure> {
     match sim.substrate.entities.get(passenger) {
         None => return Err(DepartureFailure::MissingPassenger),
@@ -315,7 +315,7 @@ pub(crate) fn spawn_parachuted(
     passenger: u64,
     landing: DriveCoord,
     spot: u8,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::SpawnParachuted(
@@ -370,7 +370,7 @@ fn paradrop(
     passenger: u64,
     landing: DriveCoord,
     spot: u8,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<(), DepartureFailure> {
     if !cell_is_in_playfield_leptons(
         (landing.x, landing.y, landing.z),
@@ -502,7 +502,7 @@ fn land_tail(
     plane: u64,
     passenger: u64,
     landing: DriveCoord,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Ares 3.0 AircraftClass_Paradrop_Carryall (10048B80, hook 0x415DF6):
     // the paradropped passenger's Transporter (`+0x11C`) and IsOnCarryall
@@ -738,7 +738,7 @@ mod tests {
                     &mut sim,
                     1,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert!(cargo(&sim, 1).is_empty(), "native row={row}");
                 let passenger = sim.substrate.entities.get(2).unwrap();
@@ -825,7 +825,7 @@ mod tests {
                 &mut sim,
                 1,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let passenger = sim.substrate.entities.get(2).unwrap();
             if blocked {
@@ -870,7 +870,7 @@ mod tests {
             &mut sim,
             aircraft_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(cargo(&sim, aircraft_id).is_empty());
         let parachute = sim.interner.get("PARACH").expect("type interned");
@@ -951,7 +951,7 @@ mod tests {
             &mut sim,
             aircraft_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for _ in 0..10 {
             sim.advance_tick(&[], Some(&rules), None, None, 100);
@@ -985,7 +985,7 @@ mod tests {
             &rules,
             None,
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert!(
@@ -1062,7 +1062,7 @@ mod tests {
             &mut sim,
             aircraft_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let passenger = sim.substrate.entities.get(passenger_id).unwrap();
         assert_eq!(
@@ -1106,7 +1106,7 @@ mod tests {
                 &mut sim,
                 1,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let passenger = sim.substrate.entities.get(2).unwrap();
             (
@@ -1160,9 +1160,9 @@ mod tests {
             .position
             .set_exact_z_leptons_for_test(Some(1500));
         plane_entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
-        let effects = crate::sim::world::FrameEffects::default();
+        let mut effects = crate::sim::world::FrameEffects::default();
 
-        drop_payload(&mut sim, plane, &rules, effects);
+        drop_payload(&mut sim, plane, &rules, &mut effects);
         let rider = sim.substrate.entities.get(passenger).unwrap();
         assert!(rider.passenger_role().is_inside_transport());
         assert!(rider.on_bridge(), "the refusal keeps OnBridge");
@@ -1172,7 +1172,7 @@ mod tests {
         plane_entity
             .position
             .put_world_xy([50 * 256 + 128, 24 * 256 + 128]);
-        drop_payload(&mut sim, plane, &rules, effects);
+        drop_payload(&mut sim, plane, &rules, &mut effects);
         // ChuteSound keeps the plane's height, which raises the cue up the
         // screen in CalcVolumeAndPan (`0x006D21DE..0x006D21F7`).
         assert!(sim.sound_events.iter().any(|event| matches!(
@@ -1185,7 +1185,7 @@ mod tests {
 
         let max_fall_rate = rules.general.parachute_max_fall_rate;
         let mut frames = 0;
-        while !sim.advance_fall(passenger, max_fall_rate, &rules, effects) {
+        while !sim.advance_fall(passenger, max_fall_rate, &rules, &mut effects) {
             frames += 1;
             assert!(frames < 10_000, "the fall ends");
         }
@@ -1223,7 +1223,7 @@ mod tests {
             &mut sim,
             aircraft_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(chute_sounds(&sim), vec![(50, 20)]);
@@ -1309,7 +1309,7 @@ mod tests {
                 &mut sim,
                 aircraft_id,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
 
             assert!(chute_sounds(&sim).is_empty());
@@ -1392,7 +1392,7 @@ mod tests {
             &mut sim,
             1,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let observed = OBSERVED.with(|log| log.borrow_mut().take()).unwrap();
 
@@ -1453,7 +1453,7 @@ mod tests {
             &mut sim,
             aircraft_id,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert!(chute_sounds(&sim).is_empty());
@@ -1510,7 +1510,7 @@ mod tests {
                 &mut sim,
                 1,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let aircraft = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
@@ -1566,7 +1566,7 @@ mod tests {
                     &mut sim,
                     1,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 let cargo = sim
                     .substrate

@@ -86,7 +86,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
     for _ in 0..600 {
         let due = runtime.simulation.take_due_commands();
         let output = runtime
-            .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         if runtime
@@ -152,7 +152,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
     );
     let due = runtime.simulation.take_due_commands();
     let output = runtime
-        .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(output.tick.frame_committed);
     assert_eq!(
@@ -212,7 +212,7 @@ fn deploy_key_on_a_selected_loaded_bio_reactor_does_not_unload_absorber_cargo() 
     for _ in 0..180 {
         let due = runtime.simulation.take_due_commands();
         let output = runtime
-            .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
         if runtime
@@ -284,7 +284,7 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
     fn step(runtime: &mut SimRuntime) -> crate::sim::world::TickResult {
         let due = runtime.simulation.take_due_commands();
         let output = runtime
-            .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
             .expect("ordinary retail garrison frame");
         assert!(output.tick.frame_committed);
         output.tick

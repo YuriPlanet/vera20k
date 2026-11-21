@@ -56,14 +56,14 @@ fn credits(s: &Scene) -> i32 {
 
 /// Advance one production frame; returns the owner's credits after it.
 fn frame(s: &mut Scene) -> i32 {
-    frame_with_effects(s, &[], crate::sim::world::FrameEffects::default())
+    frame_with_effects(s, &[], &mut crate::sim::world::FrameEffects::default())
 }
 
 /// Same fixture frame as `advance_tick`, with caller-owned frame effects.
 fn frame_with_effects(
     s: &mut Scene,
     commands: &[crate::sim::command::CommandEnvelope],
-    effects: crate::sim::world::FrameEffects<'_>,
+    effects: &mut crate::sim::world::FrameEffects<'_>,
 ) -> i32 {
     let overlay = crate::sim::tiberium::test_support::overlay_registry();
     let grid = s.sim.path_grid_snapshot();
@@ -89,9 +89,8 @@ fn frame_with_production_strip(s: &mut Scene, owner: crate::sim::intern::Interne
     s.sim.session.set_current_house_for_test(Some(owner));
     let due = s.sim.take_due_commands();
     let visits = s.sim.production.factories().strip_visits_for_test(owner);
-    let effects =
-        crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
-    let balance = frame_with_effects(s, &due, effects);
+    let mut effects = crate::sim::world::FrameEffects::default().with_production_strip(&visits);
+    let balance = frame_with_effects(s, &due, &mut effects);
     s.sim.session.set_current_house_for_test(previous_house);
     balance
 }
@@ -156,7 +155,7 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             crate::sim::radio::RadioMessage::CanEnter,
             crate::sim::radio::RadioPayload::default(),
             &s.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
         "CAN_LOAD must share the actual-slot Radio owner"
@@ -169,7 +168,7 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             &s.rules.object("HARV").unwrap().dock,
             false,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Some(s.refinery),
         "the narrow scan must share the same actual-slot predicate"
@@ -320,7 +319,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
                 &s.rules,
                 "Americans",
                 "E1",
-                Default::default(),
+                &mut Default::default(),
                 false,
             ));
         }
@@ -642,7 +641,7 @@ fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination()
         crate::sim::components::NavTargetRef::Object { id: s.refinery },
         &s.rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let miner = s.sim.substrate.entities.get(s.miner).unwrap();
     assert_eq!(miner.seldom.radio_contacts.slot(0), Some(s.refinery));
@@ -739,7 +738,7 @@ fn capturing_the_refinery_mid_unload_sends_the_miner_off() {
         russians,
         &s.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let refinery = s.sim.substrate.entities.get(s.refinery).unwrap();
     assert_eq!(refinery.owner(), russians);

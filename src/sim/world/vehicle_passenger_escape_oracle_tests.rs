@@ -182,7 +182,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 0,
                 128,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -206,7 +206,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                     0,
                     0,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -271,7 +271,7 @@ fn vehicle_passenger_escape_matches_native_caller_scatter() {
                 ignore_defenses: false,
                 selected_by_player: false,
             },
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert!(
             sim.substrate

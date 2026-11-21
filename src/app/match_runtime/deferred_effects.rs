@@ -26,15 +26,14 @@
 //! Replay, a campaign's initial save and command observation still need the
 //! lent owners, so those frames stay on the borrowing path.
 
-use std::cell::{Cell, RefCell};
-
 use crate::app::AppState;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{CommandEnvelope, CommandRecord};
 use crate::sim::intern::InternedId;
 use crate::sim::world::{
-    LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, NetworkCommandQueues,
-    NetworkQueueContext, NetworkQueuePass, OutcomeWaitBoundary, Simulation, TacticalRadarBoundary,
+    FrameClient, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass, OutcomeWaitBoundary, Simulation,
+    TacticalRadarBoundary,
 };
 
 use super::scenario_exit::ScenarioOutcomeVoiceWait;
@@ -59,12 +58,12 @@ pub(crate) enum DeferredEffect {
 /// recorded for [`Self::apply`].
 #[derive(Debug)]
 pub(crate) struct DeferredClientEffects {
-    planning_active: Cell<bool>,
+    planning_active: bool,
     voices_active: bool,
     defer_verdict_to_clip: bool,
     queue_handoff: bool,
-    outcome_wait: RefCell<Option<ScenarioOutcomeVoiceWait>>,
-    recorded: RefCell<Vec<DeferredEffect>>,
+    outcome_wait: Option<ScenarioOutcomeVoiceWait>,
+    recorded: Vec<DeferredEffect>,
 }
 
 impl DeferredClientEffects {
@@ -108,12 +107,12 @@ impl DeferredClientEffects {
             _ => false,
         };
         Self {
-            planning_active: Cell::new(planning_active),
+            planning_active,
             voices_active,
             defer_verdict_to_clip,
             queue_handoff,
-            outcome_wait: RefCell::new(outcome_wait.clone()),
-            recorded: RefCell::new(Vec::new()),
+            outcome_wait: outcome_wait.clone(),
+            recorded: Vec::new(),
         }
     }
 
@@ -123,21 +122,21 @@ impl DeferredClientEffects {
         self.queue_handoff
     }
 
-    pub(crate) fn record(&self, effect: DeferredEffect) {
-        self.recorded.borrow_mut().push(effect);
+    fn record(&mut self, effect: DeferredEffect) {
+        self.recorded.push(effect);
     }
 
     /// The writes recorded so far, in order.
     #[cfg(test)]
-    pub(crate) fn recorded(&self) -> std::cell::Ref<'_, Vec<DeferredEffect>> {
-        self.recorded.borrow()
+    pub(crate) fn recorded(&self) -> &[DeferredEffect] {
+        &self.recorded
     }
 
     /// Write the record to the client owners on the main thread, after the
     /// tick, in the order the tick asked.
     pub(crate) fn apply(self, state: &mut AppState) {
-        state.match_state.scenario_outcome = self.outcome_wait.into_inner();
-        for effect in self.recorded.into_inner() {
+        state.match_state.scenario_outcome = self.outcome_wait;
+        for effect in self.recorded {
             match effect {
                 DeferredEffect::TacticalRadar(available) => {
                     crate::app::presentation::building_anim::set_local_tactical_radar(
@@ -187,15 +186,49 @@ impl DeferredClientEffects {
     }
 }
 
+/// Every role but sound, which plays from the frame tail; the network role
+/// only for a frame that stops at Queue_AI ([`Self::hands_off_queue`]).
+impl FrameClient for DeferredClientEffects {
+    fn tactical_radar(&mut self) -> Option<&mut dyn TacticalRadarBoundary> {
+        Some(self)
+    }
+
+    fn outcome_wait(&mut self) -> Option<&mut dyn OutcomeWaitBoundary> {
+        Some(self)
+    }
+
+    fn local_planning(&mut self) -> Option<&mut dyn LocalPlanningBoundary> {
+        Some(self)
+    }
+
+    fn network_commands(&mut self) -> Option<&mut dyn NetworkCommandBoundary> {
+        if self.queue_handoff { Some(self) } else { None }
+    }
+
+    fn production_request_cleared(&mut self, type_id: InternedId) {
+        self.record(DeferredEffect::ProductionRequestCleared(type_id));
+    }
+
+    // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
+    fn bounty_text(
+        &mut self,
+        _sim: &Simulation,
+        _rules: &RuleSet,
+        text: crate::sim::bounty::BountyText,
+    ) {
+        self.record(DeferredEffect::Bounty(text));
+    }
+}
+
 impl TacticalRadarBoundary for DeferredClientEffects {
-    fn set_available(&self, _sim: &Simulation, _rules: &RuleSet, available: bool) {
+    fn set_available(&mut self, _sim: &Simulation, _rules: &RuleSet, available: bool) {
         self.record(DeferredEffect::TacticalRadar(available));
     }
 }
 
 impl LocalPlanningBoundary for DeferredClientEffects {
-    fn leave_planning(&self, sim: &Simulation, _rules: &RuleSet) -> Option<CommandEnvelope> {
-        if !self.planning_active.replace(false) {
+    fn leave_planning(&mut self, sim: &Simulation, _rules: &RuleSet) -> Option<CommandEnvelope> {
+        if !std::mem::replace(&mut self.planning_active, false) {
             return None;
         }
         self.record(DeferredEffect::PlanningLeft);
@@ -203,25 +236,24 @@ impl LocalPlanningBoundary for DeferredClientEffects {
     }
 
     fn planning_active(&self) -> bool {
-        self.planning_active.get()
+        self.planning_active
     }
 }
 
 impl OutcomeWaitBoundary for DeferredClientEffects {
     fn wait_complete(
-        &self,
+        &mut self,
         _owner: InternedId,
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) -> bool {
-        let mut pending = self.outcome_wait.borrow_mut();
         // As FrameClientBoundary: a line held for the commander's clip waits
         // on a frozen clip, so the wait ends now. Only wall time changes.
         if self.defer_verdict_to_clip {
-            *pending = None;
+            self.outcome_wait = None;
             return true;
         }
         ScenarioOutcomeVoiceWait::poll_pending(
-            &mut pending,
+            &mut self.outcome_wait,
             kind,
             super::frame_pacer::wall_clock_ms(),
             self.voices_active,
@@ -234,14 +266,14 @@ impl OutcomeWaitBoundary for DeferredClientEffects {
 /// through the live session ([`super::frame_effects::FrameClientBoundary`]).
 impl NetworkCommandBoundary for DeferredClientEffects {
     fn exchange_commands(
-        &self,
+        &mut self,
         _context: NetworkQueueContext,
         _queues: &mut NetworkCommandQueues<'_>,
     ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
         Ok(Some(NetworkQueuePass::Waiting))
     }
 
-    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
+    fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
         self.record(DeferredEffect::FrameChecksum { frame, checksum });
     }
 
@@ -268,12 +300,12 @@ mod tests {
 
     fn deferred(planning_active: bool, defer_verdict_to_clip: bool) -> DeferredClientEffects {
         DeferredClientEffects {
-            planning_active: Cell::new(planning_active),
+            planning_active,
             voices_active: false,
             defer_verdict_to_clip,
             queue_handoff: false,
-            outcome_wait: RefCell::new(None),
-            recorded: RefCell::new(Vec::new()),
+            outcome_wait: None,
+            recorded: Vec::new(),
         }
     }
 
@@ -288,7 +320,7 @@ mod tests {
         sim.session_mut_for_test()
             .set_current_house_for_test(Some(owner));
         let rules = RuleSet::empty_for_test();
-        let effects = deferred(true, false);
+        let mut effects = deferred(true, false);
 
         effects.set_available(&sim, rules, false);
         assert!(effects.planning_active());
@@ -302,7 +334,7 @@ mod tests {
         assert_eq!(effects.leave_planning(&sim, rules), None);
         effects.set_available(&sim, rules, true);
         assert_eq!(
-            *effects.recorded(),
+            effects.recorded(),
             [
                 DeferredEffect::TacticalRadar(false),
                 DeferredEffect::PlanningLeft,
@@ -313,8 +345,8 @@ mod tests {
 
     #[test]
     fn a_clip_held_verdict_ends_the_outcome_wait_on_the_copy() {
-        let effects = deferred(false, true);
-        *effects.outcome_wait.borrow_mut() = Some(ScenarioOutcomeVoiceWait::start(
+        let mut effects = deferred(false, true);
+        effects.outcome_wait = Some(ScenarioOutcomeVoiceWait::start(
             0,
             crate::sim::house_state::HouseOutcomeKind::Victory,
         ));
@@ -322,7 +354,7 @@ mod tests {
             InternedId::default(),
             crate::sim::house_state::HouseOutcomeKind::Victory
         ));
-        assert!(effects.outcome_wait.borrow().is_none());
+        assert!(effects.outcome_wait.is_none());
     }
 
     /// The simulation thread's part of a network frame stops at Queue_AI
@@ -333,7 +365,7 @@ mod tests {
         use crate::sim::world::{FrameEffects, TickLane};
         let world = super::super::frame_effects::network_command_tests::frame_256_runtime;
         let expected = world()
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap()
             .multiplayer_checksum
             .unwrap()
@@ -359,13 +391,13 @@ mod tests {
                 &[],
                 33,
                 TickLane::Ordinary,
-                FrameEffects::empty().with_network_commands(&effects),
+                &mut FrameEffects::empty().with_network_commands(&mut effects),
             )
             .unwrap();
         assert!(logic.network_waiting);
         assert!(!logic.tick.frame_committed);
         assert_eq!(
-            *effects.recorded(),
+            effects.recorded(),
             [DeferredEffect::FrameChecksum {
                 frame: 256,
                 checksum: expected
@@ -378,7 +410,7 @@ mod tests {
         checksums.record_frame_checksum(256, expected);
         let mut sounds = crate::audio::events::SoundEventQueue::new();
         let mut radar = |_, _, _: &RuleSet| false;
-        let boundary = super::super::frame_effects::FrameClientBoundary::new(
+        let mut boundary = super::super::frame_effects::FrameClientBoundary::new(
             None,
             Some("Human"),
             &mut sounds,
@@ -386,9 +418,7 @@ mod tests {
         )
         .with_frame_checksums(&mut checksums);
         let rest = runtime
-            .resume_network_wait(
-                FrameEffects::for_sound(&boundary).with_network_commands(&boundary),
-            )
+            .resume_network_wait(&mut FrameEffects::for_client(&mut boundary))
             .unwrap();
         let failure = rest
             .network_failure

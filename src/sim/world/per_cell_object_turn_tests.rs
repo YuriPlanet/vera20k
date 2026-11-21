@@ -55,7 +55,7 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
                 message,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -81,7 +81,7 @@ fn infantry_arrival_runs_reciprocal_clearance_then_the_existing_foot_tail() {
         PerCellReason::TurnComplete,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(radio::take_transmit_log().is_empty());
@@ -102,7 +102,7 @@ fn infantry_arrival_runs_reciprocal_clearance_then_the_existing_foot_tail() {
         PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -138,7 +138,7 @@ fn infantry_arrival_runs_reciprocal_clearance_then_the_existing_foot_tail() {
         PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -162,7 +162,7 @@ fn an_untethered_infantry_arrival_preserves_its_contact_and_runs_the_foot_tail()
         RadioMessage::Untether,
         RadioPayload::default(),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     radio::take_transmit_log();
     sim.per_cell_process(
@@ -170,7 +170,7 @@ fn an_untethered_infantry_arrival_preserves_its_contact_and_runs_the_foot_tail()
         PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -223,7 +223,7 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
         .unwrap()
         .set_in_playfield(false);
 
-    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -261,7 +261,7 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(matches!(
@@ -312,7 +312,12 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
     let scenario_before = sim.scenario_rng.native_state_hex();
 
     let process = sim
-        .process_air_locomotor(id, &rules, None, crate::sim::world::FrameEffects::default())
+        .process_air_locomotor(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
         .unwrap();
 
     assert!(process.per_cell_ran, "accepted touchdown ran PerCell");

@@ -24,7 +24,7 @@ fn step(scene: &mut HeadlessScenario) {
             &[],
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound frame");
     assert!(

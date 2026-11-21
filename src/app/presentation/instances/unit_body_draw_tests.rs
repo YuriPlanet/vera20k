@@ -588,7 +588,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         }
         scene
             .runtime
-            .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
     }
     assert!(
@@ -610,7 +610,7 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         let commands = scene.runtime.simulation.take_due_commands();
         scene
             .runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&commands, 22, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         let sim = scene.sim();
         let Some(plane) = sim

@@ -848,7 +848,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
                     .set_rx_for_test(20);
             }
         },
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.substrate.entities.get(1).unwrap().on_bridge());
 }
@@ -914,7 +914,7 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -984,7 +984,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(at.0, at.1) & 0x20,
@@ -1082,7 +1082,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         if unload_active {
@@ -1193,7 +1193,7 @@ fn per_cell_partner_fixture(
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         RadioResponse::Roger
     );
@@ -1206,7 +1206,7 @@ fn per_cell_partner_fixture(
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -1266,7 +1266,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -1455,7 +1455,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
             reason,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let sends = crate::sim::radio::take_transmit_log();
@@ -1539,7 +1539,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
             PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let sends = crate::sim::radio::take_transmit_log();
@@ -1565,7 +1565,7 @@ fn per_cell_factory_clearance_starts_a_slave_miners_hunt() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1643,7 +1643,7 @@ fn per_cell_factory_clearance_sends_a_computer_unit_to_its_post() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1686,7 +1686,7 @@ fn per_cell_factory_clearance_without_a_post_clears_the_archive() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1721,7 +1721,7 @@ fn per_cell_factory_clearance_reads_unit_archive_through_the_shared_setter() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1810,7 +1810,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
                 super::super::PerCellReason::Arrival,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let sends = crate::sim::radio::take_transmit_log();
@@ -1873,7 +1873,12 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
                 .navigation
                 .set_nav_com_for_test(has_destination.then(|| NavTargetRef::cell(12, 10)));
             let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-            sim.unit_enter_idle_mode(1, rules, false, crate::sim::world::FrameEffects::default());
+            sim.unit_enter_idle_mode(
+                1,
+                rules,
+                false,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let entity = sim.substrate.entities.get(1).unwrap();
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index through the NULL target.
@@ -2299,11 +2304,14 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                 tank,
                 &rules,
                 false,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else if input["entry"] == "navigation_gate" {
-            let returns =
-                sim.track_navigation_gate(tank, &rules, crate::sim::world::FrameEffects::default());
+            let returns = sim.track_navigation_gate(
+                tank,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             assert_eq!(
                 u8::from(returns),
                 row["returned_al"].as_u64().unwrap() as u8,
@@ -2343,7 +2351,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                             compare(world, tank, depot, other, &native["state"], context);
                         }
                     },
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(per_cell_calls, 1, "{context}: original terminal PerCell");
@@ -2426,7 +2434,7 @@ fn foot_idle_empty_queue_admission_matches_original_latch_rows() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),
@@ -2482,7 +2490,7 @@ fn foot_idle_set_latch_refuses_queue_and_speed_setters_without_effects() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )),
         row["returned_al"].as_u64().unwrap() as u8
     );
@@ -2530,7 +2538,7 @@ fn foot_idle_ends_a_warp_teleport_like_original_end_rows() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let events: Vec<&str> = row["events"]
@@ -2604,7 +2612,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(restored.rng_state(), rng);
         assert_eq!(restored.state_hash(), entered_hash);
@@ -2656,7 +2664,7 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -2711,7 +2719,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -2767,7 +2775,7 @@ fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             crate::sim::radio::take_transmit_log();
         }
@@ -2789,7 +2797,7 @@ fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 
@@ -2920,7 +2928,7 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -2982,7 +2990,7 @@ fn a_unit_at_rest_on_a_cell_centre_breaks_its_radio_link() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let over_out = crate::sim::radio::take_transmit_log()
             .iter()
@@ -3031,7 +3039,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let expected = if case == "loaded" {
             MissionType::Unload
@@ -3093,7 +3101,7 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -3425,7 +3433,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             super::super::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["per_cell"]);

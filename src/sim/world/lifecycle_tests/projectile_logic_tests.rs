@@ -41,7 +41,7 @@ fn persistent_bullet_logic_slot_publishes_native_wall_dirty_visits() {
         assert!(sim.object_ai_visit_one(
             projectile_id,
             Some(&rules),
-            ObjectAiCtx {
+            &mut ObjectAiCtx {
                 overlay_registry: Some(&overlays),
                 ..ObjectAiCtx::default()
             },
@@ -258,7 +258,7 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
                 &[],
                 16,
                 super::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         if old_height == 1 {
@@ -287,7 +287,7 @@ fn homing_ground_impact_reaches_damage_and_cleanup_through_runtime_frame() {
                     &[],
                     16,
                     super::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
         }
@@ -502,7 +502,7 @@ fn gsi_05_02_mixed_six_family_order_roundtrips_and_dispatches_every_slot() {
     let rules = gsi_05_02_rules();
     let mut visited = Vec::new();
     restored.for_each_live_object(|sim, id| {
-        if sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default()) {
+        if sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default()) {
             visited.push(id);
         }
     });
@@ -619,7 +619,7 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     let mut visited = Vec::new();
     sim.for_each_live_object(|sim, id| {
         visited.push(id);
-        let _ = sim.object_ai_visit_one(id, None, ObjectAiCtx::default());
+        let _ = sim.object_ai_visit_one(id, None, &mut ObjectAiCtx::default());
         if id == entity_id {
             let projectile_id = sim.substrate.allocate_stable_id();
             sim.admit_projectile(projectile_id, gsi_05_02_projectile(entity_id, None));
@@ -664,7 +664,7 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
     let mut removal_visited = Vec::new();
     removal.for_each_live_object(|sim, id| {
         removal_visited.push(id);
-        let _ = sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        let _ = sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
     });
     assert_eq!(removal_visited, vec![terminal_id]);
     assert_eq!(removal.live_object_order_snapshot(), vec![successor_id]);
@@ -755,7 +755,7 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
                 near_center_ic_isolation_eligible: false,
             },
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let terrain = &sim.terrain_objects.objects()[&terrain_id];
     assert_eq!(terrain.lifecycle(), TerrainObjectLifecycle::Destroyed);
@@ -827,12 +827,12 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
                 near_center_ic_isolation_eligible: false,
             },
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let projectile_id = sim.substrate.allocate_stable_id();
     sim.admit_projectile(projectile_id, gsi_05_02_projectile(0, Some(0)));
-    assert!(sim.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile_id, None, &mut ObjectAiCtx::default()));
 
     let wave_id = sim.substrate.allocate_stable_id();
     let mut terminal_wave = Wave::new(
@@ -842,7 +842,7 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
     );
     terminal_wave.set_lifetime_for_test(0);
     sim.admit_wave(wave_id, terminal_wave);
-    assert!(sim.object_ai_visit_one(wave_id, None, ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(wave_id, None, &mut ObjectAiCtx::default()));
 
     assert_eq!(
         sim.terrain_objects.objects()[&terrain_id].lifecycle(),
@@ -940,7 +940,7 @@ fn gsi_05_04_ground_source_and_target_retarget_before_removal_without_expiry() {
     }));
 
     let _ = crate::sim::cell_rect::get_cellclass_fallback(sim.resolved_terrain.as_ref(), 20, -1);
-    assert!(sim.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile_id, None, &mut ObjectAiCtx::default()));
     assert!(sim.projectiles.get(projectile_id).is_some());
     assert_eq!(
         sim.projectiles.get(projectile_id).unwrap().target(),
@@ -1049,7 +1049,7 @@ fn gsi_04_01_cell_target_uses_live_structural_bit() {
         cell_target_coord(sim.resolved_terrain.as_ref(), 6, 7),
         center
     );
-    assert!(sim.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile_id, None, &mut ObjectAiCtx::default()));
 
     // The actual Bullet visit consumes the live Cell target coordinate. Being
     // stationary at that target is not an admission: old height is 416, above
@@ -1118,7 +1118,7 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
         &logic_order,
         &std::collections::BTreeSet::new(),
         &[detonation],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let victim = sim
@@ -1255,7 +1255,7 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
         &logic_order,
         &std::collections::BTreeSet::new(),
         &[detonation],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let passenger = sim
@@ -1344,7 +1344,7 @@ fn assert_unallocated_expiry_retains_live_dummy_identity(through_receiver: bool)
         crate::sim::cell_rect::CellRef::Dummy { .. }
     ));
     assert_eq!(dummy.snapshot().coord, (20, -1));
-    assert!(sim.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(projectile_id, None, &mut ObjectAiCtx::default()));
     assert!(
         f64::from_bits(
             sim.projectiles
@@ -1441,7 +1441,7 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
         target_id,
         208,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let projectile_id = sim.substrate.allocate_stable_id();
     let mut spawn = gsi_05_04_guided_projectile(
@@ -1489,7 +1489,7 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
         restored.projectiles.get(projectile_id).unwrap().target(),
         ProjectileTarget::None
     );
-    assert!(restored.object_ai_visit_one(projectile_id, None, ObjectAiCtx::default()));
+    assert!(restored.object_ai_visit_one(projectile_id, None, &mut ObjectAiCtx::default()));
     let advanced = restored.projectiles.get(projectile_id).unwrap();
     assert_eq!(advanced.target(), ProjectileTarget::None);
     let expected_velocity: [u64; 3] = std::array::from_fn(|i| {

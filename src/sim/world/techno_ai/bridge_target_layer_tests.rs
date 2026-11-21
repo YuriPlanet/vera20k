@@ -197,7 +197,7 @@ fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
             1,
             None::<TargetKind>,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     }
@@ -327,7 +327,7 @@ fn native_passive_bridge_histories_preserve_timers_rng_assignment_and_cell_list_
             let main = sim.main_rng.logical_state();
             let map = sim.mapgen_rng.logical_state();
             let ids = sim.native_unique_ids.as_ref().unwrap().current_raw();
-            passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
+            passive_acquire_step(&mut sim, 1, &rules, &mut ObjectAiCtx::default());
             assert_state(&sim, &step["after"], &format!("{label}/{index} after"));
             assert_eq!(
                 sim.scenario_rng.native_state_hex(),
@@ -422,7 +422,7 @@ fn move_retail_fv(
                 },
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = runtime.simulation.substrate.entities.get(id).unwrap();
@@ -620,7 +620,7 @@ pub(super) fn retail_hills_collapsed_scene(
             &mut runtime.simulation,
             source,
             &runtime.resources.rules,
-            ObjectAiCtx {
+            &mut ObjectAiCtx {
                 overlay_registry: Some(runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
@@ -688,7 +688,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         std::mem::swap(&mut runtime.simulation, &mut first);
@@ -697,7 +697,7 @@ pub(super) fn retail_hills_collapsed_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -748,7 +748,7 @@ fn collapse_retail_scene(
     };
     let mut collapsed = false;
     for _ in 0..8 {
-        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation, &runtime.resources.rules, &[event], crate::sim::world::FrameEffects::default());
+        collapsed|=crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(&mut runtime.simulation, &runtime.resources.rules, &[event], &mut crate::sim::world::FrameEffects::default());
         if !runtime
             .simulation
             .resolved_terrain
@@ -806,7 +806,7 @@ fn collapse_retail_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         std::mem::swap(&mut runtime.simulation, &mut first);
@@ -815,7 +815,7 @@ fn collapse_retail_scene(
                 &[],
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

@@ -36,7 +36,7 @@ impl Simulation {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> MissionType {
         let Some(entity) = self.substrate.entities.get(id) else {
             return mission;
@@ -90,7 +90,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let now = self.session.binary_frame();
         self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
@@ -176,7 +176,7 @@ impl Simulation {
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
         rules: &crate::rules::ruleset::RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let queued =
             self.begin_megamission_retask(id, mission, target, destination, rules, frame_effects);

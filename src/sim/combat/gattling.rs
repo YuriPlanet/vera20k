@@ -386,7 +386,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         outcome: UnitFireOutcome,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some((is_gattling, slot0)) = self.substrate.entities.get(id).and_then(|entity| {
             let obj = self.object_type(entity.type_ref(), rules)?;
@@ -429,7 +429,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         ticks: i32,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -489,7 +489,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         ticks: i32,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -518,7 +518,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn gattling_limbo(
         &mut self,
         id: u64,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -531,7 +531,8 @@ impl crate::sim::world::Simulation {
                 .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
                     owner: gattling_sound_owner(id),
                 });
-            context.effects().flush_sound(self, context.rules());
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
         });
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;

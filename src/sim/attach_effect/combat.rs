@@ -471,7 +471,7 @@ impl Simulation {
         detonations: &[crate::sim::projectile::ProjectileDetonation],
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         if detonations.is_empty() {
             return;
@@ -510,7 +510,7 @@ impl Simulation {
         damage: i32,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         if damage <= 0 || self.reflected_warhead == Some(warhead_ref) {
             return;
@@ -733,7 +733,7 @@ impl Simulation {
         attacker_id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(victim) = self.substrate.entities.get(victim_id) else {
             return;
@@ -782,7 +782,7 @@ impl Simulation {
         dead_id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let Some(victim) = self.substrate.entities.get(dead_id) else {
             return;
@@ -906,7 +906,7 @@ impl Simulation {
         invoker: Option<u64>,
         source_house: Option<crate::sim::intern::InternedId>,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
         let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {

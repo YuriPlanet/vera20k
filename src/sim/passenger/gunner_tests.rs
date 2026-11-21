@@ -48,7 +48,7 @@ fn multiple_passenger_gunner_keeps_the_first_boarded_weapon() {
         ifv,
         super::BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_selection(&sim, ifv, (1, 2));
     assert!(super::board_passenger(
@@ -58,7 +58,7 @@ fn multiple_passenger_gunner_keeps_the_first_boarded_weapon() {
         ifv,
         super::BoardingArm::InfantryTransport,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert_eq!(entity(&sim, ifv).passenger_role().passenger_count(), 2);
     assert_selection(&sim, ifv, (1, 2));
@@ -177,7 +177,7 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
             rules,
             ifv,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, passenger);
                 // FootClass::RemoveFirstPassenger 4DE710 resets the gunner before
                 // UnitClass::Mission_Unload attempts the passenger's Unlimbo.
@@ -191,10 +191,10 @@ fn unload_at_clear_exit(sim: &mut Simulation, rules: &RuleSet, ifv: u64, passeng
                     position,
                     crate::sim::world::PlacementEvidence::MarkSucceeded,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Ok(())
     );
@@ -279,7 +279,7 @@ fn retail_infantry_transport_boarding_waits_for_transport_cell() {
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let pax = entity(&sim, passenger);
@@ -408,7 +408,7 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
             &mut sim,
             rules,
             passenger,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(entity(&sim, passenger).pending_entry(), None);
         assert_eq!(
@@ -511,7 +511,7 @@ fn retail_tanks_scatter_after_their_transport_is_destroyed() {
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(rules, None, &[hit], &mut FrameEffects::default());
     assert!(sim.substrate.pending_delete.contains_object(&transport));
     assert!(
         entity(&sim, transport)
@@ -634,7 +634,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
             rules,
             boat,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, ifv);
                 let position = exit_cell_position(sim, departing, 16, 20, 0);
                 reveal_unloaded_passenger(
@@ -645,10 +645,10 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
                     position,
                     crate::sim::world::PlacementEvidence::MarkSucceeded,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             },
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Ok(())
     );
@@ -755,12 +755,12 @@ fn retail_ifv_boarding_and_departure_retry_keep_one_selection_owner() {
                 rules,
                 ifv,
                 DepartureRoute::Vehicle,
-                |sim, departing| {
+                |sim, departing, _| {
                     assert_eq!(departing, passenger);
                     assert_selection(sim, ifv, (0, 0));
                     Err(DepartureFailure::Placement)
                 },
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             Err(DepartureFailure::Placement)
         );
@@ -805,8 +805,8 @@ fn retail_empty_ifv_departure_resets_selection_without_a_passenger() {
                 rules,
                 ifv,
                 DepartureRoute::Vehicle,
-                |_, _| { panic!("an empty hold must never attempt passenger placement") },
-                crate::sim::world::FrameEffects::default()
+                |_, _, _| { panic!("an empty hold must never attempt passenger placement") },
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Err(DepartureFailure::NoCargo)
         );
@@ -962,7 +962,7 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
             rules,
             ifv,
             DepartureRoute::Vehicle,
-            |sim, departing| {
+            |sim, departing, _| {
                 assert_eq!(departing, passenger);
                 assert_selection(sim, ifv, (0, 0));
                 assert!(entity(sim, passenger).temporal.has_link());
@@ -980,7 +980,7 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
                 assert!(entity(sim, passenger).seldom.rearm_timer.remaining(frame) > 0);
                 Err(DepartureFailure::Placement)
             },
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Err(DepartureFailure::Placement)
     );
@@ -1221,7 +1221,7 @@ fn retail_a_walking_passenger_runs_mission_enter() {
         &mut sim,
         gi,
         rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     )
     .unwrap();
     assert_eq!(sim.scenario_rng.state(), replay.state());
@@ -1306,7 +1306,7 @@ fn retail_a_transport_sent_elsewhere_breaks_its_passengers_contact() {
         htk,
         Some(crate::sim::components::NavTargetRef::object(other)),
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(entity(&sim, htk).seldom.radio_contacts.is_empty());
     assert!(entity(&sim, gi).seldom.radio_contacts.is_empty());
@@ -1337,7 +1337,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::radio::RadioResponse::Roger
         );
@@ -1347,7 +1347,7 @@ fn retail_the_setters_break_spares_every_other_contact() {
             unit,
             Some(crate::sim::components::NavTargetRef::object(target)),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     let htk = sim.spawn_object("HTK", OWNER, 16, 16, 64, rules).unwrap();
@@ -1406,7 +1406,7 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger
     );
@@ -1416,14 +1416,14 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
         at,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     crate::sim::world::dispatch_foot_mission(
         &mut sim,
         gi,
         rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     )
     .unwrap();
 

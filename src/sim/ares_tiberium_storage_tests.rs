@@ -159,13 +159,17 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     );
 
     // Mission_Selling's last stage: Limbo, then the store payout.
-    sim.house_removed_from_game(silo, &rules, FrameEffects::default());
+    sim.house_removed_from_game(silo, &rules, &mut FrameEffects::default());
     assert_eq!(house_stored(&sim, owner), 10);
     sim.ares_sale_storage_payout(silo, &rules);
     assert_eq!(stored(&sim, spare), 20);
     assert_eq!(house_stored(&sim, owner), 30);
 
-    sim.ares_destroy_refinery_storage(refinery, &rules, crate::sim::world::FrameEffects::default());
+    sim.ares_destroy_refinery_storage(
+        refinery,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(stored(&sim, refinery), 0);
     assert_eq!(house_stored(&sim, owner), 20);
 
@@ -174,7 +178,7 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     let rival = sim.interner.intern("Russians");
     sim.houses
         .register(HouseState::new(rival, 1, Some(rival), false, 0, 10));
-    sim.house_removed_from_game(spare, &rules, FrameEffects::default());
+    sim.house_removed_from_game(spare, &rules, &mut FrameEffects::default());
     sim.substrate
         .entities
         .get_mut(spare)

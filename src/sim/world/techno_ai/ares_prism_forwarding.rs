@@ -854,7 +854,7 @@ pub(super) fn update_prism(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
@@ -925,7 +925,7 @@ pub(super) fn update_prism(
                         },
                         rules,
                         ctx.overlay_registry,
-                        ctx.effects,
+                        &mut ctx.effects,
                     )
                     .bridge_state_changed;
             }

@@ -87,7 +87,7 @@ fn committed_selection_holds_for_its_ledger_rules_and_frame_only() {
         RuleSet::empty_for_test(),
         67,
         crate::sim::world::TickLane::Ordinary,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     )
     .unwrap();
     assert!(!committed.holds(&sim, Some(&rules), &ledger));

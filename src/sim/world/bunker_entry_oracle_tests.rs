@@ -604,7 +604,7 @@ impl NativeScene {
 
     fn step(&mut self, step: &Value) {
         use crate::sim::world::FrameEffects;
-        let effects = FrameEffects::default();
+        let mut effects = FrameEffects::default();
         let mut answer = None;
         match step["op"].as_str().unwrap() {
             "set_destination" | "other_set_destination" | "replace_destination" => {
@@ -623,7 +623,7 @@ impl NativeScene {
                     NavTargetRef::object(target),
                     &self.rules,
                     true,
-                    effects,
+                    &mut effects,
                 );
             }
             "enter" => {
@@ -632,7 +632,7 @@ impl NativeScene {
                     &self.rules,
                     None,
                     self.unit,
-                    effects,
+                    &mut effects,
                 ))
             }
             "radio_docking" => {
@@ -644,7 +644,7 @@ impl NativeScene {
                         crate::sim::radio::RadioMessage::CanDock,
                         crate::sim::radio::RadioPayload::default(),
                         &self.rules,
-                        effects,
+                        &mut effects,
                     )
                     .code() as i32,
                 )
@@ -664,18 +664,23 @@ impl NativeScene {
             "supply_arrival" => self.supply_position(coord(&step["coordinate"])),
             "per_cell" => {
                 self.sim
-                    .unit_dock_now(self.unit, &self.rules, None, effects);
+                    .unit_dock_now(self.unit, &self.rules, None, &mut effects);
             }
             "cancel_destination" => {
                 self.sim
-                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, &mut effects);
             }
             "idle_event_calls" => {
-                crate::sim::radio::broadcast_break(&mut self.sim, self.unit, &self.rules, effects);
+                crate::sim::radio::broadcast_break(
+                    &mut self.sim,
+                    self.unit,
+                    &self.rules,
+                    &mut effects,
+                );
                 self.sim
-                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, &mut effects);
                 self.sim
-                    .assign_target_represented(self.unit, None, &self.rules, effects)
+                    .assign_target_represented(self.unit, None, &self.rules, &mut effects)
                     .unwrap();
             }
             "update_bunker" => crate::sim::docking::bunker_install::update_bunker(
@@ -683,13 +688,13 @@ impl NativeScene {
                 &self.rules,
                 None,
                 self.bunker,
-                effects,
+                &mut effects,
             ),
             "seek_bunker" => {
                 answer = Some(i32::from(self.sim.foot_enter_tank_bunker(
                     self.unit,
                     &self.rules,
-                    effects,
+                    &mut effects,
                 )))
             }
             "prepare_state3_destination" => {

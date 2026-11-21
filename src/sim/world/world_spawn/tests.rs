@@ -285,7 +285,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
@@ -340,7 +340,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.clear_lifecycle_test_events_for_test();
@@ -616,7 +616,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         check(sim.substrate.entities.get(held).unwrap());
@@ -653,7 +653,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let rng = authored.scenario_rng.logical_state();
@@ -665,7 +665,7 @@ fn building_contact_constructor_matches_original_slots_before_hello() {
                     crate::sim::radio::RadioMessage::Hello,
                     crate::sim::radio::RadioPayload::default(),
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 ),
                 crate::sim::radio::RadioResponse::Roger
             );
@@ -847,7 +847,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
             entity,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         assert!(sim.substrate.occupancy.contains_entity(6, 5, id));
@@ -881,7 +881,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .is_some()
         );
@@ -930,7 +930,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                     0,
                     PlacementEvidence::MarkSucceeded,
                     &rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .is_some()
         );
@@ -1024,7 +1024,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
             0,
             placement,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(result.is_some(), placement != PlacementEvidence::MarkFailed);
         let entity = sim.substrate.entities.get(id).unwrap();
@@ -1079,7 +1079,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let ambush = MissionId::from_known(MissionType::Ambush);
@@ -1101,7 +1101,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             0,
             PlacementEvidence::MarkSucceeded,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .is_some()
     );
@@ -1185,7 +1185,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
             entity,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(matches!(outcome, RevealOutcome::Revealed { .. }));
         sim.object_conceal(id);
@@ -1348,7 +1348,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held lamp");
     assert!(held.lighting_sources.buildings().is_empty());
@@ -1362,7 +1362,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             PlacementEvidence::MarkFailed,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .is_none()
     );
@@ -1378,7 +1378,7 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         Some(held_id)
     );
@@ -1492,7 +1492,7 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("construct held aircraft");
         sim.substrate
@@ -1510,7 +1510,7 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     };
     assert_eq!(reveal(false, false), None);
@@ -1552,7 +1552,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held aircraft");
     assert!(
@@ -1564,7 +1564,7 @@ fn an_admitted_aircraft_takes_no_playfield_gate() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_some()
     );
@@ -1603,7 +1603,7 @@ fn a_place_anywhere_building_is_placed_just_outside_the_playfield() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held building");
     assert_eq!(
@@ -1615,7 +1615,7 @@ fn a_place_anywhere_building_is_placed_just_outside_the_playfield() {
             0,
             PlacementEvidence::EvaluateMark,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Some(held)
     );
@@ -1817,7 +1817,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
             9,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("constructor-complete carrier graph");
     let child_ids = sim
@@ -1843,7 +1843,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
             PlacementEvidence::EvaluateMark,
             &rules,
             Some(registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_none()
     );
@@ -1872,7 +1872,7 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
     assert!(sim.discard_constructed_limbo(
         parent_id,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.substrate.entities.is_empty());
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -2030,7 +2030,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("factory-held carrier constructor");
         let parent = sim
@@ -2060,7 +2060,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         assert!(sim.discard_constructed_limbo(
             parent_id,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert!(sim.substrate.entities.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
@@ -2084,7 +2084,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("factory-held slave miner constructor");
         let slave_ids = sim
@@ -2116,7 +2116,7 @@ fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_
         assert!(sim.discard_constructed_limbo(
             parent_id,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert!(sim.substrate.entities.is_empty());
         assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
@@ -2141,7 +2141,7 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("held manager parent");
         let child_ids = if parent_type == "CARRIER" {
@@ -2179,7 +2179,7 @@ fn techno_constructor_manager_pools_survive_delivery_without_reconstruction() {
                 0,
                 PlacementEvidence::EvaluateMark,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             Some(parent_id)
         );
@@ -2678,7 +2678,7 @@ fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
                 &rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -2794,7 +2794,7 @@ fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
                     &rules,
                     33,
                     crate::sim::world::TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let shots: Vec<_> = output
@@ -2930,7 +2930,7 @@ fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
                 &rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let shots: Vec<_> = output
@@ -3041,7 +3041,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 
@@ -3054,7 +3054,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
             0,
             PlacementEvidence::MarkFailed,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .is_none()
     );
@@ -3067,7 +3067,7 @@ fn techno_constructor_failed_reveal_keeps_one_draw_and_reuses_identity() {
     assert!(sim.discard_constructed_limbo(
         stable_id,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.substrate.entities.get(stable_id).is_none());
 }

@@ -72,7 +72,13 @@ fn campaign_fixture(triggers: &str) -> Option<(Simulation, RuleSet, InternedId)>
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) {
     let output = sim
-        .advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert!(output.tick.frame_committed);
 }
@@ -153,7 +159,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
         .unwrap()
         .set_is_human_for_test(true);
     Simulation::invalidate_house_power(&lockstep.houses, &mut lockstep.power_states, remote, true);
-    lockstep.assess_house_derived_state(remote, &rules, FrameEffects::default());
+    lockstep.assess_house_derived_state(remote, &rules, &mut FrameEffects::default());
     assert_eq!(lockstep.power_states()[&remote].total_output(), 200);
     assert!(power_system::has_active_radar(
         lockstep.power_states(),
@@ -168,7 +174,7 @@ fn remote_campaign_services_wait_for_ordinary_discovery_and_retain_it_on_load() 
         .session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     Simulation::invalidate_house_power(&hidden.houses, &mut hidden.power_states, remote, true);
-    hidden.assess_house_derived_state(remote, &rules, FrameEffects::default());
+    hidden.assess_house_derived_state(remote, &rules, &mut FrameEffects::default());
     assert_eq!(hidden.power_states()[&remote].total_output(), 200);
     assert!(power_system::has_active_radar(
         hidden.power_states(),
@@ -343,7 +349,7 @@ fn building_destroyed_by_its_unlimbo_discovery_stays_out_of_display_and_logic() 
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     sim.attach_object_trigger_tag(id, Some("DIE_TAG"));
@@ -358,7 +364,7 @@ fn building_destroyed_by_its_unlimbo_discovery_stays_out_of_display_and_logic() 
         0,
         PlacementEvidence::MarkSucceeded,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let building = sim.entities().get(id).unwrap();
     assert!(building.seldom.discovery.discovered_by_current_house());

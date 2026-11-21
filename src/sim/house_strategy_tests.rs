@@ -291,7 +291,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let timer = sim.houses[&owner].strategy_timer();
@@ -418,7 +418,7 @@ fn the_strategy_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let tried = AI_FIRE_LOG
             .take()
@@ -513,7 +513,7 @@ fn the_fire_sale_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let sold: Vec<i32> = (0..slots.len())
@@ -622,7 +622,7 @@ fn all_to_hunt_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let hunting: Vec<i32> = slots
@@ -1023,7 +1023,7 @@ fn last_legs_pass(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
         rules,
         owner,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 

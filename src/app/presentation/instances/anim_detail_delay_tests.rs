@@ -138,7 +138,7 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
     for _ in 0..16 {
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default())
+        sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
             .unwrap();
         if sim.anim(id).unwrap().runtime().delay_remaining != 0 {
             break;
@@ -163,7 +163,7 @@ fn random_loop_delay_skips_detail_until_real_anim_ai_restarts_it() {
         );
         frame += 1;
         sim.session_mut_for_test().set_binary_frame_for_test(frame);
-        sim.visit_anim(id, &rules, None, FrameEffects::default())
+        sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
             .unwrap();
     }
     assert_eq!(sim.anim(id).unwrap().runtime().delay_remaining, 0);

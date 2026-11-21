@@ -930,10 +930,10 @@ fn network_local_perspectives_share_startup_fog_and_ordinary_frame_hashes() {
         assert!(right.simulation.prepare_fog_view_for("Guest"));
         assert!(right.simulation.prepare_fog_view_for("Guest"));
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(a.tick.frame_committed && b.tick.frame_committed);
         assert_eq!(
@@ -977,8 +977,12 @@ fn network_zero_sight_discovery_uses_each_human_admission_and_retains_shared_has
     let unseen = left.simulation.state_hash();
     for viewer in [host, guest] {
         for runtime in [&mut left, &mut right] {
-            let context = UninitContext::new(&runtime.resources.rules);
-            assert!(runtime.simulation.discover_techno(ids[0], viewer, context));
+            let mut context = UninitContext::new(&runtime.resources.rules);
+            assert!(
+                runtime
+                    .simulation
+                    .discover_techno(ids[0], viewer, context.reborrow())
+            );
             assert!(!runtime.simulation.discover_techno(ids[0], viewer, context));
             assert!(
                 runtime
@@ -1033,10 +1037,10 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     for viewer in [last, observer] {
         let before = left.simulation.state_hash();
         for runtime in [&mut left, &mut right] {
-            let context = UninitContext::new(&runtime.resources.rules);
+            let mut context = UninitContext::new(&runtime.resources.rules);
             let sim = &mut runtime.simulation;
             assert!(!sim.techno_discovered_by_viewer(ids[0], viewer));
-            assert!(sim.discover_techno(ids[0], viewer, context));
+            assert!(sim.discover_techno(ids[0], viewer, context.reborrow()));
             assert!(sim.techno_discovered_by_viewer(ids[0], viewer));
             if viewer == last {
                 assert!(!sim.techno_discovered_by_viewer(ids[0], observer));
@@ -1065,10 +1069,10 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     assert!(right.simulation.admit_native_command_record(record));
     for _ in 0..6 {
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(a.tick.frame_committed && b.tick.frame_committed);
         assert_eq!(a.tick.state_hash, b.tick.state_hash);
@@ -1173,7 +1177,7 @@ fn network_trigger_and_reveal_to_all_lifecycle_update_both_logical_maps() {
     assert_eq!(ids[0], ids[1]);
     for runtime in [&mut left, &mut right] {
         let frame = runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(frame.tick.frame_committed);
         let sim = &mut runtime.simulation;
@@ -1220,10 +1224,10 @@ fn network_two_human_destruct_keeps_full_frame_and_terminal_score_hashes_equal()
             assert!(right.simulation.admit_native_command_record(record));
         }
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert_eq!(a.tick.tick, b.tick.tick, "frame {frame}");
         assert_eq!(
@@ -1286,7 +1290,7 @@ fn network_defeated_viewer_and_storm_keep_shared_maps_and_radar() {
     for _ in 0..6 {
         for runtime in [&mut left, &mut right] {
             runtime
-                .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+                .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
                 .unwrap();
         }
         assert_eq!(
@@ -1339,7 +1343,7 @@ fn network_defeated_viewer_and_storm_keep_shared_maps_and_radar() {
     for _ in 0..2 {
         for runtime in [&mut left, &mut right] {
             runtime
-                .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+                .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
                 .unwrap();
         }
         assert_eq!(left.simulation.state_hash(), right.simulation.state_hash());

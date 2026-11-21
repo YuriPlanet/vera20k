@@ -96,7 +96,13 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     let mut cameras = Vec::new();
     for _ in 0..100 {
         let output = sim
-            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_app_frame(
+                &[],
+                &rules,
+                67,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
             matches!(
@@ -140,7 +146,13 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for _ in 0..250 {
         let output = sim
-            .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_app_frame(
+                &[],
+                &rules,
+                67,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(
             !output.trigger_effects.iter().any(|effect| matches!(
@@ -178,7 +190,7 @@ fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
                 .len(),
             1
         );
-        sim.destroy_team(team, &rules, FrameEffects::default());
+        sim.destroy_team(team, &rules, &mut FrameEffects::default());
         assert!(sim.team_script_vm.team(team).is_none());
         assert!(
             sim.entities()
@@ -1068,8 +1080,11 @@ impl OracleTeam {
 fn load_onto_transport_matches_the_original() {
     for (case, row) in oracle_rows("load").iter().enumerate() {
         let mut team = OracleTeam::new(row, 14);
-        team.sim
-            .team_action_load_onto_transport(team.team, &team.rules, FrameEffects::default());
+        team.sim.team_action_load_onto_transport(
+            team.team,
+            &team.rules,
+            &mut FrameEffects::default(),
+        );
         team.check(row, case, true);
     }
 }
@@ -1101,7 +1116,7 @@ fn unload_matches_the_original() {
             team.team,
             int(&row["argument"]),
             &team.rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         team.check(row, case, false);
     }
@@ -1119,7 +1134,7 @@ fn deploy_matches_the_original() {
     for (case, row) in oracle_rows("deploy").iter().enumerate() {
         let mut team = OracleTeam::new(row, 9);
         team.sim
-            .team_action_deploy(team.team, &team.rules, None, FrameEffects::default());
+            .team_action_deploy(team.team, &team.rules, None, &mut FrameEffects::default());
         team.check(row, case, false);
         let owner = team.sim.interner.get("Russians");
         for event in row["events"].as_array().unwrap() {

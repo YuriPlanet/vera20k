@@ -217,12 +217,12 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         },
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     assert_eq!(bullets.len(), 1);
     for id in bullets {
-        sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
     }
     assert_eq!(
         sim.entities()

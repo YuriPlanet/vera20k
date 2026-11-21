@@ -285,7 +285,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
             // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses an enemy
             // building with no weapon or no posed threat, which is a targeting
             // fact this Tube-ordering test is not about.
-            sim.foot_arrival_target_handler(1, &rules, ObjectAiCtx::default());
+            sim.foot_arrival_target_handler(1, &rules, &mut ObjectAiCtx::default());
             assert!(matches!(
                 sim.substrate
                     .entities

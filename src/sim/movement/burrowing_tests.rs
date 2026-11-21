@@ -73,7 +73,7 @@ fn below_ground_drive_routes_through_burrowable_cell_then_resumes_object_target(
             rules.overlay_registry(),
         )
         .unwrap();
-    sim.set_object_height(mover, -1, &rules, FrameEffects::default());
+    sim.set_object_height(mover, -1, &rules, &mut FrameEffects::default());
     assert_eq!(
         super::air_movement::current_fly_height(
             sim.substrate.entities.get(mover).unwrap(),
@@ -83,7 +83,7 @@ fn below_ground_drive_routes_through_burrowable_cell_then_resumes_object_target(
     );
     let requested = NavTargetRef::object(target);
     let rng_before = sim.scenario_rng.native_state_hex();
-    assert!(sim.set_unit_destination(mover, requested, &rules, true, FrameEffects::default()));
+    assert!(sim.set_unit_destination(mover, requested, &rules, true, &mut FrameEffects::default()));
     let navigation = &sim.substrate.entities.get(mover).unwrap().navigation;
     let Some(NavTargetRef::Cell { rx, ry }) = navigation.nav_com() else {
         panic!("the burrowing planner must choose an intermediate Cell before the object");
@@ -112,7 +112,7 @@ fn below_ground_drive_routes_through_burrowable_cell_then_resumes_object_target(
         mover,
         &rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     let navigation = &sim.substrate.entities.get(mover).unwrap().navigation;
     assert_eq!(navigation.nav_com(), Some(requested));

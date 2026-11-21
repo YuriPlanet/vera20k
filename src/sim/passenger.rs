@@ -520,9 +520,9 @@ impl Simulation {
         carrier: u64,
         head_first: &[(u64, f64)],
         voices: bool,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
-        if !self.add_cargo_passenger_chain(carrier, head_first, context) {
+        if !self.add_cargo_passenger_chain(carrier, head_first, context.reborrow()) {
             return false;
         }
         let Some(&(head, _)) = head_first.first() else {
@@ -586,7 +586,7 @@ impl Simulation {
         size: f64,
         rider: bool,
         voices: bool,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
             entity.passenger_role_mut().board_carrier(CarrierLink {
@@ -609,7 +609,7 @@ impl Simulation {
         carrier: u64,
         open_topped: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
             passenger.passenger_role_mut().board_carrier(CarrierLink {
@@ -632,7 +632,7 @@ impl Simulation {
         &mut self,
         passenger: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.reset_orders_to_guard(passenger, rules, effects);
         self.register_open_topped_passenger(passenger)
@@ -1297,7 +1297,7 @@ pub(crate) fn board_passenger(
     carrier_id: u64,
     arm: BoardingArm,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(pax_size) = sim.substrate.entities.get(pax_id).map(|pax| {
         sim.object_type(pax.type_ref(), rules)
@@ -1368,8 +1368,8 @@ pub(crate) fn board_passenger(
     if absorber_entry {
         sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
-    let context = UninitContext::new(rules).with_effects(effects);
-    if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
+    let mut context = UninitContext::new(rules).with_effects(effects);
+    if sim.techno_limbo_with_context(pax_id, context.reborrow()) != ConcealOutcome::Concealed {
         if absorber_entry {
             sim.substrate.set_infantry_absorber_entry(pax_id, false);
         }
@@ -1387,7 +1387,7 @@ pub(crate) fn board_passenger(
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
                 rules,
-                effects,
+                context.effects(),
             );
         }
         BoardingArm::InfantryBuilding if extra_power => {
@@ -1422,14 +1422,20 @@ pub(crate) fn board_passenger(
         .get(pax_id)
         .and_then(|pax| pax.passenger_role().transporter());
     if arm == BoardingArm::InfantryTransport {
-        sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
+        sim.mark_boarded_transport_passenger(
+            pax_id,
+            carrier_id,
+            open_topped,
+            rules,
+            context.effects(),
+        );
     }
     let boarded = if arm.building() {
         // A building's cargo shares VERA's carrier relation; Transporter
         // (`+0x11C`, `PassengerRole::transporter`) stays as it is.
-        sim.add_cargo_members(carrier_id, &[(pax_id, pax_size)], context)
+        sim.add_cargo_members(carrier_id, &[(pax_id, pax_size)], context.reborrow())
     } else {
-        sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context)
+        sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context.reborrow())
     };
     // The admitted carrier survives Limbo; Cargo creates its hold if needed.
     debug_assert!(boarded, "boarding admission changed during one transaction");
@@ -1516,7 +1522,7 @@ pub fn add_garrison_occupant(
     pax_id: u64,
     building_id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<bool, crate::sim::world::FrameAdvanceError> {
     let Some(pax) = sim.substrate.entities.get(pax_id) else {
         return Ok(false);
@@ -1650,7 +1656,7 @@ impl Simulation {
         transport_id: u64,
         passenger: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Some(id) = passenger
             && let Some(cargo) = self
@@ -1865,7 +1871,7 @@ impl Simulation {
         transport_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(transport) = self.substrate.entities.get(transport_id) else {
             return;
@@ -1909,7 +1915,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     building_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return false;
@@ -2018,7 +2024,7 @@ fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
             crate::sim::movement::PerCellReason::Arrival,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("supplied infantry arrival");
     }

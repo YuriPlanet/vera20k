@@ -176,7 +176,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         })
         .unwrap();
@@ -196,7 +196,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
             0,
             PlacementEvidence::MarkSucceeded,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     })
     .unwrap();
@@ -208,7 +208,7 @@ fn plane_at(sim: &mut Simulation, rules: &RuleSet, at: (u16, u16), passengers: u
         crate::rules::object_type::ObjectCategory::Infantry,
         "E1",
         passengers,
-        Default::default(),
+        &mut Default::default(),
     );
     sim.substrate
         .entities
@@ -368,7 +368,7 @@ fn launch_cases_five_and_six_match_native() {
                 cell.1,
                 kind,
                 sw_type,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             charged,
             "{row}"
@@ -492,7 +492,7 @@ fn a_water_click_sends_the_plane_to_land_beside_it() {
         TARGET.1,
         ParaDropKind::Generic,
         sw_type,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
 
     let [plane] = planes(&sim)[..] else {
@@ -610,7 +610,7 @@ fn send_paradrop_planes_matches_native() {
             MissionType::ParadropApproach,
             TARGET,
             Payload::Infantry(infantry, num),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
 
         let [plane] = planes(&sim)[..] else {
@@ -683,7 +683,7 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value, target: (u1
             id,
             Some(nav),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     let distance = int(&row["distance"]);
@@ -769,7 +769,7 @@ fn paradrop_missions_match_native() {
         let now = sim.session.binary_frame();
 
         let (observed, records) = observe(7, || {
-            crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
+            crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, &mut Default::default());
         });
 
         let dropped = events(row, "drop_payload").next().is_some();
@@ -881,7 +881,7 @@ fn drop_payload_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
 
@@ -1040,7 +1040,7 @@ fn spawn_parachuted_matches_native() {
                 &mut sim,
                 plane,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         });
 
@@ -1229,7 +1229,7 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(!sim.super_weapons[&russians][&sw_type].is_ready);
@@ -1273,7 +1273,7 @@ fn ares_launch(
         sw_type,
         rules.super_weapon(&name).unwrap(),
         TARGET,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 

@@ -47,7 +47,7 @@ pub(crate) fn spawn_building_free_unit(
     stable_id: u64,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some((owner_id, type_ref, rx, ry, width, height)) =
         sim.substrate.entities.get(stable_id).and_then(|entity| {
@@ -104,7 +104,7 @@ fn try_spawn_building_free_unit(
     width: u16,
     height: u16,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(free_unit_type) = rules.building_free_unit(building_type_id) else {
         return false;
@@ -237,7 +237,7 @@ fn try_place_free_unit(
     facing: u8,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     // BuildingClass::OnConstructionComplete @ 0x00445F80 invokes the newly
     // constructed UnitClass through virtual Unlimbo for every primary/fallback

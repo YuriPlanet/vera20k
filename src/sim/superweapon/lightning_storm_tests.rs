@@ -681,7 +681,7 @@ fn storm_strike_matches_native_rows() {
             &rules,
             None,
             coords,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let mut expected = Calls::expected(row);
@@ -815,7 +815,7 @@ fn storm_process_matches_native_rows() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_globals(&sim, &houses, &row["storm"], row);
@@ -1010,7 +1010,7 @@ fn strike(
         rules,
         registry,
         [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1600,7 +1600,7 @@ fn ares_fire_storm(
         sw_type,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     )
 }
@@ -1756,7 +1756,7 @@ fn ares_storm_starts_with_its_type_keys() {
             sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     process(&mut sim, 1002);
@@ -1836,7 +1836,7 @@ fn ares_storm_strike_scales_a_lightning_rods_damage() {
         &rules,
         None,
         [i32::from(at.0) * 256 + 128, i32::from(at.1) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(rod).unwrap().health.current(),
@@ -1888,7 +1888,7 @@ fn ares_storm_lists_strike_from_half_front_to_back() {
         &mut sim,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.lightning_storm.clouds_for_test().1.is_empty());
     let bolts: Vec<i32> = sim

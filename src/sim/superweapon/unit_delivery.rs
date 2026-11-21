@@ -177,7 +177,7 @@ pub(crate) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(config) = sw.unit_delivery.as_ref() else {
         return false;
@@ -217,7 +217,7 @@ pub(crate) fn tick(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let pending = std::mem::take(&mut sim.unit_deliveries.pending);
     let mut retained = Vec::new();
@@ -239,7 +239,7 @@ fn apply(
     rules: &RuleSet,
     request: PendingDelivery,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Update10075DE0 prints Message.Activate first. Its firer is the
     // Super's owner; the request retains the resolved payload owner, which
@@ -281,7 +281,7 @@ fn place(
     request: &PendingDelivery,
     payload: &DeliveryType,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(ty) = rules.object_in_category(payload.category, &payload.id) else {
         return;

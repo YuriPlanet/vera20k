@@ -9,8 +9,14 @@ use crate::sim::world::{FrameEffects, SimFrameOutput, SimSoundEvent, TickLane};
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     let due = sim.take_due_commands();
-    sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .expect("ordinary authoritative frame")
+    sim.advance_app_frame(
+        &due,
+        rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .expect("ordinary authoritative frame")
 }
 
 fn command(sim: &mut Simulation, owner: InternedId, payload: Command) {

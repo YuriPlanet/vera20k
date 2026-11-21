@@ -650,7 +650,7 @@ mod tests {
             &rules,
             None,
             hit(1, 2, other, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(1).unwrap().health.current(), 100);
         assert!(sim.entities().get(1).unwrap().invulnerability.is_none());
@@ -658,7 +658,7 @@ mod tests {
             &rules,
             None,
             hit(2, 1, owner, 10),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.entities().get(2).unwrap().health.current(), 70);
         let entity = sim.substrate.entities.get_mut(1).unwrap();

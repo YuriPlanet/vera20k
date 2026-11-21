@@ -26,7 +26,7 @@ pub(super) fn apply(
     registry: Option<&OverlayTypeRegistry>,
     rx: u16,
     ry: u16,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let warhead_ref = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let mut current = members(sim, rx, ry).next();
@@ -120,7 +120,7 @@ mod tests {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         // Supply the fallout scene's pose after the constructor's zero Location.
@@ -190,7 +190,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/spatial_oracle/bridge_zero_health_receiver.json",
@@ -266,7 +266,7 @@ mod tests {
                 break;
             }
             sim.session.set_binary_frame_for_test(frame);
-            sim.advance_live_object_turn(terror, &rules, Default::default())
+            sim.advance_live_object_turn(terror, &rules, &mut Default::default())
                 .expect("the corpse's ordinary turn completes");
         }
         let head = sim.substrate.entities.get(terror).unwrap();
@@ -295,7 +295,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!sim.sound_events.iter().any(|event| matches!(
             event,
@@ -337,7 +337,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let hut = sim.substrate.entities.get(hut).unwrap();
         assert_eq!(hut.health.current(), hut_type.strength);
@@ -384,7 +384,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.entities.get(bunker).unwrap().health.current(),
@@ -427,7 +427,7 @@ mod tests {
                 None,
                 4,
                 4,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let tree = &sim.terrain_objects.objects()[&id];
             if wood {
@@ -480,7 +480,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.entities.get(head).unwrap().health.current(),
@@ -535,7 +535,7 @@ mod tests {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             // The unmarked contrast has this same pose without Cell membership.
@@ -572,7 +572,7 @@ mod tests {
             None,
             4,
             4,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         for id in [older, newer, building] {
             assert_eq!(

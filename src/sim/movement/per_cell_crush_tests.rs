@@ -314,7 +314,7 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -383,7 +383,7 @@ fn ares_crush_damage_hurts_the_crusher() {
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let crushed = sim

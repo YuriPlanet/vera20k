@@ -115,7 +115,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output
@@ -268,7 +273,7 @@ fn finite_infantry_refills_after_damage_fear_expires_and_can_fire_again() {
         &scene.0.resources.rules,
         Some(scene.0.resources.rules.overlay_registry()),
         hit,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(scene.actor(infantry).infantry.unwrap().fear_level(), 100);
     let reload = scene.reload(infantry);
@@ -616,7 +621,7 @@ fn damage_reduces_readiness_before_object_immunity_and_restarts_reload() {
             &scene.0.resources.rules,
             Some(scene.0.resources.rules.overlay_registry()),
             event,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     hit(&mut scene, 100, tank);

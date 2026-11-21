@@ -550,7 +550,7 @@ fn update_repair_and_power_matches_the_original() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let owner = sim.interner.get("AI").unwrap();
         let building = sim.substrate.entities.get(1).unwrap();
@@ -683,7 +683,11 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
                 .unwrap()
                 .building_art
                 .actually_placed();
-            sim.object_ai_visit_one(1, Some(&rules), super::techno_ai::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                1,
+                Some(&rules),
+                &mut super::techno_ai::ObjectAiCtx::default(),
+            );
             let after = cursors(&sim);
             let completed = !placed_before
                 && sim
@@ -884,7 +888,7 @@ fn the_repair_step_keeps_signed_adds_and_the_live_strength() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
@@ -1018,7 +1022,7 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let building = sim.substrate.entities.get(1).unwrap();
         assert_eq!(

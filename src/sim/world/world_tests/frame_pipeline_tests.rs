@@ -44,7 +44,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         &commands,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         1,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let selected_before_logic = sim
         .entities()
@@ -72,7 +72,7 @@ fn combatant_selection_ingress_precedes_destroy_and_is_not_replayed_at_tail() {
         &commands,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         1,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert!(
@@ -118,7 +118,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
             67,
             TickLane::Ordinary,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -130,7 +130,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
             67,
             TickLane::Ordinary,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -190,7 +190,7 @@ fn live_game_speed_event_decodes_and_applies_within_its_frame() {
             67,
             TickLane::Ordinary,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -202,7 +202,7 @@ fn live_game_speed_event_decodes_and_applies_within_its_frame() {
             67,
             TickLane::Ordinary,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -504,7 +504,7 @@ fn network_modal_does_not_execute_game_speed_ingress() {
             67,
             TickLane::NetworkModal,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -535,7 +535,7 @@ fn animation_boundary_fixture() -> (Simulation, RuleSet) {
             crate::sim::movement::infantry_action::DO_IDLE1,
             true,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -597,7 +597,7 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         let headless = headless_sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -659,7 +659,7 @@ fn advance_tick_finishes_dying_infantry_from_rules_catalog() {
         id,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let corpse = sim.substrate.entities.get(id).expect("Die1 receiver");
     assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
@@ -726,7 +726,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
             67,
             TickLane::Ordinary,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
         .into_tick();
@@ -769,7 +769,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
             crate::rules::ruleset::RuleSet::empty_for_test(),
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(matches!(
@@ -784,7 +784,7 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
             crate::rules::ruleset::RuleSet::empty_for_test(),
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(second.sound_events.is_empty());
@@ -811,7 +811,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(deferred.overlay_updates.is_empty());
@@ -828,7 +828,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert_eq!(first.overlay_updates.len(), 1);
@@ -848,7 +848,7 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(second.overlay_updates.is_empty());
@@ -887,7 +887,7 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(!output.tick.frame_committed);
@@ -922,7 +922,7 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(!next.tick.frame_committed);
@@ -1043,7 +1043,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
             &[],
             16,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
 
@@ -1054,7 +1054,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
             &due,
             16,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);

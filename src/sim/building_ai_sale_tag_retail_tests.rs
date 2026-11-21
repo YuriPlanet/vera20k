@@ -38,7 +38,7 @@ fn frame(scene: &mut HeadlessScenario, building: u64) -> (SimFrameOutput, Option
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound-resource frame")
     });

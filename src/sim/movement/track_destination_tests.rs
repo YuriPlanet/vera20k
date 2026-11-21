@@ -87,10 +87,15 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
-            sim.foot_null_destination(1, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.foot_null_destination(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
         }
         let e = sim.substrate.entities.get(1).unwrap();
         let (destination, head) = if input["family"] == "drive" {
@@ -702,7 +707,7 @@ fn unit_setters_clear_navqueue_like_the_original() {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
         } else {
             assert!(sim.set_unit_destination(
@@ -710,7 +715,7 @@ fn unit_setters_clear_navqueue_like_the_original() {
                 NavTargetRef::cell(11, 10),
                 &rules,
                 input["flag"] != 0,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
         }
         compare(sim.substrate.entities.get(1).unwrap(), &row);
@@ -1070,7 +1075,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
                 requested,
                 &rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         } else {
             sim.assign_infantry_destination(
@@ -1078,7 +1083,7 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
                 requested,
                 &rules,
                 Some(&overlays),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         };

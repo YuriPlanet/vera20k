@@ -40,7 +40,7 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
             id,
             Some(NavTargetRef::cell(12, 14)),
             &rules,
-            Default::default(),
+            &mut Default::default(),
         )
         .is_ok()
     );
@@ -138,7 +138,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             &mut sim,
             id,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -156,7 +156,7 @@ fn stock_sniper_patrol_scans_then_approaches_through_the_existing_owners() {
             &mut sim,
             id,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         )
         .unwrap();
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -247,14 +247,14 @@ fn patrol_saved_pursuit_and_return_continue_in_independent_worlds() {
                 &mut live,
                 id,
                 &rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
             )
             .unwrap();
             super::super::mission_handlers::dispatch_foot_mission(
                 &mut restored,
                 id,
                 &rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
             )
             .unwrap();
             let a = live.substrate.entities.get(id).unwrap();

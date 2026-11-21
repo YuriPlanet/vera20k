@@ -120,14 +120,14 @@ struct NothingYet;
 
 impl NetworkCommandBoundary for NothingYet {
     fn exchange_commands(
-        &self,
+        &mut self,
         _: NetworkQueueContext,
         _: &mut NetworkCommandQueues<'_>,
     ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
         Ok(Some(NetworkQueuePass::Waiting))
     }
 
-    fn record_frame_checksum(&self, _: u32, _: u32) {}
+    fn record_frame_checksum(&mut self, _: u32, _: u32) {}
 
     fn compare_frame_info(&self, _: &CommandRecord, _: i32) -> Result<bool, NetworkCommandError> {
         Ok(true)
@@ -144,7 +144,7 @@ fn a_watcher_follows_while_its_frame_waits_on_the_stream() {
             RuleSet::empty_for_test(),
             33,
             TickLane::Ordinary,
-            FrameEffects::empty().with_network_commands(&NothingYet),
+            &mut FrameEffects::empty().with_network_commands(&mut NothingYet),
         )
         .unwrap();
     assert!(output.network_waiting && sim.pending_network_wait());
@@ -182,7 +182,7 @@ fn the_followed_players_own_records_are_another_games() {
             RuleSet::empty_for_test(),
             33,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -220,7 +220,7 @@ fn the_followed_house_can_lose_before_the_watch_ends() {
             RuleSet::empty_for_test(),
             33,
             TickLane::Ordinary,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         )
         .unwrap();
     assert!(first.tick.frame_committed);
@@ -241,7 +241,7 @@ fn the_followed_house_can_lose_before_the_watch_ends() {
             RuleSet::empty_for_test(),
             33,
             TickLane::Ordinary,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         )
         .unwrap();
     assert!(!last.tick.frame_committed);
@@ -291,13 +291,13 @@ fn a_watcher_admits_scripted_win_and_loss_while_hostile_houses_remain() {
                     skip_timer: true,
                 }
             };
-            assert!(sim.request_player_outcome(outcome, &rules, FrameEffects::empty(),));
+            assert!(sim.request_player_outcome(outcome, &rules, &mut FrameEffects::empty(),));
             assert!(sim.network_match_winners().is_none());
             let timer = sim.houses[&followed].outcome_timer();
             sim.session.set_binary_frame_for_test(
                 timer.start_frame().wrapping_add(timer.duration()) as u32,
             );
-            sim.house_rung(&rules, None, false, FrameEffects::empty(), None)
+            sim.house_rung(&rules, None, false, &mut FrameEffects::empty(), None)
                 .unwrap();
             assert_eq!(
                 sim.ready_outcome_for_owner(followed)

@@ -216,10 +216,10 @@ pub fn visit_paid_deso_light_lifecycle(
             .production()
             .factories()
             .strip_visits_for_test(owner);
-        let effects = FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = FrameEffects::default().with_production_strip(&visits);
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, effects)
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut effects)
             .expect("ordinary paid DESO frame");
         assert!(output.tick.frame_committed);
         if !bound_deso

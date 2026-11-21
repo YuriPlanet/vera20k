@@ -97,7 +97,7 @@ fn visit(type_id: &str, nav: NavTargetRef, case: Case) -> Option<bool> {
             "the stopped Move prefix stays out of these rows"
         );
     }
-    sim.infantry_movement_actions(id, &rules, None, FrameEffects::default());
+    sim.infantry_movement_actions(id, &rules, None, &mut FrameEffects::default());
     let after = sim.substrate.entities.get(id).unwrap().navigation.nav_com();
     assert!(
         after.is_none() || after == Some(nav),

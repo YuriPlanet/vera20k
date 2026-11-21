@@ -249,7 +249,8 @@ impl KamikazeHost for WorldHost<'_> {
     }
 
     fn crash(&mut self, child: u64) {
-        self.sim.foot_crash(child, None, self.rules, self.effects);
+        self.sim
+            .foot_crash(child, None, self.rules, &mut self.effects);
     }
 
     fn location_xy(&self, child: u64) -> [i32; 2] {
@@ -291,9 +292,12 @@ impl KamikazeHost for WorldHost<'_> {
             .ok()
             .zip(u16::try_from(y).ok())
             .map(|(x, y)| TargetKind::Cell(x, y));
-        let _ =
-            self.sim
-                .assign_target_represented(child, cell, self.rules, FrameEffects::default());
+        let _ = self.sim.assign_target_represented(
+            child,
+            cell,
+            self.rules,
+            &mut FrameEffects::default(),
+        );
     }
 
     fn queue_attack(&mut self, child: u64) {
@@ -317,7 +321,7 @@ impl Simulation {
         child: u64,
         target: Option<TargetKind>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let target_xy = target.and_then(|target| {
             let cells = self
@@ -331,7 +335,7 @@ impl Simulation {
             &mut WorldHost {
                 sim: self,
                 rules,
-                effects,
+                effects: effects.reborrow(),
             },
             child,
             target_xy,
@@ -349,13 +353,13 @@ impl Simulation {
     }
 
     /// Update (`0x0054E4D0`), from LogicClass::AI after the BombList.
-    pub(crate) fn kamikaze_update(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
+    pub(crate) fn kamikaze_update(&mut self, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         let frame = self.session.binary_frame();
         update(
             &mut WorldHost {
                 sim: self,
                 rules,
-                effects,
+                effects: effects.reborrow(),
             },
             frame,
         );

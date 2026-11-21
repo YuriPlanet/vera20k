@@ -41,7 +41,7 @@ pub(crate) fn mission_capture(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;

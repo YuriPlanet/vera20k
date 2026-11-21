@@ -136,7 +136,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         41,
         "score filters do not suppress capacity"
     );
-    sim.change_owner_with_rules(target, second, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, second, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         (
             sim.houses[&first].tracking().storage_capacity(),
@@ -147,7 +147,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
     sim.techno_limbo_with_rules(target, &rules);
     sim.techno_limbo_with_rules(target, &rules);
     assert_eq!(sim.houses[&second].tracking().storage_capacity(), 0);
-    sim.change_owner_with_rules(target, first, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, first, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.houses[&first].tracking().storage_capacity(),
         18,

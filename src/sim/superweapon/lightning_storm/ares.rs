@@ -282,7 +282,7 @@ pub(super) fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut bridge_changed = false;
     let manifesting = std::mem::take(&mut sim.lightning_storm.clouds_manifesting);
@@ -586,7 +586,7 @@ pub(super) fn ground_strike(
     overlay_registry: Option<&OverlayTypeRegistry>,
     (super_owner, _, launch): AresStorm<'_>,
     [x, y]: [i32; 2],
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let lightning = launch.lightning();
     let general = &rules.general;

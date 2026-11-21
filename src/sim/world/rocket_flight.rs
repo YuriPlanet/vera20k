@@ -88,7 +88,7 @@ impl RocketHost for RocketProcessHost<'_> {
             DriveCoord { x, y, z },
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.frame_effects,
+            &mut self.frame_effects,
         );
     }
     fn height(&self) -> i32 {
@@ -115,14 +115,14 @@ impl RocketHost for RocketProcessHost<'_> {
                 self.id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
         } else {
             self.sim.foot_mark_remove(
                 self.id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
         }
     }
@@ -244,7 +244,7 @@ impl RocketHost for RocketProcessHost<'_> {
             warhead_type,
             true,
             (self.id, None, warhead_ref),
-            self.frame_effects,
+            &mut self.frame_effects,
         )
         .bridge_state_changed;
     }
@@ -293,16 +293,16 @@ impl RocketHost for RocketProcessHost<'_> {
             self.rules,
             Some(self.rules.overlay_registry()),
             &[detonation],
-            self.frame_effects,
+            &mut self.frame_effects,
         );
         // UnInit (vtable +0xF8) of the never-Fired Bullet.
         self.sim
-            .destroy_unfired_projectile(bullet_id, self.rules, self.frame_effects);
+            .destroy_unfired_projectile(bullet_id, self.rules, &mut self.frame_effects);
     }
     fn uninit(&mut self) {
         self.sim.uninit_with_context(
             self.id,
-            UninitContext::new(self.rules).with_effects(self.frame_effects),
+            UninitContext::new(self.rules).with_effects(&mut self.frame_effects),
         );
     }
 }
@@ -345,7 +345,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> RocketProcessOutcome {
         let Some(entity) = self.substrate.entities.get(id) else {
             return RocketProcessOutcome::default();
@@ -370,7 +370,7 @@ impl Simulation {
             id,
             frame,
             bridge_state_changed: false,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
         };
         rocket_movement::process(&mut rocket, block, cmisl, &ext, &mut host);
         let outcome = RocketProcessOutcome {
@@ -1191,7 +1191,7 @@ pub(super) mod retail_tests {
             v3,
             Some(crate::sim::combat::TargetKind::Entity(target)),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("the V3 takes the tank as its target");
         let now = sim.session.binary_frame();

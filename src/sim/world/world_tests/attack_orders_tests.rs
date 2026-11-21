@@ -306,7 +306,7 @@ fn an_attack_move_click_over_an_object_keeps_it_the_mega_destination() {
         Some(crate::sim::components::NavTargetRef::Object { id: mcv })
     );
 
-    sim.detach_all_pointer_expired(mcv, &rules, crate::sim::world::FrameEffects::default());
+    sim.detach_all_pointer_expired(mcv, &rules, &mut crate::sim::world::FrameEffects::default());
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(attacker.seldom.mega_mission.destination(), None);
     assert_eq!(attacker.navigation.nav_com(), None);
@@ -572,7 +572,7 @@ fn test_lethal_hit_stuns_the_dying_infantry() {
         &rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let gi = sim

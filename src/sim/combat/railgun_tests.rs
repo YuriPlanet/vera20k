@@ -211,7 +211,7 @@ fn railgun_line_damage_matches_native_hits_and_ground_stop() {
             &mut sim,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             &mut deaths,
             firer,
             ProjectileCoord::new(source[0], source[1], source[2]),

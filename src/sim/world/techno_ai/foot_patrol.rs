@@ -37,7 +37,7 @@ pub(super) fn mission_patrol(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> i32 {
     let actor = sim.substrate.entities.get(id).expect("Patrol receiver");
     if actor.category() == EntityCategory::Unit {
@@ -147,7 +147,7 @@ pub(super) fn mission_patrol(
                 if healthy_allied_building_for_engineer(sim, id, object, rules) {
                     target(sim, id, None, rules, ctx);
                 } else if qualifies(sim, id, object, weapon, Some(post(sim, id)), limit, rules) {
-                    sim.approach_target(id, rules, ctx.overlay_registry, ctx.effects);
+                    sim.approach_target(id, rules, ctx.overlay_registry, &mut ctx.effects);
                     if sim
                         .substrate
                         .entities
@@ -348,7 +348,7 @@ fn scan(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     point: DriveCoord,
 ) -> Option<TargetKind> {
     sim.greatest_threat_represented(
@@ -564,9 +564,9 @@ fn target(
     id: u64,
     target: Option<TargetKind>,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
-    let _ = sim.assign_target_represented(id, target, rules, ctx.effects);
+    let _ = sim.assign_target_represented(id, target, rules, &mut ctx.effects);
 }
 
 fn destination(
@@ -574,13 +574,13 @@ fn destination(
     id: u64,
     target: Option<NavTargetRef>,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) {
-    let _ = sim.assign_destination_represented(id, target, rules, ctx.effects);
+    let _ = sim.assign_destination_represented(id, target, rules, &mut ctx.effects);
 }
 
-fn idle(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCtx<'_>) -> i32 {
-    crate::sim::world::enter_idle_mode(sim, id, rules, ctx.overlay_registry, ctx.effects);
+fn idle(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: &mut ObjectAiCtx<'_>) -> i32 {
+    crate::sim::world::enter_idle_mode(sim, id, rules, ctx.overlay_registry, &mut ctx.effects);
     set_state(sim, id, 3);
     1
 }

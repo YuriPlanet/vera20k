@@ -69,7 +69,7 @@ fn run(
         &mut Vec::new(),
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -351,7 +351,7 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
         houses[2],
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(ids[1]).unwrap();
     assert_eq!(
@@ -440,7 +440,7 @@ fn house_directive_transferred_base_dies_with_original_house() {
         houses[2],
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.techno_original_owner(ids[2]), None);
     assert!(run(
@@ -589,7 +589,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.iter().any(|e| matches!(e,crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner,sw_type,world } if *owner==houses[0] && *sw_type==sw && world.to_cell_sub_z().0==17 && world.to_cell_sub_z().1==15)), "the closer third House is excluded by native arg3=true");
     assert!(
@@ -613,7 +613,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.iter().any(|e| matches!(
         e,
@@ -624,7 +624,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         .get_mut(&houses[0])
         .unwrap()
         .clear_preferred_super_weapon_target();
-    sim.destroy_team(team, &rules, FrameEffects::default());
+    sim.destroy_team(team, &rules, &mut FrameEffects::default());
     sim.sound_events.clear_for_test();
     crate::sim::superweapon::chronosphere_tests::charge_super(&mut sim, houses[0], "REVEAL");
     let rng = sim.rng_state();
@@ -633,7 +633,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         crate::sim::superweapon::superweapon_views_for_owner(&sim, &rules, &houses[0])

@@ -30,7 +30,7 @@ impl Simulation {
         &mut self,
         owner: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let count = self.substrate.entities.techno_registry_len();
         for ordinal in 0..count {

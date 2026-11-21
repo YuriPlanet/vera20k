@@ -136,7 +136,7 @@ fn sov07_discovery_recruits_the_nine_authored_group_members_after_reload() {
             Some(team_id)
         );
     }
-    sim.destroy_team(team_id, &rules, FrameEffects::default());
+    sim.destroy_team(team_id, &rules, &mut FrameEffects::default());
     assert!(sim.team_script_vm.team(team_id).is_none());
     for member in members {
         assert_eq!(sim.team_script_vm.team_for_member(member), None);

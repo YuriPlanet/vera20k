@@ -126,7 +126,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
             return SleepVisit::Awake;

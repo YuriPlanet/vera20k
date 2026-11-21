@@ -130,7 +130,8 @@ fn visit(case: Case, guard_cell: (u16, u16)) -> Option<Visit> {
         .get_mut(id)
         .unwrap()
         .set_archive_target(Some(post));
-    crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
+    crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
     Some(Visit {
         post: entity.archive_target(),
@@ -366,7 +367,7 @@ fn ready_area_guard(
             crate::sim::movement::infantry_action::DO_READY,
             false,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
     );
@@ -406,7 +407,7 @@ fn an_area_guard_without_a_post_skips_the_idle_action() {
         };
         let id = ready_area_guard(&mut sim, &rules, "E1", queued);
 
-        crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
+        crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
             .unwrap();
 
         let posted = queued == MissionId::NONE;
@@ -443,7 +444,7 @@ fn an_area_guard_that_approached_its_target_skips_the_idle_action() {
         id,
         target,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -456,7 +457,8 @@ fn an_area_guard_that_approached_its_target_skips_the_idle_action() {
         target
     );
 
-    crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
+    crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
 
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(entity.archive_target().is_some());

@@ -83,7 +83,7 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
         },
     );
     assert_eq!(rules.warhead("SA").unwrap().inf_death, 1);
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let corpse = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(corpse.health.current(), 0);
     assert!(corpse.lifecycle.object_alive());

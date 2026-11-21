@@ -1666,7 +1666,7 @@ mod control_link_port_tests {
                     0,
                     4,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let actor = sim.substrate.entities.get_mut(id).unwrap();

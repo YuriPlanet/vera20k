@@ -113,7 +113,7 @@ fn an_occupier_raids_an_empty_raidable_building_until_it_empties() {
             gi,
             bunker,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     );
@@ -145,7 +145,7 @@ fn a_shot_passes_through_to_an_occupant() {
             gi,
             bunker,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap()
     );
@@ -211,7 +211,7 @@ fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
                 gi,
                 building,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
         );
@@ -336,7 +336,7 @@ fn delegated_trench_redirect_only_checks_occupants_that_would_move() {
             &envelope.payload,
             &rules,
             Some(rules.overlay_registry()),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     };
 

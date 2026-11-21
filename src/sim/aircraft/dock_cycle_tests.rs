@@ -357,7 +357,7 @@ fn an_airfield_killing_hit_destroys_all_four_docked_aircraft() {
                 arg6: true,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for id in aircraft {
         assert!(
@@ -400,7 +400,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -495,7 +495,7 @@ fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
                 RadioMessage::Hello,
                 RadioPayload::default(),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             RadioResponse::Roger
         );
@@ -515,7 +515,7 @@ fn a_non_helipad_kills_near_contacts_and_releases_distant_contacts() {
                     arg6: true,
                 },
             ),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -692,7 +692,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
                 arg6: true,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     for harrier in harriers {
         assert!(

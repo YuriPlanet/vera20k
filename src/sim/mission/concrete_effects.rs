@@ -342,7 +342,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         //6FCDD2..6FCDE1: only a receiver owning its manager clears the
         //designation here; aircraft and marked buildings borrow +294.
         if changes && entity.airstrike_link() == Some(prepared.receiver) {
-            sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
+            sim.airstrike_clear_target(prepared.receiver, self.rules, &mut self.frame_effects);
         }
         let stored = assign_target_stored(
             &sim.substrate.entities,
@@ -417,7 +417,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 prepared.receiver,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             return true;
         }
@@ -439,7 +439,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         requested,
                         rules,
                         !self.keep_queue,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 // `InfantryClass::Assign_Destination @ 0x0051AA40`.
@@ -450,7 +450,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                             requested,
                             rules,
                             Some(self.rules.overlay_registry()),
-                            self.frame_effects,
+                            &mut self.frame_effects,
                         )
                         .expect("represented Infantry destination dependencies must be available");
                 }
@@ -460,7 +460,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         prepared.receiver,
                         Some(requested),
                         rules,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 crate::map::entities::EntityCategory::Structure => {

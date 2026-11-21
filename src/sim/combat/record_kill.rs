@@ -478,7 +478,7 @@ impl crate::sim::world::Simulation {
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let rules = context.rules();
         if matches!(source, KillSource::Techno(_))
@@ -512,7 +512,11 @@ impl crate::sim::world::Simulation {
                         && kind == 7
                         && let KillSource::Techno(Some(destroyer)) = source
                     {
-                        self.raise_ares_destroyed_by_house(victim_id, destroyer, context);
+                        self.raise_ares_destroyed_by_house(
+                            victim_id,
+                            destroyer,
+                            context.reborrow(),
+                        );
                     }
                     if kind != 7 || source.is_present() {
                         self.dispatch_object_tag_event(
@@ -520,7 +524,7 @@ impl crate::sim::world::Simulation {
                             kind,
                             Some(victim_id),
                             None,
-                            context,
+                            context.reborrow(),
                         );
                     }
                 }
@@ -539,7 +543,7 @@ impl crate::sim::world::Simulation {
             .interner
             .object_type(victim.type_ref(), rules)
             .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
-        self.record_kill_tag_prefix(victim_id, source, context);
+        self.record_kill_tag_prefix(victim_id, source, context.reborrow());
         let promote_now = record_the_kill(
             &mut self.substrate.entities,
             &mut self.houses,
@@ -573,7 +577,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         victim: u64,
         source: KillSource,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         if source.is_present() {
             for kind in [6, 4] {
@@ -583,7 +587,13 @@ impl crate::sim::world::Simulation {
                     .get(victim)
                     .is_some_and(|victim| victim.lifecycle.object_alive())
                 {
-                    self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                    self.dispatch_object_tag_event(
+                        victim,
+                        kind,
+                        Some(victim),
+                        None,
+                        context.reborrow(),
+                    );
                 }
             }
         }
@@ -602,7 +612,7 @@ impl crate::sim::world::Simulation {
                 victim,
                 85,
                 Some(crate::sim::trigger_runtime::AresEventSource::House(house)),
-                context,
+                context.reborrow(),
             );
         }
         //702DCE/7032BE query WhatAmI once: Unit1 skips7/48/29,
@@ -621,7 +631,7 @@ impl crate::sim::world::Simulation {
         if context.rules().ares()
             && let KillSource::Techno(Some(destroyer)) = source
         {
-            self.raise_ares_destroyed_by_house(victim, destroyer, context);
+            self.raise_ares_destroyed_by_house(victim, destroyer, context.reborrow());
         }
         for kind in [7, 48, 29] {
             if kind == 7 && !source.is_present() {
@@ -633,7 +643,13 @@ impl crate::sim::world::Simulation {
                 .get(victim)
                 .is_some_and(|victim| victim.lifecycle.object_alive())
             {
-                self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                self.dispatch_object_tag_event(
+                    victim,
+                    kind,
+                    Some(victim),
+                    None,
+                    context.reborrow(),
+                );
             }
         }
     }

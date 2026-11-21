@@ -139,7 +139,7 @@ impl Simulation {
         firer: u64,
         target: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = target.filter(|id| self.substrate.entities.contains(*id)) else {
             return;
@@ -186,7 +186,7 @@ impl Simulation {
         owner: u64,
         target: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let elite = self
             .substrate
@@ -245,7 +245,7 @@ impl Simulation {
         owner: u64,
         target: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let m = self.substrate.airstrike_manager(owner).unwrap();
         let aircraft = m.aircraft.clone();
@@ -306,7 +306,7 @@ impl Simulation {
         &mut self,
         owner: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
             return;
@@ -413,7 +413,7 @@ impl Simulation {
         sound: Option<&str>,
         audible_to: Option<[crate::sim::intern::InternedId; 2]>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let (Some(sound), Some(entity)) = (sound, self.substrate.entities.get(source)) {
             self.sound_events.emit(SimSoundEvent::voc_at_for(
@@ -456,7 +456,7 @@ impl Simulation {
         owner: u64,
         expired: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
             return;

@@ -282,7 +282,7 @@ impl Simulation {
         actor_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<VehicleCaptureOutcome, String> {
         use crate::sim::components::NavTargetRef;
         use crate::sim::movement::ground_pose::object_get_coords;
@@ -349,16 +349,22 @@ impl Simulation {
             } else {
                 //5203F7..52046D: each callback finishes before the next live
                 // read. Radio+274 addresses slot zero, not the broadcast walk.
-                let context = super::UninitContext::new(rules).with_effects(effects);
-                self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
+                let mut context = super::UninitContext::new(rules).with_effects(effects);
+                self.dispatch_object_tag_event(
+                    target_id,
+                    1,
+                    Some(actor_id),
+                    None,
+                    context.reborrow(),
+                );
                 crate::sim::radio::transmit_to_contact(
                     self,
                     target_id,
                     crate::sim::radio::RadioMessage::Break,
                     rules,
-                    effects,
+                    context.effects(),
                 );
-                self.detach_all(target_id, false, context);
+                self.detach_all(target_id, false, context.reborrow());
                 self.trigger_runtime
                     .transfer_object_tag(actor_id, target_id);
                 if let Some(owner) = self
@@ -367,7 +373,13 @@ impl Simulation {
                     .get(actor_id)
                     .map(|actor| actor.owner())
                 {
-                    self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+                    self.change_owner_with_rules(
+                        target_id,
+                        owner,
+                        rules,
+                        registry,
+                        context.effects(),
+                    );
                 }
                 let captor_type = self
                     .substrate
@@ -2008,7 +2020,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(BuildingEntryResult::default());
@@ -2064,7 +2076,7 @@ impl Simulation {
         engineer_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -2090,8 +2102,8 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(rules).with_effects(frame_effects);
-        self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
+        let mut context = super::UninitContext::new(rules).with_effects(frame_effects);
+        self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context.reborrow());
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
         };
@@ -2185,7 +2197,7 @@ impl Simulation {
                             arg6: false,
                         },
                     ),
-                    frame_effects,
+                    context.effects(),
                 );
                 //519EA5 joins the consumption at51A010.
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
@@ -2211,7 +2223,7 @@ impl Simulation {
                         &ext.rubble_intact,
                         rules,
                         registry,
-                        frame_effects,
+                        context.effects(),
                     ))
                 } else {
                     (!ext.engineer_repairable(object.repairable)).then_some(true)
@@ -2254,7 +2266,13 @@ impl Simulation {
                 //519F44 re-reads the Building Tag and raises Entered again;
                 //do not deduplicate the earlier519B53 call.519F4F then reads
                 //the current owner, followed by optional519F6C Tag transfer.
-                self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
+                self.dispatch_object_tag_event(
+                    building_id,
+                    1,
+                    Some(engineer_id),
+                    None,
+                    context.reborrow(),
+                );
                 if let Some(old_owner) = self
                     .substrate
                     .entities
@@ -2281,7 +2299,7 @@ impl Simulation {
                         capture_owner,
                         rules,
                         registry,
-                        frame_effects,
+                        context.effects(),
                     );
                 }
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
@@ -2291,8 +2309,12 @@ impl Simulation {
                         .capture_infantry_type_index
                         .record(native_type_index);
                 }
-                changed =
-                    self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
+                changed = self.scatter_building_infantry(
+                    building_id,
+                    rules,
+                    registry,
+                    context.effects(),
+                )?;
             }
             //519EAACapturable=false consumes too.519FF0 repair and519F9A
             //capture join Tag event48 then virtualUnInit, with no Foot tail.
@@ -2319,7 +2341,7 @@ impl Simulation {
             self,
             rules,
             engineer_id,
-            frame_effects,
+            context.effects(),
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
@@ -2331,8 +2353,9 @@ impl Simulation {
         })?;
         //519D17..519D36 descends Infantry's registry with +28(hut,false).
         //Clearing NavCom does not stop a retained Walk head/destination.
-        self.expire_infantry_bridge_hut_targets(building_id, rules, frame_effects);
-        changed |= self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
+        self.expire_infantry_bridge_hut_targets(building_id, rules, context.effects());
+        changed |=
+            self.scatter_building_infantry(building_id, rules, registry, context.effects())?;
         //51A025 consumption raises own Tag48 before virtual UnInit.
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
@@ -2370,7 +2393,7 @@ impl Simulation {
         agent: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let entered = BuildingEntryResult {
             return_before_foot: true,
@@ -2425,7 +2448,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
         self.assign_null_destination(infantry_id, rules, registry, frame_effects);
         self.scatter_from_building(infantry_id, building_id, rules, registry, frame_effects)
@@ -2440,7 +2463,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
         let Some(coord) = self.substrate.entities.get(building_id).map(|building| {
             crate::sim::movement::ground_pose::object_get_coords(
@@ -2487,7 +2510,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((pending, health, bridge_hut, cell)) = self
             .substrate

@@ -53,7 +53,7 @@ fn stock_psychedelic_wave_can_affect_the_firers_own_house() {
     ]);
     let id = sim.substrate.allocate_stable_id();
     sim.admit_wave(id, wave);
-    assert!(sim.object_ai_visit_one(id, Some(&rules), Default::default()));
+    assert!(sim.object_ai_visit_one(id, Some(&rules), &mut Default::default()));
     let berserk = |id| sim.entities().get(id).unwrap().berserk.is_active();
     assert!(berserk(hostile), "the hostile GI went berserk");
     assert!(berserk(friendly), "the friendly GI should also go berserk");
@@ -288,7 +288,12 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
                 .current()
         };
         for _ in 0..20 {
-            sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.visit_combat_tail(
+                0,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             if health(&sim) != 100 {
                 break;
             }
@@ -411,7 +416,12 @@ fn sonic_constructor_at_240_registers_then_runs_at_same_pass_tail() {
     assert!(wave.in_logic_vector());
     assert_eq!(wave.lifetime(), 100, "FireAt only registers the Logic tail");
 
-    sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_combat_tail(
+        0,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
 
     let wave = sim.waves.get(wave_id).expect("Wave survives first tail AI");
     assert_eq!(wave.lifetime(), 99, "first AI belongs to the firing pass");
@@ -486,14 +496,24 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     // Update_Wave puts the owner's GetFLH first (0x00762D15..0x00762D52), so
     // UpdateCells walks out from the firer's corner: the first AI's two
     // samples stay in its cell and look nothing up.
-    sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_combat_tail(
+        0,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let wave = sim.waves.get(wave_id).expect("Wave survives first live AI");
     assert_eq!(wave.lifetime(), 99);
     assert_eq!(wave.target().z, 674);
     assert!(wave.recorded_cells().is_empty());
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     // The second AI's third sample enters (0, 1), off this empty map.
-    sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.visit_combat_tail(
+        0,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let wave = sim
         .waves
         .get(wave_id)
@@ -580,7 +600,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
                 &[],
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(output.tick.frame_committed);
@@ -651,7 +671,7 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
                 &[],
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
     }
@@ -726,7 +746,7 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
             &[],
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);
@@ -910,7 +930,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
             &[],
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);
@@ -932,7 +952,7 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
             &[],
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);

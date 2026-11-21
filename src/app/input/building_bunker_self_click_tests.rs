@@ -36,7 +36,7 @@ fn frame(scene: &mut HeadlessScenario) -> SimFrameOutput {
             &commands,
             crate::headless_scenario::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound-resource frame");
     assert!(output.tick.frame_committed && !output.network_waiting && !output.outcome_waiting);

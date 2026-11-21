@@ -441,7 +441,7 @@ fn unit_route_beside_building(
         tank,
         Some(crate::sim::components::NavTargetRef::cell(goal.0, goal.1)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(

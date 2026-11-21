@@ -51,7 +51,7 @@ fn advance_garrison_frame(runtime: &mut crate::sim::runtime::SimRuntime) {
             &due,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 }
@@ -173,7 +173,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let sim = &runtime.simulation;
@@ -304,7 +304,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
                             occupant,
                             castle,
                             None,
-                            crate::sim::world::FrameEffects::default(),
+                            &mut crate::sim::world::FrameEffects::default(),
                         )
                         .unwrap()
                     );

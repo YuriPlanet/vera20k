@@ -94,7 +94,7 @@ fn retail_shipyard_repairs_and_releases_a_damaged_destroyer() {
                 arg6: false,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let strength = rules.object("DEST").unwrap().strength;
     assert_eq!(
@@ -182,7 +182,7 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
                         arg6: false,
                     },
                 ),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 sim.substrate.entities.get(tank).unwrap().health.current(),

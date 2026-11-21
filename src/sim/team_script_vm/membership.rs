@@ -321,7 +321,7 @@ impl Simulation {
         entity_id: u64,
         constrained: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
             return false;
@@ -409,7 +409,7 @@ impl Simulation {
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self.team_script_vm.member_team.get(&entity_id) != Some(&team_id) {
             return;
@@ -500,7 +500,7 @@ impl Simulation {
         entity_id: u64,
         no_idle: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(team_id) = self.team_script_vm.member_team.get(&entity_id).copied() {
             self.team_remove_member(team_id, entity_id, no_idle, rules, frame_effects);
@@ -514,7 +514,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         while let Some(head) = self
             .team_script_vm
@@ -557,7 +557,7 @@ impl Simulation {
         slot: usize,
         walks: &mut RecruitWalks,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -700,7 +700,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let feedback_rules = AiTriggerFeedbackRules::new(&rules.general);
         self.team_script_vm
@@ -719,7 +719,7 @@ impl Simulation {
         &mut self,
         team_type: crate::sim::intern::InternedId,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let mut index = 0;
         loop {
@@ -750,7 +750,7 @@ impl Simulation {
         priority: i32,
         duration: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         let vm = &self.team_script_vm;

@@ -64,7 +64,7 @@ fn detach_sweep_restores_before_clearing_target_in_descending_id_order() {
     }
     sim.lifecycle_test_events.clear();
 
-    sim.stop_all_targeting_on_detach(3, &rules, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_on_detach(3, &rules, &mut crate::sim::world::FrameEffects::default());
 
     // The detaching object is untouched and still present: this is not removal.
     assert!(sim.substrate.entities.contains(3));
@@ -136,7 +136,7 @@ fn detach_sweep_clears_target_when_no_mission_was_suspended() {
     sim.stop_all_targeting_on_detach(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let attacker = sim.substrate.entities.get(1).unwrap();
@@ -180,7 +180,7 @@ fn detach_sweep_never_matches_a_cell_target() {
     sim.stop_all_targeting_on_detach(
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let attacker = sim.substrate.entities.get(1).unwrap();
@@ -216,7 +216,12 @@ fn bridge_cell_success_restores_before_conditional_target_clear() {
         MissionType::Attack,
         MissionId::from_known(MissionType::Move),
     ));
-    sim.stop_all_targeting_cell(9, 11, &rules, crate::sim::world::FrameEffects::default());
+    sim.stop_all_targeting_cell(
+        9,
+        11,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let attacker = sim.substrate.entities.get(1).unwrap();
     assert_eq!(attacker.attack_target.target(), Some(TargetKind::Entity(2)));
     assert_eq!(

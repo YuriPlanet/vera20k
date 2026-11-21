@@ -34,7 +34,7 @@ impl Simulation {
         type_id: &str,
         count: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> AirstrikeAircraftSpawn {
         let mut result = AirstrikeAircraftSpawn::default();
         let Some(boris) = self.substrate.entities.get(owner) else {
@@ -183,7 +183,7 @@ mod tests {
             "BPLN",
             3,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 3);
         assert_eq!(sortie.aircraft.len(), 3);
@@ -229,7 +229,7 @@ mod tests {
             "BPLN",
             1,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 1);
         let plane = sim.substrate.entities.get(sortie.aircraft[0]).unwrap();
@@ -261,7 +261,7 @@ mod tests {
             "BPLN",
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sortie.count, 0);
         assert!(sortie.aircraft.is_empty());
@@ -287,7 +287,7 @@ mod tests {
                     .mission
                     .set_current_for_test(MissionId::from_known(MissionType::Attack), 5);
                 plane.ammo_mut().unwrap().set_current_for_test(2);
-                sim.assign_target_represented(id, target, &rules, FrameEffects::default())
+                sim.assign_target_represented(id, target, &rules, &mut FrameEffects::default())
                     .unwrap();
                 let plane = sim.substrate.entities.get(id).unwrap();
                 // A NULL request jumps to the store (0x006FCDF3), keeping

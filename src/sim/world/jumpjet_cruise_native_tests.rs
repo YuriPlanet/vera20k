@@ -245,7 +245,7 @@ fn supplied_world(
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("stock SHAD constructor");
     {
@@ -329,14 +329,14 @@ fn supplied_world(
         id,
         rules,
         Some(registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     if state["marked"] == 0 {
         assert!(sim.foot_mark_remove(
             id,
             rules,
             Some(registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     } else {
         assert_eq!(state["marked"], 1);
@@ -352,7 +352,7 @@ fn supplied_world(
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("foreign supplied SHAD identity");
         {
@@ -739,7 +739,7 @@ fn execute_step(
                 NavTargetRef::cell(at.0, at.1),
                 rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "unit_stop" => {
@@ -747,7 +747,7 @@ fn execute_step(
                 actor,
                 rules,
                 Some(registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         "scenario_load_seed0" => {
@@ -823,9 +823,13 @@ fn execute_step(
             .unwrap();
         }
         process if process.starts_with("process_") => {
-            sim.tick_jumpjet_cruise_one(actor, rules, crate::sim::world::FrameEffects::default())
-                .unwrap()
-                .unwrap();
+            sim.tick_jumpjet_cruise_one(
+                actor,
+                rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap()
+            .unwrap();
         }
         unknown => panic!("unrepresented native command {unknown}"),
     }
@@ -888,14 +892,14 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
                 NavTargetRef::cell(initial_cell.0, initial_cell.1),
                 &retail.rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
             assert!(
                 sim.tick_jumpjet_cruise_one(
                     id,
                     &retail.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
                 .is_some()

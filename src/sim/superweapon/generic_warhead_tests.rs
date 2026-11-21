@@ -370,7 +370,7 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -620,7 +620,7 @@ fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
             &rules,
             owner,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.entities().get(target).unwrap().health.current(),
@@ -728,7 +728,7 @@ fn mono_player_and_ai_queries_keep_independent_requirements() {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
     assert!(!sim.super_weapons[&owner][&sw_type].is_ready);

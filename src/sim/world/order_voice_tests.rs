@@ -729,7 +729,7 @@ fn attack_voice_selects_for_the_committed_target_without_retargeting_the_actor()
         actor,
         Some(TargetKind::Entity(2)),
         &rules,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     )
     .unwrap();
     for (target, expected) in [

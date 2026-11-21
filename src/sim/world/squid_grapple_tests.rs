@@ -188,7 +188,7 @@ impl Encounter {
                 &self.rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary open-water Squid combat frame");
         assert!(output.tick.frame_committed);
@@ -386,8 +386,12 @@ impl Encounter {
                 arg6: true,
             },
         );
-        self.sim
-            .commit_direct_damage_receiver(&self.rules, None, event, FrameEffects::default());
+        self.sim.commit_direct_damage_receiver(
+            &self.rules,
+            None,
+            event,
+            &mut FrameEffects::default(),
+        );
     }
 }
 
@@ -712,7 +716,7 @@ fn stock_squid_iron_curtain_releases_host_then_kills_revealed_organic_owner() {
         ry,
         sw,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     // Native IC visits its center first, then the eight neighboring cells.
     // Center DEST runs ExitUnit; the revealed Organic SQD is now in one of
@@ -908,7 +912,7 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
                 &scene.rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("internal restored grapple continuation");
         let live = scene
@@ -1317,7 +1321,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.squid,
-        super::UninitContext::new(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(&mut FrameEffects::default()),
     );
     assert!(
         scene
@@ -1328,7 +1332,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         scene.squid,
         Some(scene.ship),
         &scene.rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         scene
@@ -1382,7 +1386,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
                 scene.ship,
                 &scene.rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         });
         if let Some(row) = row {

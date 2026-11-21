@@ -234,7 +234,12 @@ fn retail_soviet_tank_team_completes_its_stock_attack_script() {
         }
         let output = scene
             .runtime
-            .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         let sim = &scene.runtime.simulation;
         if step == 700 {

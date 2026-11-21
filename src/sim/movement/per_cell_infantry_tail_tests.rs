@@ -71,7 +71,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, from: u64, to: u64, message: Radi
             message,
             RadioPayload::default(),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -83,7 +83,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         PerCellReason::Arrival,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -289,7 +289,7 @@ fn a_capturer_with_no_destination_idles_and_scatters_off_a_building() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate

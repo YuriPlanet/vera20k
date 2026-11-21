@@ -502,7 +502,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
     };

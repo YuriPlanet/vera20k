@@ -248,7 +248,7 @@ fn ground_command_fixture(
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     ground_pose::foot_set_location(
         &mut sim.substrate.entities,
@@ -261,7 +261,7 @@ fn ground_command_fixture(
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     if unit && state["target"] != 0 {
         // Recreate the observed admitted GAPOWR TarCom prior. The owner label
@@ -316,7 +316,7 @@ fn ground_command_fixture(
             id,
             Some(TargetKind::Entity(target)),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     }
@@ -1077,7 +1077,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                         5,
                         true,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_ground_command_fields(&sim, id, row, &down["after"]);
@@ -1113,7 +1113,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                 &decoded.payload,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_ground_command_fields(&sim, id, row, &dispatch["after"]);
         }
@@ -1155,7 +1155,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
                 &Command::Stop { entity_id: id },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_ground_command_fields(&sim, id, row, &stop["after"]);
         }
@@ -1176,7 +1176,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             &decoded.payload,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let dispatch = boundaries
             .iter()
@@ -1228,7 +1228,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
             },
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "the void class refusal is still an executed Move"
     );
@@ -1281,7 +1281,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
@@ -1331,7 +1331,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                     5,
                     true,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_ground_command_fields(&sim, id, row, &down["after"]);
@@ -1361,7 +1361,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             },
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_ground_command_fields(&sim, id, row, &row["final"]);
     }
@@ -1387,7 +1387,7 @@ fn replay_original_stop(
         id,
         rules,
         Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_ground_command_fields(sim, id, row, &stop["after"]);
@@ -1442,7 +1442,7 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
                 crate::sim::components::DriveCoord::cell(xy.0, xy.1, 0),
                 answer,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let native_near = calls
@@ -1650,7 +1650,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
@@ -1688,7 +1688,7 @@ fn initialized_gi_deploy_class_contexts_match_original_returns() {
                 requested,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_ground_command_fields(&sim, id, row, &call["after"]);
@@ -2019,11 +2019,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
         // The ordinary app drains player ingress before advancing each frame.
         let due = sim.take_due_commands();
         let visits = sim.production.factories().strip_visits_for_test(owner);
-        let effects =
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = crate::sim::world::FrameEffects::default().with_production_strip(&visits);
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
-                .advance_app_frame(&due, &rules, TICK_MS, super::TickLane::Ordinary, effects)
+                .advance_app_frame(
+                    &due,
+                    &rules,
+                    TICK_MS,
+                    super::TickLane::Ordinary,
+                    &mut effects,
+                )
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
             if products[0].completed_frame.is_some() && products[0].placed_frame.is_none() {
@@ -2077,7 +2082,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 TICK_MS,
                 super::TickLane::Ordinary,
                 false,
-                effects,
+                &mut effects,
             )
             .unwrap();
         }

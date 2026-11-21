@@ -397,7 +397,7 @@ fn logic_visit_of_a_dead_open_topped_rider_does_not_uninit_it_again() {
     assert!(sim.register_open_topped_passenger(1));
     sim.uninit(1);
 
-    let _ = sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+    let _ = sim.object_ai_visit_one(1, None, &mut ObjectAiCtx::default());
 
     let uninits = sim
         .lifecycle_test_events

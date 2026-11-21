@@ -143,7 +143,7 @@ fn authored_team_sets_then_clears_global_to_finish_the_battle() {
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -285,7 +285,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     &commands,
                     SIM_TICK_MS,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             sold_events += frame.sound_events.iter().filter(|event| {

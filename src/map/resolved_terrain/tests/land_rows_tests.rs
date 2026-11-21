@@ -158,7 +158,7 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
         crate::sim::components::NavTargetRef::cell(13, 12),
         rules,
         true,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.session.set_binary_frame_for_test(101);
     sim.entity_mut_for_test(tank)

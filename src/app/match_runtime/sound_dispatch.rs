@@ -3400,7 +3400,7 @@ mod tests {
                 rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
             .sound_events
@@ -3688,7 +3688,12 @@ mod tests {
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime
-                .advance_frame(commands, 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    commands,
+                    67,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .unwrap();
             let sim = &runtime.simulation;
             let hash = sim.state_hash();

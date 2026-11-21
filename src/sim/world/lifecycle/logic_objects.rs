@@ -437,7 +437,7 @@ impl Simulation {
     pub(super) fn limbo_terrain_with_context(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         let Some(terrain) = self.terrain_objects.get(stable_id) else {
             return false;
@@ -449,7 +449,7 @@ impl Simulation {
                 &mut self.substrate.raw_cell_occupation,
                 self.resolved_terrain.as_ref(),
             );
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             let occupied_offsets = self.terrain_occupied_offsets(stable_id, context.rules());
             let recalculated = self
                 .terrain_objects
@@ -466,7 +466,8 @@ impl Simulation {
             self.publish_recalculated_cells(context.rules(), &recalculated);
             self.substrate.display.remove(stable_id);
             self.object_sound_conceal(stable_id, context.rules());
-            context.effects().flush_sound(self, context.rules());
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
             self.unregister_logic_object(stable_id);
             self.terrain_objects.finish_limbo(stable_id);
         }
@@ -479,7 +480,11 @@ impl Simulation {
     ///
     /// gamemd-derived: active YR `DrainDeferredFinalizationQueue @ 0x00725C70`
     /// performs scalar destruction/freeing only after the frame commit.
-    pub fn retire_non_entity_object(&mut self, stable_id: u64, context: UninitContext<'_>) -> bool {
+    pub fn retire_non_entity_object(
+        &mut self,
+        stable_id: u64,
+        mut context: UninitContext<'_>,
+    ) -> bool {
         let represented = matches!(
             self.classify_object(stable_id),
             Some(ObjectKind::Terrain | ObjectKind::Projectile | ObjectKind::Wave)
@@ -495,15 +500,15 @@ impl Simulation {
             // ObjectUnInit5F6616 and ObjectLimbo5F4D61 announce while this
             // instance is retained. TerrainLimbo71C930 unlinks only its ID;
             // a successor keeps its own Logic/Display, Stage and cell query.
-            self.notify_pointer_expired(stable_id, context);
-            self.limbo_terrain_with_context(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
+            self.limbo_terrain_with_context(stable_id, context.reborrow());
             self.terrain_objects.finish_uninit(stable_id);
         }
         if self.classify_object(stable_id) == Some(ObjectKind::Projectile) {
             // `ObjectClass::UnInit @ 0x005F65F0` broadcasts the bullet's
             // expiry before it leaves Logic; an anim riding it ends
             // (`AnimClass::PointerExpired @ 0x00425150`, `+0x17C`).
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             // ObjectLimbo5F4D61 repeats DetachAll before removing the fired
             // Bullet's membership. The later scalar destructor repeats once.
             self.notify_pointer_expired(stable_id, context);
@@ -525,14 +530,14 @@ impl Simulation {
         &mut self,
         lethal: crate::sim::terrain_object::TerrainLethalDamage,
         finalizing: &mut std::collections::BTreeSet<u64>,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         if !finalizing.contains(&lethal.stable_id) {
             return false;
         }
         // 71BB69->5F5311 precedes ordinary UnInit's5F6616/5F4D61.
         // Repeated announcements do not rematch a repaired Bullet.
-        self.notify_pointer_expired(lethal.stable_id, context);
+        self.notify_pointer_expired(lethal.stable_id, context.reborrow());
         let finalized = self
             .terrain_objects
             .get(lethal.stable_id)
@@ -552,7 +557,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(bullet) = self.projectiles.get(id) else {
             return;

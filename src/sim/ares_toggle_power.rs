@@ -29,7 +29,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let globals = rules.ares_building_globals();
         let frame = self.session.binary_frame();
@@ -143,7 +143,7 @@ mod tests {
             power.set_total_output_for_test(output);
             power.set_total_drain_for_test(100);
             sim.session.set_binary_frame_for_test(frame);
-            sim.ares_update_toggle_power(owner, &rules, FrameEffects::default());
+            sim.ares_update_toggle_power(owner, &rules, &mut FrameEffects::default());
         };
         balance(&mut sim, 44, 50);
         assert!(online(&sim, gun) && online(&sim, lab), "not a multiple");

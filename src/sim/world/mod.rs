@@ -66,7 +66,7 @@ pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
 pub use frame_effects::{
-    FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    FrameClient, FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
     OutcomeWaitBoundary, SoundBoundary, TacticalRadarBoundary,
 };
 pub use network_commands::{

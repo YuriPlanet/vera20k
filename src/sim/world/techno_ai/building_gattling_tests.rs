@@ -42,7 +42,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if matches!(event, SimSoundEvent::GattlingLoopRelease { owner } if *owner == self.owner)
                 {
@@ -54,7 +54,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
-        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+        fn update_looping_sound(&mut self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
             if owner == self.owner {
                 self.calls.borrow_mut().push(("position", Some(world)));
             }
@@ -102,7 +102,13 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     ));
     let started = (0..120).any(|_| {
         let output = sim
-            .advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_app_frame(
+                &[],
+                &rules,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::empty(),
+            )
             .unwrap();
         output.sound_events.iter().any(|event| {
             matches!(event,
@@ -121,7 +127,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         Some(&rules)
     ));
     let world = Simulation::movement_sound_world(sim.entities().get(cannon).unwrap());
-    let heard = Heard {
+    let mut heard = Heard {
         owner: gattling_sound_owner(cannon),
         delivered: Cell::new(0),
         calls: RefCell::new(Vec::new()),
@@ -134,7 +140,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
             &rules,
             33,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&heard),
+            &mut FrameEffects::for_sound(&mut heard),
         )
         .unwrap();
         heard
@@ -448,7 +454,7 @@ fn gattling_attack_matches_the_original() {
                     target,
                     weapon,
                     code,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 )
             })
@@ -502,7 +508,7 @@ fn gattling_attack_matches_the_original() {
                 aimed,
                 weapon,
                 FireError::Ok,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false,
             );
             let shot = live_shot(&live, firer);
@@ -557,7 +563,7 @@ fn building_fire_finishes_before_the_mission_returns() {
         aimed,
         weapon,
         FireError::Ok,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         &mut false,
     );
     assert!(
@@ -613,7 +619,7 @@ fn gattling_guard_matches_the_original() {
                 sim,
                 building,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             )
         });
         assert_eq!(
@@ -764,7 +770,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         Some(TargetKind::Entity(target)),
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -773,7 +779,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         None,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -782,7 +788,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         target,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     ));
                 }
                 Some(Event::OutOfRange) => aim_at(&mut sim, building, far),

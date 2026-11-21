@@ -175,7 +175,7 @@ fn the_launch_matches_native() {
             cell.0,
             cell.1,
             sw_type,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
 
         let native_anim = events(row, "anim").next().unwrap();
@@ -465,7 +465,7 @@ mod sound_reference_history {
             .unwrap();
         sim.spawn_object("PROVIDER", "Russians", 27, 27, 0, rules)
             .unwrap();
-        sim.recheck_house_tech_tree(owner, rules, Default::default());
+        sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
         let type_id = sim.interner.get(SHIELD).unwrap();
         assert!(sim.super_weapons[&owner][&type_id].is_active());
         assert!(!sim.super_weapons[&owner][&type_id].is_ready());
@@ -489,7 +489,7 @@ mod sound_reference_history {
             },
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         // StartSound is expanded by the app from this actual Launch fact and
         // the bound type. Its cue consumer is tested in sound_dispatch; core

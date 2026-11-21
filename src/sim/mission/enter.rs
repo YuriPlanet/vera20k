@@ -29,7 +29,7 @@ pub(crate) fn mission_enter(
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -116,7 +116,7 @@ fn pop_nav_queue(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
@@ -146,7 +146,12 @@ fn pop_nav_queue(
 /// to the class setter with the flag 1. On a Unit's pad approach that re-runs
 /// the Teleporter arm and the Teleport Move_To; after the warp NavCom is NULL
 /// and the setter returns at once (`0x00741A80`).
-fn teleporter_reassign(sim: &mut Simulation, rules: &RuleSet, id: u64, effects: FrameEffects<'_>) {
+fn teleporter_reassign(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    effects: &mut FrameEffects<'_>,
+) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };

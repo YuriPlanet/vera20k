@@ -166,7 +166,7 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
 pub(crate) fn break_bunker_link(
     sim: &mut Simulation,
     building_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     let unit_id = sim.substrate.entities.get(building_id)?.bunker.occupant()?;
     // BREAK over the bus (clears any bus-level radio contact both ways).
@@ -224,7 +224,7 @@ pub(crate) fn unit_unload_empties_bunker(
     sim: &mut Simulation,
     unit_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(unit) = sim
         .substrate
@@ -256,7 +256,7 @@ pub(crate) fn release_normal(
     sim: &mut Simulation,
     building_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     emit_bunker_wall_anim(sim, building_id, false, rules);
     emit_bunker_wall_sound(
@@ -330,7 +330,7 @@ pub(crate) fn release_sell_destroy(
     sim: &mut Simulation,
     building_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(unit_id) = sim
         .substrate
@@ -374,7 +374,7 @@ fn power_and_force_release(
     building_id: u64,
     unit_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(unit) = sim.substrate.entities.get_mut(unit_id) else {
         return;
@@ -420,7 +420,7 @@ fn break_first_contact(
     sim: &mut Simulation,
     building_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let contact = sim
         .substrate
@@ -463,7 +463,7 @@ pub(crate) fn clear_bunker(
     sim: &mut Simulation,
     building_id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let occupant = sim
         .substrate
@@ -905,7 +905,8 @@ mod tests {
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
         install_bunker_link(&mut sim, 2, 1, &rules);
 
-        let released = break_bunker_link(&mut sim, 2, crate::sim::world::FrameEffects::default());
+        let released =
+            break_bunker_link(&mut sim, 2, &mut crate::sim::world::FrameEffects::default());
         assert_eq!(released, Some(1));
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker.occupant(),
@@ -1051,7 +1052,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // Native cell-list order: the prepended tank's record precedes the
         // bunker's, so the live receiver gate sees an intact link.
@@ -1206,7 +1207,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // The impact cell is the tank's own foundation-centre cell, so its
         // prepended record precedes every bunker record of the transaction.
@@ -1300,7 +1301,7 @@ mod tests {
                 z_leptons,
             }),
             z_leptons.div_euclid(crate::util::lepton::LEPTONS_PER_LEVEL as i32),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mut run = world_receiver::ReceiverRun::default();
         let _ = world_receiver::commit_area_with_dispatch(
@@ -1418,7 +1419,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
@@ -1482,7 +1483,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().navigation.nav_com(),
@@ -1497,7 +1498,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
@@ -1535,7 +1536,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
@@ -1600,7 +1601,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             down_anim_events(&sim),
@@ -1623,7 +1624,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(down_anim_events(&sim), 1, "one walls-down anim on clear");
     }
@@ -1636,7 +1637,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.bunker_wall_events.is_empty(),
@@ -1659,7 +1660,7 @@ mod tests {
             &mut sim,
             2,
             &rules(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let ev = sim.bunker_wall_events.iter().find(|e| !e.up).unwrap();
         assert!(

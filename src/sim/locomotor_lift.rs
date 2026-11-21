@@ -299,7 +299,7 @@ impl Simulation {
         jumpjet_override: &crate::rules::jumpjet_params::JumpjetOverride,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(firer) = self.substrate.entities.get(owner) else {
             return;
@@ -397,7 +397,7 @@ impl Simulation {
         jumpjet_override: &crate::rules::jumpjet_params::JumpjetOverride,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.substrate.entities.contains(target) {
             return;
@@ -605,7 +605,7 @@ impl Simulation {
         clear_target: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(firer_entity) = self.substrate.entities.get(firer) else {
             return;
@@ -670,7 +670,7 @@ impl Simulation {
         expired: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(listener) else {
             return;
@@ -793,7 +793,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> DroppedImpact {
         let Some(entity) = self.substrate.entities.get(id) else {
             return DroppedImpact::default();
@@ -846,7 +846,7 @@ impl Simulation {
         id: u64,
         first: CellObjectMember,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let mut cursor = Some(first);
         while let Some(member) = cursor {
@@ -874,8 +874,8 @@ impl Simulation {
                     &mut self.sound_events,
                 );
             }
-            let context = UninitContext::new(rules).with_effects(effects);
-            if !self.record_manipulated_kill(victim, id, context) {
+            let mut context = UninitContext::new(rules).with_effects(effects);
+            if !self.record_manipulated_kill(victim, id, context.reborrow()) {
                 self.record_the_kill(
                     victim,
                     KillSource::Techno(Some(id)),
@@ -903,7 +903,7 @@ impl Simulation {
         target: CellObjectMember,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(owner) = self.substrate.entities.get(id) else {
             return false;
@@ -967,7 +967,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.begin_living_ship_sinking(
             id,

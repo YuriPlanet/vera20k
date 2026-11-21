@@ -421,9 +421,9 @@ impl Simulation {
         // A live install uses the same map visitor as individual writes.
         // Campaign ScenarioInit reaches this before any Techno exists.
         let sight_changed = !changed.is_empty();
-        let context = crate::sim::world::UninitContext::new(rules);
+        let mut context = crate::sim::world::UninitContext::new(rules);
         if sight_changed {
-            self.release_alliance_sight(context);
+            self.release_alliance_sight(context.reborrow());
         }
         self.house_alliances.replace(alliances);
         self.reveal_viewers.forget();
@@ -441,7 +441,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
         // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
@@ -551,7 +551,7 @@ impl Simulation {
                                 other,
                                 rules,
                                 registry,
-                                FrameEffects::default(),
+                                &mut FrameEffects::default(),
                                 false,
                             );
                         }
@@ -571,7 +571,7 @@ impl Simulation {
         other: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
     ) {
         self.make_ally_with(owner, other, rules, registry, effects, announce, None);
@@ -585,7 +585,7 @@ impl Simulation {
         other: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
         mut paranoid: Option<&mut ParanoidMaps>,
     ) {
@@ -593,7 +593,7 @@ impl Simulation {
         if !self.can_ally(owner, other, rules) {
             return;
         }
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         // 0x004F9B9A. Its write adds `other` to `owner`'s mask. Of the live
         // tail only Paranoid and Assign_Target write state the walks read.
         let quiet = paranoid.is_some()
@@ -603,7 +603,12 @@ impl Simulation {
                 .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()))
             && !self.may_drop_targets(owner);
         let edge_maps = self.maps_keyed_like(other);
-        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, quiet, context);
+        let walks = self.open_alliance_walks(
+            paranoid.as_deref_mut(),
+            edge_maps,
+            quiet,
+            context.reborrow(),
+        );
         // 0x004F9B9F..0x004F9BB3, then the threat rebuild (0x004F9BB9).
         Self::set_ally_bit(
             &self.interner,
@@ -659,7 +664,7 @@ impl Simulation {
                     .get(&other)
                     .is_some_and(|house| !house.multiplay_passive())
             {
-                self.computer_paranoid(rules, registry, effects);
+                self.computer_paranoid(rules, registry, context.effects());
             }
             // 0x004F9C7F..0x004F9D48: in Logic order, each of the house's
             // Technos (As_Techno 0x0040DD70) out of limbo (+0x81) whose
@@ -683,7 +688,7 @@ impl Simulation {
                         target_owner,
                     )
                 {
-                    let _ = self.assign_target_represented(id, None, rules, effects);
+                    let _ = self.assign_target_represented(id, None, rules, context.effects());
                 }
             }
             self.announce_alliance(owner, other, true, announce);
@@ -726,7 +731,7 @@ impl Simulation {
         owner: InternedId,
         other: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
     ) {
         self.make_enemy_with(owner, other, rules, effects, announce, None);
@@ -739,7 +744,7 @@ impl Simulation {
         owner: InternedId,
         other: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
         mut paranoid: Option<&mut ParanoidMaps>,
     ) {
@@ -756,7 +761,7 @@ impl Simulation {
         {
             return;
         }
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         // 0x004F9FD8. Breaking an alliance takes `other` from `owner`'s mask
         // and may take `owner` from `other`'s.
         let mut edge_maps = BTreeSet::new();
@@ -764,7 +769,8 @@ impl Simulation {
             edge_maps = self.maps_keyed_like(other);
             edge_maps.extend(self.maps_keyed_like(owner));
         }
-        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context);
+        let walks =
+            self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context.reborrow());
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,

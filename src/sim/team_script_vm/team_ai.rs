@@ -156,7 +156,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let unfilled_team_timeout = self
             .session
@@ -182,7 +182,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         unfilled_team_timeout: Option<i32>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
@@ -277,7 +277,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -323,7 +323,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let vm = &mut self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -502,7 +502,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
         let vm = &mut self.team_script_vm;
@@ -573,7 +573,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
@@ -830,7 +830,7 @@ impl Simulation {
         team_id: u64,
         member: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
         let Some(entity) = self.substrate.entities.get(member) else {

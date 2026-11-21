@@ -139,7 +139,7 @@ pub fn enqueue_by_type(
     rules: &RuleSet,
     owner: &str,
     type_id: &str,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     force: bool,
 ) -> bool {
     let Some(obj) = rules.object(type_id) else {
@@ -159,7 +159,7 @@ pub(crate) fn enqueue_selected(
     rules: &RuleSet,
     owner: &str,
     selection: super::ProductionSelection,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     force: bool,
 ) -> bool {
     let Some(obj) = selection.object_type(rules) else {
@@ -325,7 +325,7 @@ pub(super) fn start_active_production(
     rules: &RuleSet,
     holder: FactoryHolder,
     type_id: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     held_start: bool,
 ) -> Option<u64> {
     let (owner_id, category) = sim
@@ -416,7 +416,7 @@ pub(super) fn settle_abandoned(
     owner_id: InternedId,
     holder: FactoryHolder,
     abandoned: AbandonedObject,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // NPSE 2.0 AbandonProduction C2EFB4..C2F06D releases the held
     // object's House before refund, even for human factories or while the
@@ -480,7 +480,7 @@ pub(crate) fn abandon_house_factories(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     for holder in sim.production.factories().owner_holders_last_first(owner) {
         abandon_production(sim, rules, holder, owner, effects);
@@ -495,7 +495,7 @@ pub(super) fn abandon_production(
     rules: &RuleSet,
     holder: FactoryHolder,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Phobos `FactoryClass_AbandonProduction_Phobos 0x4CA07A` nulls the
     // house's category pointer for a forbidden category or product, without
@@ -603,7 +603,7 @@ pub fn cancel_production_for_owner(
     owner: &str,
     request: ProductionCancellation<'_>,
     all: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let request = match request {
         ProductionCancellation::Type { type_id, naval } => {
@@ -688,7 +688,7 @@ fn finish_house_abandon(
     rules: &RuleSet,
     owner_id: InternedId,
     category: ProductionCategory,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let queued = sim
         .production
@@ -712,7 +712,7 @@ pub(super) fn start_next_queued(
     rules: &RuleSet,
     owner: InternedId,
     category: ProductionCategory,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if let Some(type_id) = sim
         .production
@@ -781,7 +781,7 @@ pub(in crate::sim) fn release_delivered_mobile(
     owner: InternedId,
     category: ProductionCategory,
     cancellation: ProductionCancellation<'_>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let product = sim
         .production
@@ -904,7 +904,7 @@ pub(super) fn refund_failed_delivery(
     rules: &RuleSet,
     owner: InternedId,
     cancellation: ProductionCancellation<'_>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let owner = sim.interner.resolve(owner).to_owned();
     let _ = cancel_production_for_owner(sim, rules, &owner, cancellation, false, effects);
@@ -943,7 +943,7 @@ impl ReadyFactoryObject {
         sim: &mut Simulation,
         rules: &RuleSet,
         selection: super::ProductionSelection,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // HousePlace4FB2C7 retains its original nonnegative index. Let
         // HouseAbandon's shared BuildCat0/NULL-held admission decide retention,
@@ -1032,7 +1032,7 @@ pub fn complete_held_building_for_test(
         rules,
         FactoryHolder::House(owner, category),
         type_id,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     )
     .expect("the fixture constructs its object at StartProduction");
@@ -1067,7 +1067,7 @@ pub(in crate::sim) fn construct_active_factory_fixture(
         rules,
         FactoryHolder::House(owner, category),
         type_id,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     )
 }
@@ -1088,7 +1088,7 @@ pub(in crate::sim) fn update_factory_queue(
     rules: &RuleSet,
     owner: InternedId,
     category: ProductionCategory,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // Ares 3.0 HouseClass_Update_Factories_Queues 10025100 (hook 0x00509140)
     // first runs the BuildingType/DontCare call again for BuildCat::Combat,
@@ -1201,7 +1201,7 @@ pub(in crate::sim) fn delete_building_factory(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     game_active: bool,
 ) {
     if game_active {
@@ -1221,7 +1221,7 @@ pub(in crate::sim) fn detach_building_production(
     sim: &mut Simulation,
     rules: &RuleSet,
     building: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     super::factory_ai::detach_all(sim, rules, building, effects);
     let Some((owner, category, factory_rtti)) =

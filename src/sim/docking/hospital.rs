@@ -18,7 +18,7 @@ pub(super) fn mission_repair(
     rules: &RuleSet,
     hospital: u64,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
@@ -108,7 +108,7 @@ pub(super) fn mission_repair(
                 rules,
                 hospital,
                 DepartureRoute::Hospital,
-                |sim, patient| {
+                |sim, patient, effects| {
                     let _ = crate::sim::production::exit_produced_object(
                         sim,
                         rules,

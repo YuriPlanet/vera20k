@@ -309,7 +309,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
             0,
             0,
             &retail.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let entity = sim.entity_mut_for_test(id).unwrap();
@@ -457,7 +457,7 @@ fn bracket_delta_moves_the_health_bar_but_not_the_scale_pips() {
                 0,
                 0,
                 &retail.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = sim.entity_mut_for_test(id).unwrap();
@@ -1820,7 +1820,11 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     );
                 }
                 if actor["sinking"].as_bool().unwrap_or(false) {
-                    sim.begin_ship_sinking(id, rules, crate::sim::world::FrameEffects::default());
+                    sim.begin_ship_sinking(
+                        id,
+                        rules,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    );
                 }
                 let mut strip = techno_extras_for_parent(
                     &sim,

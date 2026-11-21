@@ -392,7 +392,7 @@ fn original_unit_fire_update_rows() {
             id,
             outcome,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
@@ -729,7 +729,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         arrival,
         &spin.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     {
         let tank = spin.sim.substrate.entities.get_mut(spin.tank).unwrap();
@@ -749,7 +749,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             &spin.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
     );
@@ -760,7 +760,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::movement::PerCellReason::Arrival,
             &spin.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let tank = spin.sim.substrate.entities.get(spin.tank).unwrap();

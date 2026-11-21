@@ -203,7 +203,7 @@ fn failed_harvest_departure_still_assigns_the_zero_cell() {
         &mut sim,
         miner,
         &rules,
-        ObjectAiCtx {
+        &mut ObjectAiCtx {
             overlay_registry: Some(overlay_registry_with_land()),
             ..Default::default()
         },
@@ -234,7 +234,7 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ),
         RadioResponse::Roger
     );
@@ -243,7 +243,7 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
         &mut sim,
         miner,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(miner).unwrap();
     assert!(unit.seldom.radio_contacts.is_empty());

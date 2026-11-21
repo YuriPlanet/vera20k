@@ -256,7 +256,7 @@ impl ResponseSelection {
                         responder.entity_id,
                         Some(TargetKind::Entity(attacker_id)),
                         rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .expect(
                         "selected responder remains present during synchronous target assignment",
@@ -425,7 +425,7 @@ pub(crate) fn respond_to_base_attack(
     rules: &RuleSet,
     victim_id: u64,
     attacker_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let entities = &world.substrate.entities;
     let interner = &world.interner;

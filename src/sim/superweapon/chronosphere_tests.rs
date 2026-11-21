@@ -173,7 +173,7 @@ pub(crate) fn place(
             0,
             level + deck,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap_or_else(|| panic!("{kind} constructs at {x},{y}"));
     let frame = sim.session.binary_frame();
@@ -445,8 +445,14 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
 
     fn frame(sim: &mut Simulation, rules: &RuleSet) {
         let due = sim.take_due_commands();
-        sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
-            .expect("ordinary skirmish frame");
+        sim.advance_app_frame(
+            &due,
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .expect("ordinary skirmish frame");
     }
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -624,7 +630,7 @@ fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
         &command,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let mut flew = false;
     for _ in 0..30 {
@@ -679,7 +685,7 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     };
     order(&mut sim, (30, 20));
@@ -765,7 +771,7 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
         &command,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     charge_chronosphere(&mut sim, americans);
     click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
@@ -997,7 +1003,7 @@ fn retail_destination_while_warping_in_is_refused_by_the_drive() {
         next,
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(chain(&sim, miner), [Drive, Teleport, Teleport]);
     assert!(warping_in(&sim));
@@ -1404,7 +1410,7 @@ fn retail_chrono_update_position_matches_native_rows() {
             place,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(u8::from(answer), int(&row["result"]) as u8, "{row}");

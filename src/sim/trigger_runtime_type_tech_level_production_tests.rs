@@ -324,7 +324,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         &runtime.resources.rules,
         input["house"].as_str().unwrap(),
         "ORCA",
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
     let held = runtime
@@ -389,7 +389,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     // additionally commits that frame; observe the tail's pre-commit frame.
     let native_tail_frame = runtime.simulation.session.binary_frame();
     let mut output = runtime
-        .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     let commands = output.take_admitted_commands();
     let events: Vec<_> = commands

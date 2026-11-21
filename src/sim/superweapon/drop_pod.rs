@@ -103,7 +103,7 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(config) = rules
         .super_weapon_metadata(&sw.id)
@@ -265,7 +265,7 @@ pub(crate) fn create_with_drop_pod(
     id: u64,
     coord: DriveCoord,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     // GetCellAt(CoordStruct), toward zero.
     let cell = ((coord.x / 256) as i16, (coord.y / 256) as i16);
@@ -343,7 +343,7 @@ impl Simulation {
         to: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(pod) = self
             .substrate
@@ -450,7 +450,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -521,7 +521,7 @@ impl Simulation {
         location: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
             return;
@@ -595,7 +595,7 @@ impl Simulation {
         warhead: &crate::rules::warhead_type::WarheadType,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let warhead_ref = self.interner.intern(&warhead.id);
         let receipt = crate::sim::combat::world_receiver::apply_area_damage(
@@ -630,7 +630,7 @@ impl Simulation {
         pod: DropPodFlight,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.set_object_height(id, 0, rules, effects);
         let Some(entity) = self.substrate.entities.get(id) else {

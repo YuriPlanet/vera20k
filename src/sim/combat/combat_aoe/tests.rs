@@ -517,7 +517,7 @@ fn dummy_sweep_keeps_shared_overlay_but_never_fabricates_grid_residents() {
                 (super::super::RAD_NO_ATTACKER, None, wh),
                 Some(center_impact(0)),
                 0,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert!(result.receivers.is_empty());
             assert_eq!(
@@ -1746,7 +1746,7 @@ fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         (super::super::RAD_NO_ATTACKER, None, wh),
         Some(center_impact(0)),
         0,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let overlays = world.overlay_grid.as_ref().unwrap();
     let entities = &world.substrate.entities;
@@ -1905,7 +1905,7 @@ fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
             (super::super::RAD_NO_ATTACKER, None, warhead_ref),
             Some(center_impact(0)),
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -3759,7 +3759,7 @@ fn gsi_04_10_spawning_terrain_c4_precedes_uninit_and_guards_reentry() {
             }),
             AreaDamageReceiver::Entity(later_parent_receiver),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(
@@ -3892,7 +3892,7 @@ fn gsi_04_10_scenario_no_damage_blocks_entity_terrain_and_nested_c4() {
                 near_center_ic_isolation_eligible: true,
             }),
         ],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(

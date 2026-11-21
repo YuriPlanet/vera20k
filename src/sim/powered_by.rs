@@ -70,7 +70,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -97,7 +97,7 @@ impl Simulation {
         killer: Option<u64>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate
@@ -139,7 +139,7 @@ impl Simulation {
         id: u64,
         source: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::spawn_manager::SpawnSlotState;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -193,7 +193,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -363,7 +363,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -459,7 +459,12 @@ impl Simulation {
 
     /// Installed EMPulse::DisableEMPEffect2 10062650 for a returned power
     /// source.
-    fn ares_disable_emp_effect2(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn ares_disable_emp_effect2(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

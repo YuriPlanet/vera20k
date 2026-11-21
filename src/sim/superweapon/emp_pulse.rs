@@ -50,7 +50,7 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlays: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(emp) = rules
         .super_weapon_metadata(&sw.id)

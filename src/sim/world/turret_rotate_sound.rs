@@ -175,7 +175,7 @@ impl Simulation {
         id: u64,
         sample: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((has_turret, armed)) = self.substrate.entities.get(id).and_then(|entity| {
             let object = self.object_type(entity.type_ref(), rules)?;
@@ -245,7 +245,7 @@ impl Simulation {
     pub(crate) fn turret_rotate_sound_limbo(
         &mut self,
         id: u64,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         rules: &RuleSet,
     ) {
         if !Self::turret_rotate_loop_live(&self.substrate, id) {

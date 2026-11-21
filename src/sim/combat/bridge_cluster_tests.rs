@@ -196,7 +196,7 @@ fn nested_death_bridge_continuation_finishes_before_parent_area_returns() {
                     0,
                     6,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             // Both objects are in the deck list at the identical coordinate,

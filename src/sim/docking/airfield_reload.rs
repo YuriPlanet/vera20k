@@ -224,13 +224,13 @@ pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
     dock: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let mut host = WorldReload {
         sim,
         rules,
         dock,
-        effects,
+        effects: effects.reborrow(),
         detached_timers: DockReloadTimers::default(),
     };
     if rules.ares_form() {
@@ -299,7 +299,7 @@ impl ReloadHost for WorldReload<'_> {
             message,
             RadioPayload::default(),
             self.rules,
-            self.effects,
+            &mut self.effects,
         ) == RadioResponse::Roger
     }
 
@@ -338,7 +338,7 @@ impl ReloadHost for WorldReload<'_> {
             contact,
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.effects,
+            &mut self.effects,
         );
         let now = self.sim.session.binary_frame();
         let _ = self.sim.substrate.mission_assign_exact(

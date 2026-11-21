@@ -292,7 +292,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<C4Arrival, FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(C4Arrival::default());
@@ -407,7 +407,7 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
@@ -489,7 +489,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<C4Arrival, FrameAdvanceError> {
         let frame_error = |sim: &Simulation, cause: String| {
             FrameAdvanceError::new(sim.session.tick(), sim.session.binary_frame(), id, cause)
@@ -594,7 +594,7 @@ impl Simulation {
         at: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
             return false;

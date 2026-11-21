@@ -172,7 +172,7 @@ fn armed_teleport_destination_requires_the_current_cell_inputs() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -247,7 +247,7 @@ fn forced_gates_and_draw_match_original_hut_caller() {
                 ScatterFlags::new(true, true),
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -324,7 +324,7 @@ fn forced_no_kidding_gates_match_native_walk_and_jumpjet_rows() {
                     1,
                     flags,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(admitted, flag("gate_admitted"), "{row}");
@@ -420,7 +420,7 @@ fn damage_gates_match_original_execution() {
                 1,
                 ScatterFlags::new(flag("forced", false), flag("no_kidding", false)),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(admitted, row["admitted"].as_bool().unwrap(), "{input}");
@@ -464,7 +464,7 @@ fn deploy_doing_head_refuses_a_human_owner_without_both_flags() {
                     1,
                     flags,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(admitted, !human, "human={human} flags={flags:?}");

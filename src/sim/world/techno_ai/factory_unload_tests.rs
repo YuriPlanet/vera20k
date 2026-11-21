@@ -361,7 +361,7 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let producer = sim
@@ -373,7 +373,7 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     Fixture {
@@ -511,7 +511,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                     message,
                     RadioPayload::default(),
                     rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .code(),
                 1
@@ -536,7 +536,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
                 *product,
                 RadioMessage::RequestClearance,
                 rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .code(),
             23
@@ -725,7 +725,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
                     &mut fixture.sim,
                     fixture.producer,
                     &rules,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                 )
                 .unwrap();
                 assert_eq!(
@@ -928,7 +928,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let product = sim
@@ -940,7 +940,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for (id, actor) in [(yard, &before["producer"]), (product, &before["product"])] {
@@ -1057,7 +1057,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             .anim_slots();
         let production_before =
             slots_before[8].map(|id| (id, sim.anim(id).unwrap().runtime().clone()));
-        let delay = mission_unload(&mut sim, yard, &rules, ObjectAiCtx::default()).unwrap();
+        let delay = mission_unload(&mut sim, yard, &rules, &mut ObjectAiCtx::default()).unwrap();
         assert_eq!(
             json!(delay),
             call["return_eax"],
@@ -1164,7 +1164,7 @@ fn original_harvester_and_weeder_primary_controls_use_shared_mission_authority()
                 PerCellReason::Arrival,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_snapshot(&fixture, &row["after"], name);
@@ -1260,7 +1260,8 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
 
         // The arena's pose differs from the native crop. Only dispatch inputs
         // and effects are compared: this guard never resolves coordinates.
-        super::super::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default()).unwrap();
+        super::super::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
+            .unwrap();
 
         let entity = sim.substrate.entities.get(id).unwrap();
         let expected = &after["actor"];
@@ -1359,7 +1360,7 @@ fn a_busy_factory_exit_pushes_its_neighbours_away_from_the_head() {
             producer,
             track,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
         ));
         let cell = |id: u64| match sim.substrate.entities.get(id).unwrap().navigation.nav_com() {
             Some(NavTargetRef::Cell { rx, ry }) => (rx, ry),
@@ -1438,7 +1439,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
             &mut sim,
             factory,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut bridge_changed,
         );
         assert!(
@@ -1469,7 +1470,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
             &mut sim,
             factory,
             &rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut bridge_changed,
         );
         for id in [blocker, east] {
@@ -1531,7 +1532,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                         &rules,
                         33,
                         crate::sim::world::TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::empty(),
+                        &mut crate::sim::world::FrameEffects::empty(),
                     )
                     .unwrap();
                 assert!(
@@ -1608,7 +1609,7 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(matches!(
@@ -1619,7 +1620,7 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             miner,
             (0, 0),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::ai_base_building::BuildingExit::Placed
     ));
@@ -1747,7 +1748,7 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                 &rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                &mut FrameEffects::default().with_production_strip(&visits),
             )
             .expect("ordinary local production frame");
         assert!(output.tick.frame_committed);
@@ -1974,7 +1975,7 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(matches!(
@@ -1985,7 +1986,7 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
                 tank,
                 (0, 0),
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed
         ));
@@ -2006,7 +2007,13 @@ fn a_factory_captured_while_its_door_opens_still_lets_the_product_out() {
             "the capture lands before the product starts driving"
         );
         let americans = sim.interner.get("Americans").unwrap();
-        sim.change_owner_with_rules(factory, americans, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(
+            factory,
+            americans,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         let left = (0..600).any(|_| {
             tick(&mut sim);
             let unit = sim.substrate.entities.get(tank).unwrap();

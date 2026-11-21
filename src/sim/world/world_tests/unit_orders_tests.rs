@@ -408,7 +408,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         crate::sim::components::NavTargetRef::cell(8, 4),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     // An accepted order only installs NavCom/route. The first production
     // Process owns selection, the retained head, and its occupation claim.
@@ -588,7 +588,7 @@ fn gsi_13_06_stop_preserves_committed_ship_segment_and_speed_state() {
         crate::sim::components::NavTargetRef::cell(8, 4),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
         .expect("Ship Process must commit the first segment before Stop");

@@ -74,7 +74,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         force: bool,
     ) {
         let frame = self.session.binary_frame() as i32;
@@ -328,13 +328,13 @@ mod tests {
             "opposite ally bit does not block bounty"
         );
         let events = RefCell::new(Vec::new());
-        let observe = |sim: &Simulation, _: &RuleSet, text: BountyText| {
+        let mut observe = |sim: &Simulation, _: &RuleSet, text: BountyText| {
             events
                 .borrow_mut()
                 .push((text, sim.entities().get(text.entity_id).unwrap().owner()));
         };
-        let effects = FrameEffects::empty().with_bounty_text(&observe);
-        sim.flush_bounty_display(hunter, &rules, effects, false);
+        let mut effects = FrameEffects::empty().with_bounty_text(&mut observe);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, false);
         assert_eq!(events.borrow()[0].0.amount, 30);
         sim.session.set_binary_frame_for_test(1);
         sim.substrate
@@ -344,7 +344,7 @@ mod tests {
             .veterancy
             .set_elite();
         record(&mut sim, victim, source);
-        sim.flush_bounty_display(hunter, &rules, effects, false);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, false);
         assert_eq!(events.borrow().len(), 1, "delay retains a later kill's sum");
         record(&mut sim, penalty, KillSource::House(Some(owner)));
         sim.substrate
@@ -385,7 +385,7 @@ mod tests {
             serde_json::from_slice(&serde_json::to_vec(&state).unwrap()).unwrap();
         assert_eq!(saved, state);
         let before = sim.state_hash();
-        sim.change_owner_with_rules(hunter, enemy, &rules, None, effects);
+        sim.change_owner_with_rules(hunter, enemy, &rules, None, &mut effects);
         assert_eq!(
             events.borrow()[1].0.amount,
             -130,
@@ -402,7 +402,7 @@ mod tests {
             "ownership still changes gameplay state"
         );
         let before = sim.state_hash();
-        sim.flush_bounty_display(hunter, &rules, effects, true);
+        sim.flush_bounty_display(hunter, &rules, &mut effects, true);
         assert_eq!(events.borrow().len(), 2, "consumed sum never repeats");
         assert_eq!(
             sim.state_hash(),

@@ -267,7 +267,7 @@ pub(crate) fn flush_for_placement(
     ty: &ObjectType,
     origin: (i16, i16),
     house: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Flush {
     if origin == (0, 0) {
         return Flush::Clear;

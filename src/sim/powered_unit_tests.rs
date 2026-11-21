@@ -253,7 +253,7 @@ fn destroy(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             arg6: true,
         },
     );
-    sim.commit_direct_damage_receiver(rules, None, hit, FrameEffects::default());
+    sim.commit_direct_damage_receiver(rules, None, hit, &mut FrameEffects::default());
     assert!(
         sim.substrate
             .entities
@@ -462,7 +462,7 @@ fn a_captured_center_counts_for_its_captor_only_at_its_next_edge() {
     ));
 
     events.clear();
-    sim.change_owner_with_rules(center, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(center, russians, &rules, None, &mut FrameEffects::default());
     events.extend(sim.sound_events.take_for_test());
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert!(!sim.has_powered_center(americans));
@@ -811,7 +811,7 @@ fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
     entity.infantry.as_mut().unwrap().set_fear_level_for_test(3);
     entity.deactivated.set_for_test(true);
     assert!(
-        !sim.infantry_fear_turn(offline, &rules, None, FrameEffects::default())
+        !sim.infantry_fear_turn(offline, &rules, None, &mut FrameEffects::default())
             .unwrap()
     );
     let fear = |sim: &Simulation| {
@@ -834,7 +834,7 @@ fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
             ScatterFlags::new(true, false),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         sim.scenario_rng.logical_state() != before
@@ -858,9 +858,9 @@ fn deactivate_sound_waits_for_the_ares_placement_mutex() {
     ];
     sim.sound_events.take_for_test();
     sim.with_object_placement_scope(|sim| {
-        sim.techno_deactivate(tanks[0], &rules, FrameEffects::default())
+        sim.techno_deactivate(tanks[0], &rules, &mut FrameEffects::default())
     });
-    sim.techno_deactivate(tanks[1], &rules, FrameEffects::default());
+    sim.techno_deactivate(tanks[1], &rules, &mut FrameEffects::default());
     let events = sim.sound_events.take_for_test();
     assert!(tanks.iter().all(|&id| offline(&sim, id)));
     assert_eq!(

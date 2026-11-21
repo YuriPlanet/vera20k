@@ -418,7 +418,8 @@ pub(crate) enum PointerExpiryControl {
 /// `0x005F6120` (vtable `0x007E22A4`), Building reservation clear `0x004561F0`,
 /// and Bullet expiry `0x004684E0`. Source: active gamemd.exe bodies and vtables.
 /// An absent resident field during receiver execution is not an empty map.
-#[derive(Clone, Copy)]
+/// It holds the frame's effects handle by value, lent for this tree with
+/// [`FrameEffects::reborrow`]; a nested call takes [`Self::reborrow`].
 pub struct UninitContext<'a> {
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     rules: &'a RuleSet,
@@ -441,12 +442,30 @@ impl<'a> UninitContext<'a> {
     /// Preserve the current frame's synchronous sound boundary through nested
     /// lifecycle receivers. It borrows the caller; no callback survives the
     /// enclosing frame or becomes simulation state.
-    pub const fn with_effects(self, effects: FrameEffects<'a>) -> Self {
-        Self { effects, ..self }
+    pub fn with_effects<'b>(self, effects: &'b mut FrameEffects<'_>) -> UninitContext<'b>
+    where
+        'a: 'b,
+    {
+        UninitContext {
+            terrain: self.terrain,
+            rules: self.rules,
+            requested_facing: self.requested_facing,
+            effects: effects.reborrow(),
+        }
     }
 
-    pub(crate) const fn effects(self) -> FrameEffects<'a> {
-        self.effects
+    pub(crate) fn effects(&mut self) -> &mut FrameEffects<'a> {
+        &mut self.effects
+    }
+
+    /// The same context for one nested call.
+    pub(crate) fn reborrow(&mut self) -> UninitContext<'_> {
+        UninitContext {
+            terrain: self.terrain,
+            rules: self.rules,
+            requested_facing: self.requested_facing,
+            effects: self.effects.reborrow(),
+        }
     }
 
     /// Techno Unlimbo's direction for this synchronous reveal. The caller's
@@ -462,17 +481,17 @@ impl<'a> UninitContext<'a> {
     /// The match's OverlayTypeClass table, which its rules own, for
     /// receivers that classify a cell's overlay (an ejected occupant's
     /// Scatter entry test). gamemd reads the one global OverlayTypes vector.
-    pub(crate) fn registry(self) -> Option<&'a crate::rules::overlay_types::OverlayTypeRegistry> {
+    pub(crate) fn registry(&self) -> Option<&'a crate::rules::overlay_types::OverlayTypeRegistry> {
         Some(self.rules.overlay_registry())
     }
 
     pub(crate) const fn terrain(
-        self,
+        &self,
     ) -> Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid> {
         self.terrain
     }
 
-    pub const fn rules(self) -> &'a RuleSet {
+    pub const fn rules(&self) -> &'a RuleSet {
         self.rules
     }
 }

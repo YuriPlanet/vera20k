@@ -61,7 +61,7 @@ fn engineer_family_selector_matches_original_boundary_and_dummy() {
                 0,
                 10,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         {

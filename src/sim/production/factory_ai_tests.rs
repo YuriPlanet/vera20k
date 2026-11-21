@@ -335,7 +335,7 @@ fn ai_limit_visit(f: &mut Fixture, building: u64) {
         &f.rules,
         building,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -537,7 +537,7 @@ fn disable_parallel_ai_queues_serializes_war_factory_production() {
         &f.rules,
         FactoryHolder::Building(weap_1),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!ai_limit_holds(&f, weap_1), "the production ended");
     // The abandon clears the standing choice; the house's chooser refills it
@@ -594,7 +594,7 @@ fn parallel_ai_queues_gate_and_category_forbid_control_a_second_factory() {
         &f.rules,
         FactoryHolder::Building(weap_1),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     f.sim
         .houses
@@ -780,14 +780,14 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
         &f.rules,
         weap,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     factory_ai(
         &mut f.sim,
         &f.rules,
         syrd,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         held(&f, weap).as_deref(),
@@ -804,7 +804,7 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
         &f.rules,
         FactoryHolder::Building(syrd),
         f.owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let choices = f.sim.houses[&f.owner].ai_unit_choices();
     assert_eq!(
@@ -926,7 +926,7 @@ fn parallel_reservation_releases_at_exit_before_factory_cleanup() {
         product,
         (8, 9),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         ai_limit_holds(&f, first),
@@ -965,7 +965,7 @@ fn parallel_reservation_survives_product_expiry_and_state_roundtrip() {
     assert!(f.sim.discard_constructed_limbo(
         product,
         &f.rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(!ai_limit_holds(&f, first));
     ai_limit_visit(&mut f, second);

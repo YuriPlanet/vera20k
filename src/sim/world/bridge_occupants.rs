@@ -169,7 +169,7 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                     self.live.rules,
                     Some(self.live.rules.overlay_registry()),
                     event,
-                    self.live.frame_effects,
+                    &mut self.live.frame_effects,
                 );
             }
             CellObjectMember::Terrain(id) => {
@@ -188,7 +188,7 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                     Some(self.live.rules.overlay_registry()),
                     event,
                     true,
-                    self.live.frame_effects,
+                    &mut self.live.frame_effects,
                 );
             }
         }

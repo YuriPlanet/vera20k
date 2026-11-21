@@ -158,7 +158,7 @@ pub(super) fn retail_frame(
             &orders,
             crate::headless_scenario::SIM_TICK_MS,
             super::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame")
 }
@@ -694,7 +694,7 @@ fn a_grounded_rocketeer_fidgets_and_turns_to_the_fidgets_facing() {
         1,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -1109,7 +1109,7 @@ fn rocketeer_crash_fixture(
                 doing,
                 true,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -1165,7 +1165,7 @@ fn a_hovering_jumpjet_turn_infantryman_aims_his_locomotor_at_his_target() {
             .jumpjet_runtime_mut()
             .unwrap();
         *runtime = runtime.clone().with_destination_for_test(here);
-        sim.tick_jumpjet_cruise_one(1, &rules, crate::sim::world::FrameEffects::default())
+        sim.tick_jumpjet_cruise_one(1, &rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
         let frame = sim.session.binary_frame();
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -1215,7 +1215,7 @@ fn shoot_the_rocketeer(
                 arg6: false,
             },
         ),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1518,7 +1518,7 @@ fn a_ground_route_order_gives_a_rocketeer_his_navcom_and_move_to() {
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let rocketeer = sim.substrate.entities.get(1).unwrap();
@@ -1595,7 +1595,7 @@ fn an_object_order_flies_a_rocketeer_with_the_order() {
         1,
         Some(crate::sim::components::NavTargetRef::object(shooter)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_rocketeer_flies_near(&sim, (46, 44));
@@ -1615,7 +1615,7 @@ fn the_class_setter_flies_a_rocketeer_to_an_object() {
             crate::sim::components::NavTargetRef::object(shooter),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true)
     );
@@ -1634,7 +1634,7 @@ fn the_mission_destination_setter_flies_a_rocketeer() {
         1,
         Some(crate::sim::components::NavTargetRef::cell(60, 52)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_rocketeer_flies_near(&sim, (60, 52));
@@ -1652,7 +1652,7 @@ fn an_order_to_a_rocketeers_own_cell_is_ignored() {
             crate::sim::components::NavTargetRef::cell(52, 52),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true),
         "the void setter still dispatched"
@@ -1682,7 +1682,7 @@ fn an_object_order_into_a_rocketeers_own_cell_is_ignored() {
             crate::sim::components::NavTargetRef::object(shooter),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true)
     );
@@ -1723,7 +1723,7 @@ fn the_mission_destination_setter_reorders_a_moving_rocketeer() {
             1,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     };
@@ -1769,7 +1769,7 @@ fn a_moving_rocketeers_reorder_runs_stop_driver_first() {
                     crate::sim::components::NavTargetRef::cell(cell.0, cell.1),
                     rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 ),
                 Ok(true)
             );
@@ -1825,7 +1825,7 @@ fn foot_admission_refuses_a_rocketeers_order_during_a_locomotor_swap() {
             crate::sim::components::NavTargetRef::cell(60, 52),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true),
         "the void setter still dispatched"
@@ -1930,7 +1930,7 @@ fn a_rocketeer_taken_over_in_flight_stops_over_his_cell() {
         soviets,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let rocketeer = sim.substrate.entities.get(1).unwrap();
     let here = (

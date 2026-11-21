@@ -160,7 +160,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore_with_map_streng
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -266,7 +266,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore_with_map_streng
                         &[],
                         SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 std::mem::swap(&mut scene.runtime.simulation, &mut second);

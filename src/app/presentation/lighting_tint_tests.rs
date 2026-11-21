@@ -274,7 +274,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     sim.advance_triggers(
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.lighting_sources().pending().len(), 3);
     lights.apply_events(&terrain, sim.lighting_sources().pending());
@@ -381,7 +381,7 @@ fn ambient_action_relights_no_cell_before_the_fade() {
     );
     let top = |lights: &MatchLighting| lights.grid.cell_light_at((1, 0)).unwrap().top_scalar;
     let before = top(&lights);
-    sim.advance_triggers(rules, None, FrameEffects::default());
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
     assert_eq!(sim.session().lighting().target_ambient(), 40);
     lights.apply_events(&terrain, &sim.take_lighting_events());
     lights.after_pass(&terrain, &sim, 2);

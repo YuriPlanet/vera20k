@@ -376,7 +376,7 @@ fn a_slow_infantry_shot_scatters_its_targets_cell_away_from_the_shooter() {
                 FireVisit::InfantryTarget(gi),
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::empty(),
+                &mut crate::sim::world::FrameEffects::empty(),
             );
         };
         fire(&mut sim);

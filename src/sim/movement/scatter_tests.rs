@@ -100,7 +100,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
                     flags,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
             );
@@ -249,7 +249,7 @@ fn building_receiver_is_the_object_no_op() {
             ScatterFlags::new(true, true),
             &no_rules(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -514,7 +514,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -536,7 +536,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -617,7 +617,7 @@ fn unit_null_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -747,7 +747,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
                 retaliation,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             if !scatter {
@@ -878,7 +878,7 @@ fn unit_source_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         );
@@ -953,7 +953,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
             tank,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.substrate

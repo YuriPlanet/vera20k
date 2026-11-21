@@ -44,7 +44,7 @@ fn factory_fixture(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("construct actual held graph");
     let type_id = saved.interner().get(type_name).unwrap();
@@ -152,7 +152,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
         &rules,
         "Americans",
         "PARENT",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     // Seed a partially paid held object, then exercise a different live credit
@@ -199,7 +199,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("restored active frame");
         reference
@@ -207,7 +207,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("uninterrupted active frame");
         assert_eq!(
@@ -243,7 +243,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             naval: false
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(
         crate::sim::production::credits_for_owner(&runtime.simulation, "Americans"),
@@ -254,7 +254,7 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
             &[],
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("restored frame");
     let economy = runtime.simulation.houses()[&owner].economy();
@@ -394,7 +394,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                         0,
                         0,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
             }

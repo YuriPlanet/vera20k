@@ -112,7 +112,7 @@ impl Simulation {
         supplied: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let ares = rules.ares_form();
         self.force_track_observed(id, selector, supplied, ares, &mut |sim, id, coord| {
@@ -139,7 +139,7 @@ impl Simulation {
         cell: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         match registry {
             Some(registry) => {
@@ -233,7 +233,7 @@ impl Simulation {
         invocation: TrackInvocation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let object = self
             .substrate
@@ -332,7 +332,7 @@ impl Simulation {
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             registry,
             observe,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("track fixture must provide every coordinate receiver")
         .moved
@@ -345,7 +345,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let TrackInvocation {
             entity_id: id,
@@ -769,7 +769,7 @@ impl Simulation {
         entered: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(train) = self.substrate.entities.get(id) else {
             return;
@@ -872,7 +872,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1167,7 +1167,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -1378,7 +1378,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_enter_idle_base_with(id, rules, registry, effects, true)
     }
@@ -1390,7 +1390,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         planning_arrival: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -1512,7 +1512,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         skip_human_land_check: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let saved_base_return =
             self.foot_enter_idle_base(id, rules, Some(rules.overlay_registry()), effects);
@@ -1703,7 +1703,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Foot vt+504 ->4DB9B0, called after terminal PerCell and
         // StopMoving4DF0D0. Stock Enter7 + Building contact + UnitRepair

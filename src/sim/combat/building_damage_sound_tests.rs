@@ -312,7 +312,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
             &mut local_world,
             rules,
             Some(resolved),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         )
         .unwrap()

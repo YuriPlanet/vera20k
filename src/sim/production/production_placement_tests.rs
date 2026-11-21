@@ -756,7 +756,7 @@ fn place_building(
         owner,
         ProductionPlacement::Building { type_id, cell },
         overlays,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -1513,7 +1513,7 @@ fn ares_free_unit_comes_from_the_first_opening_only() {
         false,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -1909,7 +1909,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
                 blocker_id,
                 crate::sim::world::InfantryDeathSequence::Die1,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
 
@@ -3412,7 +3412,7 @@ fn blocked_active_war_factory_does_not_spawn_from_second_factory() {
             category: ProductionCategory::Vehicle
         },
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let produced = sim.substrate.entities.get(held).unwrap();
 
@@ -3557,7 +3557,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
                 1,
                 order,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "{order:?}"
         );
@@ -3575,7 +3575,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
                 1,
                 order,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "{order:?}"
         );
@@ -3594,7 +3594,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert!(!can_sell_building(&sim, &rules, 1));
@@ -3611,7 +3611,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(clicks(&sim), 2, "the repeated order clicks");
     assert_eq!(
@@ -3630,7 +3630,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(clicks(&sim), 2);
 
@@ -3641,7 +3641,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert_eq!(clicks(&sim), 1);
@@ -3663,7 +3663,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(!selling(&sim));
     assert_eq!(clicks(&sim), 0);
@@ -3674,7 +3674,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert_eq!(clicks(&sim), 1);
@@ -3998,7 +3998,7 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4194,7 +4194,7 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4308,7 +4308,7 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4391,7 +4391,7 @@ fn cloning_vats_do_not_duplicate_yuri_vehicle_factory_output() {
         &rules,
         "YuriCountry",
         "YTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Vehicle;
@@ -4461,7 +4461,7 @@ fn cloning_vat_copies_wait_for_the_source_dock_cell() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4599,7 +4599,7 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
             &rules,
             "Americans",
             "ORCA",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         let built = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Aircraft);
@@ -4692,7 +4692,7 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
             &rules,
             "YuriCountry",
             "E1",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         let category = ProductionCategory::Infantry;

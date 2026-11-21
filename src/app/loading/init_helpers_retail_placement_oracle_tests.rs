@@ -346,7 +346,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         &rules,
         OWNER,
         POWER_PLANT,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = crate::sim::production::category_for_object(

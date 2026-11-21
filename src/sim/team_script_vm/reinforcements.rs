@@ -125,7 +125,7 @@ impl Simulation {
         team_type: InternedId,
         rules: &RuleSet,
         _registry: Option<&OverlayTypeRegistry>,
-        _effects: FrameEffects<'_>,
+        _effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         self.with_object_placement_scope(|sim| sim.create_team(team_type, None, rules))
     }
@@ -140,7 +140,7 @@ impl Simulation {
         waypoint_override: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
         if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
@@ -321,7 +321,7 @@ impl Simulation {
         waypoint_override: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
         if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
@@ -566,7 +566,7 @@ impl Simulation {
         target: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::rules::object_type::ObjectCategory;
         use crate::sim::components::DriveCoord;
@@ -731,7 +731,7 @@ impl Simulation {
         &mut self,
         team_type: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<Vec<u64>> {
         let definition = *self.team_script_vm.team_types.get(&team_type)?;
         let metadata = self
@@ -962,7 +962,7 @@ impl Simulation {
         nearby: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let edge = self
             .houses
@@ -1130,7 +1130,7 @@ impl Simulation {
         facing: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let below = DriveCoord {
             z: coord.z.wrapping_sub(0x190),

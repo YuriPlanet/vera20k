@@ -378,7 +378,7 @@ impl Simulation {
                 &mut effects,
                 rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ) {
                 return None;
             }

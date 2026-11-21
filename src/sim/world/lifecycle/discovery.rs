@@ -213,7 +213,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         viewer: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         admitted_network_views: u32,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -312,7 +312,13 @@ impl Simulation {
                 if !self.object_placement_scope_active() {
                     //6F4A03..6F4A18: the attachment owner resolves the Tag,
                     // including an Event48-only chain's no-match traversal.
-                    self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
+                    self.dispatch_object_tag_event(
+                        stable_id,
+                        4,
+                        Some(stable_id),
+                        None,
+                        context.reborrow(),
+                    );
                 }
             }
         }
@@ -369,10 +375,10 @@ impl Simulation {
         &mut self,
         id: u64,
         viewer: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         admitted_network_views: u32,
     ) -> bool {
-        if !self.record_techno_discovery(id, viewer, context, admitted_network_views) {
+        if !self.record_techno_discovery(id, viewer, context.reborrow(), admitted_network_views) {
             return false;
         }
         let Some(entity) = self.substrate.entities.get(id) else {

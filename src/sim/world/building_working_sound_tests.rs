@@ -30,7 +30,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
         calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 let kind = match event {
                     SimSoundEvent::ObjectSoundDetached { owner } if *owner == self.owner => {
@@ -51,7 +51,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
-        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+        fn update_looping_sound(&mut self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
             if owner == self.owner {
                 self.calls.borrow_mut().push(("position", Some(world)));
             }
@@ -89,7 +89,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
     let tanya = sim
         .spawn_object("TANY", "Americans", 7, 10, 0, &rules)
         .unwrap();
-    let heard = Heard {
+    let mut heard = Heard {
         owner: working_sound_owner(patriot),
         delivered: Cell::new(0),
         calls: RefCell::default(),
@@ -103,7 +103,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
                 &rules,
                 64,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&heard),
+                &mut FrameEffects::for_sound(&mut heard),
             )
             .unwrap();
         heard.consume(&sim, &rules, &output.sound_events);
@@ -139,7 +139,7 @@ fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
                 &rules,
                 64,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&heard),
+                &mut FrameEffects::for_sound(&mut heard),
             )
             .unwrap();
         // Destructors publish the undelivered suffix after their owner is
@@ -288,7 +288,7 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
     );
     sim.process_pending_delete_with(
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         sim.session.started(),
     );

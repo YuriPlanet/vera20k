@@ -80,7 +80,7 @@ fn duplicate_random_timer_message_keeps_its_schedule_through_core_restore() {
         original.session.set_binary_frame_for_test(frame);
         assert!(
             original
-                .advance_triggers(rules, None, FrameEffects::default())
+                .advance_triggers(rules, None, &mut FrameEffects::default())
                 .is_empty()
         );
     }
@@ -100,9 +100,9 @@ fn duplicate_random_timer_message_keeps_its_schedule_through_core_restore() {
     for frame in (72..=128).step_by(8) {
         original.session.set_binary_frame_for_test(frame);
         restored.session.set_binary_frame_for_test(frame);
-        let effects = original.advance_triggers(rules, None, FrameEffects::default());
+        let effects = original.advance_triggers(rules, None, &mut FrameEffects::default());
         assert_eq!(
-            restored.advance_triggers(rules, None, FrameEffects::default()),
+            restored.advance_triggers(rules, None, &mut FrameEffects::default()),
             effects
         );
         assert_eq!(

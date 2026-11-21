@@ -834,7 +834,7 @@ mod tests {
                         facing,
                         0,
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
                 // OnBridge is an explicit caller prior, as in the existing
@@ -856,7 +856,7 @@ mod tests {
                             PlacementEvidence::EvaluateMark,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )
                         .is_some()
                     }),
@@ -899,7 +899,7 @@ mod tests {
                 },
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             let bullet = sim
                 .projectiles
@@ -1740,7 +1740,7 @@ mod tests {
                     &[],
                     16,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let detonate = !source_present || shared_wall;
@@ -1831,7 +1831,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let saved = runtime.simulation.projectiles.get(id).unwrap().clone();
@@ -1914,7 +1914,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let _ = resumed
@@ -1922,7 +1922,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert!(
@@ -2051,7 +2051,7 @@ mod tests {
                         &[],
                         16,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 assert_eq!(
@@ -2165,7 +2165,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert_eq!(
@@ -2282,7 +2282,7 @@ mod tests {
                                 &[],
                                 16,
                                 TickLane::Ordinary,
-                                crate::sim::world::FrameEffects::default(),
+                                &mut crate::sim::world::FrameEffects::default(),
                             )
                             .expect("fixture frame must complete");
                     }
@@ -2371,7 +2371,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let projectile = runtime

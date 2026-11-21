@@ -523,7 +523,7 @@ fn prism_recruitment_matches_the_original() {
             target,
             0,
             FireError::Ok,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert_eq!(
@@ -709,7 +709,7 @@ fn prism_support_bonus_matches_the_original() {
                 &mut fixture.sim,
                 master,
                 &fixture.rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false,
             )
         });
@@ -826,7 +826,7 @@ fn prism_support_beam_matches_the_original() {
             &mut fixture.sim,
             supporter,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
         assert!(fixture.sim.fire_events.is_empty(), "{name}");
@@ -870,7 +870,7 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
                     building,
                     None,
                     &fixture.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -948,7 +948,7 @@ fn prism_cadence_matches_the_original() {
                     &mut fixture.sim,
                     id,
                     &fixture.rules,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 );
                 let entity = fixture.sim.substrate.entities.get_mut(id).unwrap();
@@ -1007,7 +1007,7 @@ fn prism_cadence_matches_the_original() {
                         &mut fixture.sim,
                         id,
                         &fixture.rules,
-                        ObjectAiCtx::default(),
+                        &mut ObjectAiCtx::default(),
                         &mut false,
                     )
                 });
@@ -1202,7 +1202,7 @@ fn ares_attack(fixture: &mut Fixture, id: u64) {
         target,
         0,
         FireError::Ok,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         &mut false,
     );
 }
@@ -1214,7 +1214,7 @@ fn ares_visit(fixture: &mut Fixture, ids: &[u64]) {
             &mut fixture.sim,
             id,
             &fixture.rules,
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut false,
         );
     }
@@ -1453,7 +1453,7 @@ fn ares_prism_break_support_and_a_sale_break_up_the_network() {
         master,
         crate::sim::production::SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = fixture.sim.substrate.entities.get(master).unwrap();
     assert!(entity.building.pending_building_fire.pending().is_none());

@@ -626,7 +626,7 @@ impl Simulation {
         restore: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let source = if restore { incoming } else { selected };
         let destination = if restore { selected } else { incoming };
@@ -723,7 +723,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(controller_id) = self
             .substrate
@@ -806,7 +806,7 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.capture_unit_with_ring(
             controller_id,
@@ -831,7 +831,7 @@ impl Simulation {
         target_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(controller) = self.substrate.entities.get(controller_id) else {
             return false;
@@ -899,7 +899,7 @@ impl Simulation {
         ring_anim: Option<&str>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.can_capture(controller_id, target_id, rules) {
             return false;
@@ -1022,7 +1022,7 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(controller) = self
             .substrate
@@ -1056,7 +1056,7 @@ impl Simulation {
         house: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(object) = self.substrate.entities.get(id) else {
             return false;
@@ -1107,7 +1107,7 @@ impl Simulation {
         ring: Option<&str>,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if let Some(controller) = self
             .substrate
@@ -1157,7 +1157,7 @@ impl Simulation {
         detonation: ProjectileDetonation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let initial = self.projectiles.current_detonation(detonation);
         let Some(firer) = self.substrate.entities.get(initial.source_id) else {
@@ -1190,13 +1190,14 @@ impl Simulation {
         // 46927A reads Object+90, not HP. EDI retains this original actor;
         // neither a changed bullet target nor an Alive reread replaces it.
         if let Some((actor, true)) = actor {
-            let context = crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
+            let mut context =
+                crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
             if self.dispatch_object_tag_event(
                 actor,
                 6,
                 Some(actor),
                 Some(initial.source_id),
-                context,
+                context.reborrow(),
             ) {
                 // 4692A2 rereads Bullet+B0 after event 6. PointerExpired
                 // may have cleared it; the dispatcher also rereads the Tag.
@@ -1300,7 +1301,7 @@ impl Simulation {
         &mut self,
         target_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = self.substrate.entities.get(target_id) else {
             return;
@@ -1416,7 +1417,7 @@ impl Simulation {
         victim_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(manager) = self
             .substrate
@@ -1483,7 +1484,7 @@ impl Simulation {
         controller_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let victims: Vec<u64> = self
             .substrate
@@ -1513,7 +1514,7 @@ impl Simulation {
         controller_id: u64,
         unit_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
@@ -1681,7 +1682,7 @@ impl Simulation {
         controller_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let table = &rules.mind_control;
         // Only an infinite manager overloads; checking it before the

@@ -132,7 +132,7 @@ fn busy_factory_exit_product(
         rules,
         super::factory::FactoryHolder::Building(1),
         type_id,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     )
     .unwrap();
@@ -158,7 +158,7 @@ fn busy_factory_exit_attempt(
         product,
         (0, 0),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ) == crate::sim::ai_base_building::BuildingExit::Placed)
         .then_some(product)
 }
@@ -705,7 +705,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert!(labels.insert(*label, id).is_none());
@@ -948,7 +948,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(enqueue_by_type(
@@ -956,7 +956,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         &rules,
         "Americans",
         "E2",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let held = sim
@@ -1025,7 +1025,7 @@ fn ready_infantry_prefix_world(
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(enqueue_by_type(
@@ -1033,7 +1033,7 @@ fn ready_infantry_prefix_world(
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(
@@ -1087,7 +1087,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             &rules,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut crate::sim::world::FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
@@ -1140,7 +1140,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             &rules,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut crate::sim::world::FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1202,8 +1202,8 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
 
     let visits = live.production.factories().strip_visits_for_test(owner);
     let clears = std::cell::Cell::new(0);
-    let clear = |_| clears.set(clears.get() + 1);
-    let before_logic = |_: &Simulation| {
+    let mut clear = |_| clears.set(clears.get() + 1);
+    let mut before_logic = |_: &Simulation| {
         assert_eq!(
             clears.get(),
             1,
@@ -1216,9 +1216,10 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             &rules,
             67,
             TickLane::Ordinary,
-            FrameEffects::default()
-                .with_production_strip(&visits, &clear)
-                .with_before_logic(&before_logic),
+            &mut FrameEffects::default()
+                .with_production_strip(&visits)
+                .with_production_request_cleared(&mut clear)
+                .with_before_logic(&mut before_logic),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
@@ -1251,7 +1252,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             &rules,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1280,7 +1281,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                &mut FrameEffects::default().with_production_strip(&visits),
             )
             .unwrap();
         assert!(next.take_admitted_commands().is_empty());
@@ -1318,7 +1319,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let vehicle = sim
@@ -1341,7 +1342,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let infantry = sim
@@ -1363,7 +1364,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
         &rules,
         "Americans",
         "E2",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(
@@ -1382,7 +1383,7 @@ fn factory_constructor_start_cancel_and_promotion_own_scenario_words() {
             naval: false
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(sim.substrate.entities.get(e1_id).is_none());
     let promoted = sim
@@ -1511,14 +1512,14 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             sim.assign_target_represented(
                 observer,
                 Some(crate::sim::combat::TargetKind::Entity(object)),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             Some(observer)
@@ -1563,7 +1564,7 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
                 naval: false
             },
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert!(sim.substrate.entities.get(object).is_none());
         let state = serde_json::to_value(&sim.power_states[&owner]).unwrap();
@@ -2335,7 +2336,7 @@ fn cancel_by_type_removes_ready_building_and_refunds() {
             naval: false,
         },
         false,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(cancelled, "should cancel ready building");
 
@@ -2436,7 +2437,7 @@ fn only_a_busy_airfield_refuses_its_type() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
 }
@@ -2453,7 +2454,7 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
         &rules,
         "Americans",
         "AMCV",
-        Default::default(),
+        &mut Default::default(),
         false
     ));
     assert!(
@@ -2476,7 +2477,7 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
         &rules,
         "Americans",
         "AMCV",
-        Default::default(),
+        &mut Default::default(),
         false
     ));
     assert_eq!(
@@ -2507,7 +2508,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(suspend_production(
@@ -2547,7 +2548,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let factory = sim
@@ -2573,7 +2574,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         &rules,
         "Americans",
         "AMCV",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert!(sim.sound_events.iter().any(|event| {
@@ -2602,7 +2603,7 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
             &rules,
             "Americans",
             "MTNK",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
     }
@@ -2612,7 +2613,7 @@ fn a_produce_past_the_queue_cap_is_refused_with_a_scold() {
         &rules,
         "Americans",
         "MTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(refusals(&sim), 1);
@@ -2694,7 +2695,7 @@ fn a_producer_without_weapons_factory_takes_the_generic_exit_arm() {
                 product,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "human {human}"
@@ -2798,7 +2799,7 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 product,
                 (0, 0),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             crate::sim::ai_base_building::BuildingExit::Placed,
             "{context}"
@@ -2828,7 +2829,7 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 &mut sim,
                 product,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             )
             .unwrap();
             let e1 = sim.substrate.entities.get(product).unwrap();
@@ -2864,7 +2865,7 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
             .test_arm_ready(remote, ProductionCategory::Infantry)
     );
     let hash = sim.state_hash();
-    super::publish_production_changes(&mut sim, &rules, FrameEffects::default());
+    super::publish_production_changes(&mut sim, &rules, &mut FrameEffects::default());
     assert!(
         sim.network_command_queues()
             .local_records()
@@ -2878,11 +2879,13 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
     stale.construction_order = stale.construction_order.wrapping_add(1);
     let visits = [stale, local, local];
     let cleared = std::cell::RefCell::new(Vec::new());
-    let clear = |id| cleared.borrow_mut().push(id);
+    let mut clear = |id| cleared.borrow_mut().push(id);
     super::publish_production_changes(
         &mut sim,
         &rules,
-        FrameEffects::default().with_production_strip(&visits, &clear),
+        &mut FrameEffects::default()
+            .with_production_strip(&visits)
+            .with_production_request_cleared(&mut clear),
     );
     assert_eq!(*cleared.borrow(), [local.type_id]);
     let raw = sim.network_command_queues().local_records().unwrap()[0].clone();
@@ -2909,7 +2912,7 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
     super::publish_production_changes(
         &mut sim,
         &rules,
-        FrameEffects::default().with_production_strip(&remote_visits, &|_| {}),
+        &mut FrameEffects::default().with_production_strip(&remote_visits),
     );
     let records = sim
         .network_command_queues()

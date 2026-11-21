@@ -198,7 +198,7 @@ fn projectile_level_uses_loaded_theater_interval_through_runtime() {
                 &[],
                 16,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(

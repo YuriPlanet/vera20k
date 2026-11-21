@@ -109,7 +109,7 @@ fn advance_retail_frame(runtime: &mut crate::sim::runtime::SimRuntime) -> Vec<Si
             &due,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
         .sound_events
@@ -432,7 +432,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
         false,
         rules,
         Some(runtime.resources.rules.overlay_registry()),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let plant_entity = runtime.simulation.entity_mut_for_test(plant).unwrap();
     plant_entity
@@ -490,7 +490,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for event in output.sound_events {
@@ -530,7 +530,7 @@ fn retail_building_repair_input_walk_art_sound_house_and_retirement() {
             &[],
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let plant_entity = runtime.simulation.entities().get(plant).unwrap();

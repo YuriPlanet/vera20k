@@ -52,7 +52,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
             id,
             TargetKind::Cell(4, 4),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ));
         // Nonzero burst is an explicit component prior. Native6FCF5B resets
         // it only if the changed-to-NULL setter actually runs; stock MTNK's
@@ -71,7 +71,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for id in actors {
         let actor = sim.substrate.entities.get(id).unwrap();
@@ -205,7 +205,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         &Command::SellWallAtCell { x: 4, y: 4 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 
     let sold = sim.overlay_grid.as_ref().unwrap().cell(4, 4);
@@ -431,7 +431,7 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
         &Command::SellWallAtCell { x: 0, y: 1 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let grid = sim.overlay_grid.as_ref().expect("overlay authority");
     assert_eq!(grid.cell(0, 1).overlay_id, None);
@@ -459,7 +459,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
             &Command::SellWallAtCell { x: 1, y: 1 },
             rules,
             Some(&overlays),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     };
 
@@ -514,7 +514,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         &Command::SellWallAtCell { x: 0, y: 2 },
         &unsellable_rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(0, 2).overlay_id,
@@ -528,7 +528,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(sim.sound_events.is_empty());
 
@@ -544,7 +544,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     sim.houses
         .get_mut(&wall_owner)
@@ -556,7 +556,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         &Command::SellWallAtCell { x: 0, y: 2 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(!sim.apply_command_with_overlays(
         None,
@@ -564,6 +564,6 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
         &Command::SellWallAtCell { x: 0, y: 0 },
         &rules,
         Some(&overlays),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }

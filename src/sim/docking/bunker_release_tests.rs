@@ -128,7 +128,7 @@ fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(
@@ -217,7 +217,7 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
         &mut sim,
         2,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(trace[1].name, "force");
@@ -252,7 +252,7 @@ fn normal_release_runs_the_foot_setters_timer_tail() {
         &mut sim,
         2,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let _ = take_trace();
 
@@ -278,7 +278,7 @@ fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
         &mut sim,
         2,
         &super::tests::rules(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(
@@ -334,7 +334,7 @@ fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -374,7 +374,7 @@ fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         !sim.substrate
@@ -417,7 +417,7 @@ fn empty_slot_zero_does_not_scan_later_contacts() {
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -454,14 +454,14 @@ fn nonunit_link_does_not_release_or_reset_bunker() {
                 &mut sim,
                 2,
                 &super::tests::rules(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
             release_sell_destroy(
                 &mut sim,
                 2,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         assert!(take_trace().is_empty());

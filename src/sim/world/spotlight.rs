@@ -616,7 +616,12 @@ impl Simulation {
         }
     }
     /// BuildingLightClass::AI @ 0x004361D0.
-    pub(super) fn visit_spotlight(&mut self, id: u64, rules: &RuleSet, context: UninitContext<'_>) {
+    pub(super) fn visit_spotlight(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        mut context: UninitContext<'_>,
+    ) {
         let Some(mut light) = self.substrate.spotlights.get(id).cloned() else {
             return;
         };
@@ -741,7 +746,13 @@ impl Simulation {
                     ) < threshold
                 });
             if seen {
-                self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                self.dispatch_object_tag_event(
+                    parent_id,
+                    35,
+                    Some(parent_id),
+                    None,
+                    context.reborrow(),
+                );
                 // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
                 // 0x4368C9): then 66 (in spotlight) on the same object while
                 // it is alive.

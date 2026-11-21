@@ -163,7 +163,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let vm = &mut self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
@@ -244,7 +244,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
         // The Ares action bodies below follow how the Rules were read.
@@ -471,7 +471,7 @@ impl Simulation {
                 //vtD4 Limbo and vtF8 UnInit, then marks+80 to advance.
                 //Neither direct deletion nor a damage/RecordKill path is
                 //this action's call. Reuse the complete class lifecycle.
-                let context =
+                let mut context =
                     crate::sim::world::UninitContext::new(rules).with_effects(frame_effects);
                 let mut member = self
                     .team_script_vm
@@ -484,8 +484,8 @@ impl Simulation {
                         .teams
                         .get(&team_id)
                         .and_then(|team| team.next_member_after(current));
-                    let _ = self.techno_limbo_with_context(current, context);
-                    self.uninit_with_context(current, context);
+                    let _ = self.techno_limbo_with_context(current, context.reborrow());
+                    self.uninit_with_context(current, context.reborrow());
                     member = next;
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -1082,7 +1082,7 @@ impl Simulation {
         team_id: u64,
         argument: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(owner) = self
             .team_script_vm
@@ -1194,7 +1194,7 @@ impl Simulation {
         first: bool,
         argument: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !first {
             return;
@@ -1257,7 +1257,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if first {
             let Some(leader) = self.team_leader(team_id, rules) else {
@@ -1388,7 +1388,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // Scenario68BCE0 resolves even a missing/out-of-range waypoint to
         // CellStruct::Empty before asking the existing canonical Map owner.
@@ -1468,7 +1468,7 @@ impl Simulation {
         team_id: u64,
         mission: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -1577,7 +1577,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let transport_class = if self.team_air_transports(team_id, rules) {
             EntityCategory::Aircraft
@@ -1735,7 +1735,7 @@ impl Simulation {
         team_id: u64,
         argument: i32,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -1850,7 +1850,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -1961,7 +1961,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if first && let Some(leader) = self.team_leader(team_id, rules) {
             let Some(entity) = self.substrate.entities.get(leader) else {
@@ -2017,7 +2017,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if !first {
             self.team_coordinate_move(team_id, rules, registry, frame_effects);
@@ -2075,7 +2075,7 @@ impl Simulation {
         seed: (i32, i32),
         speed_type: Option<crate::rules::locomotor_type::SpeedType>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let cell = speed_type
             .and_then(|speed_type| {
@@ -2117,7 +2117,7 @@ impl Simulation {
         first: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if first
             && let Some(leader) = self.team_leader(team_id, rules)
@@ -2223,7 +2223,7 @@ impl Simulation {
         team_id: u64,
         target: Option<TeamTarget>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -2322,7 +2322,7 @@ impl Simulation {
         &mut self,
         firer: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team_id) = self.team_script_vm.member_team.get(&firer).copied() else {
             return;
@@ -2346,7 +2346,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.team_assign_mission_target(team_id, None, rules, frame_effects);
         let members: Vec<u64> = self
@@ -2392,7 +2392,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let vm = &mut self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
@@ -2657,7 +2657,7 @@ impl Simulation {
         waypoint: i32,
         first: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if first {
             let target =
@@ -2695,7 +2695,7 @@ impl Simulation {
         waypoint: i32,
         first: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if first {
             let target = self
@@ -2777,7 +2777,7 @@ impl Simulation {
         waypoint: i32,
         first: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if first {
             let target = self
@@ -2821,7 +2821,7 @@ impl Simulation {
         quarry: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -2891,7 +2891,7 @@ impl Simulation {
         argument: i32,
         first: bool,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -2939,7 +2939,7 @@ impl Simulation {
         argument: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
             return;
@@ -3067,7 +3067,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;

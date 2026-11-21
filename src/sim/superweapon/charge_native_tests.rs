@@ -207,7 +207,12 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                     assert_eq!(i32::from(changed), int(row, "returned"));
                 }
                 "held_ai" | "released_ai" | "elapsed_ai" => {
-                    tick_house_superweapon_instances(&mut sim, &rules, owner, Default::default());
+                    tick_house_superweapon_instances(
+                        &mut sim,
+                        &rules,
+                        owner,
+                        &mut Default::default(),
+                    );
                 }
                 _ => panic!("unhandled original history stage {stage}"),
             }
@@ -297,7 +302,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
             power.set_total_drain_for_test(int(row, "retained_drain"));
             power.set_is_low_power_for_test(row["low_power_before_call"].as_bool().unwrap());
             sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-            update_owned_supers(&mut sim, &rules, owner, Default::default());
+            update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
             assert_state(&sim.super_weapons[&owner][&type_id], &row["output"], &label);
             assert_eq!(
                 sim.houses.get_mut(&owner).unwrap().take_tech_recheck(),

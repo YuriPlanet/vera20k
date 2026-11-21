@@ -386,7 +386,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
         &rules,
         None,
         &[event],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(hut).unwrap().health.current(),
@@ -1288,7 +1288,7 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
         &rules,
         None,
         &[event, event],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(
@@ -1491,7 +1491,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
                 &rules,
                 id,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
     };

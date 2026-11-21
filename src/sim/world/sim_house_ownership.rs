@@ -162,7 +162,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -247,7 +247,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.houses.contains_key(&owner) {
             return;
@@ -392,7 +392,7 @@ impl Simulation {
             new_owner,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -439,7 +439,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.change_owner_impl(stable_id, new_owner, rules, registry, effects);
     }
@@ -450,7 +450,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -526,7 +526,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((old_owner, category, has_spawn_manager, build_const_eligible)) =
             self.substrate.entities.get(stable_id).map(|entity| {
@@ -811,9 +811,9 @@ impl Simulation {
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
         //the owner store. PlaceDown's Cell discovery therefore observes the
         //old House and can dirty its radar as well as its power.
-        let mark_context = UninitContext::new(rules).with_effects(effects);
+        let mut mark_context = UninitContext::new(rules).with_effects(effects);
         if on_map {
-            self.unmark_entity_remove(stable_id, mark_context);
+            self.unmark_entity_remove(stable_id, mark_context.reborrow());
         }
         // `TechnoClass::ChangeOwner` runs the live-detach targeting sweep next,
         // before the house swap: everything shooting at this object is released
@@ -821,7 +821,7 @@ impl Simulation {
         // garrison transfer both come through here, so a squad that was firing
         // at a building stops the instant the building changes hands instead of
         // shooting at what is now its own structure.
-        self.stop_all_targeting_on_detach(stable_id, rules, effects);
+        self.stop_all_targeting_on_detach(stable_id, rules, mark_context.effects());
         if on_map {
             self.mark_entity_put(stable_id, mark_context);
         }
@@ -1053,7 +1053,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<(u64, bool)> {
         use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
         let mut taken = Vec::new();
@@ -1158,7 +1158,7 @@ impl Simulation {
         building: u64,
         taken: &[(u64, bool)],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         for &(contact, tethered) in taken {
             crate::sim::radio::transmit(
@@ -1263,7 +1263,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let Some(entity) = self.substrate.entities.get(stable_id) else {

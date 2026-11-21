@@ -17,7 +17,7 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
             rules,
             33,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary retail Drone combat frame");
     assert!(output.tick.frame_committed);
@@ -247,8 +247,12 @@ impl DroneScene {
                 arg6: true,
             },
         );
-        self.sim
-            .commit_direct_damage_receiver(&self.rules, None, event, FrameEffects::default());
+        self.sim.commit_direct_damage_receiver(
+            &self.rules,
+            None,
+            event,
+            &mut FrameEffects::default(),
+        );
     }
 
     fn assert_linked_and_mobile(&self) {
@@ -860,7 +864,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.drone,
-        super::UninitContext::new(&scene.rules).with_effects(FrameEffects::default()),
+        super::UninitContext::new(&scene.rules).with_effects(&mut FrameEffects::default()),
     );
     for (index, id) in [(0, scene.drone), (1, scene.tank)] {
         compare_drone_actor(
@@ -879,7 +883,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
         scene.drone,
         Some(scene.tank),
         &scene.rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for (index, id) in [(0, scene.drone), (1, scene.tank)] {
         compare_drone_actor(
@@ -931,7 +935,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
                 scene.tank,
                 &scene.rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         });
         let births: Vec<_> = scene

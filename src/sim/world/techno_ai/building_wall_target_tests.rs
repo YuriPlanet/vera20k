@@ -155,7 +155,7 @@ fn retail_pillbox_target_assignment_observes_wall_geometry() {
                 scene.building,
                 Some(requested),
                 &scene.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let blocked = wall_owner.is_some() && !endpoint;
@@ -201,7 +201,7 @@ fn a_player_attack_order_cannot_keep_a_pillbox_target_behind_a_wall() {
         },
         &scene.rules,
         Some(&scene.registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(scene.target(), None);
     let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
@@ -263,7 +263,7 @@ fn generic_retaliation_archives_and_overrides_before_wall_target_admission() {
             scene.building,
             scene.target,
             &scene.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         let entity = scene.sim.substrate.entities.get(scene.building).unwrap();
         assert_eq!(
@@ -299,7 +299,7 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
         scene.building,
         scene.target,
         &scene.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     scene.wall("Russians", (12, 20));
     assert!(
@@ -308,7 +308,7 @@ fn canonical_restore_rechecks_a_wall_added_after_the_target_was_archived() {
             .mission_restore_represented(
                 scene.building,
                 &scene.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
     );

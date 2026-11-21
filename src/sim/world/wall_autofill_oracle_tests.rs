@@ -147,7 +147,7 @@ impl Scene {
                 0,
                 0,
                 &self.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
     }
@@ -165,13 +165,13 @@ impl Scene {
                 PlacementEvidence::EvaluateMark,
                 &self.rules,
                 Some(&self.registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
     }
 
     fn drain(&mut self) {
         self.sim
-            .process_pending_delete_with(&self.rules, FrameEffects::default(), 1, true);
+            .process_pending_delete_with(&self.rules, &mut FrameEffects::default(), 1, true);
     }
 
     fn assert_boundary(&self, corpus: &Value, control: &Value, state: &Value, label: &str) {
@@ -515,7 +515,7 @@ fn native_whole_wall_autofill_constructs_retires_and_keeps_the_refused_middle() 
             object_type,
             origin,
             scene.owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         scene.assert_boundary(
             &corpus,
@@ -560,7 +560,7 @@ fn wall_unlimbo_keeps_exact_overlay_request_and_constructor_building_location() 
                 PlacementEvidence::EvaluateMark,
                 &scene.rules,
                 Some(&scene.registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
         Some(id)
     );

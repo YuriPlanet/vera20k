@@ -109,7 +109,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
     let mut output = SoundEventQueue::new();
     let mut radar = |_, _, _: &RuleSet| false;
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(
             &sim,
@@ -131,7 +131,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "loop identity remains kept"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.update_looping_sound(&sim, 41, near);
     }
@@ -140,7 +140,7 @@ fn foot_phase_position_updates_the_existing_client_handle_without_recreating_a_r
         "audible phase resumes the kept loop"
     );
     {
-        let boundary =
+        let mut boundary =
             FrameClientBoundary::new(Some((&mut player, inputs())), None, &mut output, &mut radar);
         boundary.consume(
             &sim,
@@ -283,7 +283,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
         };
         // Absent output is the ordinary headless/audio-unavailable path.
         // Cue/radar conversion still runs through the production dispatcher.
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &facts);
         boundary.consume(&sim, &rules, &facts);
         facts.push(SimSoundEvent::UnitVoiceVisit { owner: 41 });
@@ -328,7 +329,8 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             admitted.push((tick, request.rx));
             true
         };
-        let boundary = FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("LOCAL"), &mut output, &mut admit_radar);
         boundary.consume(&sim, &rules, &[repaired(local, 2)]);
         assert_eq!(boundary.delivered(), 1);
     }
@@ -349,7 +351,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         heard: &'a RefCell<Vec<(String, bool)>>,
     }
     impl SoundBoundary for Shots<'_> {
-        fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered()..] {
                 let sound_id = match event {
                     SimSoundEvent::VocAt { sound_id, .. } => sound_id,
@@ -404,14 +406,14 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
         gun,
         Some(TargetKind::Entity(target)),
         &rules,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     )
     .unwrap();
     let heard = RefCell::new(Vec::new());
     let mut output = SoundEventQueue::new();
     for _ in 0..300 {
         let mut admit_radar = |_, _, _: &RuleSet| false;
-        let boundary = Shots {
+        let mut boundary = Shots {
             client: FrameClientBoundary::new(
                 None,
                 Some("Americans"),
@@ -426,7 +428,7 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&boundary),
+                &mut FrameEffects::for_sound(&mut boundary),
             )
             .unwrap();
         // The app dispatches the suffix that was not consumed inline.
@@ -460,7 +462,6 @@ fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
 #[test]
 fn synchronous_sound_prefix_keeps_eva_text_rows() {
     use crate::app::input::messages::HudMessage;
-    use std::cell::RefCell;
 
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
@@ -484,17 +485,17 @@ fn synchronous_sound_prefix_keeps_eva_text_rows() {
         },
     ];
     let mut output = SoundEventQueue::new();
-    let rows: RefCell<Vec<HudMessage>> = RefCell::new(Vec::new());
+    let mut rows: Vec<HudMessage> = Vec::new();
     {
         let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
-        let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
-            .with_eva_text(Some(&rows));
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
         boundary.consume(&sim, &rules, &facts);
         assert_eq!(boundary.delivered(), facts.len());
     }
-    let collected = rows.borrow();
     assert_eq!(
-        *collected,
+        rows,
         vec![
             HudMessage::EvaObjectLine {
                 label: "VERA:EvaConstructionComplete",
@@ -517,7 +518,6 @@ fn under_attack_and_infiltration_keep_text_only_eva_rows() {
     use crate::app::input::messages::HudMessage;
     use crate::sim::radar::{RadarEventRequest, RadarEventType};
     use crate::sim::spy_infiltration::InfiltrationEffect;
-    use std::cell::RefCell;
 
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
@@ -556,15 +556,16 @@ fn under_attack_and_infiltration_keep_text_only_eva_rows() {
         },
     ];
     let mut output = SoundEventQueue::new();
-    let rows: RefCell<Vec<HudMessage>> = RefCell::new(Vec::new());
+    let mut rows: Vec<HudMessage> = Vec::new();
     {
         let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
-        let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
-            .with_eva_text(Some(&rows));
+        let mut boundary =
+            FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar)
+                .with_eva_text(Some(&mut rows));
         boundary.consume(&sim, &rules, &facts);
     }
     assert_eq!(
-        *rows.borrow(),
+        rows,
         vec![
             HudMessage::EvaTextLine {
                 label: "VERA:EvaBaseUnderAttack"

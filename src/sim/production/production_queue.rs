@@ -121,7 +121,7 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
 pub fn publish_production_changes(
     sim: &mut Simulation,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(owner) = sim.control_projection().local_command_house() else {
         return;
@@ -186,7 +186,7 @@ pub fn publish_production_changes_for_tests(
     publish_production_changes(
         sim,
         rules,
-        FrameEffects::default().with_production_strip(&visits, &|_| {}),
+        &mut FrameEffects::default().with_production_strip(&visits),
     );
     sim.session.set_current_house_for_test(previous);
 }
@@ -210,7 +210,7 @@ pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleS
         &due,
         rules,
         sim.session.tick().saturating_add(1),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     spawned
 }
@@ -227,7 +227,7 @@ pub(in crate::sim) fn exit_produced_object(
     stable_id: u64,
     exit_cell: (i16, i16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::{self, BuildingExit};
     use crate::sim::ai_unit_choice::UnitChoiceKind;
@@ -407,7 +407,7 @@ fn exit_naval(
     stable_id: u64,
     speed_type: crate::rules::locomotor_type::SpeedType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     // 444175/65AE30 scans every actual radio slot. This request precedes
@@ -490,7 +490,7 @@ fn exit_land(
     producer_id: u64,
     stable_id: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
@@ -634,8 +634,8 @@ fn exit_land(
         )?;
         // The native successful suffix44459F..4445C9 re-marks around the
         // second coordinate write. Use the shared Mark/SetLocation owners.
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
-        sim.unmark_entity_remove(spawned, context);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        sim.unmark_entity_remove(spawned, context.reborrow());
         crate::sim::movement::ground_pose::foot_set_location(
             &mut sim.substrate.entities,
             spawned,
@@ -685,7 +685,7 @@ fn exit_at_dock(
     exit_cell: (i16, i16),
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     if arm == ExitArm::Infantry {
@@ -777,7 +777,7 @@ fn kick_out_ares_clones(
     producer_id: u64,
     product_id: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::rules::object_type::{FactoryType, ObjectCategory};
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
@@ -896,7 +896,7 @@ fn exit_cloning_vat_copies(
     producer_id: u64,
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(producer) = sim.substrate.entities.get(producer_id) else {
         return;
@@ -973,7 +973,7 @@ fn infantry_exit_tail(
     dock: (u16, u16),
     product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let nav = sim
         .substrate
@@ -1045,7 +1045,7 @@ fn infantry_exit_post(
     producer_id: u64,
     spawned: u64,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(producer) = ExitProducer::of(sim, rules, producer_id) else {
         return;
@@ -1137,7 +1137,7 @@ fn generic_exit_tail(
     producer_id: u64,
     spawned: u64,
     dock: (u16, u16),
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::mission::{MissionId, MissionType, authority::LiveReadyInputProvider};
     let _ = sim.mission_queue_exact(
@@ -1189,7 +1189,7 @@ fn exit_aircraft(
     stable_id: u64,
     airport_bound: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> crate::sim::ai_base_building::BuildingExit {
     use crate::sim::ai_base_building::BuildingExit;
     use crate::sim::radio::{self, RadioMessage, RadioPayload};

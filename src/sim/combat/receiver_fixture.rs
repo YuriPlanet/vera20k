@@ -816,7 +816,7 @@ pub(crate) fn resolve_attacker_fire(
                 binary_frame,
                 has_active_wave,
                 out,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         },
     )
@@ -938,7 +938,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 first_tail_id,
                 rules,
                 overlay_registry,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             for (mut effects, under_attack_events) in
                 std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().tail_effects)

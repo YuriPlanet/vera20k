@@ -90,7 +90,7 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
         gun,
         Some(TargetKind::Entity(target)),
         rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert!(sim.interner.get("LateGun").is_none());
@@ -231,7 +231,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             },
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.projectiles.iter().count(),

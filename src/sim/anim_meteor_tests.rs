@@ -150,7 +150,7 @@ fn original_anim_ore_loop_keeps_direction_aliasing_density_and_constructor_refus
                 &rules,
                 Some(&registry),
                 position,
-                FrameEffects::empty()
+                &mut FrameEffects::empty()
             )
             .unwrap()
         );
@@ -200,7 +200,7 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
             &rules,
             None,
             glam::IVec3::new(10368, 10368, 0),
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .unwrap()
     );
@@ -224,7 +224,7 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
                 &rules,
                 None,
                 glam::IVec3::new(10368, 10368, 0),
-                FrameEffects::empty()
+                &mut FrameEffects::empty()
             )
             .unwrap()
     );
@@ -328,7 +328,7 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     assert!(sim.trigger_meteor_shower(&rules, 0, 7));
     let ids: Vec<_> = sim.anims().map(|(&id, _)| id).collect();
     assert!(!ids.is_empty());
-    sim.visit_anim(ids[0], &rules, None, FrameEffects::empty())
+    sim.visit_anim(ids[0], &rules, None, &mut FrameEffects::empty())
         .unwrap();
     let bytes =
         crate::sim::snapshot::GameSnapshot::save_validated(&sim, 17, 23, "meteor flight", 0);
@@ -370,7 +370,7 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
                 .set_binary_frame_for_test(world.session.binary_frame().wrapping_add(1));
             for &id in &ids {
                 world
-                    .visit_anim(id, &rules, None, FrameEffects::empty())
+                    .visit_anim(id, &rules, None, &mut FrameEffects::empty())
                     .unwrap();
             }
             world.flush_pending_delete();

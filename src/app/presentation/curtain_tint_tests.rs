@@ -411,7 +411,7 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
                     &rules,
                     33,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("ordinary gas integration frame");
             assert!(output.tick.frame_committed);

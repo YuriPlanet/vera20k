@@ -131,7 +131,7 @@ impl Replay {
                     scene.miner,
                     Some(TargetKind::Entity(first)),
                     &scene.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
         }
@@ -388,7 +388,7 @@ impl Replay {
                         &command,
                         &s.rules,
                         Some(registry()),
-                        crate::sim::world::FrameEffects::default()
+                        &mut crate::sim::world::FrameEffects::default()
                     ),
                     "{context}: command admission"
                 );
@@ -420,7 +420,7 @@ impl Replay {
                     &mut s.sim,
                     s.miner,
                     &s.rules,
-                    super::ObjectAiCtx {
+                    &mut super::ObjectAiCtx {
                         overlay_registry: Some(registry()),
                         ..Default::default()
                     },
@@ -442,7 +442,7 @@ impl Replay {
                     s.miner,
                     crate::sim::radio::RadioMessage::Break,
                     &s.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert_eq!(
                     response.code() as i32,
@@ -464,7 +464,7 @@ impl Replay {
                     s.miner,
                     &s.rules,
                     skip_land,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert_eq!(
                     u8::from(result),
@@ -504,7 +504,7 @@ impl Replay {
                         PointerExpiryControl::Uninit
                     },
                     &s.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
             }
             "deadline" => {

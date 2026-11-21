@@ -1349,7 +1349,7 @@ impl Simulation {
     pub(super) fn planning_select_tail_node(
         &mut self,
         actor: u64,
-        context: super::UninitContext<'_>,
+        mut context: super::UninitContext<'_>,
     ) {
         if self.planning.select_expanding {
             return;
@@ -1363,7 +1363,7 @@ impl Simulation {
                 .get(member)
                 .is_some_and(|entity| entity.seldom.selection.is_selected());
             if !selected {
-                self.techno_select(member, context);
+                self.techno_select(member, context.reborrow());
             }
         }
         self.planning.select_expanding = false;
