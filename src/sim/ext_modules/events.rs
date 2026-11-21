@@ -215,9 +215,13 @@ impl Host<'_, '_> {
                 TriggerScope::Global
             }
             // Decision-only (appendix 4.5): Defeat asks about a house and
-            // needs no binding; ProductionQueued binds to the queued type.
+            // needs no binding; ProductionAllowed and ProductionQueued bind
+            // to the type, CommandAllowed to the commanded object or its
+            // type.
             vera20k_wasm_ext::decide::EVENT_DEFEAT => TriggerScope::Global,
-            vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED => object,
+            vera20k_wasm_ext::decide::EVENT_PRODUCTION_ALLOWED
+            | vera20k_wasm_ext::decide::EVENT_PRODUCTION_QUEUED
+            | vera20k_wasm_ext::decide::EVENT_COMMAND_ALLOWED => object,
             EVENT_FIRE => TriggerScope::Object { weapon: true },
             EVENT_TAKE_DAMAGE
             | EVENT_ATTACKED_BY

@@ -437,9 +437,10 @@ impl Host<'_, '_> {
 impl Simulation {
     /// Runs `f` with the host module `source` sees, for the reads of an
     /// event site (clauses, the record's position):
-    /// [`Simulation::with_ext_module`] on its slot. Inside a module call the
-    /// slots are set aside, and a placeholder stream serves: reads draw
-    /// nothing. Reads reach no lent owner, so no frame effects are lent.
+    /// [`Simulation::with_ext_module`] on its slot. Inside that module's own
+    /// call its slot is out of the list, and a placeholder stream serves:
+    /// reads draw nothing. Reads reach no lent owner, so no frame effects
+    /// are lent.
     pub(super) fn with_module_host<R>(
         &mut self,
         rules: &RuleSet,

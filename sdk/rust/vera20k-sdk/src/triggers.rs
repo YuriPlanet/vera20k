@@ -162,11 +162,18 @@ impl Event {
     pub const DISTANCE_POLL: i32 = 1029;
     pub const VARIABLE_POLL: i32 = 1030;
 
-    // Decision-only events (appendix 4.5), from 1031 (ProductionAllowed).
+    // Decision-only events (appendix 4.5); `Launch` (1035) and
+    // `ProjectileFrame` (1036) are not decided yet.
+    /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and a
+    /// type binding. Asked once per frame for each house and bound type.
+    pub const PRODUCTION_ALLOWED: i32 = 1031;
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`].
     pub const PRODUCTION_QUEUED: i32 = 1032;
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`].
     pub const DEFEAT: i32 = 1033;
+    /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and an
+    /// object or type binding. Asked for each command on a bound object.
+    pub const COMMAND_ALLOWED: i32 = 1034;
 }
 
 /// What a trigger action acts on (`ActionTarget`, appendix 5.1).
