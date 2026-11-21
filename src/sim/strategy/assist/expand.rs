@@ -60,6 +60,17 @@ const EXPAND_MIN_CELLS: i32 = 10;
 /// cell of slack: a maker inside it has arrived, not "arriving forever".
 const RETRIEVE_ARRIVED_CELLS: i32 = 6;
 
+/// How long a yard stays committed to the stance the house gave it, in frames.
+///
+/// [`deploy_yard_maker`] and [`super::orders::pack_captured_yard`] are two halves
+/// of one decision about the same object, and neither used to carry commitment:
+/// a captured yard that packed home became a maker, the maker read
+/// `deploy_site_admits` and was deployed straight back out, and the yard it made
+/// was then far from home again — the wishlist's "部署收起部署收起". Sixty
+/// seconds is a turn of the expansion probe, long enough for the stance to have
+/// meant something and short enough that a changed front still gets a new one.
+pub(super) const YARD_COMMIT_FRAMES: u64 = 900;
+
 /// How far out that search looks, in cells.
 ///
 /// A second base goes to the next patch of ground that takes a yard, which
@@ -104,6 +115,18 @@ pub(super) fn yard_stands(census: &Census) -> bool {
 /// one still driving out of its factory.
 pub(super) fn owns_yard_maker(census: &Census) -> bool {
     census.yard_makers > 0
+}
+
+/// Whether this yard is still inside the term of a stance already given, so the
+/// caller leaves it alone rather than reversing it. Reading and writing
+/// [`AssistBrain::yard_commit`] here is the whole commitment: a pack and a deploy
+/// are the same decision about the same object, so both halves ask this one
+/// question instead of each carrying its own memory of it.
+pub(super) fn yard_committed(brain: &AssistBrain, tick: u64, entity_id: u64) -> bool {
+    brain
+        .yard_commit
+        .get(&entity_id)
+        .is_some_and(|at| tick.saturating_sub(*at) < YARD_COMMIT_FRAMES)
 }
 
 /// Deploy the house's Construction Yard maker while it has no yard.
@@ -321,7 +344,13 @@ pub(super) fn deploy_yard_maker(
         return;
     }
     if obs.deploy_site_admits(rules, entity_id, yard) {
-        super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
+        // The one guard the pack also runs: a yard the house only just packed
+        // home is inside its term, and deploying it again is the round trip the
+        // commitment exists to stop.
+        if !yard_committed(brain, obs.tick(), entity_id) {
+            brain.yard_commit.insert(entity_id, obs.tick());
+            super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
+        }
         return;
     }
     let Some(yard_id) = obs.type_id(&yard.id) else {
@@ -597,7 +626,12 @@ fn deploy_second_yard(
         && space.ground_at(cell).buildable()
         && obs.deploy_site_admits(rules, entity_id, yard)
     {
-        super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
+        // Same term as the no-yard branch: a maker that just packed home stands
+        // on the base's own ground, which is far enough away to qualify here.
+        if !yard_committed(brain, obs.tick(), entity_id) {
+            brain.yard_commit.insert(entity_id, obs.tick());
+            super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy);
+        }
         return;
     }
     // The cell the house decided on: a patch of ground a second yard fits on,
@@ -982,6 +1016,45 @@ mod tests {
                     .expect("a walk")
             ),
             "and the cell it is sent to is one the deploy would land on"
+        );
+    }
+
+    /// A yard the house just gave a stance is left alone for the term, which is
+    /// what stops the pack/deploy round trip: the maker a pack produces reads
+    /// `deploy_site_admits` on the spot, so without the commitment it was
+    /// deployed straight back out — the wishlist's "部署收起部署收起".
+    #[test]
+    fn a_yard_inside_its_term_is_not_deployed_again() {
+        let Some((mut sim, rules, owner)) = arena(0xA17) else {
+            return;
+        };
+        let maker = sim
+            .spawn_object("AMCV", "Americans", 20, 20, 255, &rules)
+            .expect("an MCV");
+        let mut brain = AssistBrain::new(0xA17);
+        brain.census.refresh(
+            &crate::rules::unit_role::RoleTable::build(&rules),
+            &rules,
+            &Observation::new(&sim, owner),
+        );
+        let obs = Observation::new(&sim, owner);
+        // Committed this frame, so the whole term still runs.
+        brain.yard_commit.insert(maker, obs.tick());
+        let mut out = Outbox::default();
+        deploy_yard_maker(&mut brain, &rules, &obs, &mut out);
+        assert!(
+            !out.orders
+                .iter()
+                .any(|order| matches!(order.goal, Goal::Deploy)),
+            "a yard inside its term is not deployed again: {:?}",
+            out.orders.iter().map(|o| o.goal).collect::<Vec<_>>()
+        );
+        // Past the term the yard is its own decision again: the commit entry is
+        // a frame long gone, so the gate reads false.
+        brain.yard_commit.insert(maker, 0);
+        assert!(
+            !super::yard_committed(&brain, obs.tick() + super::YARD_COMMIT_FRAMES, maker),
+            "a term that has run out no longer holds the yard"
         );
     }
 

@@ -360,6 +360,10 @@ pub struct AssistBrain {
     /// a maker came from: a house-made one appears at its own factory, a
     /// captured one appears in the enemy's base.
     pub(super) seen_makers: std::collections::BTreeSet<u64>,
+    /// Yards the house has already given a stance, by unit: the frame it was last
+    /// told to pack or to deploy. Both halves of that one decision read it, so a
+    /// captured yard is not packed home and deployed out again a frame later.
+    pub(super) yard_commit: std::collections::BTreeMap<u64, u64>,
     /// Infiltration classes the house has already unlocked: a barracks, a war
     /// factory, a lab. One of each is the whole unlock, and a second spy buys
     /// nothing.
@@ -458,6 +462,7 @@ impl AssistBrain {
             sale_attempts: std::collections::BTreeMap::new(),
             retrieve_makers: std::collections::BTreeSet::new(),
             seen_makers: std::collections::BTreeSet::new(),
+            yard_commit: std::collections::BTreeMap::new(),
             infiltrated: std::collections::BTreeSet::new(),
             spy_errand: std::collections::BTreeMap::new(),
             ore_scan: None,

@@ -562,6 +562,11 @@ pub(super) fn pack_captured_yard(
         if !obs.can_repack_yard(rules, unit.entity_id) {
             continue;
         }
+        // The other half of the commitment: this yard and the maker it becomes
+        // are one object, so the term the deploy wrote is the term this reads.
+        if super::expand::yard_committed(brain, tick, unit.entity_id) {
+            continue;
+        }
         if !brain
             .tracked
             .admits(tick, unit.entity_id, TrackedKind::Deploy, None, None)
@@ -571,6 +576,7 @@ pub(super) fn pack_captured_yard(
         brain
             .tracked
             .record(tick, unit.entity_id, TrackedKind::Deploy, None, None);
+        brain.yard_commit.insert(unit.entity_id, tick);
         log::info!(
             "auto play: yard {} at {:?} packs and comes home",
             ty.id,
@@ -1041,7 +1047,6 @@ fn nearest_site(sites: &[(u64, (u16, u16))], from: (u16, u16)) -> Option<u64> {
         .min_by_key(|(id, cell)| (squared_distance(from, *cell), *id))
         .map(|(id, _)| *id)
 }
-
 
 /// Put every idle combat unit no team has taken on area guard where it stands.
 pub(super) fn forces(
