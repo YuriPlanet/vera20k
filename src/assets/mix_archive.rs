@@ -307,6 +307,10 @@ impl MixArchive {
         )))]
         let data = {
             let file = File::open(path)?;
+            // SAFETY: memmap2 cannot stop another process from changing the
+            // file under the map. Nothing in the game writes an archive it has
+            // open; a file changed outside it mid-game is the residual memmap2
+            // documents, taken for reads without copies.
             let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
             MixData::from_mapped(data)
         };

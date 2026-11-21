@@ -1124,6 +1124,7 @@ fn thread_cpu_time() -> Option<Duration> {
         // SAFETY: clock_gettime only writes the timespec it is given, and
         // that timespec is read only when the call reports success.
         if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, time.as_mut_ptr()) } == 0 {
+            // SAFETY: clock_gettime succeeded, so it initialized `time`.
             let time = unsafe { time.assume_init() };
             return Some(Duration::new(time.tv_sec as u64, time.tv_nsec as u32));
         }

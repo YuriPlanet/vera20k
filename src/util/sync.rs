@@ -45,6 +45,7 @@ pub struct NeverWaitingOnceLock<T> {
 // SAFETY: the cell owns its value as a `Box<T>` would; shared access hands
 // out `&T` and fills the cell with a `T` moved from the calling thread.
 unsafe impl<T: Send + Sync> Sync for NeverWaitingOnceLock<T> {}
+// SAFETY: moving the cell moves the owned `T` with it, as a `Box<T>` would.
 unsafe impl<T: Send> Send for NeverWaitingOnceLock<T> {}
 
 impl<T> NeverWaitingOnceLock<T> {

@@ -818,6 +818,7 @@ mod native {
             // SAFETY: both arguments are NUL-terminated and live for the call.
             #[cfg(target_os = "macos")]
             let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+            // SAFETY: both arguments are NUL-terminated and live for the call.
             #[cfg(target_os = "linux")]
             let result = unsafe {
                 libc::renameat2(
