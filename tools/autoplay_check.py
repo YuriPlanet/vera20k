@@ -114,7 +114,7 @@ INCOME = re.compile(r"income=(-?\d+)/min")
 # one exists because "did the house mass before it attacked" cannot be answered
 # from the last line alone.
 STATUS = re.compile(
-    r"fighters=(\d+) idle=(\d+) "
+    r"fighters=(\d+) limbo=(\d+) idle=(\d+) "
     r".*?push=(\S+) .*?squads=\[([^\]]*)\]"
 )
 ROSTER = re.compile(r"roster=\[([^\]]*)\]")
@@ -171,6 +171,7 @@ class MatchReport:
     # at a time" is a claim about the second number: a house that attacks with
     # five when it could have had thirty did not mass, whatever its final count.
     peak_army: int = 0
+    peak_limbo: int = 0
     army_at_push: int = 0
 
     @property
@@ -258,11 +259,12 @@ def parse_report(seed: str, text: str, seconds: float) -> MatchReport:
     status = STATUS.findall(text)
     if status:
         report.peak_army = max(int(row[0]) for row in status)
+        report.peak_limbo = max(int(row[1]) for row in status)
         # The first open gate, not the last: the last one is after the army has
         # already been ground down, which measures the battle rather than the
         # decision to start it.
         report.army_at_push = next(
-            (int(row[0]) for row in status if row[2] == "push"), 0
+            (int(row[0]) for row in status if row[3] == "push"), 0
         )
     report.yards = max((int(value) for value in re.findall(r"yard=(\d+)", text)), default=0)
     report.walls = max((int(value) for value in STANDING.findall(text)), default=0)
@@ -319,6 +321,7 @@ def append_history(reports: list[MatchReport], args, path: Path) -> None:
                 "squads": report.squads,
                 "income": report.income,
                 "peak_army": report.peak_army,
+                "peak_limbo": report.peak_limbo,
                 "army_at_push": report.army_at_push,
                 "seconds": round(report.seconds, 1),
             }) + "\n")
@@ -490,7 +493,7 @@ def compare_histories(baseline: Path, current: Path) -> None:
     header = (
         f"{'map':<14}{'country':<10}{'seed':<7}{'ticks':<7}{'brain':<7}{'opp':<5}{'diff':<8}"
         f"{'own':<12}{'army':<12}{'enemy':<12}{'lost':<16}{'unclaimed':<10}{'idle':<7}"
-        f"{'peak':<7}{'push@':<7}{'flips':<7}{'yards':<7}{'walls':<7}verdict"
+        f"{'limbo':<7}{'peak':<7}{'push@':<7}{'flips':<7}{'yards':<7}{'walls':<7}verdict"
     )
     print("", flush=True)
     print(header, flush=True)
@@ -528,6 +531,7 @@ def compare_histories(baseline: Path, current: Path) -> None:
             f"{arrow(was, now, 'enemy'):<12}"
             f"{lost_arrow(was, now):<16}"
             f"{arrow(was, now, 'unowned'):<10}{arrow(was, now, 'stuck'):<7}"
+            f"{arrow(was, now, 'peak_limbo'):<7}"
             f"{arrow(was, now, 'peak_army'):<7}{arrow(was, now, 'army_at_push'):<7}"
             f"{arrow(was, now, 'push_flips'):<7}{arrow(was, now, 'yards'):<7}"
             f"{arrow(was, now, 'walls'):<7}{verdict}",
@@ -745,7 +749,8 @@ def main(argv: list[str] | None = None) -> int:
               f"roster=[{report.roster}]", flush=True)
         print(f"  own={report.own} enemy={report.enemy} yards={report.yards} "
               f"walls={report.walls} army={report.army} idle={report.idle} "
-              f"unclaimed={report.unowned} lost={report.exchange}", flush=True)
+              f"unclaimed={report.unowned} lost={report.exchange} "
+              f"limbo={report.peak_limbo}", flush=True)
         print(f"  push={report.push or 'none'} flips={report.push_flips} "
               f"squads=[{report.squads}] income={report.income}/min", flush=True)
         print(f"  peak army={report.peak_army} army at first push={report.army_at_push}",
