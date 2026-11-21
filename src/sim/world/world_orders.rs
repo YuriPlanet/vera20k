@@ -1103,6 +1103,11 @@ impl Simulation {
             && infantry
             && target.category() == EntityCategory::Structure
             && target_obj.hospital;
+        // An Armory also service-admits infantry even when its Passengers=
+        // is 0; the shared Passengers gate would otherwise hide Enter.
+        let armory_entry = infantry
+            && target.category() == EntityCategory::Structure
+            && target_obj.armory();
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,
@@ -1112,7 +1117,7 @@ impl Simulation {
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
-            || (target_obj.passengers <= 0 && !tunnel && !hospital_entry)
+            || (target_obj.passengers <= 0 && !tunnel && !hospital_entry && !armory_entry)
         {
             return None;
         }
