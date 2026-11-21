@@ -66,10 +66,11 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     }
 }
 
-/// The chat NewEdit while it takes keys, for the input method
-/// (`app::input::ime`): `handle_wol_key` reaches [`key_press`] with the lobby
-/// page up, no page dialog, no popup and the chat showing.
-pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
+/// The NewEdit that takes keys, for the input method (`app::input::ime`):
+/// `handle_wol_key` reaches [`key_press`] with the lobby page up, no page
+/// dialog and no popup. It is the chat edit while the chat shows, else VERA's
+/// room search.
+pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
     let routed = App::wol_active(state)
         && !shell_transition::blocks_shell_input(state)
         && !App::wol_quick_match_verify(state)
@@ -77,13 +78,16 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         && App::wol_page_is_lobby(state);
     lobby(state)
         .filter(|lobby| {
-            routed
-                && lobby.interactive()
-                && lobby.ui.popup.is_none()
-                && lobby.ui.card.is_none()
-                && lobby.ui.shows_chat()
+            routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
         })
-        .map(|_| layout(state).chat)
+        .map(|lobby| {
+            let layout = layout(state);
+            if lobby.ui.shows_chat() {
+                layout.chat
+            } else {
+                layout.search
+            }
+        })
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -109,10 +113,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
     let lobby = lobby_mut(state).expect("checked");
     let action = match key {
         Some(key) => lobby.ui.edit_key(key),
-        None => {
-            lobby.ui.insert_text(text.unwrap_or_default());
-            None
-        }
+        None => lobby.ui.insert_text(text.unwrap_or_default()),
     };
     update_geometry(state);
     if let Some(action) = action {
@@ -437,16 +438,22 @@ pub(in crate::app::shell_wol) fn mouse(state: &mut AppState, pressed: bool) {
                     press = Press::Cue(LauncherCue::GenericClick);
                 }
             }
-            Some(control @ (OBSERVER_IMAGE | OBSERVER_TOGGLE)) => {
+            Some(control @ (OBSERVER_IMAGE | OBSERVER_TOGGLE | HIDE_FULL | HIDE_LOCKED)) => {
+                let plate = match control {
+                    HIDE_FULL => layout.hide_full,
+                    HIDE_LOCKED => layout.hide_locked,
+                    _ => layout.observer_toggle,
+                };
                 let icon_hit = control == OBSERVER_IMAGE
-                    || crate::ui::skirmish_shell::checkbox_icon_rect(layout.observer_toggle, scale)
-                        .contains(x, y);
+                    || crate::ui::skirmish_shell::checkbox_icon_rect(plate, scale).contains(x, y);
                 if icon_hit {
                     action = ui.activate(control);
                     press = Press::Cue(LauncherCue::Checkbox);
                 }
             }
-            Some(control) if control != CHAT && control != CHAT_LOG && ui.enabled(control) => {
+            Some(control)
+                if !matches!(control, CHAT | CHAT_LOG | SEARCH) && ui.enabled(control) =>
+            {
                 ui.buttons.press(Some(control));
                 press = Press::Button;
             }

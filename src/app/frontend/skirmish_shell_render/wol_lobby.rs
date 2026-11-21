@@ -242,13 +242,69 @@ pub(crate) fn paint_wol_lobby_children(
             state
                 .platform
                 .ime
-                .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
+                .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit),
             layout.chat,
             ui.popup.is_none() && ui.caret_visible(now),
             SHELL_LABEL_TEXT_RGB,
             SHELL_CONTROL_TEXT_DEPTH,
             scale,
         );
+    }
+    // VERA's filter row under the games: the room search, which names
+    // itself while empty, as the map search does, and the two checkboxes.
+    if shown(layout.search) {
+        let composition = state
+            .platform
+            .ime
+            .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit);
+        if ui.search.units.is_empty() && composition.is_none() {
+            let hint = scale.derive_rect(layout.search, |rect| {
+                RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
+            });
+            paint.texts.push(text(
+                &crate::i18n::tr("VERA:LobbySearchHint"),
+                hint,
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+        }
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.search,
+            composition,
+            layout.search,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
+    let filter = state.frontend.wol_lobby_globals.room_filter;
+    for (control, rect, key) in [
+        (HIDE_FULL, layout.hide_full, "VERA:HideFull"),
+        (HIDE_LOCKED, layout.hide_locked, "VERA:HideLocked"),
+    ]
+    .into_iter()
+    .filter(|(_, rect, _)| shown(*rect))
+    {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect,
+                checked: filter.checked(control),
+            },
+            scale,
+        );
+        paint.texts.push(text(
+            &crate::i18n::tr(key),
+            crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+        ));
     }
 
     let lobbies = ui
