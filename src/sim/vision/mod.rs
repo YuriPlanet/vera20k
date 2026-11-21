@@ -2237,7 +2237,7 @@ pub struct VisionConfig {
     /// Default true (the standard RA2/YR setting).
     reveal_by_height: bool,
     /// The map `Size=` diamond (`MapClass+0xF4/+0xF8`) that bounds a reveal's
-    /// lifted centre and each of its cells ([`collect_reveal_cells`]). A
+    /// lifted centre and each of its cells ([`extend_reveal_cells`]). A
     /// headless fixture without a map has none; the fog grid bounds it alone.
     map_size: Option<(i32, i32)>,
     /// `[AudioVisual] AllyReveal=`: an allied house's reveals map this
@@ -2357,7 +2357,7 @@ impl VisionConfig {
             .map(|(x, y)| (x as u16, y as u16, z))
     }
 
-    /// The area route's ordered geometry ([`collect_reveal_cells`]), appended
+    /// The area route's ordered geometry ([`extend_reveal_cells`]), appended
     /// to `cells`. The world owns synchronous receivers and current-player
     /// admission.
     pub(crate) fn extend_area_cells(
@@ -2522,7 +2522,7 @@ pub(crate) fn entity_sight_admission(
 }
 
 /// The sight admission of a source with `geometry`: its footprint under
-/// `config` and `height_grid` ([`collect_reveal_cells`]), written into
+/// `config` and `height_grid` ([`extend_reveal_cells`]), written into
 /// `cells` (emptied first); none on an unallocated map.
 pub(crate) fn sight_admission(
     fog: &FogState,
@@ -2802,6 +2802,10 @@ impl CellLevels<'_> {
 /// - With `RevealByHeight=` off, a caller's outline argument (arg 3, the
 ///   Techno sight callers') walks only the outer three rings
 ///   (`0x00567A77..0x00567AA5`); retail rules leave the key on.
+///
+/// Production walks fill a kept buffer ([`extend_reveal_cells`]); this
+/// owned form serves fixtures.
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn collect_reveal_cells(
     center_rx: u16,
     center_ry: u16,
@@ -2827,8 +2831,8 @@ pub(crate) fn collect_reveal_cells(
     cells
 }
 
-/// [`collect_reveal_cells`] appended to `cells`, for a caller that reuses
-/// one buffer across walks.
+/// The walk `collect_reveal_cells` documents, appended to `cells`, for a
+/// caller that reuses one buffer across walks.
 pub(crate) fn extend_reveal_cells(
     cells: &mut Vec<(u16, u16)>,
     center_rx: u16,
