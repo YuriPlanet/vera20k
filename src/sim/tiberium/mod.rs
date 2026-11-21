@@ -1218,7 +1218,7 @@ mod tests {
                 event,
                 crate::sim::world::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
                     if *anim_id == child_id
-                        && sound_id.name_in(&rules) == "BUILDINGFIREBIG"
+                        && sound_id.name_in(&cold) == "BUILDINGFIREBIG"
                         && *world == child.world_coord()
             )),
             "retail FIRE01 Start must emit its sound before classification"
