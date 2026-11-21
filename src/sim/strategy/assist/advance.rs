@@ -761,14 +761,20 @@ pub(super) fn advance(
             brain.tracked.void(unit.entity_id, kind);
             refused += 1;
             if std::env::var("AUTOPLAY_TRACE_REFUSE").is_ok() && tick % 600 == 0 {
+                let dx = i32::from(unit.cell.0) - i32::from(target_cell.0);
+                let dy = i32::from(unit.cell.1) - i32::from(target_cell.1);
+                let reachable = super::orders::reachable(rules, obs, unit.entity_id, target_cell);
                 log::info!(
-                    "refuse probe: unit={} target={} hostile={} engage={} hurt={} in_bounds={:?}",
+                    "refuse probe: unit={} at {:?} target={} at {:?} d2={} hostile={} engage={} hurt={} reach={}",
                     unit.entity_id,
+                    unit.cell,
                     target_id,
+                    target_cell,
+                    dx * dx + dy * dy,
                     obs.is_hostile(target_id),
                     obs.can_engage(rules, unit.entity_id, target_id),
                     obs.can_hurt(rules, unit.entity_id, target_id),
-                    target_cell,
+                    reachable,
                 );
             }
             continue;
