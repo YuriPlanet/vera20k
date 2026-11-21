@@ -641,11 +641,11 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
 }
 
 /// Authored localization fixture using the CSF owner's binary encoder.
-#[cfg(any(test, feature = "test-support"))]
 #[expect(
     clippy::unwrap_used,
     reason = "a test fixture: a bad fixture is a bug in the test that built it"
 )]
+#[cfg(any(test, feature = "test-support"))]
 pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     assert!(!entries.is_empty());
     let mut data = build_test_csf(entries[0].0, entries[0].1);

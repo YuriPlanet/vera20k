@@ -346,11 +346,11 @@ fn parse_limb(
 
 /// A minimal valid VXL for tests, client tests included: one limb named
 /// `body`, a 2×2×2 grid, a few voxels.
-#[cfg(any(test, feature = "test-support"))]
 #[expect(
     clippy::indexing_slicing,
     reason = "a test fixture writing into the buffer it just built"
 )]
+#[cfg(any(test, feature = "test-support"))]
 pub fn minimal_test_vxl() -> Vec<u8> {
     let mut data: Vec<u8> = Vec::new();
 
