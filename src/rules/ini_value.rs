@@ -61,7 +61,10 @@
 //!   conversion stays in `util::fixed_math`. No float enters sim/.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use super::{IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;

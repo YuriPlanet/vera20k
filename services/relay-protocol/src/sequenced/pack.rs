@@ -20,7 +20,10 @@
 //! | DESYNC 11 | `[11][seq u64][frame u32][sample_frame u32][outlier u8][checksum u32][other u8][checksum u32]` |
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use super::{
     BATCH_EVENT, CANONICAL_HEAD, DEPARTURE_EVENT, DESYNC_EVENT, DESYNC_TAIL, FRAME_END_EVENT,

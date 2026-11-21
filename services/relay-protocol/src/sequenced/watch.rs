@@ -6,7 +6,7 @@
 //! and its traffic spends budgets of its own, none of the players'.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::panic))]
 
 use std::collections::VecDeque;
 

@@ -5,11 +5,14 @@
 //! fractional hexadecimal digits of pi, in order: `P[0]` is `0x243F6A88`.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
 )]
 
 /// Expanded key: the P-array and S-boxes after the key schedule.

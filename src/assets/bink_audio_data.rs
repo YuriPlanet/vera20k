@@ -1,10 +1,13 @@
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable,
-    clippy::indexing_slicing
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
 )]
 // Constants ported from FFmpeg's libavcodec/binkaudio.c and libavcodec/wma_freqs.c.
 // Copyright (c) 2007-2011 Peter Ross (pross@xvid.org)

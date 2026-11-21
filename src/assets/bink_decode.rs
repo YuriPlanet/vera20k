@@ -1,5 +1,8 @@
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 // Ported from FFmpeg's libavcodec/bink.c and libavcodec/binkdsp.c.
 // Copyright (c) 2009 Konstantin Shishkov
 // Copyright (c) 2011 Peter Ross <pross@xvid.org>

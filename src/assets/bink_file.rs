@@ -1,10 +1,13 @@
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable,
-    clippy::indexing_slicing
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
 )]
 // Ported from FFmpeg's libavformat/bink.c.
 // Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)

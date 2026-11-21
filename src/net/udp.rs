@@ -11,7 +11,10 @@
 //! filtering, spare sockets and platform socket-buffer tuning are not ported.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use std::collections::VecDeque;
 use std::io;

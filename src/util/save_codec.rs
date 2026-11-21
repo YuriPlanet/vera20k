@@ -19,11 +19,14 @@
 //! [`layout`] describes what a type reads, so saves can name their layout.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
 )]
 
 use std::fmt;

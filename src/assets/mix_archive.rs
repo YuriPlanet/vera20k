@@ -40,11 +40,14 @@
 //! - Uses mix_crypto for decryption and mix_hash for filename lookup.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
 )]
 
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]

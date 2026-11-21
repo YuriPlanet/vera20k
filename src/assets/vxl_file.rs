@@ -19,12 +19,15 @@
 //! - Part of assets/ — no dependencies on game modules.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unreachable,
-    clippy::indexing_slicing
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
 )]
 
 use crate::assets::error::AssetError;
@@ -346,9 +349,12 @@ fn parse_limb(
 
 /// A minimal valid VXL for tests, client tests included: one limb named
 /// `body`, a 2×2×2 grid, a few voxels.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "a test fixture writing into the buffer it just built"
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::indexing_slicing,
+        reason = "a test fixture writing into the buffer it just built"
+    )
 )]
 #[cfg(any(test, feature = "test-support"))]
 pub fn minimal_test_vxl() -> Vec<u8> {

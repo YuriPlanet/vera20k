@@ -5,11 +5,14 @@
 //! work a stable source of truth.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::unreachable,
-    clippy::indexing_slicing
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
 )]
 
 use std::collections::HashMap;

@@ -4,7 +4,7 @@
 //! parser. Frontend discovery and tools use the same resolution path.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::panic))]
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};

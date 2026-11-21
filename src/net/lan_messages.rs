@@ -8,7 +8,10 @@
 //! the app; the actual source address is global-envelope metadata, not payload.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
 
 use crate::sim::multiplayer_checksum::RetailChecksumAccumulator;
 use crate::util::native_string::{narrow_utf16_c_string, widen_bytes};

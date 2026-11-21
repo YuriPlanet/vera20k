@@ -5,7 +5,10 @@
 //! resolved terrain from final land type and theater tile identity.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 
 use crate::map::tube_facts::TubeFact;
 use crate::rules::ini_parser::IniFile;

@@ -5,7 +5,10 @@
 //! runtime code can stop guessing at the original payload shape.
 
 // Outside data reaches this module: it refuses bad input, never panics.
-#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 
 use std::collections::{BTreeSet, HashMap};
 
