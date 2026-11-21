@@ -878,6 +878,11 @@ pub struct FogState {
     /// ([`Self::take_admitted_viewers`]). Never saved or hashed.
     #[serde(skip)]
     admitted_viewers: Vec<InternedId>,
+    /// A released sight footprint's cell buffer, kept for the next admission
+    /// to fill ([`Self::take_footprint`]), so a cell arrival's release and
+    /// re-admission allocate no footprint. Never saved or hashed.
+    #[serde(skip)]
+    spare_footprint: Vec<(u16, u16)>,
 }
 
 impl FogState {
@@ -903,6 +908,21 @@ impl FogState {
     pub(crate) fn restore_admitted_viewers(&mut self, mut viewers: Vec<InternedId>) {
         viewers.clear();
         self.admitted_viewers = viewers;
+    }
+
+    /// The spare footprint buffer, empty, for one [`sight_admission`]; a
+    /// nested admission finds it taken and starts its own.
+    pub(crate) fn take_footprint(&mut self) -> Vec<(u16, u16)> {
+        std::mem::take(&mut self.spare_footprint)
+    }
+
+    /// Keep a released admission's cell buffer for the next admission, when
+    /// it holds more room than the one already kept.
+    pub(crate) fn recycle_footprint(&mut self, mut cells: Vec<(u16, u16)>) {
+        if cells.capacity() > self.spare_footprint.capacity() {
+            cells.clear();
+            self.spare_footprint = cells;
+        }
     }
 
     /// What drawing reads of the fog, for the presentation copy of the world
@@ -2225,7 +2245,38 @@ pub struct VisionConfig {
     ally_reveal: bool,
     /// The houses whose type is `MultiplayPassive=` (HouseType `+0x1A6`):
     /// no reveal of theirs passes its gates ([`holds_sight`]).
-    passive_owners: Vec<InternedId>,
+    passive_owners: PassiveOwners,
+}
+
+/// The `MultiplayPassive=` houses, in house order. A config is read for every
+/// cell arrival, so the first [`Self::INLINE`] are held inline; only a map
+/// or mod with more passive houses than that puts the rest on the heap.
+#[derive(Default, PartialEq)]
+struct PassiveOwners {
+    inline: [Option<InternedId>; Self::INLINE],
+    more: Vec<InternedId>,
+}
+
+impl PassiveOwners {
+    /// VERA's own bound: room for the retail Neutral and Special houses and
+    /// a few a map adds.
+    const INLINE: usize = 8;
+
+    fn contains(&self, owner: InternedId) -> bool {
+        self.inline.contains(&Some(owner)) || self.more.contains(&owner)
+    }
+}
+
+impl FromIterator<InternedId> for PassiveOwners {
+    fn from_iter<I: IntoIterator<Item = InternedId>>(owners: I) -> Self {
+        let mut held = Self::default();
+        let mut owners = owners.into_iter();
+        for (slot, owner) in held.inline.iter_mut().zip(&mut owners) {
+            *slot = Some(owner);
+        }
+        held.more.extend(owners);
+        held
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -2238,7 +2289,7 @@ impl Default for VisionConfig {
             reveal_by_height: true,
             map_size: None,
             ally_reveal: true,
-            passive_owners: Vec::new(),
+            passive_owners: PassiveOwners::default(),
         }
     }
 }
@@ -2250,7 +2301,7 @@ impl VisionConfig {
         rules: &crate::rules::ruleset::RuleSet,
         map_size: Option<(i32, i32)>,
         require_playfield_membership: bool,
-        passive_owners: Vec<InternedId>,
+        passive_owners: impl IntoIterator<Item = InternedId>,
     ) -> Self {
         Self {
             require_playfield_membership,
@@ -2259,7 +2310,7 @@ impl VisionConfig {
             reveal_by_height: rules.general.reveal_by_height,
             map_size,
             ally_reveal: rules.general.ally_reveal,
-            passive_owners,
+            passive_owners: passive_owners.into_iter().collect(),
         }
     }
 
@@ -2267,7 +2318,7 @@ impl VisionConfig {
     /// both reveal functions (`0x0070AF66..0x0070AF77`,
     /// `0x0070B1DF..0x0070B1F0`).
     pub(crate) fn passive_owner(&self, owner: InternedId) -> bool {
-        self.passive_owners.contains(&owner)
+        self.passive_owners.contains(owner)
     }
 
     /// Whether `entity`'s reveal under this configuration applies the
@@ -2466,18 +2517,20 @@ pub(crate) fn entity_sight_admission(
         sight_ability,
         radius_override,
     );
-    sight_admission(fog, geometry, config, height_grid, terrain)
+    // A `RevealToAll=` building's reveal, once as it opens: its own buffer.
+    sight_admission(fog, geometry, config, height_grid, terrain, Vec::new())
 }
 
 /// The sight admission of a source with `geometry`: its footprint under
-/// `config` and `height_grid` ([`collect_reveal_cells`]); none on an
-/// unallocated map.
+/// `config` and `height_grid` ([`collect_reveal_cells`]), written into
+/// `cells` (emptied first); none on an unallocated map.
 pub(crate) fn sight_admission(
     fog: &FogState,
     geometry: SightGeometry,
     config: &VisionConfig,
     height_grid: Option<CellLevels<'_>>,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    mut cells: Vec<(u16, u16)>,
 ) -> Option<SightAdmission> {
     let width = fog.width;
     let height = fog.height;
@@ -2485,7 +2538,9 @@ pub(crate) fn sight_admission(
         return None;
     }
     let (rx, ry, height_leptons) = geometry.origin;
-    let cells = collect_reveal_cells(
+    cells.clear();
+    extend_reveal_cells(
+        &mut cells,
         rx,
         ry,
         geometry.radius.clamp(0, i32::from(MAX_SIGHT_RANGE)) as u16,
@@ -2500,24 +2555,20 @@ pub(crate) fn sight_admission(
     // Dummy) through reveal_map_cell. Missing native slots must not fabricate
     // source counts in unrelated rectangular storage; aliases use the actual
     // Cell's coordinates. An isolated lookup preserves the live Dummy here.
-    let cells = if let Some(terrain) = terrain {
+    if let Some(terrain) = terrain {
         let query = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
-        cells
-            .into_iter()
-            .filter_map(|(x, y)| {
-                let identity = query.lookup((x as i16, y as i16));
-                match identity {
-                    crate::map::cell_index::NativeCellIdentity::Real(_) => {
-                        let (x, y) = query.coord(identity);
-                        Some((x as u16, y as u16))
-                    }
-                    crate::map::cell_index::NativeCellIdentity::Dummy => None,
+        cells.retain_mut(|cell| {
+            let identity = query.lookup((cell.0 as i16, cell.1 as i16));
+            match identity {
+                crate::map::cell_index::NativeCellIdentity::Real(_) => {
+                    let (x, y) = query.coord(identity);
+                    *cell = (x as u16, y as u16);
+                    true
                 }
-            })
-            .collect()
-    } else {
-        cells
-    };
+                crate::map::cell_index::NativeCellIdentity::Dummy => false,
+            }
+        });
+    }
     Some(SightAdmission {
         latched: true,
         owner: geometry.owner,

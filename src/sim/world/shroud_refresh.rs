@@ -2101,12 +2101,14 @@ impl Simulation {
                     trace.footprints += 1;
                 }
             });
+            let cells = self.fog.take_footprint();
             vision::sight_admission(
                 &self.fog,
                 geometry,
                 config,
                 heights.and_then(|heights| heights.cell_levels(self.resolved_terrain.as_ref())),
                 terrain,
+                cells,
             )
         };
         if let Some(admission) = admission
@@ -2120,8 +2122,10 @@ impl Simulation {
             // own footprint; the last takes this one.
             let fog = &mut self.fog;
             let mut register = |viewer, footprint| {
-                if fog.sight_is_latched(id, viewer) {
-                    fog.abandon_sight_admission(id, viewer);
+                if fog.sight_is_latched(id, viewer)
+                    && let Some(stale) = fog.abandon_sight_admission(id, viewer)
+                {
+                    fog.recycle_footprint(stale.cells);
                 }
                 fog.retain_sight_admission(id, viewer, footprint, false);
             };
@@ -2222,7 +2226,9 @@ impl Simulation {
                 self.fog.abandon_sight_admission(id, viewer);
                 continue;
             }
-            let _ = self.fog.take_sight_admission(id, viewer, false);
+            if let Some(released) = self.fog.take_sight_admission(id, viewer, false) {
+                self.fog.recycle_footprint(released.cells);
+            }
             self.walk_source_sight_at(
                 viewer,
                 source.origin,
@@ -2692,8 +2698,7 @@ impl Simulation {
             .houses
             .iter()
             .filter(|(_, house)| house.multiplay_passive())
-            .map(|(&owner, _)| owner)
-            .collect();
+            .map(|(&owner, _)| owner);
         vision::VisionConfig::new(
             rules,
             self.map_size_diamond(),
