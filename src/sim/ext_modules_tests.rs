@@ -356,3 +356,181 @@ fn a_module_finds_a_houses_objects_and_reads_them() {
     assert_eq!(i64_at(928), i64::from(entity.health.current()));
     assert!(scene.sim().trigger_runtime.local_variable_is_set(6));
 }
+
+/// `ActionParams` with `id`, `arg`, `value` and `house` set, as WAT stores
+/// at `at` (appendix "Fixed layouts").
+fn params_wat(at: u32, id: i32, arg: i32, value: i64, house: i64) -> String {
+    format!(
+        "(i32.store (i32.const {at}) (i32.const {id})) (i32.store (i32.const {}) (i32.const {arg})) \
+         (i64.store (i32.const {}) (i64.const {value})) (i64.store (i32.const {}) (i64.const {house}))",
+        at + 4,
+        at + 16,
+        at + 40
+    )
+}
+
+/// One module call kills an object, damages another, creates an infantryman
+/// on a free cell and runs stock action `SetGlobal` through the map trigger
+/// executor; every effect is the owners' own.
+#[test]
+fn atomic_and_stock_actions_change_the_game_through_their_owners() {
+    use crate::map::entities::EntityCategory;
+    let Some(mut scene) = scenario() else { return };
+    let (victim, hurt, health, owner, free, warhead, e1) = {
+        let sim = scene.sim();
+        let rules = &scene.runtime.resources.rules;
+        let mut ground = sim.entities().iter_sorted().filter(|(_, e)| {
+            matches!(
+                e.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            ) && e.health.current() > 20
+                && !e.lifecycle.in_limbo()
+        });
+        let (victim, _) = ground.next().expect("a ground object");
+        let (hurt, hurt_entity) = ground.next().expect("a second ground object");
+        let health = hurt_entity.health.current();
+        let owner = sim
+            .houses
+            .index_of(hurt_entity.owner())
+            .expect("owner index");
+        let (hx, hy) = (hurt_entity.position.rx(), hurt_entity.position.ry());
+        // Cells near the damaged object with no object or tree; the module
+        // tries them in turn, since the land may refuse an infantryman.
+        let free: Vec<(u16, u16)> = (hx.saturating_sub(3)..=hx + 3)
+            .flat_map(|x| (hy.saturating_sub(3)..=hy + 3).map(move |y| (x, y)))
+            .filter(|&(x, y)| {
+                !sim.terrain_objects.cell_index().contains_key(&(x, y))
+                    && sim
+                        .entities()
+                        .iter_sorted()
+                        .all(|(_, e)| (e.position.rx(), e.position.ry()) != (x, y))
+            })
+            .take(32)
+            .collect();
+        assert!(!free.is_empty(), "a free cell");
+        let warhead = rules.bridge_warheads.c4_name.clone();
+        let e1 = rules.type_handle("E1").expect("E1").0;
+        (victim, hurt, health, owner, free, warhead, e1)
+    };
+    let house = house_ref(owner);
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "lookup" (func $lookup (param i32 i32 i32 i32) (result i32)))
+  (import "vera:sim@1.0" "action" (func $action (param i32 i64 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 0) "{warhead}")
+  (data (i32.const 64) "SetGlobal")
+  (func (export "on_scenario_start") (local $i i32)
+    {store_cells}
+    (drop (call $lookup (i32.const 2) (i32.const 0) (i32.const {wlen}) (i32.const 1000)))
+    (drop (call $lookup (i32.const 21) (i32.const 64) (i32.const 9) (i32.const 1004)))
+    {damage}
+    (i32.store (i32.const 256) (i32.load (i32.const 1000)))
+    {create}
+    {global}
+    (i32.store (i32.const 1100) (call $action (i32.const 1005) (i64.const {victim}) (i32.const 128) (i32.const 72) (i32.const 2000)))
+    (i32.store (i32.const 1104) (call $action (i32.const 1006) (i64.const {hurt}) (i32.const 256) (i32.const 72) (i32.const 2008)))
+    ;; CreateObject on each candidate cell until one admits it.
+    (block $made (loop $next
+      (i32.store (i32.const 1108) (call $action (i32.const 1008)
+        (i64.load (i32.add (i32.const 4096) (i32.mul (local.get $i) (i32.const 8))))
+        (i32.const 384) (i32.const 72) (i32.const 2016)))
+      (br_if $made (i32.eqz (i32.load (i32.const 1108))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br_if $next (i32.lt_u (local.get $i) (i32.const {count})))))
+    (i32.store (i32.const 1112) (call $action (i32.load (i32.const 1004)) (i64.const 0) (i32.const 512) (i32.const 72) (i32.const 2024)))))"#,
+        wlen = warhead.len(),
+        count = free.len(),
+        store_cells = free
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| format!(
+                "(i64.store (i32.const {}) (i64.const {}))",
+                4096 + 8 * i,
+                super::cell_ref(x, y)
+            ))
+            .collect::<Vec<_>>()
+            .join(" "),
+        damage = params_wat(256, 0, 0, 10, 0),
+        create = params_wat(384, e1 as i32, 255, 0, house),
+        global = params_wat(512, 0, 0, 7, 0),
+    ))
+    .expect("test module parses");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &module)
+        .expect("module installs");
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    let memory = scene.sim().ext_modules.slots[0].module.memory();
+    let i32_at = |at: usize| i32::from_le_bytes(memory[at..at + 4].try_into().expect("4 bytes"));
+    let created = i64::from_le_bytes(memory[2016..2024].try_into().expect("8 bytes"));
+    assert_eq!(i32_at(1004), 28, "lookup(ActionKind, SetGlobal)");
+    assert_eq!(
+        [i32_at(1100), i32_at(1104), i32_at(1108), i32_at(1112)],
+        [0; 4],
+        "every action is Ok"
+    );
+    let sim = scene.sim();
+    assert!(
+        sim.entities()
+            .get(victim)
+            .is_none_or(|e| e.health.current() == 0),
+        "Kill takes all health"
+    );
+    let damaged = sim.entities().get(hurt).expect("damaged object stays");
+    assert!(damaged.health.current() < health && damaged.health.current() > 0);
+    let infantry = sim
+        .entities()
+        .get(created as u64)
+        .expect("created object is live");
+    assert_eq!(sim.resolve(infantry.type_ref()), "E1");
+    assert_eq!(sim.houses.index_of(infantry.owner()), Some(owner));
+    assert!(sim.trigger_runtime.global_variable_is_set(7));
+}
+
+/// A direct call with house 0 is an invalid argument: the module stops.
+#[test]
+fn an_action_with_an_invalid_parameter_disables_the_module() {
+    let Some(mut scene) = scenario() else { return };
+    let module = wat::parse_str(format!(
+        r#"(module
+  (import "vera:sim@1.0" "action" (func $action (param i32 i64 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (func (export "on_scenario_start")
+    (drop (call $action (i32.const {ACTION_ADD_MONEY}) (i64.const 0) (i32.const 128) (i32.const 72) (i32.const 256)))))"#
+    ))
+    .expect("test module parses");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Map, &module)
+        .expect("module installs");
+    scene.tick();
+    let status = scene.sim().ext_modules().status();
+    let reason = status[0].1.as_deref().expect("the module stopped");
+    assert!(reason.contains("house 0"), "{reason}");
+}
+
+/// Runs `sdk/examples/actions-demo` when `VERA20K_TEST_ACTIONS_WASM` names
+/// its `rules.wasm`: SDK actions reach the owners.
+#[test]
+fn a_rust_built_actions_module_runs() {
+    let Some(path) = std::env::var_os("VERA20K_TEST_ACTIONS_WASM") else {
+        return;
+    };
+    let Some(mut scene) = scenario() else { return };
+    let bytes = std::fs::read(&path).expect("module file reads");
+    scene
+        .runtime
+        .simulation
+        .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Mod, &bytes)
+        .expect("module installs");
+    scene.tick();
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+    assert!(scene.sim().trigger_runtime.global_variable_is_set(3));
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    assert!(log.iter().any(|l| l == "actions-demo: damage"), "{log:?}");
+    assert!(!log.iter().any(|l| l == "actions-demo: failed"), "{log:?}");
+}

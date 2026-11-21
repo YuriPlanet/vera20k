@@ -13,8 +13,13 @@
 //! the RFC's `(value, status)` signatures. `frame` cannot fail and returns its
 //! value directly. See [`IMPORTS`].
 
+mod action_kinds;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 mod native;
+
+pub use action_kinds::{
+    ATOMIC_ACTIONS, FIRST_ATOMIC_ACTION, STOCK_ACTIONS, action_kind_id, action_kind_name,
+};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use native::SimModule;
@@ -66,8 +71,12 @@ pub const SCAN_COST: u64 = 2;
 /// Name kinds (appendix 8.1) and their count; `lookup` and `name_of` take
 /// kinds below [`NAME_KINDS`], anything else is invalid.
 pub const NAME_TECHNO_TYPE: i32 = 0;
+pub const NAME_WARHEAD: i32 = 2;
 pub const NAME_COUNTRY: i32 = 11;
+pub const NAME_TEAM_TYPE: i32 = 12;
 pub const NAME_PROPERTY: i32 = 19;
+/// Answered by the sandbox from [`STOCK_ACTIONS`] and [`ATOMIC_ACTIONS`].
+pub const NAME_ACTION_KIND: i32 = 21;
 pub const NAME_KINDS: i32 = 23;
 
 /// `has_kind` tables (appendix 8.3 `Table`).
@@ -386,13 +395,18 @@ pub struct ActionParams {
     pub cell: i64,
     pub house: i64,
     pub other: i64,
+    /// `text` and `extra`: pointer and length into module memory. The
+    /// sandbox reads `text` for `action`; `extra` is not used yet.
+    pub text: i32,
+    pub text_len: i32,
+    pub extra: i32,
+    pub extra_len: i32,
 }
 
 impl ActionParams {
     pub const SIZE: usize = 72;
 
-    /// Reads the fixed layout. `text` and `extra` are not used by any action
-    /// this engine implements yet.
+    /// Reads the fixed layout.
     pub fn parse(bytes: &[u8]) -> Result<Self, Invalid> {
         if bytes.len() != Self::SIZE {
             return Err(Invalid(format!(
@@ -417,6 +431,10 @@ impl ActionParams {
             cell: i64_at(32),
             house: i64_at(40),
             other: i64_at(48),
+            text: i32_at(56),
+            text_len: i32_at(60),
+            extra: i32_at(64),
+            extra_len: i32_at(68),
         })
     }
 }
@@ -447,12 +465,14 @@ pub trait SimHost {
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid>;
     fn var_get(&mut self, scope: i64, var: i32) -> Result<(i64, Status), Invalid>;
     fn var_set(&mut self, scope: i64, var: i32, value: i64) -> Result<Status, Invalid>;
-    /// Runs action `kind`; returns the created object or 0, and the status.
+    /// Runs action `kind` with `params.text` read as `text`; returns the
+    /// created object or 0, and the status.
     fn action(
         &mut self,
         kind: i32,
         target: i64,
         params: &ActionParams,
+        text: &str,
     ) -> Result<(i64, Status), Invalid>;
 }
 

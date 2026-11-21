@@ -19,8 +19,8 @@ pub mod sys;
 
 pub mod prelude {
     pub use crate::{
-        Action, Category, Cell, Find, House, NameKind, Op, Prop, Ref, Status, Techno, TypeRef,
-        Var, Waypoint, frame, log, random,
+        Action, Category, Cell, Find, House, NameKind, Op, Outcome, Prop, Ref, Status, Techno,
+        TypeRef, Var, Waypoint, frame, log, lookup, random,
     };
 }
 
@@ -233,7 +233,13 @@ pub fn lookup(kind: NameKind, name: &str) -> Result<i32> {
 pub fn name_of(kind: NameKind, id: i32, buf: &mut [u8]) -> Result<&str> {
     let mut len = 0;
     check(unsafe {
-        sys::name_of(kind as i32, id, buf.as_mut_ptr(), buf.len() as i32, &mut len)
+        sys::name_of(
+            kind as i32,
+            id,
+            buf.as_mut_ptr(),
+            buf.len() as i32,
+            &mut len,
+        )
     })?;
     let bytes = buf.get(..len as usize).ok_or(Status::Refused)?;
     core::str::from_utf8(bytes).map_err(|_| Status::Unsupported)
@@ -398,8 +404,8 @@ impl Find {
     /// wrote and where the next page starts (0 on the last page).
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
         self.0.query.after = after;
-        let len = size_of::<sys::Query>()
-            + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
+        let len =
+            size_of::<sys::Query>() + size_of::<sys::Clause>() * self.0.query.clause_count as usize;
         let mut result = sys::FindResult::default();
         let status = unsafe {
             sys::find(
@@ -426,20 +432,63 @@ impl Find {
 
 // ----------------------------------------------------------------- Actions
 
-/// Atomic actions (appendix 5.3), numbered from 1000 in table order.
-/// Provisional numbers (RFC open question 5).
+/// `EndFor` results (appendix 8.3, enum 17).
+#[repr(i32)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Outcome {
+    Win = 0,
+    Lose = 1,
+}
+
+/// One function per action kind the engine runs (appendix section 5).
+/// Atomic actions are numbered from 1000 in table order, provisionally
+/// (RFC open question 5); stock actions keep their stock numbers. A stock
+/// action that addresses a waypoint takes a [`Waypoint`]; one with a house
+/// takes a [`House`]. Type arguments are [`TypeRef`]s from [`lookup`]
+/// (superweapons, animations and weapons use their rules array position as
+/// the ID until those name kinds resolve names).
 pub struct Action;
 
-impl Action {
-    pub const ADD_MONEY: i32 = 1015;
+/// Parameters with the given fields set.
+macro_rules! params {
+    ($($field:ident: $value:expr),* $(,)?) => {
+        sys::ActionParams { $($field: $value,)* ..Default::default() }
+    };
+}
 
-    /// Runs action `kind` on `target`; returns the created object or 0.
-    pub fn run(kind: i32, target: impl Ref, params: &sys::ActionParams) -> Result<i64> {
+/// Stock actions of one shape: `$name($args) -> kind, target, params`.
+macro_rules! stock {
+    ($($(#[$doc:meta])* $name:ident($($arg:ident: $ty:ty),*) = $kind:expr, $target:expr, $params:expr;)*) => {
+        $(
+            $(#[$doc])*
+            pub fn $name($($arg: $ty),*) -> Result<()> {
+                Self::run($kind, $target, &$params).map(drop)
+            }
+        )*
+    };
+}
+
+impl Action {
+    pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
+    pub const REMOVE: i32 = 1004;
+    pub const KILL: i32 = 1005;
+    pub const DAMAGE: i32 = 1006;
+    pub const CREATE_OBJECT: i32 = 1008;
+    pub const CLEAR_TARGET: i32 = 1011;
+    pub const ADD_MONEY: i32 = 1015;
+    pub const SET_OWNER: i32 = 1017;
+    pub const DETONATE_WARHEAD: i32 = 1026;
+    pub const END_FOR: i32 = 1030;
+    pub const LOG: i32 = 1033;
+
+    /// Runs action `kind` on `target` (a reference, 0 for none); returns
+    /// the created object or 0.
+    pub fn run(kind: i32, target: i64, params: &sys::ActionParams) -> Result<i64> {
         let mut out = 0;
         check(unsafe {
             sys::action(
                 kind,
-                target.raw(),
+                target,
                 params,
                 size_of::<sys::ActionParams>() as i32,
                 &mut out,
@@ -448,13 +497,281 @@ impl Action {
         Ok(out)
     }
 
+    /// Runs action `kind` with `text` as its string argument.
+    pub fn run_text(kind: i32, target: i64, text: &str) -> Result<i64> {
+        let params = params!(text: text.as_ptr() as i32, text_len: text.len() as i32);
+        Self::run(kind, target, &params)
+    }
+
+    // Atomic actions (5.3).
+
+    /// Launches `house`'s superweapon `kind` at `at` (a cell, waypoint or
+    /// object).
+    pub fn launch_super_weapon(house: House, kind: TypeRef, at: impl Ref) -> Result<()> {
+        let params = params!(id: kind.id(), cell: at.raw());
+        Self::run(Self::LAUNCH_SUPER_WEAPON, house.0, &params).map(drop)
+    }
+
+    /// Removes `target` without death, survivors or kill credit.
+    pub fn remove(target: Techno) -> Result<()> {
+        Self::run(Self::REMOVE, target.0, &params!()).map(drop)
+    }
+
+    /// Kills `target` through the damage path, crediting `source`
+    /// (`Techno(NO_HANDLE)` for none).
+    pub fn kill(target: Techno, source: Techno) -> Result<()> {
+        Self::run(Self::KILL, target.0, &params!(other: source.0)).map(drop)
+    }
+
+    /// Deals `amount` damage of `warhead` to `target` under armor rules.
+    pub fn damage(target: Techno, amount: i32, warhead: TypeRef) -> Result<()> {
+        Self::damage_from(target, amount, warhead, Techno(NO_HANDLE))
+    }
+
+    /// As [`Action::damage`], crediting `source` with the kill and experience.
+    pub fn damage_from(
+        target: Techno,
+        amount: i32,
+        warhead: TypeRef,
+        source: Techno,
+    ) -> Result<()> {
+        let params = params!(id: warhead.id(), value: i64::from(amount), other: source.0);
+        Self::run(Self::DAMAGE, target.0, &params).map(drop)
+    }
+
+    /// Creates a `kind` owned by `house` at `at` (a cell or waypoint) and
+    /// returns it. An occupied cell is `Err(Refused)`.
+    pub fn create_object(at: impl Ref, kind: TypeRef, house: House) -> Result<Techno> {
+        let params = params!(id: kind.id(), arg: 255, house: house.0);
+        Self::run(Self::CREATE_OBJECT, at.raw(), &params).map(Techno)
+    }
+
+    /// Drops `target`'s current target.
+    pub fn clear_target(target: Techno) -> Result<()> {
+        Self::run(Self::CLEAR_TARGET, target.0, &params!()).map(drop)
+    }
+
     /// Gives `house` `amount` credits (negative takes them).
     pub fn add_money(house: House, amount: i32) -> Result<()> {
-        let params = sys::ActionParams {
-            value: i64::from(amount),
-            ..Default::default()
-        };
-        Self::run(Self::ADD_MONEY, house, &params).map(drop)
+        Self::run(Self::ADD_MONEY, house.0, &params!(value: i64::from(amount))).map(drop)
+    }
+
+    /// Gives `target` to `house`.
+    pub fn set_owner(target: Techno, house: House) -> Result<()> {
+        Self::run(Self::SET_OWNER, target.0, &params!(house: house.0)).map(drop)
+    }
+
+    /// Applies `warhead`'s area damage at `at`.
+    pub fn detonate_warhead(at: impl Ref, warhead: TypeRef, damage: i32) -> Result<()> {
+        let params = params!(id: warhead.id(), value: i64::from(damage));
+        Self::run(Self::DETONATE_WARHEAD, at.raw(), &params).map(drop)
+    }
+
+    /// Makes `house` win or lose.
+    pub fn end_for(house: House, outcome: Outcome) -> Result<()> {
+        Self::run(Self::END_FOR, house.0, &params!(arg: outcome as i32)).map(drop)
+    }
+
+    /// Writes `line` to the in-game log, as an action.
+    pub fn log(line: &str) -> Result<()> {
+        Self::run_text(Self::LOG, 0, line).map(drop)
+    }
+
+    // Stock actions (5.2) taking a string.
+
+    /// Stock 1: the player wins if their country is `country`, else loses.
+    pub fn declare_winner(country: &str) -> Result<()> {
+        Self::run_text(1, 0, country).map(drop)
+    }
+    /// Stock 2: the player loses if their country is `country`, else wins.
+    pub fn declare_loser(country: &str) -> Result<()> {
+        Self::run_text(2, 0, country).map(drop)
+    }
+    /// Stock 11: shows a CSF entry.
+    pub fn show_text(label: &str) -> Result<()> {
+        Self::run_text(11, 0, label).map(drop)
+    }
+    /// Stock 12: removes the map trigger `id`.
+    pub fn destroy_trigger(id: &str) -> Result<()> {
+        Self::run_text(12, 0, id).map(drop)
+    }
+    /// Stock 20: plays a theme.
+    pub fn play_theme(theme: &str) -> Result<()> {
+        Self::run_text(20, 0, theme).map(drop)
+    }
+    /// Stock 21: plays an EVA line.
+    pub fn play_speech(eva: &str) -> Result<()> {
+        Self::run_text(21, 0, eva).map(drop)
+    }
+    /// Stock 22: fires the map trigger `id`.
+    pub fn force_trigger(id: &str) -> Result<()> {
+        Self::run_text(22, 0, id).map(drop)
+    }
+    /// Stock 53: enables the map trigger `id`.
+    pub fn enable_trigger(id: &str) -> Result<()> {
+        Self::run_text(53, 0, id).map(drop)
+    }
+    /// Stock 54: disables the map trigger `id`.
+    pub fn disable_trigger(id: &str) -> Result<()> {
+        Self::run_text(54, 0, id).map(drop)
+    }
+    /// Stock 70: destroys the map tag `id`.
+    pub fn destroy_tag(id: &str) -> Result<()> {
+        Self::run_text(70, 0, id).map(drop)
+    }
+    /// Stock 103: the mission timer's caption.
+    pub fn timer_text(label: &str) -> Result<()> {
+        Self::run_text(103, 0, label).map(drop)
+    }
+
+    stock! {
+        // No target.
+        /// Stock 16.
+        reveal_all() = 16, 0, params!();
+        /// Stock 23.
+        timer_start() = 23, 0, params!();
+        /// Stock 24.
+        timer_stop() = 24, 0, params!();
+        /// Stock 31.
+        grow_shroud() = 31, 0, params!();
+        /// Stock 45.
+        ion_storm_stop() = 45, 0, params!();
+        /// Stock 46.
+        lock_input() = 46, 0, params!();
+        /// Stock 47.
+        unlock_input() = 47, 0, params!();
+        /// Stock 67.
+        announce_win() = 67, 0, params!();
+        /// Stock 68.
+        announce_lose() = 68, 0, params!();
+        /// Stock 69.
+        end_scenario() = 69, 0, params!();
+        /// Stock 97.
+        toggle_train_cargo() = 97, 0, params!();
+        /// Stock 118.
+        clear_smudges() = 118, 0, params!();
+        /// Stock 145.
+        home_camera() = 145, 0, params!();
+        // A value.
+        /// Stock 10.
+        play_movie(movie: i32) = 10, 0, params!(value: i64::from(movie));
+        /// Stock 25.
+        timer_extend(seconds: i32) = 25, 0, params!(value: i64::from(seconds));
+        /// Stock 26.
+        timer_shorten(seconds: i32) = 26, 0, params!(value: i64::from(seconds));
+        /// Stock 27.
+        timer_set(seconds: i32) = 27, 0, params!(value: i64::from(seconds));
+        /// Stock 28: Red Alert 2 global `n` (0..49).
+        set_global(n: i32) = 28, 0, params!(value: i64::from(n));
+        /// Stock 29.
+        clear_global(n: i32) = 29, 0, params!(value: i64::from(n));
+        /// Stock 44.
+        ion_storm_start(duration: i32) = 44, 0, params!(value: i64::from(duration));
+        /// Stock 56: Red Alert 2 local `n` (0..99).
+        set_local(n: i32) = 56, 0, params!(value: i64::from(n));
+        /// Stock 57.
+        clear_local(n: i32) = 57, 0, params!(value: i64::from(n));
+        /// Stock 73.
+        set_ambient_light(value: i32) = 73, 0, params!(value: i64::from(value));
+        /// Stock 84.
+        wake_group(group: i32) = 84, 0, params!(value: i64::from(group));
+        /// Stock 100.
+        play_radar_movie(movie: i32) = 100, 0, params!(value: i64::from(movie));
+        /// Stock 110.
+        pause_game(duration: i32) = 110, 0, params!(value: i64::from(duration));
+        /// Stock 114.
+        set_sidebar_tab(tab: i32) = 114, 0, params!(value: i64::from(tab));
+        /// Stock 127.
+        chrono_screen_effect(duration: i32) = 127, 0, params!(value: i64::from(duration));
+        // TeamTypes (lookup(TeamType, name)).
+        /// Stock 4.
+        create_team(team: TypeRef) = 4, 0, params!(id: team.id());
+        /// Stock 5.
+        destroy_teams(team: TypeRef) = 5, 0, params!(id: team.id());
+        /// Stock 7: at the TeamType's own waypoint.
+        reinforce(team: TypeRef) = 7, 0, params!(id: team.id());
+        /// Stock 80.
+        reinforce_at(team: TypeRef, at: Waypoint) = 80, at.0, params!(id: team.id());
+        /// Stock 107.
+        reinforce_by_chrono(team: TypeRef, at: Waypoint) = 107, at.0, params!(id: team.id());
+        // A waypoint.
+        /// Stock 8.
+        drop_zone_flare(at: Waypoint) = 8, at.0, params!();
+        /// Stock 17.
+        reveal_around(at: Waypoint) = 17, at.0, params!();
+        /// Stock 18.
+        reveal_zone(at: Waypoint) = 18, at.0, params!();
+        /// Stock 90.
+        lightning_strike(at: Waypoint) = 90, at.0, params!();
+        /// Stock 94.
+        ion_cannon_strike(at: Waypoint) = 94, at.0, params!();
+        /// Stock 95.
+        nuke_strike(at: Waypoint) = 95, at.0, params!();
+        /// Stock 96.
+        chem_strike(at: Waypoint) = 96, at.0, params!();
+        /// Stock 101.
+        reshroud_at(at: Waypoint) = 101, at.0, params!();
+        /// Stock 109.
+        iron_curtain_at(at: Waypoint) = 109, at.0, params!();
+        /// Stock 112.
+        jump_camera(at: Waypoint) = 112, at.0, params!();
+        /// Stock 41: animation by rules array position.
+        play_anim_at(at: Waypoint, anim: i32) = 41, at.0, params!(id: anim);
+        /// Stock 42: weapon by rules array position.
+        detonate_weapon_at(at: Waypoint, weapon: i32) = 42, at.0, params!(id: weapon);
+        /// Stock 48.
+        center_camera(at: Waypoint, speed: i32) = 48, at.0, params!(value: i64::from(speed));
+        /// Stock 58.
+        meteor_shower(at: Waypoint, intensity: i32) = 58, at.0, params!(value: i64::from(intensity));
+        /// Stock 108: 20 picks a random crate.
+        create_crate(at: Waypoint, kind: i32) = 108, at.0, params!(value: i64::from(kind));
+        /// Stock 102: the storm belongs to `house`.
+        lightning_storm_strike(at: Waypoint, house: House) = 102, at.0, params!(house: house.0);
+        /// Stock 125.
+        create_building_at(at: Waypoint, kind: TypeRef, house: House) = 125, at.0, params!(id: kind.id(), house: house.0);
+        // Types.
+        /// Stock 106.
+        set_tech_level(kind: TypeRef, level: i32) = 106, 0, params!(id: kind.id(), value: i64::from(level));
+        /// Stock 115.
+        flash_cameo(kind: TypeRef, frames: i32) = 115, 0, params!(id: kind.id(), value: i64::from(frames));
+        // A house.
+        /// Stock 30.
+        auto_base_building(house: House, on: bool) = 30, house.0, params!(value: i64::from(on));
+        /// Stock 51.
+        reshroud(house: House) = 51, house.0, params!();
+        /// Stock 82.
+        wake_sleepers(house: House) = 82, house.0, params!();
+        /// Stock 83.
+        wake_harmless(house: House) = 83, house.0, params!();
+        /// Stock 139.
+        radar_blackout(house: House, frames: i32) = 139, house.0, params!(value: i64::from(frames));
+        /// Stock 33: superweapon by `[SuperWeaponTypes]` position.
+        one_time_super_weapon(house: House, kind: TypeRef) = 33, house.0, params!(id: kind.id());
+        /// Stock 34.
+        repeating_super_weapon(house: House, kind: TypeRef) = 34, house.0, params!(id: kind.id());
+        /// Stock 129.
+        super_weapon_set_charge(house: House, kind: TypeRef, percent: i32) = 129, house.0, params!(id: kind.id(), value: i64::from(percent));
+        /// Stock 134.
+        super_weapon_reset(house: House, kind: TypeRef) = 134, house.0, params!(id: kind.id());
+        /// Stock 128.
+        teleport_all(house: House, to: Waypoint) = 128, house.0, params!(cell: to.0);
+        /// Stock 137.
+        set_alternate_base(house: House, at: Waypoint) = 137, house.0, params!(cell: at.0);
+        /// Stock 138.
+        clear_alternate_base(house: House) = 138, house.0, params!();
+        /// Stock 131.
+        flash_buildings(house: House, kind: TypeRef, frames: i32) = 131, house.0, params!(id: kind.id(), value: i64::from(frames));
+        // An object.
+        /// Stock 14.
+        change_house(target: Techno, house: House) = 14, target.0, params!(house: house.0);
+        /// Stock 32.
+        destroy_object(target: Techno) = 32, target.0, params!();
+        /// Stock 60.
+        sell_building(target: Techno) = 60, target.0, params!();
+        /// Stock 61.
+        turn_off_building(target: Techno) = 61, target.0, params!();
+        /// Stock 62.
+        turn_on_building(target: Techno) = 62, target.0, params!();
     }
 }
 

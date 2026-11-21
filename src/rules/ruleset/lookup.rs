@@ -714,6 +714,17 @@ impl RuleSet {
         Self::lookup_ci(&self.warheads, id).copied()
     }
 
+    /// A warhead's registry ordinal, the Wasm module API's Warhead ID
+    /// (`sim::ext_modules`); stable for one rules set.
+    pub(crate) fn warhead_id(&self, id: &str) -> Option<u32> {
+        self.warhead_handle(id).map(|handle| handle.0)
+    }
+
+    /// The warhead with registry ordinal `id` ([`Self::warhead_id`]).
+    pub(crate) fn warhead_by_id(&self, id: u32) -> Option<&WarheadType> {
+        self.warhead_types.get(usize::try_from(id).ok()?)
+    }
+
     /// The warhead `handle` names in this set, which made it.
     pub(crate) fn warhead_by_handle(&self, handle: WarheadHandle) -> &WarheadType {
         &self.warhead_types[handle.0 as usize]

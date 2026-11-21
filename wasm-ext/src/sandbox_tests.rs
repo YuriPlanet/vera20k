@@ -72,6 +72,7 @@ impl SimHost for Recorder {
         kind: i32,
         target: i64,
         params: &ActionParams,
+        _text: &str,
     ) -> Result<(i64, Status), Invalid> {
         self.actions.push((kind, target, *params));
         Ok((0, Status::Ok))

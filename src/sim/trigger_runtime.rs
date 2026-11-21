@@ -321,6 +321,9 @@ mod events;
 mod lifecycle;
 #[cfg(any(test, feature = "dev-overlays"))]
 mod trace;
+mod untriggered;
+
+pub(crate) use untriggered::{StockActionCall, StockReference, StockReferenceKind};
 
 #[cfg(test)]
 use definitions::event_classification;

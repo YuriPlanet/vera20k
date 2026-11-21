@@ -15,7 +15,9 @@
 //! - names of TechnoTypes, countries and properties (`lookup`, `name_of`);
 //! - reads of the object and house properties [`Host::get`] lists, and
 //!   `find` over objects and houses;
-//! - the atomic `AddMoney` action.
+//! - names of warheads, TeamTypes and action kinds;
+//! - the `action` import ([`actions`]): atomic actions and stock trigger
+//!   actions through their owners.
 //!
 //! Modules come from the selected mod's folder and the map's
 //! `[VeraWasmRulesPack]` ([`Simulation::install_scenario_ext_modules`]).
@@ -40,15 +42,20 @@ use std::hash::{Hash, Hasher};
 
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_COUNTRY, NAME_PROPERTY, NAME_TECHNO_TYPE, Query, SCOPE_HOUSES, SCOPE_OBJECTS, SimHost,
-    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_ACTION_KIND, NAME_COUNTRY, NAME_PROPERTY, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_WARHEAD,
+    Query, SCOPE_HOUSES, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND,
+    TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
+mod actions;
+pub use actions::{ActionContext, run_action};
+
 use crate::map::entities::EntityCategory;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::{CountryIdx, RuleSet};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::rng::SimRng;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// Operations per `on_frame` call (RFC 15.2 proposes about 2 ms on the
 /// slowest platform; open question 7).
@@ -62,7 +69,7 @@ const GLOBAL_VARS: std::ops::Range<i32> = 100..150;
 
 /// Atomic action `AddMoney`: atomic actions are numbered from 1000 in
 /// appendix 5.3 table order, where it is entry 15 (numbers are open question 5).
-pub const ACTION_ADD_MONEY: i32 = 1015;
+pub const ACTION_ADD_MONEY: i32 = actions::ADD_MONEY;
 
 /// Provisional house reference: kind 0 with bit 47 set over the house array
 /// index. Houses here have no creation serial; the RFC's shared counter is a
@@ -287,14 +294,16 @@ const fn category_value(category: EntityCategory) -> i64 {
 
 /// The host a module sees during one call: the simulation, whose module
 /// slots are set aside for the call, and the calling module's own state.
-struct Host<'a> {
+struct Host<'a, 'f> {
     sim: &'a mut Simulation,
     rules: &'a RuleSet,
+    overlay_registry: Option<&'a OverlayTypeRegistry>,
+    frame_effects: &'a mut FrameEffects<'f>,
     rng: &'a mut SimRng,
     source: ModuleSource,
 }
 
-impl SimHost for Host<'_> {
+impl SimHost for Host<'_, '_> {
     fn frame(&mut self) -> i32 {
         self.sim.session.binary_frame() as i32
     }
@@ -310,9 +319,17 @@ impl SimHost for Host<'_> {
 
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
         match table {
-            TABLE_ACTION => id == ACTION_ADD_MONEY,
+            TABLE_ACTION => actions::has_action(id, self.rules),
             TABLE_PROPERTY => property_name(id).is_some_and(|name| READABLE.contains(&name)),
-            TABLE_NAME_KIND => matches!(id, NAME_TECHNO_TYPE | NAME_COUNTRY | NAME_PROPERTY),
+            TABLE_NAME_KIND => matches!(
+                id,
+                NAME_TECHNO_TYPE
+                    | NAME_WARHEAD
+                    | NAME_COUNTRY
+                    | NAME_TEAM_TYPE
+                    | NAME_PROPERTY
+                    | NAME_ACTION_KIND
+            ),
             TABLE_SCOPE => matches!(id, SCOPE_OBJECTS | SCOPE_HOUSES),
             _ => false,
         }
@@ -322,6 +339,11 @@ impl SimHost for Host<'_> {
         let id = match kind {
             NAME_TECHNO_TYPE => self.rules.type_handle(name).map(|h| h.0 as i32),
             NAME_COUNTRY => self.rules.country_index(name).map(|c| i32::from(c.0)),
+            NAME_WARHEAD => self.rules.warhead_id(name).map(|id| id as i32),
+            NAME_TEAM_TYPE => self
+                .sim
+                .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
+                .map(|index| index as i32),
             _ => return Ok((-1, Status::Unsupported)),
         };
         Ok(id.map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
@@ -333,6 +355,13 @@ impl SimHost for Host<'_> {
             NAME_COUNTRY => u16::try_from(id)
                 .ok()
                 .and_then(|id| self.rules.country_name(CountryIdx(id))),
+            NAME_WARHEAD => u32::try_from(id)
+                .ok()
+                .and_then(|id| self.rules.warhead_by_id(id))
+                .map(|warhead| warhead.id.as_str()),
+            NAME_TEAM_TYPE => usize::try_from(id)
+                .ok()
+                .and_then(|id| self.sim.stock_team_type_name(id)),
             _ => return Ok((String::new(), Status::Unsupported)),
         };
         name.map(|name| (name.to_owned(), Status::Ok))
@@ -388,20 +417,16 @@ impl SimHost for Host<'_> {
         kind: i32,
         target: i64,
         params: &ActionParams,
+        text: &str,
     ) -> Result<(i64, Status), Invalid> {
-        match kind {
-            ACTION_ADD_MONEY => {
-                let Some(owner) = self.house(target)? else {
-                    return Ok((0, Status::Gone));
-                };
-                let amount = i32::try_from(params.value).map_err(|_| {
-                    Invalid(format!("AddMoney amount {} is out of range", params.value))
-                })?;
-                crate::sim::credit_income::add_credits(&mut self.sim.houses, owner, amount);
-                Ok((0, Status::Ok))
-            }
-            _ => Ok((0, Status::Unsupported)),
-        }
+        let context = ActionContext {
+            rules: self.rules,
+            overlay_registry: self.overlay_registry,
+            frame_effects: &mut *self.frame_effects,
+            text,
+            trigger_house: None,
+        };
+        run_action(self.sim, kind, target, params, context)
     }
 }
 
@@ -426,7 +451,7 @@ const READABLE: &[&str] = &[
     "IsHuman",
 ];
 
-impl Host<'_> {
+impl Host<'_, '_> {
     /// A house reference's house; `None` for a house that does not exist.
     fn house(&self, reference: i64) -> Result<Option<crate::sim::intern::InternedId>, Invalid> {
         if reference & HOUSE_REF_BIT == 0 || reference >> 48 != 0 {
@@ -718,7 +743,15 @@ impl Simulation {
                 last_frame_ops: 0,
             },
         );
-        match self.call_ext_module(rules, position, Export::Init, ONCE_BUDGET) {
+        let init = self.call_ext_module(
+            rules,
+            None,
+            &mut FrameEffects::default(),
+            position,
+            Export::Init,
+            ONCE_BUDGET,
+        );
+        match init {
             Ok(_) => Ok(()),
             Err(fault) => {
                 self.ext_modules.slots.remove(position);
@@ -777,21 +810,39 @@ impl Simulation {
 
     /// The module phase: each enabled module in order gets its
     /// `on_scenario_start` once, then `on_frame`.
-    pub(crate) fn run_ext_module_phase(&mut self, rules: &RuleSet) {
+    pub(crate) fn run_ext_module_phase(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
         for index in 0..self.ext_modules.slots.len() {
             if self.ext_modules.slots[index].disabled.is_some() {
                 continue;
             }
             if !self.ext_modules.slots[index].started {
                 self.ext_modules.slots[index].started = true;
-                if let Err(fault) =
-                    self.call_ext_module(rules, index, Export::ScenarioStart, ONCE_BUDGET)
-                {
+                if let Err(fault) = self.call_ext_module(
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    index,
+                    Export::ScenarioStart,
+                    ONCE_BUDGET,
+                ) {
                     self.disable_ext_module(index, Export::ScenarioStart, fault);
                     continue;
                 }
             }
-            match self.call_ext_module(rules, index, Export::Frame, FRAME_BUDGET) {
+            let frame = self.call_ext_module(
+                rules,
+                overlay_registry,
+                frame_effects,
+                index,
+                Export::Frame,
+                FRAME_BUDGET,
+            );
+            match frame {
                 Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
             }
@@ -803,6 +854,8 @@ impl Simulation {
     fn call_ext_module(
         &mut self,
         rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
         index: usize,
         export: Export,
         budget: u64,
@@ -812,6 +865,8 @@ impl Simulation {
         let mut host = Host {
             sim: self,
             rules,
+            overlay_registry,
+            frame_effects,
             rng: &mut slot.rng,
             source: slot.source,
         };

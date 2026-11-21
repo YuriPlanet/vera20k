@@ -18,8 +18,9 @@ use wasmtime::{
 
 use crate::{
     ActionParams, ENTRY_COST, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits, LoadError,
-    ModuleState, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST, SIM_IMPORT_MODULE,
-    SimHost, Status, property_id, property_name,
+    ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, PAGE_BYTES, Query, SCAN_COST,
+    SIM_IMPORT_MODULE, SimHost, Status, action_kind_id, action_kind_name, property_id,
+    property_name,
 };
 
 /// Load-time shape limits (RFC section 3, open question 7), so compiling a
@@ -524,6 +525,9 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                 Ok(name) if kind == NAME_PROPERTY => {
                     Ok(property_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
                 }
+                Ok(name) if kind == NAME_ACTION_KIND => {
+                    Ok(action_kind_id(name).map_or((-1, Status::NotFound), |id| (id, Status::Ok)))
+                }
                 Ok(name) => host.lookup(kind, name),
             };
             let (id, status) = result.map_err(|e| fail(&mut caller, e))?;
@@ -556,6 +560,15 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                 property_name(id)
                     .map(|name| (name.to_owned(), Status::Ok))
                     .ok_or_else(|| Invalid(format!("unknown property {id}")))
+            } else if kind == NAME_ACTION_KIND {
+                // A stock number without a name (0, 39, 49, 50) is NotFound.
+                action_kind_name(id)
+                    .map(|name| {
+                        name.map_or((String::new(), Status::NotFound), |n| {
+                            (n.to_owned(), Status::Ok)
+                        })
+                    })
+                    .ok_or_else(|| Invalid(format!("unknown action kind {id}")))
             } else {
                 host.name_of(kind, id)
             };
@@ -672,7 +685,16 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          -> wasmtime::Result<i32> {
             let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
             let params = ActionParams::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
-            let result = enter(&mut caller, 0)?.action(kind, target, &params);
+            let text = match params.text_len {
+                0 => Vec::new(),
+                len => {
+                    read_bytes(&mut caller, params.text, len).map_err(|e| fail(&mut caller, e))?
+                }
+            };
+            let text = String::from_utf8(text)
+                .map_err(|_| fail(&mut caller, Invalid("action text is not UTF-8".into())))?;
+            let result =
+                enter(&mut caller, text.len() as u64)?.action(kind, target, &params, &text);
             let (handle, status) = result.map_err(|e| fail(&mut caller, e))?;
             write_bytes(&mut caller, out, &handle.to_le_bytes())
                 .map_err(|e| fail(&mut caller, e))?;
