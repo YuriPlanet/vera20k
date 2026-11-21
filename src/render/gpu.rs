@@ -478,6 +478,14 @@ impl GpuContext {
         } else {
             required_limits
         };
+        // The GPU timer marks with a compute pass that writes a storage
+        // buffer, which the device above has none of; like WebGL2, the
+        // compatibility mode goes untimed.
+        let required_features = if gl_fallback {
+            wgpu::Features::empty()
+        } else {
+            super::gpu_timer::GpuTimer::features(&adapter)
+        };
         // The two calls below are the driver's, and an old one can hang in
         // either: an Intel HD 620's 2017 Vulkan driver never returned from
         // them, and its log ended at the limits line above. Each is named, so
@@ -486,7 +494,7 @@ impl GpuContext {
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
-                required_features: super::gpu_timer::GpuTimer::features(&adapter),
+                required_features,
                 required_limits,
                 ..Default::default()
             })
