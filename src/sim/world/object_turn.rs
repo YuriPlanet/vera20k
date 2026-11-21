@@ -28,7 +28,7 @@ fn tube_active(entity: &crate::sim::game_entity::GameEntity) -> bool {
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
         )
-        && entity.low_bridge_tube_state.is_some()
+        && entity.active_tube().is_some()
 }
 
 #[cfg(all(test, tests_sim_world_c_o))]
@@ -61,6 +61,9 @@ mod object_turn_lookup_tests;
 
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
+    /// Foots that executed TubeMovement instead of their locomotor. A mover
+    /// which just left already has an empty tube byte.
+    pub(super) tube_turns: std::collections::BTreeSet<u64>,
     pub destroyed_structure: bool,
     pub bridge_state_changed: bool,
     ownership_changed: bool,
@@ -80,6 +83,7 @@ pub(crate) struct GroundLocomotorOutcome {
 
 #[derive(Default)]
 pub(super) struct ObjectTurnOutcome {
+    tube_turn: bool,
     movement: movement::MovementTickStats,
     destroyed_structure: bool,
     bridge_state_changed: bool,
@@ -290,7 +294,10 @@ impl Simulation {
             return Ok(LocomotorProcess::admitted());
         }
         match kind {
-            LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk => self
+            LocomotorKind::Drive
+            | LocomotorKind::Ship
+            | LocomotorKind::Walk
+            | LocomotorKind::Mech => self
                 .process_ground_locomotor_one(stable_id, rules, overlay_registry, &mut ctx.effects)
                 .map(LocomotorProcess::from_ground),
             LocomotorKind::Hover => {
@@ -615,9 +622,50 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut super::FrameEffects<'_>,
     ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
+        self.complete_pending_order(stable_id, rules, effects);
+        // Walk75AC80..75AC93 keeps the walking controller installed for its
+        // whole Process, including arrival and new-destination callbacks.
+        let guard_walk = self
+            .substrate
+            .entities
+            .get_mut_if(stable_id, |entity| {
+                entity.locomotor.as_ref().is_some_and(|loco| {
+                    loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
+                        && loco.piggyback().is_some()
+                })
+            })
+            .and_then(|entity| entity.locomotor.as_mut())
+            .is_some_and(|loco| {
+                loco.set_walk_processing(true);
+                true
+            });
+        let result = self.process_ground_movement(stable_id, rules, overlay_registry, effects);
+        if guard_walk
+            && let Some(loco) = self
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .and_then(|e| e.locomotor.as_mut())
+        {
+            loco.set_walk_processing(false);
+        }
+        result
+    }
+
+    fn process_ground_movement(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut super::FrameEffects<'_>,
+    ) -> Result<GroundLocomotorOutcome, super::FrameAdvanceError> {
         let sim = self;
         let mut outcome = GroundLocomotorOutcome::default();
-        sim.complete_pending_order(stable_id, rules, effects);
+        if let Some(changed) = sim.process_mech_head(stable_id, rules, overlay_registry, effects)? {
+            outcome.bridge_state_changed |= changed;
+            outcome.movement.movers_total += 1;
+            return Ok(outcome);
+        }
         // Drive4B050B..0557 / Ship69FC1B..FC67 samples the containing
         // cell slope before any active-track, destination or turn return.
         let slope = sim.substrate.entities.get(stable_id).and_then(|entity| {
@@ -637,7 +685,13 @@ impl Simulation {
                 sim.session.binary_frame(),
             );
         }
-        match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
+        match sim.process_track_turn(
+            stable_id,
+            rules,
+            overlay_registry,
+            effects,
+            &mut outcome.bridge_state_changed,
+        )? {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
                 sim.track_process_rest_tail(stable_id, rules, effects);
@@ -747,6 +801,7 @@ impl Simulation {
             let pass = sim
                 .run_track_process(invocation, rules, overlay_registry, effects)
                 .map_err(|cause| frame_error(sim, cause))?;
+            outcome.bridge_state_changed |= pass.bridge_state_changed;
             pending_movement.record_track_movement(pass.moved);
             // Only the FIRST, active-track call tests Process_Track's AL
             // (4B057B). The post-fresh call ignores AL and goes through the
@@ -946,6 +1001,9 @@ impl Simulation {
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             {
                 before.record(entity, sim.session.binary_frame());
+            }
+            if turn.tube_turn {
+                outcome.tube_turns.insert(stable_id);
             }
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
@@ -1166,6 +1224,7 @@ impl Simulation {
         // An entry-active TubeMovement leaf runs in place of the Foot AI and
         // its Process.
         let process = if tube_active_at_entry {
+            outcome.tube_turn = true;
             let tube =
                 sim.tube_object_turn(stable_id, rules, overlay_registry, &mut object_ctx.effects)?;
             LocomotorProcess {

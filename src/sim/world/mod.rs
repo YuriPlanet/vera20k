@@ -1613,10 +1613,12 @@ pub(crate) fn wake_anchor_for(
         return None;
     }
     let on_cadence = match entity.locomotor.as_ref().map(|loco| loco.active_kind()) {
-        Some(
-            crate::rules::locomotor_type::LocomotorKind::Drive
-            | crate::rules::locomotor_type::LocomotorKind::Hover,
-        ) => binary_frame.is_multiple_of(10),
+        Some(crate::rules::locomotor_type::LocomotorKind::Drive) => binary_frame.is_multiple_of(10),
+        // Hover Process 514705..514717 exits before its wake on entering
+        // a tube. The Drive/Ship tails have no such check.
+        Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
+            binary_frame.is_multiple_of(10) && entity.active_tube().is_none()
+        }
         Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
             binary_frame.is_multiple_of(8) && !underwater
         }

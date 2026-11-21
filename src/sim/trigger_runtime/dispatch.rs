@@ -559,7 +559,7 @@ impl Simulation {
                     let entity = self.substrate.entities.get(actor)?;
                     let current =
                         crate::sim::movement::ground_pose::position_world_coord(&entity.position);
-                    let in_tube = entity.low_bridge_tube_state.is_some();
+                    let in_tube = entity.active_tube().is_some();
                     let head = if in_tube {
                         current
                     } else {

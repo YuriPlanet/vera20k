@@ -797,6 +797,7 @@ fn empty_cell_cursor(
     match action {
         MoveAction::None => return CursorFeedbackKind::Default,
         MoveAction::NoMove => return CursorFeedbackKind::Invalid,
+        MoveAction::EnterTunnel => return CursorFeedbackKind::EnterTunnel,
         MoveAction::Move | MoveAction::Harvest => {}
     }
     // The one resolved object's harvest rungs, not the whole selection's.
@@ -844,6 +845,7 @@ fn move_action_feedback(
         (MoveAction::None, _) => CursorFeedbackKind::Default,
         (MoveAction::NoMove, _) => CursorFeedbackKind::Invalid,
         (MoveAction::Harvest, _) => CursorFeedbackKind::Harvest,
+        (MoveAction::EnterTunnel, _) => CursorFeedbackKind::EnterTunnel,
         (MoveAction::Move, OrderMode::Move)
             if modifier == super::context_order::OrderModifier::AttackMove =>
         {
@@ -1821,7 +1823,7 @@ pub(crate) fn shrouded_cell_feedback(
     match kind {
         Kind::EnemyUnit | Kind::EnemyStructure | Kind::EnemyOutOfRange => Kind::Move,
         Kind::Invalid if lead_moves_to_shroud => Kind::Move,
-        Kind::Enter | Kind::Harvest | Kind::Demolish => Kind::Default,
+        Kind::Enter | Kind::EnterTunnel | Kind::Harvest | Kind::Demolish => Kind::Default,
         other => other,
     }
 }
@@ -1864,7 +1866,9 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         // The radar's own mini set travels in the payload: its action's row
         // ([`crate::app::input::radar::cursor`]), or the plain arrow mini.
         CursorFeedbackKind::Minimap(id) => Some(id),
-        CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
+        CursorFeedbackKind::Enter | CursorFeedbackKind::EnterTunnel | CursorFeedbackKind::Grind => {
+            Some(CursorId::Enter)
+        }
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
         // RESIDUAL (dormant, retail rules set `Carryall=` only on HIND):
         // `SetCursorFromAction @ 0x004AAE90` sends action 0x11 to row 0x3C

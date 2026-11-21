@@ -491,3 +491,39 @@ fn scatter_order_whose_body_fails_is_refused() {
     assert!(!applied);
     assert_eq!(sim.scenario_rng.native_state_hex(), rng);
 }
+
+/// InfantryClass::Set_Destination 51B1D2 calls Foot4D94B0; the Foot calls
+/// its installed Move_To at 4D965D independently of the receiver's class.
+#[test]
+fn infantry_can_order_its_authored_ground_locomotors() {
+    for clsid in [
+        "{55D141B8-DB94-11D1-AC98-006008055BB5}",
+        "{4A582742-9839-11D1-B709-00A024DDAFD1}",
+        "{4A582741-9839-11D1-B709-00A024DDAFD1}",
+        "{2BEA74E1-7CCA-11D3-BE14-00104B62A16C}",
+    ] {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            &format!(
+                "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={clsid}\n"
+            ),
+        );
+        let id = sim
+            .spawn_object("GI", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let requested = NavTargetRef::cell(15, 21);
+        assert!(
+            sim.assign_infantry_destination(
+                id,
+                requested,
+                &rules,
+                Some(&registry),
+                &mut FrameEffects::default()
+            )
+            .unwrap(),
+            "{clsid}"
+        );
+        let actor = sim.entities().get(id).unwrap();
+        assert_eq!(actor.navigation.nav_com(), Some(requested));
+        assert_eq!(super::super::motion_query::is_moving(actor), Some(true));
+    }
+}

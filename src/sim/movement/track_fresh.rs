@@ -184,10 +184,11 @@ impl Simulation {
                 .expect("same Process_Movement owner");
             clear_track_head(actor);
             if mission == Some(MissionType::Move) {
-                return Ok(self.unit_enter_idle_mode(
+                return Ok(crate::sim::world::enter_idle_mode(
+                    self,
                     id,
                     call.rules,
-                    false,
+                    Some(call.rules.overlay_registry()),
                     &mut call.frame_effects,
                 ));
             }
@@ -590,7 +591,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(
+        self.assign_null_destination(
             id,
             rules,
             Some(rules.overlay_registry()),
@@ -658,7 +659,7 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(
+                        self.assign_null_destination(
                             id,
                             rules,
                             Some(rules.overlay_registry()),

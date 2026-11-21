@@ -3776,3 +3776,130 @@ fn train_stop_reaches_the_linked_car_only_with_a_committed_head() {
         assert_eq!(loco.track_head(TrackFamily::Drive), Some(car_head));
     }
 }
+
+/// Drive / Ship vt+0x484 tests AL before going on (0x004B2A31 / 0x006A2081).
+/// Foot consumes a queued cell but the human infantry deployment refuses it.
+/// Infantry's Guard tail (0x0051CC6D -> 0x0051CDA4) then returns false.
+#[test]
+fn track_waypoint_returns_the_infantry_guard_result() {
+    let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    );
+    let house = sim.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
+    let id = sim
+        .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(MissionType::Guard),
+        0,
+    );
+    actor.mission_leaf.set_foot_idle_entry_latch(0);
+    actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+    actor
+        .navigation
+        .push_nav_queue_for_test(crate::sim::components::NavTargetRef::cell(17, 15));
+    let result =
+        sim.stop_or_take_next_waypoint(id, &rules, &mut crate::sim::world::FrameEffects::default());
+    let actor = sim.entities().get(id).unwrap();
+    assert!(actor.navigation.nav_queue().is_empty());
+    assert_eq!(actor.navigation.nav_com(), None);
+    assert!(!result);
+}
+
+/// Infantry Per_Cell_Process (0x0051A8C0) commences the queued mission on
+/// arrival even when Sticky forbids Ready_To_Commence in the Unit receiver.
+#[test]
+fn drive_arrival_commences_the_infantrys_queued_mission() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId};
+
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[InfantryTypes]\n0=MTNK\n[MTNK]\nStrength=100\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    )).unwrap();
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.set_category_for_test(EntityCategory::Infantry);
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Sticky),
+        queued: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    let loco = actor.locomotor.as_mut().unwrap();
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    assert!(loco.store_track_progress(TrackFamily::Drive, track));
+    assert!(!sim.mission_ready_to_commence(1, &rules));
+
+    sim.run_track_points_observed(
+        invocation,
+        budget,
+        Some(&rules),
+        None,
+        &mut |sim, id, event| {
+            if event == TrackWorldEvent::PerCell {
+                assert_eq!(
+                    sim.entities().get(id).unwrap().mission.current().known(),
+                    Some(MissionType::Attack)
+                );
+            }
+        },
+    );
+    assert_eq!(
+        sim.entities().get(1).unwrap().mission.current().known(),
+        Some(MissionType::Attack)
+    );
+}
+
+/// Terminal Get_Mission (Drive 0x004B2259 / Ship 0x006A1898) falls back
+/// to the queued mission if Ready_To_Commence kept the current slot empty.
+#[test]
+fn terminal_idle_checks_a_move_that_is_still_queued() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::miner::{Miner, MinerConfig, MinerKind};
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
+
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 0);
+    miner.set_unload_active_for_test(true);
+    actor.miner = Some(Box::new(miner));
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::NONE,
+        queued: MissionId::from_known(MissionType::Move),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    actor
+        .navigation
+        .publish_nav_com(Some(NavTargetRef::cell(10, 9)));
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(10, 9, 0)));
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    loco.store_track_progress(TrackFamily::Drive, track);
+
+    let mut entered_idle = false;
+    sim.run_track_points_observed(invocation, budget, None, None, &mut |sim, id, event| {
+        if event == TrackWorldEvent::PerCell {
+            let mission = &sim.entities().get(id).unwrap().mission;
+            assert_eq!(mission.current(), MissionId::NONE);
+            assert_eq!(mission.effective().known(), Some(MissionType::Move));
+        }
+        entered_idle |= event == TrackWorldEvent::Arrival;
+    });
+    assert!(entered_idle);
+}

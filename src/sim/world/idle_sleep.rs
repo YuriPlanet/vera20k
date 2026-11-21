@@ -529,7 +529,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && !entity.is_warped_out()
         && !entity.is_warping_in()
         // The tube tests return before the AI counter.
-        && entity.low_bridge_tube_state.is_none()
+        && entity.active_tube().is_none()
         && entity.drain.is_idle()
         && !entity.veterancy.rank_changed()
         && !crate::sim::rocking::updates(entity)
