@@ -494,6 +494,19 @@ pub(super) struct Census {
     /// The base's anchor: the yard when one stands, otherwise whatever building
     /// the house still has.
     pub(super) base_cell: Option<(u16, u16)>,
+    /// Every yard the house owns, in the order the scan met them.
+    ///
+    /// The first is the anchor, and the first is the point. The scan meets
+    /// buildings in a stable order, so the house's own yard -- the one it
+    /// started with -- stays the anchor when a captured one comes into view.
+    /// Overwriting `base_cell` with whichever yard was scanned last moved the
+    /// anchor every time the two swapped places in the list, and every target
+    /// computed from it moved with it: a maker walking home was re-aimed at the
+    /// other yard mid-walk, turned round, and walked back. The log measures it --
+    /// `maker at (184, 94) home=Some((173, 95))` and `maker at (160, 98)
+    /// home=Some((183, 93))` in one match, the maker's own errand changing
+    /// direction under it (Death.mmx seed 24301).
+    pub(super) yard_cells: Vec<(u16, u16)>,
     /// Where the army gathers, and what a hurt unit walks home to when the
     /// house has no `UnitRepair=` bay: a cell **beside** the base.
     ///
@@ -677,6 +690,8 @@ impl Census {
         self.enemies.clear();
         self.neutrals.clear();
         self.home_cells.clear();
+        self.base_cell = None;
+        self.yard_cells.clear();
         self.repair_cell = None;
         self.repair_building = None;
         self.ready.clear();
@@ -724,7 +739,7 @@ impl Census {
             }
             if traits.yard {
                 self.yards += 1;
-                self.base_cell = Some(entity.cell);
+                self.yard_cells.push(entity.cell);
             }
             if traits.yard_maker {
                 self.yard_makers += 1;
@@ -790,6 +805,14 @@ impl Census {
                 tier,
                 traits,
             });
+        }
+
+        // The anchor, and the reason it is settled here rather than where the
+        // yards are counted: the first yard the scan met wins, and no later yard
+        // can take the anchor away from it. A house that has lost that yard
+        // anchors on the next one, which is the first of what is left.
+        if let Some(cell) = self.yard_cells.first().copied() {
+            self.base_cell = Some(cell);
         }
 
         for category in [
@@ -1365,6 +1388,43 @@ mod tests {
             census.neutral_within((10, 10), 1, only(9)),
             None,
             "and the distance still applies to it"
+        );
+    }
+
+    /// A second yard must not move the anchor. The maker walking home reads
+    /// `base_cell`, and the log shows the anchor changing mid-walk when two
+    /// yards were in play: `maker at (184, 94) home=Some((173, 95))` earlier
+    /// and `maker at (160, 98) home=Some((183, 93))` later in the same match,
+    /// so the maker was turned round and never arrived (Death.mmx seed 24301).
+    #[test]
+    fn a_captured_yard_does_not_move_the_anchor() {
+        let Some((mut sim, rules)) = arena(0xA17) else {
+            return;
+        };
+        let owner = sim.interner.intern("Americans");
+        sim.spawn_object("GACNST", "Americans", 16, 16, 255, &rules)
+            .expect("the yard the house started with");
+        sim.spawn_object("GACNST", "Americans", 40, 40, 255, &rules)
+            .expect("a captured one");
+
+        let census = ledger(&rules, &sim, owner);
+
+        // The order is the scan's, and it is what makes the assertion above a
+        // regression: the captured yard is met second, so an anchor that took the
+        // last yard scanned would read (40, 40).
+        assert_eq!(
+            census.yards, 2,
+            "both yards are the house's: the second was taken, not built"
+        );
+        assert_eq!(
+            census.yard_cells,
+            vec![(16, 16), (40, 40)],
+            "the captured yard is met second, so an anchor that took the last yard scanned would read (40, 40)"
+        );
+        assert_eq!(
+            census.base_cell,
+            Some((16, 16)),
+            "and the anchor is the yard it started with, not the one met last"
         );
     }
 }
