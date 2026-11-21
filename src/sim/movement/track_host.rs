@@ -921,6 +921,7 @@ impl Simulation {
                 let update = super::movement_bridge::resolve_cell_transition_bridge_state(
                     &mut entity.position,
                     grid,
+                    self.resolved_terrain.as_ref(),
                     previous_track_cell,
                     selected_cell,
                     on_bridge,

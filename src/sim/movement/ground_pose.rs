@@ -170,6 +170,10 @@ impl Position {
         path_grid: Option<&PathGrid>,
     ) {
         let world_xy = position_world_xy(self);
+        if on_bridge && let Some(deck) = corrected_deck_z(world_xy, terrain) {
+            self.put_z(deck.wrapping_add(height));
+            return;
+        }
         let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(Ok(0));
         if let Some(ground) = supported_ground(ground, world_xy) {
             self.put_z(z_at_height(ground, height, on_bridge));
@@ -352,6 +356,9 @@ pub(crate) fn query_object_cell_height(
     on_bridge: bool,
 ) -> i32 {
     let cell = query_object_cell(cells, physical);
+    if on_bridge && let Some(deck) = cells.terrain().corrected_high_bridge_deck_at(cell) {
+        return i32::from(deck);
+    }
     i32::from(cells.ground_fields(cell).0 as i8) + if on_bridge { 4 } else { 0 }
 }
 
@@ -533,6 +540,11 @@ pub(crate) fn object_ground_z_leptons(
     terrain: Option<&ResolvedTerrainGrid>,
 ) -> i32 {
     let [x, y] = position_world_xy(&entity.position);
+    if entity.on_bridge()
+        && let Some(deck) = corrected_deck_z([x, y], terrain)
+    {
+        return deck;
+    }
     terrain
         .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
         .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, x, y).ok())
@@ -824,8 +836,20 @@ pub(crate) fn ground_surface_z_at(
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
 ) -> Option<i32> {
+    if on_bridge && let Some(deck) = corrected_deck_z(world_xy, terrain) {
+        return Some(deck);
+    }
     let ground = supported_ground(ground_at(world_xy, terrain, path_grid)?, world_xy)?;
     Some(z_at_height(ground, 0, on_bridge))
+}
+
+fn corrected_deck_z(world_xy: [i32; 2], terrain: Option<&ResolvedTerrainGrid>) -> Option<i32> {
+    let [x, y] = world_xy;
+    let cell = crate::util::lepton::lepton_to_cell_packed;
+    let (rx, ry) = (cell(x), cell(y));
+    terrain?
+        .corrected_high_bridge_deck_level((rx as u16, ry as u16))
+        .map(|level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS)
 }
 
 /// `ObjectClass::SetHeight @ 0x005F5FA0`'s Z for a sampled ground: the

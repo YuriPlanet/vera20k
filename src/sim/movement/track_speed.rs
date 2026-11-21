@@ -122,14 +122,13 @@ fn braking_distance(
         & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
         != 0;
     // Headless fixtures without map cells read a level-0 ground.
-    let ground = super::ground_pose::ground_surface_z_at(
+    let destination_z = super::ground_pose::ground_surface_z_at(
         [destination.x, destination.y],
-        false,
+        structural,
         terrain,
         grid,
     )
-    .unwrap_or(0);
-    let destination_z = super::ground_pose::z_at_height(ground, 0, structural);
+    .unwrap_or_else(|| super::ground_pose::z_at_height(0, 0, structural));
     let current = super::ground_pose::object_location(entity, terrain);
     sqrt_approx_length([
         current.z.wrapping_sub(destination_z),

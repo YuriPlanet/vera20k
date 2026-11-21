@@ -559,15 +559,19 @@ fn initial_search_heights(
     start: &PathCell,
     start_layer: MovementLayer,
     goal: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> (i16, i16) {
     (
-        start.signed_level()
-            + if start_layer == MovementLayer::Bridge {
-                4
-            } else {
-                0
-            },
-        goal.signed_level() + if goal.has_structural_bridge() { 4 } else { 0 },
+        if start_layer == MovementLayer::Bridge {
+            corrected_decks[0].unwrap_or_else(|| start.signed_level() + 4)
+        } else {
+            start.signed_level()
+        },
+        if goal.has_structural_bridge() {
+            corrected_decks[1].unwrap_or_else(|| goal.signed_level() + 4)
+        } else {
+            goal.signed_level()
+        },
     )
 }
 
@@ -583,6 +587,7 @@ pub(crate) fn compute_node_height(
     parent_height: i16,
     parent_cell: Option<&PathCell>,
     neighbor_cell: &PathCell,
+    corrected_decks: [Option<i16>; 2],
 ) -> i16 {
     let Some(parent_cell) = parent_cell else {
         return parent_height;
@@ -591,12 +596,17 @@ pub(crate) fn compute_node_height(
     if !neighbor_cell.has_structural_bridge() {
         return ground;
     }
-    let deck = if parent_cell.has_structural_bridge() {
-        parent_height == parent_cell.signed_level() + 4
+    let deck_height = corrected_decks[1].unwrap_or(ground + 4);
+    let source_is_deck = parent_cell.has_structural_bridge()
+        && parent_height == corrected_decks[0].unwrap_or_else(|| parent_cell.signed_level() + 4);
+    let use_deck = if corrected_decks[1].is_some() {
+        parent_height == deck_height && (!parent_cell.has_structural_bridge() || source_is_deck)
+    } else if parent_cell.has_structural_bridge() {
+        source_is_deck
     } else {
         (2..=4).contains(&(parent_height - ground))
     };
-    ground + if deck { 4 } else { 0 }
+    if use_deck { deck_height } else { ground }
 }
 
 fn encode_from(cell_idx: usize, on_bridge: bool) -> u32 {
@@ -961,7 +971,23 @@ fn astar_search_along_route(
     // Residual: the Aircraft (WhatAmI 2) arms at 0x00429AF9/0x00429B2A, which
     // keep the plain level at both ends, are not ported; no Aircraft reaches
     // FootClass::Find_Path, this search's one production caller.
-    let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
+    let corrected_deck = |coord, cell: &PathCell| {
+        if !cell.has_structural_bridge() {
+            return None;
+        }
+        options
+            .resolved_terrain?
+            .corrected_high_bridge_deck_level(coord)
+    };
+    let (start_height, goal_height) = initial_search_heights(
+        start_cell,
+        start_layer,
+        goal_cell,
+        [
+            corrected_deck(start, start_cell),
+            corrected_deck(goal, goal_cell),
+        ],
+    );
     if options.hierarchy_gate.is_some()
         && let Some(progress) = progress.as_deref_mut()
     {
@@ -1009,7 +1035,7 @@ fn astar_search_along_route(
         // node is created before the loop, so it is stamped here, with g 0.
         let start_descriptor = PathDescriptor {
             parent: u32::MAX,
-            height: compute_node_height(start_height, None, start_cell),
+            height: compute_node_height(start_height, None, start_cell, [None; 2]),
             g: 0.0,
         };
         if start_on_bridge {
@@ -1124,8 +1150,15 @@ fn astar_search_along_route(
                 let neighbor_cell = grid.cell(nx, ny).unwrap_or(&DEFAULT_BLOCKED_CELL);
 
                 // Compute what height the NEW node carries forward (separate computation)
-                let neighbor_height =
-                    compute_node_height(current.height, Some(cur_cell), neighbor_cell);
+                let neighbor_height = compute_node_height(
+                    current.height,
+                    Some(cur_cell),
+                    neighbor_cell,
+                    [
+                        corrected_deck((cx, cy), cur_cell),
+                        corrected_deck((nx, ny), neighbor_cell),
+                    ],
+                );
 
                 // Original429E54..429EAF exempts structural deck candidates
                 // from the ordinary zone comparison. The signed-height/list

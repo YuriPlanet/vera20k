@@ -179,6 +179,39 @@ pub(super) fn refresh_runtime_bridge_projection(
 }
 
 impl ResolvedTerrainGrid {
+    /// Compatibility fix for the ground + 4 rule (ObjectClass::SetHeight,
+    /// 0x005F5FA0 and AStar node height, 0x0042A460). Use the intact span's deck
+    /// for a depressed side lane. The live anchor and flags also track damage
+    /// and repair. No deck is synthesized for a missing or ambiguous anchor.
+    pub(crate) fn corrected_high_bridge_deck_level(&self, coord: (u16, u16)) -> Option<i16> {
+        self.corrected_high_bridge_deck_at(
+            self.native_cell_identity((coord.0 as i16, coord.1 as i16)),
+        )
+    }
+
+    pub(crate) fn corrected_high_bridge_deck_at(&self, cell: NativeCellIdentity) -> Option<i16> {
+        let NativeCellIdentity::Real(index) = cell else {
+            return None;
+        };
+        let cell = self.cells.get(index)?;
+        if !cell.bridge_facts.has_structural_bridge() {
+            return None;
+        }
+        let NativeCellIdentity::Real(anchor) = cell.bridge_facts.native_anchor? else {
+            return None;
+        };
+        let anchor = self.cells.get(anchor)?;
+        if !anchor.bridge_facts.has_structural_bridge()
+            || anchor.bridge_facts.raw_flags & BRIDGE_FLAG_ANCHOR_SELF == 0
+            || (cell.level as i8) >= (anchor.level as i8)
+        {
+            return None;
+        }
+        // The span's level is signed and its deck is four levels above it.
+        // Keep the widened result instead of decoding the legacy byte view.
+        Some(i16::from(anchor.level as i8) + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16)
+    }
+
     /// Give every fixture deck the CellClass bit0x100 a loaded deck carries.
     #[cfg(any(test, feature = "test-support"))]
     pub fn test_mark_decks_structural(mut self) -> Self {

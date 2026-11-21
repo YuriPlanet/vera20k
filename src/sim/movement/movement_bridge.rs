@@ -197,6 +197,7 @@ pub(super) fn compute_bridge_transition(
 pub(super) fn resolve_cell_transition_bridge_state(
     position: &mut Position,
     path_grid: Option<&PathGrid>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     src: (u16, u16),
     dst: (u16, u16),
     on_bridge_before: bool,
@@ -212,7 +213,16 @@ pub(super) fn resolve_cell_transition_bridge_state(
     // The predicate owns the flag; the height function owns Z. Keeping them
     // separate is the native split, and it is why Z is recomputed here from the
     // post-transition flag rather than carried out of the transition arm.
-    let transition = compute_bridge_transition(src_cell, dst_cell);
+    let corrected_deck = terrain.and_then(|terrain| terrain.corrected_high_bridge_deck_level(dst));
+    let transition = match corrected_deck {
+        // Extend the native4B1807/75C154 exact entry comparison to the
+        // bridge span, rather than using the depressed lane as the bridge base.
+        Some(deck) if !src_cell.has_structural_bridge() && src_cell.signed_level() == deck => {
+            BridgeTransition::Enter
+        }
+        Some(_) => BridgeTransition::NoChange,
+        None => compute_bridge_transition(src_cell, dst_cell),
+    };
     let update = match transition {
         BridgeTransition::Enter => BridgeStateUpdate::Set,
         BridgeTransition::Exit => BridgeStateUpdate::Clear,
@@ -230,7 +240,11 @@ pub(super) fn resolve_cell_transition_bridge_state(
     // and therefore no value that can be absent, so this must not consult the A*
     // layer or any cell-side walkability permission — both are VERA inventions
     // that silently substituted ground level for the deck.
-    position.store_cell_level(dst_cell.ground_level, on_bridge_after);
+    if let Some(deck) = corrected_deck.filter(|_| on_bridge_after) {
+        position.store_cell_level(deck as u8, false);
+    } else {
+        position.store_cell_level(dst_cell.ground_level, on_bridge_after);
+    }
     // Raw Object Z has a separate setter cadence. Paid Drive/Ship points and
     // Walk commits refresh it; a residual crossing retains it (0x4B253F).
     update
@@ -264,7 +278,7 @@ pub(super) fn resolve_cell_transition_bridge_state_oracle(
     tick: u64,
 ) -> (BridgeStateUpdate, BridgeRuntimeOracleTick) {
     let update =
-        resolve_cell_transition_bridge_state(position, path_grid, src, dst, on_bridge_before);
+        resolve_cell_transition_bridge_state(position, path_grid, None, src, dst, on_bridge_before);
     let on_bridge_after = projected_on_bridge(on_bridge_before, update);
     let row = BridgeRuntimeOracleTick {
         tick,

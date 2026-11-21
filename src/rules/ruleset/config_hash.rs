@@ -23,6 +23,8 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // Keep the simulation identity of the independent deck calculation.
+        b"independent-high-bridge-deck-v1".hash(&mut hasher);
         // A previous scenario's list survives RulesClass's Type reset even
         // when the incoming source text omits AIHateDelays.
         if !self.general.ai_hate_delays.is_empty() {
