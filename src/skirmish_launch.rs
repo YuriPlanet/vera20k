@@ -704,6 +704,25 @@ pub struct SessionOptions {
     pub harvester_truce: bool,
 }
 
+/// C2's Short Game click (`Dialog0xC2__DlgProc`, `0x0078FB8D..0x0078FBB0`):
+/// a short game needs bases, so ticking it ticks Bases. Only a click does
+/// this; values restored from settings stay as they are.
+pub fn click_short_game(short_game: &mut bool, bases: &mut bool) {
+    *short_game = !*short_game;
+    if *short_game {
+        *bases = true;
+    }
+}
+
+/// C2's Bases click (`0x0078FAAA..0x0078FAC9`): unticking it unticks Short
+/// Game.
+pub fn click_bases(bases: &mut bool, short_game: &mut bool) {
+    *bases = !*bases;
+    if !*bases {
+        *short_game = false;
+    }
+}
+
 impl Default for SessionOptions {
     fn default() -> Self {
         SkirmishLaunchOptions::default().session_options()

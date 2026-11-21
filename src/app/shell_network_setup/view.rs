@@ -892,7 +892,12 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         // VERA's Game Options also shows the room's Tech Level.
         SetupTrackbar {
             id: TECH_LEVEL,
-            value: options.tech_level,
+            // The host's value, which may come from other rules or another
+            // game, sits within the slider.
+            value: options.tech_level.clamp(
+                crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE.min,
+                crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE.max,
+            ),
             range: crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE,
             enabled: host,
             visible: dialog.modern && !campaign,

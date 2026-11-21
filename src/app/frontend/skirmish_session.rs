@@ -1197,14 +1197,12 @@ impl MultiplayerShellRuntime {
         state.crates = self.snapshot.crates_appear;
         if let Some(session) = self.snapshot.session {
             state.session = crate::skirmish_launch::SessionOptions {
-                tech_level: crate::ui::skirmish_shell::game_options::TECH_LEVEL_RANGE
-                    .set_up(session.tech_level),
+                tech_level: crate::ui::skirmish_shell::game_options::admitted_tech_level(
+                    session.tech_level,
+                )
+                .unwrap_or(state.session.tech_level),
                 ..session
             };
-            // Bases off unticks Short Game, as C2 does (`0x0078FAAA`).
-            if !session.bases {
-                state.short_game = false;
-            }
         }
 
         state.player_name_edit = PlayerNameEditState::with_name(&self.handle_text());

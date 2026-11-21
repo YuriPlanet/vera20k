@@ -216,20 +216,11 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         .options
         .clone();
     match control {
-        // C2 ties the two (`Dialog0xC2__DlgProc`): Short Game turns Bases on
-        // (0x78FB8D..0x78FBB0), and Bases off turns Short Game off
-        // (0x78FAAA..0x78FAC9).
         0x54E => {
-            options.short_game = !options.short_game;
-            if options.short_game {
-                options.bases = true;
-            }
+            crate::skirmish_launch::click_short_game(&mut options.short_game, &mut options.bases)
         }
         BASES => {
-            options.bases = !options.bases;
-            if !options.bases {
-                options.short_game = false;
-            }
+            crate::skirmish_launch::click_bases(&mut options.bases, &mut options.short_game)
         }
         // C2's other hidden session checkboxes: Multi-Engineer (0x78FB2B),
         // Harvester Truce (0x78FBBB) and Fog of War (0x78FC07).

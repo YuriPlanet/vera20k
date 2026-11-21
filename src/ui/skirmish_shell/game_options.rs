@@ -45,6 +45,14 @@ pub const HARVESTER_TRUCE_HELP: &str = "VERA:HarvesterTruceHelp";
 /// and below.
 pub const TECH_LEVEL_RANGE: TrackbarRange = TrackbarRange::new(1, 10, 1);
 
+/// A stored Tech Level the slider can hold; `None` leaves the rules' or the
+/// page's own value, as the page's other remembered values do.
+pub fn admitted_tech_level(value: i32) -> Option<i32> {
+    (TECH_LEVEL_RANGE.min..=TECH_LEVEL_RANGE.max)
+        .contains(&value)
+        .then_some(value)
+}
+
 /// The Superweapon Limit slider of this box and of the room's Game Options:
 /// 1 is Off, then the limit itself up to [`SUPERWEAPON_LIMIT_MAX`].
 pub const SUPERWEAPON_LIMIT_RANGE: TrackbarRange =
@@ -69,6 +77,8 @@ pub struct MatchRules {
     pub skirmish_cheats: bool,
     /// `SkirmishShellState::session`.
     pub session: SessionOptions,
+    /// The page's Short Game, which unticking Bases unticks.
+    pub short_game: bool,
 }
 
 impl MatchRules {
@@ -197,12 +207,16 @@ impl GameOptionsBox {
         }
     }
 
-    /// The slider's value: Superweapon Limit's is 1 while off, else the
-    /// limit.
+    /// The slider's position: Superweapon Limit's is 1 while off, else the
+    /// limit; a rules Tech Level past the slider's ends sits at the end.
     pub fn slider_value(&self, slider: GameOptionsSlider) -> i32 {
         match slider {
             GameOptionsSlider::SuperweaponLimit => i32::from(self.rules.superweapon_limit.max(1)),
-            GameOptionsSlider::TechLevel => self.rules.session.tech_level,
+            GameOptionsSlider::TechLevel => self
+                .rules
+                .session
+                .tech_level
+                .clamp(TECH_LEVEL_RANGE.min, TECH_LEVEL_RANGE.max),
         }
     }
 
@@ -244,12 +258,18 @@ impl GameOptionsBox {
             return GameOptionsOutcome::OkPressed;
         }
         for (control, rect) in layout.checkboxes() {
-            if checkbox_icon_rect(rect, layout.scale).contains(x, y)
-                && let Some(checked) = self.rules.check_mut(control)
-            {
-                *checked = !*checked;
-                return GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound);
+            if !checkbox_icon_rect(rect, layout.scale).contains(x, y) {
+                continue;
             }
+            if control == GameOptionsControl::Bases {
+                crate::skirmish_launch::click_bases(
+                    &mut self.rules.session.bases,
+                    &mut self.rules.short_game,
+                );
+            } else if let Some(checked) = self.rules.check_mut(control) {
+                *checked = !*checked;
+            }
+            return GameOptionsOutcome::Changed(SkirmishShellUiSound::GuiCheckboxSound);
         }
         for slider in GameOptionsSlider::ALL {
             let press = slider.range().press_in(
@@ -445,11 +465,15 @@ mod tests {
     }
 
     /// Tech Level's slider runs from 1 to 10 below Superweapon Limit's, and
-    /// the session checkboxes tick the page's session options.
+    /// the session checkboxes tick the page's session options; unticking
+    /// Bases unticks the page's Short Game, as C2 does.
     #[test]
     fn the_box_sets_the_session_options() {
         let layout = layout();
-        let mut open = GameOptionsBox::new(MatchRules::default());
+        let mut open = GameOptionsBox::new(MatchRules {
+            short_game: true,
+            ..Default::default()
+        });
         assert_eq!(open.rules.session.tech_level, 10);
         let bar = layout.tech_level;
         let row = bar.y + bar.h - 4;
@@ -470,6 +494,7 @@ mod tests {
         let session = open.rules.session;
         assert!(!session.bases && session.fog_of_war && session.multi_engineer);
         assert!(session.harvester_truce);
+        assert!(!open.rules.short_game);
     }
 
     /// OK closes the box only when the press and the release are both on it.
