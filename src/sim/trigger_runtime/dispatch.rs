@@ -682,7 +682,10 @@ impl Simulation {
             let context = self.trigger_action_context(type_index, Some(index), input, rules);
             // An owned copy: the action runs through `&mut self`, and the
             // Tag events it raises write the same definitions (each event's
-            // retained House, Event+54), so it cannot stay borrowed.
+            // retained House, Event+54), so it cannot stay borrowed. Dropping
+            // the copy means moving `RuntimeEvent::retained_house` out of
+            // `RuntimeDefinitions`, which changes the saved snapshot layout
+            // and the order `hash_definitions` feeds the state hash.
             let action =
                 self.trigger_runtime.definitions.trigger_types[type_index].actions[ordinal].clone();
             #[cfg(any(test, feature = "dev-overlays"))]

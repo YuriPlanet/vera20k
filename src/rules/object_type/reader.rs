@@ -709,7 +709,12 @@ impl ObjectType {
             spawn_regen_rate: section.read_int("SpawnRegenRate", 0).max(0) as u32,
             spawn_reload_rate: section.read_int("SpawnReloadRate", 0).max(0) as u32,
             missile_spawn: section.read_bool("MissileSpawn", false),
-            no_spawn_alt: section.read_bool("NoSpawnAlt", false),
+            no_spawn_alt_model: section.read_bool("NoSpawnAlt", false).then(|| {
+                format!(
+                    "{id}{}",
+                    crate::rules::voxel_frame_catalog::NO_SPAWN_ALT_SUFFIX
+                )
+            }),
 
             // Slave Miner / economy fields
             // Constructor null; only the ordered Process owner reads it.

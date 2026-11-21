@@ -58,7 +58,7 @@ pub(crate) use processed_type::{
 };
 use processed_type::{
     EXPLICIT_RULE_TYPE_FAMILIES, PROJECTED_RULE_TYPE_FAMILIES, ProcessedType, RulesTypeFamily,
-    SelectAnimRulesState, find_existing_type, find_or_construct_type,
+    SelectAnimRulesState, find_existing_type, find_or_construct_type, read_member,
 };
 pub(crate) use registry_state::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,

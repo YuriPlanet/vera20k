@@ -379,6 +379,17 @@ impl ObjectType {
         self.convert_land = land.cloned();
     }
 
+    /// `NoSpawnAlt=yes`.
+    pub fn no_spawn_alt(&self) -> bool {
+        self.no_spawn_alt_model.is_some()
+    }
+
+    /// The `<TYPE>WO` art a `NoSpawnAlt=yes` type draws while no spawn is
+    /// docked, named after the section.
+    pub fn no_spawn_alt_model(&self) -> Option<&str> {
+        self.no_spawn_alt_model.as_deref()
+    }
+
     /// Read-only projection of the retained WaterImage pointer.
     pub fn water_image(&self) -> Option<&str> {
         self.water_image.as_deref()

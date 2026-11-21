@@ -2,7 +2,7 @@
 //! forwarding, factory owners and the TechnoType base body.
 
 use super::RulesPassProcessor;
-use super::{RulesTypeFamily, ares_country_index_of_name, read_nullable_type_vector};
+use super::{RulesTypeFamily, ares_country_index_of_name, read_member, read_nullable_type_vector};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_parser::is_native_none_type_name;
@@ -62,14 +62,14 @@ impl RulesPassProcessor {
                     |name| self.building_index(name),
                     self.ares_prerequisites.as_ref(),
                 );
-                let member = &mut self.families.get_mut(&family).unwrap()[index];
+                let member = read_member(&mut self.families, family, index);
                 member.prerequisite = prerequisite;
                 member.prerequisite_override = prerequisite_override;
-                self.families.get_mut(&family).unwrap()[index]
+                read_member(&mut self.families, family, index)
                     .recoil
                     .apply_pass(&raw);
                 let weapon_count = self.families[&family][index].weapon_slots.weapon_count;
-                self.families.get_mut(&family).unwrap()[index]
+                read_member(&mut self.families, family, index)
                     .gunner_turrets
                     .apply_pass(
                         &native_stored_id,
@@ -88,7 +88,7 @@ impl RulesPassProcessor {
                     let member = &self.families[&family][index];
                     let weapon_count = member.weapon_slots.weapon_count;
                     let gunner = member.gunner_turrets.is_gunner();
-                    self.families.get_mut(&family).unwrap()[index]
+                    read_member(&mut self.families, family, index)
                         .phobos_insignia
                         .apply_pass(&raw, catalog.as_ref(), weapon_count, gunner);
                     self.phobos_insignia_types = catalog;
@@ -97,12 +97,12 @@ impl RulesPassProcessor {
                 // (Ares.dll 0x1003E355..0x1003E380, 0x1003E6D5).
                 if ares_way {
                     let _ares = crate::rules::ares_switch::ares_reads();
-                    self.families.get_mut(&family).unwrap()[index]
+                    read_member(&mut self.families, family, index)
                         .ares_insignia
                         .apply_pass(&raw);
                 }
                 if family == RulesTypeFamily::Infantry {
-                    let member = &mut self.families.get_mut(&family).unwrap()[index];
+                    let member = read_member(&mut self.families, family, index);
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
                     // `effective` holds every pass so far, so its `Cyborg` is
@@ -139,7 +139,7 @@ impl RulesPassProcessor {
                 {
                     references.palette_binding = Some(name.to_ascii_lowercase());
                 }
-                let member = &mut self.families.get_mut(&family).unwrap()[index];
+                let member = read_member(&mut self.families, family, index);
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)
                     .read_int("ShadowIndex", member.voxel_shadow_index);
@@ -253,7 +253,7 @@ impl RulesPassProcessor {
                     self.family_mut(family)[index].techno_combat = techno_combat;
                     // 1003DFB0 names [MouseCursors] entries this pass's
                     // 1002AEF0 already allocated.
-                    self.families.get_mut(&family).unwrap()[index]
+                    read_member(&mut self.families, family, index)
                         .ares_cursors
                         .read_techno_pass(&raw, &self.ares_mouse_cursors);
                 } else {
@@ -496,11 +496,11 @@ impl RulesPassProcessor {
                                 .production
                                 .read_building_pass(&raw);
                             // 1000DD40 Cursor.Spy, after SlamSound.
-                            self.families.get_mut(&family).unwrap()[index]
+                            read_member(&mut self.families, family, index)
                                 .ares_cursors
                                 .read_building_pass(&raw, &self.ares_mouse_cursors);
                         }
-                        let member = &mut self.families.get_mut(&family).unwrap()[index];
+                        let member = read_member(&mut self.families, family, index);
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion. Read
                         // the Ares way, the common TechnoType extension read
@@ -561,12 +561,12 @@ impl RulesPassProcessor {
                             if let Some(value) =
                                 self.resolve_scalar_from(&raw, key, target_family, 0x80)
                             {
-                                self.families.get_mut(&family).unwrap()[index]
+                                read_member(&mut self.families, family, index)
                                     .secret_lab
                                     .set_override(slot, value);
                             }
                         }
-                        self.families.get_mut(&family).unwrap()[index]
+                        read_member(&mut self.families, family, index)
                             .secret_lab
                             .read_flag(&raw);
                         // BuildingTypeClass::ReadINI @0x00460DEB..0x00460E10:
@@ -609,7 +609,7 @@ impl RulesPassProcessor {
                         trailer.apply_read(animation, spawn_delay);
                     }
                     RulesTypeFamily::Vehicle => {
-                        let member = &mut self.families.get_mut(&family).unwrap()[index];
+                        let member = read_member(&mut self.families, family, index);
                         member.unit_speed_type = member
                             .unit_speed_type
                             .read_vehicle_pass(&raw, effective.read_bool("Crusher", false));
@@ -618,7 +618,7 @@ impl RulesPassProcessor {
                         // retains the Turret default across only the admitted
                         // Rules passes.
                         let has_turret = effective.read_bool("Turret", false);
-                        self.families.get_mut(&family).unwrap()[index]
+                        read_member(&mut self.families, family, index)
                             .unit_shp
                             .read_pass(fixed_art.section_or_empty(&image), has_turret);
                         #[cfg(feature = "phobos")]
@@ -704,7 +704,7 @@ impl RulesPassProcessor {
                     if let Some((turret, barrel)) =
                         super::voxel_frame_catalog::building_voxel_read_names(&effective)
                     {
-                        let member = &mut self.families.get_mut(&family).unwrap()[index];
+                        let member = read_member(&mut self.families, family, index);
                         self.model_plan.load_building(
                             &mut member.object_image.model_slots,
                             turret.as_deref(),

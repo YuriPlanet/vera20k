@@ -1571,7 +1571,9 @@ pub struct ObjectType {
     /// YR parent sets it, so the 9-frame branch is unreachable in stock play.
     pub missile_spawn: bool,
     /// `NoSpawnAlt=yes` — swap to the `<TYPE>WO` art while the pool is empty.
-    pub no_spawn_alt: bool,
+    /// Holds that art's name, built once from the section name; `None` for
+    /// `NoSpawnAlt=no`.
+    no_spawn_alt_model: Option<String>,
 
     // -- Slave Miner / economy fields --
     /// Infantry type enslaved/spawned by this unit (Enslaves= in rules.ini, YR only).

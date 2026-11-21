@@ -1190,6 +1190,20 @@ pub(super) fn find_existing_type(
         .position(|member| member.native_stored_id.eq_ignore_ascii_case(incoming))
 }
 
+/// The member at `index` of `family`, for the pass reading it. Every index a
+/// pass holds came from that family's own list, so the family is present.
+/// Takes the map, not the processor, so the caller can borrow its other
+/// fields beside it.
+pub(super) fn read_member(
+    families: &mut HashMap<RulesTypeFamily, Vec<ProcessedType>>,
+    family: RulesTypeFamily,
+    index: usize,
+) -> &mut ProcessedType {
+    &mut families
+        .get_mut(&family)
+        .expect("a pass's member index comes from its family's list")[index]
+}
+
 pub(super) fn find_or_construct_type(
     families: &mut HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     techno_type_order: &mut Vec<(RulesTypeFamily, usize)>,
