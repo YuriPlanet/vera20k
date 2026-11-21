@@ -90,7 +90,9 @@ agree.
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in
   `sections` the sections that differ from the retail copy (added, removed or changed), sorted, at
   most 20, and counts the rest in `sections_more`.
-- `settings`: the Options switches the game plays, the Ares setting (`auto`, `on`, `off`), whether
+- `settings`: the Options switches the game plays (`terrain_deformation`, `superweapon_limit`, and
+  `building_production_queue`, which is left out while off and is only ever on in a single-player
+  game: a network launch plays it off, as the probe reports it), the Ares setting (`auto`, `on`, `off`), whether
   `ares.mix` is mounted, whether the Rules, Art and AI roots, the theater suffix and the mode and
   map catalogs are YR's, and the mod (`title` and `version`, from its `mod.ini`, else its folder's
   name; `version` is empty without one). When a mod requires Ares or the game reads any INI root

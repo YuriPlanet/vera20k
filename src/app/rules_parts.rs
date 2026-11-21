@@ -62,6 +62,10 @@ pub(crate) struct RulesFile {
 pub(crate) struct RulesSettings {
     pub(crate) terrain_deformation: bool,
     pub(crate) superweapon_limit: u8,
+    /// The Building Production Queue switch. Left out while off, so a game
+    /// without it has the parts it had before the switch was named here.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) building_production_queue: bool,
     /// The Ares setting: `auto`, `on` or `off`.
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
@@ -197,6 +201,7 @@ impl RulesParts {
             RulesSettings {
                 terrain_deformation: false,
                 superweapon_limit: 0,
+                building_production_queue: false,
                 ares: "auto",
                 ares_mix: false,
                 ini_roots_stock: true,
@@ -276,6 +281,32 @@ mod tests {
             RulesParts::new(vec![file("rules", false)], deformation, None).digest,
             parts.digest
         );
+        let mut queue = settings();
+        queue.building_production_queue = true;
+        let queue = RulesParts::new(vec![file("rules", false)], queue, None);
+        assert_ne!(queue.digest, parts.digest);
+        assert!(queue.json().contains(r#""superweapon_limit":0,"building_production_queue":true,"#));
+    }
+
+    /// Each of the player's own rule switches (`PersonalRules`, which the
+    /// rules digest covers through `compatibility_crc`) has its setting
+    /// here by the same name, so a launcher can name the one two games
+    /// differ on (AGENTS.md, "Multiplayer rules").
+    #[test]
+    fn every_personal_rules_switch_is_a_setting() {
+        let mut all = settings();
+        all.building_production_queue = true;
+        let settings = serde_json::to_value(&all).unwrap();
+        let personal = serde_json::to_value(
+            crate::rules::personal_rules::PersonalRules::default(),
+        )
+        .unwrap();
+        for key in personal.as_object().unwrap().keys() {
+            assert!(
+                settings.get(key).is_some(),
+                "PersonalRules::{key} changes the rules digest but is not in RulesSettings"
+            );
+        }
     }
 
     /// A changed INI lists twenty sections and counts the rest; the cap cuts
