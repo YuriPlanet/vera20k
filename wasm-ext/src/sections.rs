@@ -1,17 +1,22 @@
-//! The `vera.vars` custom section (appendix "Custom sections"), read at load
-//! time. A module that breaks its rules never loads.
+//! The `vera.vars`, `vera.actions` and `vera.delivery` custom sections
+//! (appendix "Custom sections"), read once at load. A module that breaks
+//! their rules never loads.
 //!
-//! Layout, little endian and unpadded: a format byte (1), a `u32` count, then
-//! per variable a `u16` name length, the ASCII name, a scope byte (8.3
-//! `Scope`), a visibility byte (8.3 `Visibility`) and an `i64` default.
-//!
-//! A module holds at most one `vera.vars` section. Linkers concatenate
-//! same-named custom sections from separate objects, so two declaration
-//! blocks reach the engine as one section with trailing bytes and are
-//! rejected: a module declares all its variables in one place.
+//! Each section is little endian and unpadded and starts with a format byte
+//! (1); names are a `u16` length and ASCII bytes, compared with ASCII case
+//! folding. An unknown format, truncation, trailing bytes, a non-ASCII name,
+//! a duplicate name or a repeated section rejects the module. Linkers
+//! concatenate same-named custom sections from separate objects, so two
+//! declaration blocks reach the engine as one section with trailing bytes
+//! and are rejected: a module declares each section in one place.
 
-/// The custom section's name.
-pub const VARS_SECTION: &str = "vera.vars";
+// The browser build loads no modules, so only the types are used there.
+#![cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
+
+/// The custom sections' names.
+pub const VARS: &str = "vera.vars";
+pub const ACTIONS: &str = "vera.actions";
+pub const DELIVERY: &str = "vera.delivery";
 
 /// Variables one module may declare (open question 7).
 pub const MAX_VARS: usize = 4096;
@@ -45,42 +50,149 @@ pub struct VarDecl {
     pub default: i64,
 }
 
-/// Reads a `vera.vars` section's content. Rejects an unknown format, a
-/// truncated or overlong section, an empty or non-ASCII name, a name declared
-/// twice (ignoring ASCII case), an unknown scope or visibility, and
-/// `InSight` outside object scope.
-pub fn parse_vars(bytes: &[u8]) -> Result<Vec<VarDecl>, String> {
-    let mut reader = Reader { bytes, at: 0 };
-    let format = reader.take::<1>("format")?[0];
-    if format != 1 {
-        return Err(format!("vera.vars format {format} is unknown"));
+/// Where `on_events` batches are written in module memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Delivery {
+    pub offset: u32,
+    pub bytes: u32,
+}
+
+/// What a module's custom sections declare.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Sections {
+    /// `vera.vars`, in declaration order.
+    pub vars: Vec<VarDecl>,
+    /// `vera.actions`: (name, dispatch key), in section order.
+    pub actions: Vec<(String, i32)>,
+    pub delivery: Option<Delivery>,
+}
+
+impl Sections {
+    /// Reads every `vera.vars`, `vera.actions` and `vera.delivery` section
+    /// of a module that already passed validation.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    pub fn read(module: &[u8]) -> Result<Self, String> {
+        let mut sections = Self::default();
+        let (mut saw_vars, mut saw_actions, mut saw_delivery) = (false, false, false);
+        for payload in wasmparser::Parser::new(0).parse_all(module) {
+            let wasmparser::Payload::CustomSection(section) = payload.map_err(|e| e.to_string())?
+            else {
+                continue;
+            };
+            let name = section.name();
+            let seen = match name {
+                VARS => &mut saw_vars,
+                ACTIONS => &mut saw_actions,
+                DELIVERY => &mut saw_delivery,
+                _ => continue,
+            };
+            if std::mem::replace(seen, true) {
+                return Err(format!("{name} appears twice"));
+            }
+            let data = section.data();
+            let parsed = match name {
+                VARS => parse_vars(data).map(|vars| sections.vars = vars),
+                ACTIONS => parse_actions(data).map(|actions| sections.actions = actions),
+                _ => parse_delivery(data).map(|delivery| sections.delivery = Some(delivery)),
+            };
+            parsed.map_err(|e| format!("{name}: {e}"))?;
+        }
+        Ok(sections)
     }
-    let count = u32::from_le_bytes(reader.take::<4>("count")?);
-    if count as usize > MAX_VARS {
-        return Err(format!(
-            "vera.vars declares {count} variables, limit {MAX_VARS}"
-        ));
+
+    /// The dispatch key `vera.actions` gives `name`, ASCII case-insensitive.
+    pub fn action_key(&self, name: &str) -> Option<i32> {
+        self.actions
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, key)| *key)
     }
-    let mut vars: Vec<VarDecl> = Vec::with_capacity(count as usize);
-    for index in 0..count {
-        let len = u16::from_le_bytes(reader.take::<2>("name length")?) as usize;
-        let name = reader.slice(len, "name")?;
-        if name.is_empty() || !name.is_ascii() {
+
+    /// The first name `vera.actions` gives dispatch key `key`.
+    pub fn action_name(&self, key: i32) -> Option<&str> {
+        self.actions
+            .iter()
+            .find(|(_, k)| *k == key)
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+struct Reader<'a> {
+    data: &'a [u8],
+    at: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
+        let at = self.at;
+        let bytes = at
+            .checked_add(len)
+            .and_then(|end| self.data.get(at..end))
+            .ok_or_else(|| format!("truncated at byte {at}"))?;
+        self.at += len;
+        Ok(bytes)
+    }
+
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], String> {
+        let mut out = [0; N];
+        out.copy_from_slice(self.take(N)?);
+        Ok(out)
+    }
+
+    fn format(&mut self) -> Result<(), String> {
+        match self.array::<1>()? {
+            [1] => Ok(()),
+            [other] => Err(format!("unknown format {other}")),
+        }
+    }
+
+    fn name(&mut self) -> Result<String, String> {
+        let len = u16::from_le_bytes(self.array()?);
+        let bytes = self.take(usize::from(len))?;
+        if !bytes.is_ascii() {
             return Err(format!(
-                "vera.vars variable {index} has an empty or non-ASCII name"
+                "name at byte {} is not ASCII",
+                self.at - bytes.len()
             ));
         }
         // ASCII bytes are valid UTF-8.
-        let name = String::from_utf8_lossy(name).into_owned();
-        if vars.iter().any(|v| v.name.eq_ignore_ascii_case(&name)) {
-            return Err(format!("vera.vars declares {name} twice"));
+        Ok(String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    fn end(&self) -> Result<(), String> {
+        match self.data.len() - self.at {
+            0 => Ok(()),
+            extra => Err(format!("{extra} trailing bytes")),
         }
-        let [scope, visibility] = reader.take::<2>("scope and visibility")?;
+    }
+}
+
+/// `format: u8 = 1, count: u32, [{ name_len: u16, name, scope: u8,
+/// visibility: u8, default: i64 }; count]`, scope and visibility as in
+/// appendix 8.3. Also rejects more than [`MAX_VARS`] variables, an empty
+/// name and `InSight` outside object scope.
+fn parse_vars(data: &[u8]) -> Result<Vec<VarDecl>, String> {
+    let mut reader = Reader { data, at: 0 };
+    reader.format()?;
+    let count = u32::from_le_bytes(reader.array()?);
+    if count as usize > MAX_VARS {
+        return Err(format!("declares {count} variables, limit {MAX_VARS}"));
+    }
+    let mut vars: Vec<VarDecl> = Vec::with_capacity(count as usize);
+    for index in 0..count {
+        let name = reader.name()?;
+        if name.is_empty() {
+            return Err(format!("variable {index} has an empty name"));
+        }
+        if vars.iter().any(|v| v.name.eq_ignore_ascii_case(&name)) {
+            return Err(format!("duplicate name {name}"));
+        }
+        let [scope, visibility] = reader.array()?;
         let scope = match scope {
             0 => VarScope::Global,
             1 => VarScope::House,
             2 => VarScope::Object,
-            _ => return Err(format!("vera.vars {name} has unknown scope {scope}")),
+            _ => return Err(format!("{name} has unknown scope {scope}")),
         };
         let visibility = match visibility {
             0 => Visibility::Private,
@@ -89,11 +201,11 @@ pub fn parse_vars(bytes: &[u8]) -> Result<Vec<VarDecl>, String> {
             3 => Visibility::Public,
             _ => {
                 return Err(format!(
-                    "vera.vars {name} has visibility {visibility} for scope {scope:?}"
+                    "{name} has visibility {visibility} for scope {scope:?}"
                 ));
             }
         };
-        let default = i64::from_le_bytes(reader.take::<8>("default")?);
+        let default = i64::from_le_bytes(reader.array()?);
         vars.push(VarDecl {
             name,
             scope,
@@ -101,34 +213,36 @@ pub fn parse_vars(bytes: &[u8]) -> Result<Vec<VarDecl>, String> {
             default,
         });
     }
-    if reader.at != bytes.len() {
-        return Err(format!(
-            "vera.vars has {} trailing bytes",
-            bytes.len() - reader.at
-        ));
-    }
+    reader.end()?;
     Ok(vars)
 }
 
-struct Reader<'a> {
-    bytes: &'a [u8],
-    at: usize,
+/// `format: u8 = 1, count: u32, [{ name_len: u16, name, key: i32 }; count]`.
+fn parse_actions(data: &[u8]) -> Result<Vec<(String, i32)>, String> {
+    let mut reader = Reader { data, at: 0 };
+    reader.format()?;
+    let count = u32::from_le_bytes(reader.array()?);
+    let mut actions: Vec<(String, i32)> = Vec::new();
+    for _ in 0..count {
+        let name = reader.name()?;
+        let key = i32::from_le_bytes(reader.array()?);
+        if actions.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
+            return Err(format!("duplicate name {name}"));
+        }
+        actions.push((name, key));
+    }
+    reader.end()?;
+    Ok(actions)
 }
 
-impl<'a> Reader<'a> {
-    fn slice(&mut self, len: usize, what: &str) -> Result<&'a [u8], String> {
-        let end = self.at.checked_add(len);
-        let slice = end.and_then(|end| self.bytes.get(self.at..end));
-        let slice = slice.ok_or_else(|| format!("vera.vars is truncated in a {what}"))?;
-        self.at += len;
-        Ok(slice)
-    }
-
-    fn take<const N: usize>(&mut self, what: &str) -> Result<[u8; N], String> {
-        let mut out = [0; N];
-        out.copy_from_slice(self.slice(N, what)?);
-        Ok(out)
-    }
+/// `format: u8 = 1, offset: u32, bytes: u32`.
+fn parse_delivery(data: &[u8]) -> Result<Delivery, String> {
+    let mut reader = Reader { data, at: 0 };
+    reader.format()?;
+    let offset = u32::from_le_bytes(reader.array()?);
+    let bytes = u32::from_le_bytes(reader.array()?);
+    reader.end()?;
+    Ok(Delivery { offset, bytes })
 }
 
 #[cfg(test)]

@@ -17,13 +17,21 @@
 
 mod props;
 pub mod sys;
+pub mod triggers;
 pub mod vars;
+
+pub use triggers::{
+    ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
+    Target, TimerEvent, Trigger, TriggerRef, actions_section, actions_section_len,
+};
 
 pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
-        Action, Category, Cell, FIXED_ONE, Find, House, Modifier, ModifierOp, NameKind, Op, Prop,
-        Ref, Status, Techno, TypeRef, Var, Waypoint, fixed, frame, log, random,
+        Action, ActionDef, Category, Cell, Event, EventRecord, FIXED_ONE, Find, FireEvent, House,
+        KilledEvent, Modifier, ModifierOp, NameKind, Op, Prop, Ref, Status, TakeDamageEvent,
+        Target, Techno, TimerEvent, Trigger, TriggerRef, TypeRef, Var, Waypoint, fixed, frame, log,
+        random,
     };
 }
 
@@ -110,6 +118,13 @@ reference!(
     /// A type: kind 1, `name kind << 32 | ID`.
     TypeRef
 );
+
+impl TypeRef {
+    /// TechnoType `name`'s type reference; resolve once, at initialization.
+    pub fn techno_type(name: &str) -> Result<Self> {
+        lookup(NameKind::TechnoType, name).map(|id| Self::new(NameKind::TechnoType, id))
+    }
+}
 
 impl House {
     /// The house at array index `index`. Provisional: the engine preview

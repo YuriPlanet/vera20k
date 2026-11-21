@@ -105,6 +105,36 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
         )
     }
 
+    /// Wasm module `TakeDamage` (RFC 0001 appendix 4.3): after the Strength
+    /// write, with the source, the warhead and the damage written.
+    fn committed(&mut self, damage: i32) {
+        use vera20k_wasm_ext::triggers::EVENT_TAKE_DAMAGE;
+        if !self.execute_world_callbacks
+            || !self.world.trigger_runtime.module_listens(EVENT_TAKE_DAMAGE)
+        {
+            return;
+        }
+        let event = self.event;
+        let warhead = self
+            .rules
+            .warhead_index(self.world.interner.resolve(event.warhead_ref))
+            .map_or(-1, |index| index as i32);
+        self.world.raise_module_event(
+            self.rules,
+            crate::sim::ext_modules::ModuleEvent {
+                other: if event.attacker_id == RAD_NO_ATTACKER {
+                    0
+                } else {
+                    event.attacker_id
+                },
+                value: i64::from(damage),
+                id: warhead,
+                at_subject: true,
+                ..crate::sim::ext_modules::ModuleEvent::new(EVENT_TAKE_DAMAGE, event.target_id)
+            },
+        );
+    }
+
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;
