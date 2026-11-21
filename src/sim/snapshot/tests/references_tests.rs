@@ -3,6 +3,7 @@
 //! targets keep their identity, and process dummies stay unserialized.
 
 use super::*;
+use crate::sim::snapshot::saved_ids::{SavedIdError, check_saved_interned_ids};
 
 #[test]
 fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
@@ -1297,6 +1298,7 @@ fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
 
 /// The Team VM's saved ids (here a ScriptType's) are resolved by name when
 /// Teams are made and traced, so one past the saved interner refuses the load.
+/// No list names the field: the walk over the saved state finds it.
 #[test]
 fn script_type_id_past_the_saved_interner_refuses_the_load() {
     use crate::sim::team_script_vm::TeamScriptDefinition;
@@ -1320,11 +1322,49 @@ fn script_type_id_past_the_saved_interner_refuses_the_load() {
     };
     assert_eq!(
         error,
-        SnapshotRestoreError::UnknownInternedId {
-            registry: "ScriptType",
-            object_id: u64::from(unknown.index()),
-            field: "id",
+        SnapshotRestoreError::UnknownSavedId(SavedIdError::Unknown {
+            owner: "TeamScriptVm",
+            field: "scripts",
             id: unknown.index(),
-        },
+        }),
+    );
+}
+
+/// The walk reads an id wherever the saved shape holds one (a map key, an
+/// `Option`, an enum's field, a tuple) and takes no other `u32` for one.
+#[test]
+fn saved_id_walk_finds_ids_in_nested_shapes_and_ignores_plain_numbers() {
+    use crate::sim::intern::InternedId;
+    use std::collections::BTreeMap;
+
+    #[derive(serde::Serialize)]
+    enum Order {
+        Build { what: InternedId },
+    }
+    #[derive(serde::Serialize)]
+    struct Saved {
+        count: u32,
+        by_name: BTreeMap<InternedId, (u32, Option<InternedId>)>,
+        orders: Vec<Order>,
+    }
+    let id = InternedId::from_index;
+    let saved = |key, value, what| Saved {
+        count: 4_000_000_000,
+        by_name: BTreeMap::from([(id(key), (4_000_000_000, Some(id(value))))]),
+        orders: vec![Order::Build { what: id(what) }],
+    };
+    let unknown = |owner, field, id| Err(SavedIdError::Unknown { owner, field, id });
+    assert_eq!(check_saved_interned_ids(&saved(2, 2, 2), 3), Ok(()));
+    assert_eq!(
+        check_saved_interned_ids(&saved(3, 2, 2), 3),
+        unknown("Saved", "by_name", 3)
+    );
+    assert_eq!(
+        check_saved_interned_ids(&saved(2, 7, 2), 3),
+        unknown("Saved", "by_name", 7)
+    );
+    assert_eq!(
+        check_saved_interned_ids(&saved(2, 2, 9), 3),
+        unknown("Order", "what", 9)
     );
 }

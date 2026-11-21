@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 mod object_references;
+mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
 pub mod saved_local_view;
 #[path = "snapshot/scenario_resources.rs"]
@@ -567,6 +568,8 @@ pub enum SnapshotRestoreError {
         field: &'static str,
         id: u32,
     },
+    #[error(transparent)]
+    UnknownSavedId(#[from] saved_ids::SavedIdError),
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
