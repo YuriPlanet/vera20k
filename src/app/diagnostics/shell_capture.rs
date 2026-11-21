@@ -268,6 +268,8 @@ pub enum ShellCaptureCheckpoint {
     /// Single Player -> Load Saved Game: `0xB7` settled. Needs a readable
     /// save in the saves directory.
     LoadSavedGame0xB7Steady,
+    /// Load a skirmish save after an aborted match and check both sidebar dialogs.
+    LoadSavedGameSidebarButtons,
     /// Its entry slide held at one tick
     /// (`load-saved-game-0xb7-entry-tick-<N>`).
     LoadSavedGame0xB7Entry(u32),
@@ -763,6 +765,7 @@ impl ShellCaptureCheckpoint {
             )),
             CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
+            "load-saved-game-sidebar-buttons" => Ok(Self::LoadSavedGameSidebarButtons),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
@@ -959,6 +962,7 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
+            Self::LoadSavedGameSidebarButtons => "load-saved-game-sidebar-buttons",
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
             Self::OptionsSettings(category) => {
@@ -1122,10 +1126,18 @@ impl ShellCaptureCheckpoint {
             },
             Self::CampaignBackReturn => movies::MoviesTarget::CampaignBack,
             Self::LoadSavedGame0xB7Steady => {
-                movies::MoviesTarget::LoadSavedGame0xB7 { entry_tick: None }
+                movies::MoviesTarget::LoadSavedGame0xB7 {
+                    entry_tick: None,
+                    check_sidebar: false,
+                }
             }
             Self::LoadSavedGame0xB7Entry(tick) => movies::MoviesTarget::LoadSavedGame0xB7 {
                 entry_tick: Some(tick),
+                check_sidebar: false,
+            },
+            Self::LoadSavedGameSidebarButtons => movies::MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None,
+                check_sidebar: true,
             },
             Self::MainMenu0xE2NetworkBounce => movies::MoviesTarget::NetworkBounce,
             Self::Wol0x10ESteady => movies::MoviesTarget::WolWelcome {
