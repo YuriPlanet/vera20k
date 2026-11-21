@@ -89,10 +89,10 @@ impl App {
             .shell_controller
             .ensure_active(CAMPAIGN_DIALOG, false);
         let mut feed = Self::menu_page_button_feed(&layout.page);
-        for side in CampaignSide::ALL {
+        for side in CampaignSide::active() {
             feed.push(LaidOutControl {
                 id: side.emblem(),
-                rect: layout.emblem(side),
+                rect: layout.emblem(*side),
             });
         }
         feed.push(LaidOutControl {

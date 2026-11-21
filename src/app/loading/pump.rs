@@ -1147,7 +1147,15 @@ fn bind_early_country_loading(
             index.0
         )
     })?;
-    let palette_name = country.files().1.to_owned();
+    // `-ra2`: original game.exe binds one MPLS.PAL for every Country (only
+    // the observer uses MPLSOBS.PAL). The YR per-country MPLSU/MPLSR/... PALs
+    // in the Country table are absent from an RA2 install, so keep them out
+    // of the frozen early observation and let the SHP render with MPLS.PAL.
+    let palette_name = if crate::util::ra2_launch::enabled() {
+        "MPLS.PAL".to_owned()
+    } else {
+        country.files().1.to_owned()
+    };
     let palette = if palette_name.is_empty() {
         None
     } else {

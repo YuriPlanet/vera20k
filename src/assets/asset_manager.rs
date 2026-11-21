@@ -330,6 +330,10 @@ pub struct MixFileLoad {
 pub struct AssetManager {
     /// Loaded MIX archives in search priority order.
     archives: Vec<NamedArchive>,
+    /// `-ra2`: MD archives deferred until after the base stack is mounted, so
+    /// original RA2 resources win first-match while the MD members stay
+    /// available as fallback for shell art the YR install only ships there.
+    deferred_md_archives: Vec<String>,
     /// Parsed, named nested MIX archives that retail has not registered yet.
     archive_catalog: Vec<NamedArchive>,
     /// Precomputed first-match lookup across all archives.
@@ -373,6 +377,7 @@ impl Clone for AssetManager {
     fn clone(&self) -> Self {
         Self {
             archives: self.archives.clone(),
+            deferred_md_archives: self.deferred_md_archives.clone(),
             archive_catalog: self.archive_catalog.clone(),
             lookup_index: self.lookup_index.clone(),
             mix_file_cache: Mutex::new(
@@ -473,6 +478,27 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 
 /// Active Yuri's Revenge requires both masters, in this order.
 pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
+
+/// Original Red Alert 2 mode (`-ra2`) mounts only the base, non-md member of
+/// each retail archive pair. Active YR registers both members with the md one
+/// first, so its data wins; RA2 never shipped the md members and reads the base
+/// names instead. This predicate decides which of the two a startup mount is
+/// allowed to register. It does not touch on-demand lookups: an explicitly
+/// requested name is still resolvable, this only shapes the startup stack.
+///
+/// A name is "md" when its stem ends in `md` before an optional numeric suffix
+/// (e.g. `ra2md`, `expandmd01`, `sidec02md`, `isogenmd`). Base counterparts are
+/// `ra2`, `expand01`, `sidec02`, `isogen`. `langmd` maps to `language`, handled
+/// separately below because it is not a simple suffix trim.
+pub(crate) fn is_md_startup_archive(name: &str) -> bool {
+    let stem = name
+        .rsplit_once('.')
+        .map_or(name, |(stem, _)| stem)
+        .to_ascii_lowercase();
+    // Strip a trailing numeric slot so expandmd01/sidec02md are recognised.
+    let core = stem.trim_end_matches(|c: char| c.is_ascii_digit());
+    core.ends_with("md") && core.len() > 2
+}
 
 /// One startup archive that an install inspection could not mount.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -641,6 +667,7 @@ impl AssetManager {
         }
         Ok(Self {
             archives: Vec::new(),
+            deferred_md_archives: Vec::new(),
             archive_catalog: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
@@ -770,6 +797,26 @@ impl AssetManager {
         archive_names: &ArchiveNames,
         mut policy: StartupArchivePolicy<'_>,
     ) -> Result<Self, AssetError> {
+        // `-ra2` selects the original RA2 archive family for every data slot:
+        // maps, multiplayer, theme and movies all switch to the non-md names.
+        // Mod-provided archive names are intentionally overridden in this mode
+        // — a ra2 launch plays the base game, not a mod's md expansion stack.
+        let ra2_names = ArchiveNames::ra2();
+        let ra2_mode = crate::util::ra2_launch::enabled();
+        let archive_names = if ra2_mode {
+            &ra2_names
+        } else {
+            archive_names
+        };
+        // RA2 shipped movies/maps as a numbered family from the discs
+        // (MOVIES01.., MAPS01..), not YR's single index-3 slot. The wildcard
+        // mode mounts the whole family, so use it for a ra2 launch unless the
+        // player explicitly asked for CD mode already (both are wildcards).
+        let media_mode = if ra2_mode {
+            MediaArchiveMode::CdWildcard
+        } else {
+            media_mode
+        };
         archive_names
             .validate()
             .map_err(|detail| AssetError::ParseError {
@@ -846,6 +893,12 @@ impl AssetManager {
         // work unless the user explicitly asks to change the music catalog.
         manager.mount_startup_archive("theme.mix", false, &mut policy)?;
         manager.mount_startup_movie_media(media_mode, archive_names, &mut policy)?;
+
+        // `-ra2`: mount the deferred MD members only after the whole RA2 base
+        // stack owns the first-match slots. Shell art absent from the base
+        // archives is then filled from these, while the non-md INI roots keep
+        // all game data on the original RA2 side.
+        manager.mount_deferred_md_archives();
 
         // Loose YRO archives are deliberately absent here. Retail registers
         // each one during SessionClass scenario enumeration, immediately
@@ -1205,7 +1258,28 @@ impl AssetManager {
     ///
     /// Retail constructs the MD archive first and returns immediately when
     /// either archive is unavailable.
+    ///
+    /// Register the loading-screen archive pair at the scenario-load boundary.
+    ///
+    /// Native mounts `LOADMD.MIX` then `LOAD.MIX`, so MD duplicates win the
+    /// first-match scan. `-ra2` keeps that pair: the RA2 INI roots make the
+    /// *data* come from ra2.mix, while the MD archives remain the fallback for
+    /// shell artwork (pointers, buttons, PALs, rank insignia) that the retail
+    /// YR install keeps only inside its MD masters. Dropping them left those
+    /// resources unresolvable.
     pub fn register_loading_archives(&mut self) -> Result<bool, AssetError> {
+        // Native order is MD first, but in `-ra2` the first-match scan would
+        // then resolve campaign background/title/bar SHPs (LS800BkgdName from
+        // MISSION.INI, TTLBR*/SPLDBR*) to the YR copies in `loadmd.mix`. Mount
+        // the base archive first so original RA2 loading art wins the lookup,
+        // then add `loadmd.mix` as a fallback for art only shipped in YR.
+        if crate::util::ra2_launch::enabled() {
+            if !self.mount_named_archive("load.mix", false)? {
+                return Ok(false);
+            }
+            self.mount_named_archive("loadmd.mix", false)?;
+            return Ok(true);
+        }
         if !self.mount_named_archive("loadmd.mix", false)? {
             return Ok(false);
         }
@@ -1222,6 +1296,18 @@ impl AssetManager {
     /// `NEUTRAL.MIX`. Their registration order makes MD duplicates win retail's
     /// first-match archive scan.
     pub fn register_neutral_archives(&mut self) -> Result<bool, AssetError> {
+        // Native order is MD first, so MD duplicates would win the first-match
+        // scan. Mount the base archive first in `-ra2` so original RA2 shell
+        // art wins, then add the MD member purely as a fallback for artwork
+        // only shipped inside the YR master. Both paths still require the
+        // base `neutral.mix` (it holds the required SDBTNANM.SHP button art).
+        if crate::util::ra2_launch::enabled() {
+            if !self.mount_named_archive("neutral.mix", false)? {
+                return Ok(false);
+            }
+            self.mount_named_archive("ntrlmd.mix", false)?;
+            return Ok(true);
+        }
         if !self.mount_named_archive("ntrlmd.mix", false)? {
             return Ok(false);
         }
@@ -1806,6 +1892,13 @@ impl AssetManager {
             if !mix_wildcard_family_matches(file_name, family_prefix) {
                 continue;
             }
+            // `-ra2` reads only the base archive family. A broad prefix such
+            // as `maps` also matches YR members (`mapsmd03`, `mapsmo03`); skip
+            // those so they cannot enter the search path ahead of RA2 data.
+            if crate::util::ra2_launch::enabled() && is_md_startup_archive(file_name) {
+                log::debug!("-ra2: skipping md wildcard archive {file_name}");
+                continue;
+            }
 
             let first_match = !result.matched;
             result.matched = true;
@@ -1910,12 +2003,47 @@ impl AssetManager {
         Ok(())
     }
 
+    /// `-ra2` mounts the base member of each retail archive pair first so its
+    /// resources win first-match, then mounts the MD members as a fallback
+    /// layer. This is startup-only: direct/on-demand lookups of an md name
+    /// still resolve, so explicit diagnostics are unaffected.
+    fn skip_md_for_ra2(name: &str) -> bool {
+        crate::util::ra2_launch::enabled() && is_md_startup_archive(name)
+    }
+
+    /// Append the deferred MD archives after the whole base stack is mounted.
+    /// `lookup_index` uses `or_insert`, so a base entry already seen keeps its
+    /// slot and an MD archive only fills names the RA2 side could not supply —
+    /// shell art (pointers, buttons, PALs, rank insignia) the YR install keeps
+    /// exclusively in its MD masters. Data still comes from the non-md INI
+    /// roots (rules.ini/ra2.csf/BATTLE.INI), independent of this order.
+    fn mount_deferred_md_archives(&mut self) {
+        if self.deferred_md_archives.is_empty() {
+            return;
+        }
+        let deferred = std::mem::take(&mut self.deferred_md_archives);
+        for name in deferred {
+            match self.mount_named_archive(&name, false) {
+                Ok(mounted) => log::debug!("-ra2: mounted md fallback archive {name}: {mounted}"),
+                Err(error) => log::debug!("-ra2: could not mount md fallback {name}: {error}"),
+            }
+        }
+    }
+
     fn mount_startup_archive(
         &mut self,
         name: &str,
         required: bool,
         policy: &mut StartupArchivePolicy<'_>,
     ) -> Result<bool, AssetError> {
+        if Self::skip_md_for_ra2(name) {
+            // Keep the MD member for the deferred fallback pass instead of
+            // dropping it. De-duplicate: the same name can be probed twice.
+            if !self.deferred_md_archives.iter().any(|n| n == name) {
+                self.deferred_md_archives.push(name.to_string());
+            }
+            return Ok(false);
+        }
         match self.mount_named_archive(name, required) {
             Ok(mounted) => Ok(mounted),
             Err(error) => {
@@ -2914,6 +3042,7 @@ mod tests {
                     archive: make_new_format_mix("loading.bin", b"md-loading"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3001,6 +3130,7 @@ mod tests {
                     archive: make_new_format_mix("weather.bin", b"temperate"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3078,6 +3208,7 @@ mod tests {
                 archive: make_new_format_mix("audio.idx", b"test"),
             }],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3123,6 +3254,7 @@ mod tests {
                 },
             ],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3166,6 +3298,7 @@ mod tests {
                     archive: make_new_format_mix("duplicate.shp", b"base"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3210,6 +3343,7 @@ mod tests {
                 name: "ra2.mix -> neutral.mix".to_string(),
                 archive: make_new_format_mix("base-only.shp", b"base"),
             }],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3242,6 +3376,7 @@ mod tests {
                 archive: make_new_format_mix("ra2md.csf", b"archived"),
             }],
             archive_catalog: Vec::new(),
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::from([(
@@ -3310,6 +3445,7 @@ mod tests {
                     archive: make_new_format_mix("temperate.bin", b"temperate"),
                 },
             ],
+            deferred_md_archives: Vec::new(),
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
@@ -3387,5 +3523,65 @@ mod tests {
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
         );
+    }
+}
+
+#[cfg(test)]
+mod ra2_archive_name_tests {
+    use super::is_md_startup_archive;
+
+    #[test]
+    fn md_startup_archives_are_recognised_with_and_without_numeric_slots() {
+        for name in [
+            "ra2md.mix",
+            "langmd.mix",
+            "audiomd.mix",
+            "conqmd.mix",
+            "genermd.mix",
+            "isogenmd.mix",
+            "cameomd.mix",
+            "cachemd.mix",
+            "localmd.mix",
+            "loadmd.mix",
+            "sidec01md.mix",
+            "sidec02md.mix",
+            "expandmd01.mix",
+            "expandmd96.mix",
+            "mapsmd03.mix",
+            "multimd.mix",
+            "thememd.mix",
+            "movmd03.mix",
+            "isourbmd.mix",
+            "isotemmd.mix",
+        ] {
+            assert!(is_md_startup_archive(name), "expected md: {name}");
+        }
+    }
+
+    #[test]
+    fn base_archives_are_never_treated_as_md() {
+        for name in [
+            "ra2.mix",
+            "language.mix",
+            "audio.mix",
+            "conquer.mix",
+            "generic.mix",
+            "isogen.mix",
+            "cameo.mix",
+            "cache.mix",
+            "local.mix",
+            "load.mix",
+            "sidec01.mix",
+            "sidec02.mix",
+            "expand01.mix",
+            "maps01.mix",
+            "multi.mix",
+            "theme.mix",
+            "movies01.mix",
+            "isourb.mix",
+            "isotemp.mix",
+        ] {
+            assert!(!is_md_startup_archive(name), "unexpected md: {name}");
+        }
     }
 }

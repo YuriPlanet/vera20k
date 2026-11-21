@@ -2414,21 +2414,31 @@ pub(crate) fn techno_extras_for_parent(
     let filled = filled_count(object.strength, num_pips as i32) as u32;
     //6F69B1..69F3 compares independently: <=red overrides <=yellow. These
     // are direct ratio comparisons, unlike Building's positive-HP red gate.
+    // Original RA2's PIPS.SHP (from ra2.mix -> conquer.mix) puts the unit
+    // health pips at 15=green / 16=yellow / 17=red. YR's PIPS.SHP (conqmd)
+    // inserts an insignia at 15 and shifts them to 16/17/18. The two files
+    // are distinguished by frame count (RA2 19, YR 21) but the launch flag
+    // is authoritative for a `-ra2` run.
+    let (green_frame, yellow_frame, red_frame) = if crate::util::ra2_launch::enabled() {
+        (15usize, 16usize, 17usize)
+    } else {
+        (16usize, 17usize, 18usize)
+    };
     use crate::util::native_x87::MaskedX87Ordering::Greater;
     let frame = if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_red)
         != Greater
     {
-        18
+        red_frame
     } else if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_yellow)
         != Greater
     {
-        17
+        yellow_frame
     } else {
-        16
+        green_frame
     };
     strip.fills.reserve(filled as usize);
     for index in 0..filled {

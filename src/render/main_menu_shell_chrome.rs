@@ -316,6 +316,9 @@ pub struct CampaignShellArt {
     pub background_dark: Option<MainMenuShellChromeEntry>,
     pub allied: Vec<MainMenuShellChromeEntry>,
     pub soviet: Vec<MainMenuShellChromeEntry>,
+    /// Boot Camp emblem frames. Empty under YR (no boot camp); populated
+    /// under `-ra2` from FSBCLG.SHP / FSBCSM.SHP.
+    pub bootcamp: Vec<MainMenuShellChromeEntry>,
     /// TRAKGRIP.PCX, the 12x22 trackbar thumb.
     pub slider_thumb: Option<MainMenuShellChromeEntry>,
     /// The trackbar's two bevel boxes (`0x006208F0`) on a canvas two pixels
@@ -345,15 +348,49 @@ pub fn build_campaign_shell_art(
     small: bool,
     slider: (u32, u32),
 ) -> Option<CampaignShellArt> {
-    let [allied_pal, soviet_pal, background_pal] =
-        CAMPAIGN_ART_PALETTES.map(|name| load_named_palette(assets, name));
+    let [allied_pal, soviet_pal, background_pal] = if crate::util::ra2_launch::enabled() {
+        // Original RA2 ships the campaign emblem/background SHPs in
+        // `ra2.mix -> neutral.mix` (FSALG 570x135/8f, FSSLG 444x149/8f,
+        // FSBKGDLG 632x568) and colours them with the single shared
+        // `FSSCRN.PAL` that lives beside them in that same archive. YR instead
+        // has three per-art palettes (FSALG.PAL/FSSLG.PAL/FSBKGDLG.PAL) in
+        // `ra2md.mix -> ntrlmd.mix`. Using the YR palettes — or the generic
+        // SHELL.PAL — recolours the RA2 shapes into a YR-looking image.
+        // Use RA2's own campaign palette so the emblems show their native
+        // colours. These are pure UI colours, not game data.
+        let campaign = load_named_palette(assets, "FSSCRN.PAL");
+        log::debug!(
+            "RA2 campaign art: using FSSCRN.PAL for {:?} (palette available={})",
+            CAMPAIGN_ART_PALETTES,
+            campaign.is_some()
+        );
+        [campaign.clone(), campaign.clone(), campaign]
+    } else {
+        CAMPAIGN_ART_PALETTES.map(|name| load_named_palette(assets, name))
+    };
     let [allied, soviet, background] = campaign_art_names(small);
-    let mut rendered = render_shp_frames(assets, allied, &allied_pal?, "frame");
+    let allied_pal = allied_pal.as_ref()?;
+    let soviet_pal = soviet_pal.as_ref()?;
+    let mut rendered = render_shp_frames(assets, allied, allied_pal, "frame");
     let allied_count = rendered.len();
-    rendered.extend(render_shp_frames(assets, soviet, &soviet_pal?, "frame"));
+    rendered.extend(render_shp_frames(assets, soviet, soviet_pal, "frame"));
     let soviet_count = rendered.len() - allied_count;
+    // Original RA2 has a third Boot Camp emblem between Allied and Soviet in
+    // dialog 0x94 (control 0x6EB). YR has no boot camp, so keep this empty
+    // there. FSBCLG/FSBCSM are the large/small boot-camp shapes in
+    // `ra2.mix -> neutral.mix`, coloured by the same FSSCRN.PAL.
+    let bootcamp_count = if crate::util::ra2_launch::enabled() {
+        let shape = if small { "FSBCSM.SHP" } else { "FSBCLG.SHP" };
+        let frames = render_shp_frames(assets, shape, allied_pal, "frame");
+        let n = frames.len();
+        rendered.extend(frames);
+        n
+    } else {
+        0
+    };
+    let emblem_count = allied_count + soviet_count + bootcamp_count;
     let mut labels: Vec<&str> = Vec::new();
-    if let Some(entry) = render_shp_entry(assets, background, &background_pal?, 0, None) {
+    if let Some(entry) = render_shp_entry(assets, background, background_pal.as_ref()?, 0, None) {
         rendered.push(ChromePiece {
             label: "background:dark".into(),
             width: entry.width,
@@ -381,12 +418,13 @@ pub fn build_campaign_shell_art(
         labels
             .iter()
             .position(|label| *label == name)
-            .map(|index| packed[allied_count + soviet_count + index])
+            .map(|index| packed[emblem_count + index])
     };
     Some(CampaignShellArt {
         texture,
         allied: packed[..allied_count].to_vec(),
         soviet: packed[allied_count..allied_count + soviet_count].to_vec(),
+        bootcamp: packed[allied_count + soviet_count..emblem_count].to_vec(),
         background: extra("background"),
         background_dark: extra("background:dark"),
         slider_thumb: extra("thumb"),

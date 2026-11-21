@@ -41,6 +41,11 @@ const _: () = assert!(
     cfg!(feature = "npbug") == rules::NPBUG_ENABLED,
     "enable NPBUG through the vera20k package's npbug feature"
 );
+// The same boundary for original Red Alert 2 compatibility.
+const _: () = assert!(
+    cfg!(feature = "ra2") == rules::RA2_ENABLED,
+    "enable RA2 mode through the vera20k package's ra2 feature"
+);
 
 // Opaque process-RNG cursor receipt shared by map generation and simulation.
 use vera20k_core::rng_continuation;
