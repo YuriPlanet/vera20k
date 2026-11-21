@@ -23,7 +23,8 @@ pub enum SavedIdError {
     /// saved struct or enum around it and `field` the field of it being
     /// written.
     #[error(
-        "saved {owner} field {field} names interned id {id}, which the saved interner does not hold"
+        "this save is damaged and cannot be loaded: its saved {owner} field {field} names \
+         interned id {id}, which the save's own name table does not hold"
     )]
     Unknown {
         owner: &'static str,

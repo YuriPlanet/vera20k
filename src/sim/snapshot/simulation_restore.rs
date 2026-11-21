@@ -45,8 +45,8 @@ impl Simulation {
         Ok(())
     }
 
-    /// Every interned id the save holds must name an entry of the saved
-    /// interner: both come from the file, and `StringInterner::resolve`
+    /// Every interned id the saved Simulation holds must name an entry of the
+    /// saved interner: both come from the file, and `StringInterner::resolve`
     /// panics on an id it never produced. A save that fails this is refused
     /// before any restore step reads one. Objects, Houses and bullets are
     /// checked first, so their refusal names the object; the walk over the

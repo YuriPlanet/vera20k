@@ -560,7 +560,8 @@ pub enum SnapshotRestoreError {
     #[error("saved Terrain {object_id} references unresolved type {type_name}")]
     MissingTerrainType { object_id: u64, type_name: String },
     #[error(
-        "saved {registry} {object_id} field {field} names interned id {id}, which the saved interner does not hold"
+        "this save is damaged and cannot be loaded: its saved {registry} {object_id} field {field} \
+         names interned id {id}, which the save's own name table does not hold"
     )]
     UnknownInternedId {
         registry: &'static str,
@@ -897,6 +898,10 @@ impl GameSnapshot {
         let overlay_registry = rules.overlay_registry();
         let mut simulation = self.sim;
         simulation.validate_saved_interned_ids()?;
+        // The save's other parts name ids of the same interner.
+        let interned = simulation.interner.len();
+        saved_ids::check_saved_interned_ids(&self.sidebar_order, interned)?;
+        saved_ids::check_saved_interned_ids(&self.continuation, interned)?;
         simulation.retain_process_state_for_load(process);
         let retain_continuation = simulation.retains_snapshot_continuation();
         if retain_continuation != self.continuation.is_some() {

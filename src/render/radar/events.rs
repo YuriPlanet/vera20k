@@ -220,6 +220,10 @@ impl ClientRadarEvent {
     /// `0x0065FF86..0x0065FFE7`: a fade below 0 (or unordered) bounces only
     /// while its speed is below 0 (or unordered); one above 1 bounces only
     /// while its speed is above 0.
+    ///
+    /// RESIDUAL: native compares the register sum before it stores it; this
+    /// compares the stored f32, as it always did. A fade that rounds to
+    /// exactly 0 or 1 on the store bounces one tick later. Not visible.
     fn tick_fade(&mut self) {
         self.fade = native_add_stored_f32(self.fade, self.fade_speed);
         let compare = |value: f32, with: f32| M::compare(load_f32(value), load_f32(with));
