@@ -45,12 +45,14 @@ impl Simulation {
         Ok(())
     }
 
-    /// Each object's type and owner, each House's key and type and each
-    /// bullet's warhead, BulletType and Weapon must name an entry of the saved
-    /// interner: both come from the file, and `StringInterner::resolve`
+    /// Every interned id the saved Simulation holds must name an entry of the
+    /// saved interner: both come from the file, and `StringInterner::resolve`
     /// panics on an id it never produced. A save that fails this is refused
-    /// before any restore step reads one. Team, script and trigger ids are
-    /// not covered here.
+    /// before any restore step reads one. Objects, Houses and bullets are
+    /// checked first, so their refusal names the object; the walk over the
+    /// whole saved state ([`super::saved_ids`]) then covers every other
+    /// field (teams and scripts, superweapons, production, House state and
+    /// the rest) and names the saved struct and field.
     pub(super) fn validate_saved_interned_ids(&self) -> Result<(), SnapshotRestoreError> {
         let check = |registry, object_id, field, id: crate::sim::intern::InternedId| {
             self.interner
@@ -82,6 +84,7 @@ impl Simulation {
                 check("bullet", bullet_id, "weapon", weapon)?;
             }
         }
+        super::saved_ids::check_saved_interned_ids(self, self.interner.len())?;
         Ok(())
     }
 

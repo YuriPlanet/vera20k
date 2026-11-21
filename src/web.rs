@@ -332,6 +332,10 @@ struct PendingImport {
 /// file comes near.
 const MAX_IMPORT_BYTES: f64 = 2_147_483_647.0;
 
+/// Room beside an import's bytes for what `Arc<[u8]>` allocates with them:
+/// its two counters and the allocator's rounding.
+const IMPORT_ARC_SLACK: usize = 64;
+
 /// Begin importing a file in parts, so a large one need not be held whole in
 /// the page as well: `kind` is "retail" (as `import_file`), "spawn" (as
 /// `import_spawn_file`) or "mod:<folder>" (as `import_mod_file`). The engine
@@ -364,6 +368,17 @@ pub fn import_begin(kind: &str, name: &str, length: f64) -> Result<(), JsValue> 
         }
     };
     PENDING.with(|slot| *slot.borrow_mut() = None);
+    // Stable Rust has no fallible `Arc` slice, and an infallible one that
+    // cannot grow memory aborts the page. So reserve the slice first through
+    // the fallible `Vec` call and free it: wasm memory never shrinks, so the
+    // slice below reuses that space unless a worker thread of a threads build
+    // takes it in between. The probe asks for the slice with its `Arc`
+    // counters, so a length within that of the address space is refused here
+    // and not by a panic in the slice's layout.
+    (length as usize)
+        .checked_add(IMPORT_ARC_SLACK)
+        .and_then(|bytes| Vec::<u8>::new().try_reserve_exact(bytes).ok())
+        .ok_or_else(|| JsValue::from_str("Not enough memory for this file"))?;
     let pending = PendingImport {
         path,
         bytes: std::sync::Arc::new_uninit_slice(length as usize),

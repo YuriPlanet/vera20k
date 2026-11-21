@@ -16,6 +16,10 @@ use crate::map::rmg::scratch::RmgScratch;
 use super::carve::stamp_iso_block;
 use super::shore::TileBlocks;
 
+/// The cliff set's piece count: the materializer stamps pieces 1..=40 at
+/// `CliffSet + piece - 1`, and this pass varies the same signed window.
+pub(in crate::map::rmg) const CLIFF_SET_TILES: i32 = 40;
+
 /// Original `0x005A17F0`: visit current cells in native order, then vary a
 /// repeated neighboring cliff template south before east.
 pub(in crate::map::rmg) fn run(
@@ -29,7 +33,7 @@ pub(in crate::map::rmg) fn run(
         let tile = grid.cell_native(x, y).tile;
         // Original 5A1819..5A182F is a signed 40-tile window, without a
         // separate absent-base guard. The theater owner supplies its base.
-        if tile < cliff_base || tile >= cliff_base.wrapping_add(40) {
+        if tile < cliff_base || tile >= cliff_base.wrapping_add(CLIFF_SET_TILES) {
             continue;
         }
 
@@ -59,10 +63,11 @@ pub(in crate::map::rmg) fn run(
             // Original 5A1886..5A18C7 / 5A193B..5A197A recovers the
             // NEIGHBOR's anchor using the CURRENT OLD tile's width. It does
             // not use the replacement's dimensions or the current subtile.
-            // VERA: a theater whose cliff TMP is missing or unreadable has no
-            // template to recover the anchor from, so that cliff keeps its
-            // tile, as a missing replacement block stamps nothing
-            // (`stamp_iso_block`). Retail theaters have every cliff block.
+            // VERA: a generation whose cliff TMP is missing or unreadable is
+            // refused before it starts (`TheaterTileBlocks::missing_cliff_tile`).
+            // Blocks from elsewhere still lack a template here: that cliff
+            // keeps its tile, as a missing replacement block stamps nothing
+            // (`stamp_iso_block`).
             let Some(width) = blocks
                 .block(old_tile)
                 .map(|block| block.width)

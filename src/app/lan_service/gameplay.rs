@@ -241,7 +241,11 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         state.match_state.network_quality.record_start_parts(parts);
     }
     if state.match_state.session_mode() == SessionMode::Lan {
-        let service = state.match_state.lan_service.as_mut().expect("visit");
+        let service = state
+            .match_state
+            .lan_service
+            .as_mut()
+            .ok_or_else(super::closed_visit)?;
         let scope = service
             .setup_scope()
             .ok_or_else(|| anyhow::anyhow!("LAN gameplay has no final accepted scope"))?;
@@ -255,7 +259,7 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .match_state
         .lan_service
         .as_mut()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .transport
         .take()
         .ok_or_else(|| anyhow::anyhow!("LAN startup transport is already owned by a match"))?;

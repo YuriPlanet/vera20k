@@ -869,12 +869,11 @@ pub(super) fn received_options(
     if result.is_err() {
         maps.fail(state);
     }
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("retained LAN service")
-        .maps = maps;
+    // The step above runs with the whole app state and can close the visit;
+    // the transfer state then ends with the service it belonged to.
+    if let Some(service) = state.match_state.lan_service.as_mut() {
+        service.maps = maps;
+    }
     result
 }
 
@@ -964,12 +963,10 @@ pub(super) fn receive(state: &mut AppState, source: SocketAddrV4, bytes: &[u8]) 
             .maps,
     );
     let result = maps.receive(state, source, packet);
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("retained LAN service")
-        .maps = maps;
+    // As in `received_options`: a closed visit takes its transfer state along.
+    if let Some(service) = state.match_state.lan_service.as_mut() {
+        service.maps = maps;
+    }
     result
 }
 

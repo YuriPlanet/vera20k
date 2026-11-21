@@ -513,6 +513,8 @@ impl LanUdpTransport {
             .spawn(move || {
                 while !worker_stop.load(Ordering::Acquire) {
                     {
+                        // Poisoned here means the game thread panicked with
+                        // the lock held: the game is already ending.
                         let mut io = io.lock().expect("UDP I/O owner poisoned");
                         if worker_stop.load(Ordering::Acquire) {
                             break;
@@ -548,6 +550,16 @@ impl LanUdpTransport {
         }
     }
 
+    /// A worker pass that panicked ends the game: this assert, the poisoned
+    /// lock below and the re-raise in `stop_io_pump` are deliberate. With a
+    /// worker, `UdpIo::service` runs on it alone, and only that marks the
+    /// relay absent, retries a Leave and releases a retirement. A transport
+    /// that outlived a failed pass would leave a relay match on Reconnecting
+    /// with no end, keep its place in the room looking alive to the relay
+    /// (the game thread still sends), and hold every later online admission
+    /// behind a retirement nothing services. Turning the failure into a lost
+    /// connection needs that close path to run without the worker first;
+    /// until then the crash is the outcome that ends cleanly for the room.
     fn check_worker(&self) {
         if let Some(pump) = &self.pump {
             assert!(
@@ -559,7 +571,9 @@ impl LanUdpTransport {
 
     fn lock(&self) -> MutexGuard<'_, UdpIo> {
         self.check_worker();
-        self.io.lock().expect("UDP I/O owner poisoned")
+        self.io
+            .lock()
+            .expect("a thread panicked while holding the UDP I/O lock (see check_worker)")
     }
 
     fn wake(&self) {

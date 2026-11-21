@@ -271,14 +271,10 @@ pub(crate) fn begin_direct_spawn(
         anyhow::anyhow!("could not open UDP port {}: {error}", direct.local_port)
     })?;
     service.start_io_pump()?;
+    // The agreement reads the installed setup, not the service, so it is
+    // made first and installed with the service.
+    service.setup_agreement = Some(super::shell_network_setup::agreement::local(state)?);
     state.match_state.lan_service = Some(service);
-    let agreement = super::shell_network_setup::agreement::local(state)?;
-    state
-        .match_state
-        .lan_service
-        .as_mut()
-        .expect("installed")
-        .setup_agreement = Some(agreement);
     Ok(())
 }
 

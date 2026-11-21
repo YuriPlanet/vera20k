@@ -106,7 +106,11 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     )?;
     if admitted {
         crate::app::shell_network_setup::invalidate_network_agreement(state)?;
-        let service = state.match_state.lan_service.as_mut().expect("visit");
+        let service = state
+            .match_state
+            .lan_service
+            .as_mut()
+            .ok_or_else(super::closed_visit)?;
         service.deferred_setup.retain(|request| {
             !matches!(
                 request,
@@ -549,7 +553,11 @@ fn receive_host_options(
     host: (String, SocketAddrV4),
 ) -> Result<()> {
     let (host_setup, departed) = admit_host_room(
-        state.match_state.lan_service.as_mut().expect("visit"),
+        state
+            .match_state
+            .lan_service
+            .as_mut()
+            .ok_or_else(super::closed_visit)?,
         &state.match_state.session,
         &state.frontend.skirmish_modes,
         scope,
@@ -578,7 +586,7 @@ fn receive_host_options(
         .match_state
         .lan_service
         .as_mut()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .received_options = Some(ReceivedOptions {
         scope,
         envelope: options,

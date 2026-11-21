@@ -287,6 +287,10 @@ fn copy_section(
         .map(|(key, value)| key.len() + value.len())
         .sum();
     if !ini.ares_copies.charge(bytes) {
+        // Log only: every INI the game reads comes through this parser,
+        // which cannot fail and has no channel to the player. Telling the
+        // player takes a notice carried from the rules load to the loading
+        // screen, which is the rules stack's to add (`retail_sources`).
         log::warn!(
             "Section '{name}' does not inherit from '{}': the INI's inherited sections exceed VERA's copy limit.",
             ini.sections[base].name
