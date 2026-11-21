@@ -1069,6 +1069,18 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
     }
 }
 
+/// VERA's bound on an AnimType's or VoxelAnimType's `SpawnCount=`. Each
+/// bounce or expiry draws twice in `0..=SpawnCount` and spawns their sum of
+/// child anims one at a time, so a value near `i32::MAX` freezes the match the
+/// first time it fires; retail spawns at most 7 (`METSMALL`).
+pub(crate) const SPAWN_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `NumParticles=`: an anim with `SpawnsParticle=` births
+/// that many particles at once, so a value near `i32::MAX` freezes the match
+/// or exhausts memory the first time it plays; retail births at most 3
+/// (`VIRUSD`).
+pub(crate) const NUM_PARTICLES_LIMIT: i32 = 256;
+
 /// `AnimTypeClass::AnimTypeClass @ 0x00427530` constructor defaults for the four
 /// `ReadDouble` animation keys, taken from the literal dword pairs the
 /// constructor stores.
@@ -1084,18 +1096,6 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
 /// authored path — `CCINIClass::ReadDouble` also parses `%f` and widens — so a
 /// port that writes `0.8_f64` here starts every unauthored bouncer from a
 /// different bit pattern than gamemd.
-/// VERA's bound on an AnimType's or VoxelAnimType's `SpawnCount=`. Each
-/// bounce or expiry draws twice in `0..=SpawnCount` and spawns their sum of
-/// child anims one at a time, so a value near `i32::MAX` freezes the match the
-/// first time it fires; retail spawns at most 7 (`METSMALL`).
-pub(crate) const SPAWN_COUNT_LIMIT: i32 = 256;
-
-/// VERA's bound on `NumParticles=`: an anim with `SpawnsParticle=` births
-/// that many particles at once, so a value near `i32::MAX` freezes the match
-/// or exhausts memory the first time it plays; retail births at most 3
-/// (`VIRUSD`).
-pub(crate) const NUM_PARTICLES_LIMIT: i32 = 256;
-
 const ANIM_DAMAGE_DEFAULT: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO;
 const ANIM_ELASTICITY_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_9999_a000_0000);
 const ANIM_MIN_Z_VEL_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x400c_0000_0000_0000);

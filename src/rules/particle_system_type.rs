@@ -14,16 +14,16 @@ use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
-/// Railgun doubles written by `ParticleSystemTypeClass::Constructor @
-/// 0x006440A0` (`0x0064410E..0x0064414F`): `ParticlesPerCoord` 0.1,
-/// `SpiralDeltaPerCoord` 0.025 and `SpiralRadius` 25.0. The three
-/// perturbation coefficients start at 0.0.
 /// VERA's bound on `ParticleCap=` (only its upper end: a negative cap keeps
 /// its native meaning). A Spark system births a burst of up to the cap in one
 /// frame, one particle at a time, so a value near `i32::MAX` freezes the
 /// match or exhausts memory the first time it sparks; retail caps at 20.
 const PARTICLE_CAP_LIMIT: i32 = 1024;
 
+/// Railgun doubles written by `ParticleSystemTypeClass::Constructor @
+/// 0x006440A0` (`0x0064410E..0x0064414F`): `ParticlesPerCoord` 0.1,
+/// `SpiralDeltaPerCoord` 0.025 and `SpiralRadius` 25.0. The three
+/// perturbation coefficients start at 0.0.
 const DEFAULT_PARTICLES_PER_COORD: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 const DEFAULT_SPIRAL_DELTA_PER_COORD: NativeF64Bits =
     NativeF64Bits::from_bits(0x3f99_9999_9999_999a);

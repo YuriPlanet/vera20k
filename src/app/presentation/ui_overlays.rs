@@ -2508,7 +2508,10 @@ pub(crate) struct ScalePipDraw {
 /// `Ammo=`, a MindControl weapon's `Damage=`), and each frame builds one pip
 /// per slot, so a value near `i32::MAX` would freeze the game or exhaust
 /// memory as soon as the row draws. At 4 pixels a pip, a longer row runs off
-/// any screen; retail rows hold at most 100.
+/// any screen; retail rows hold at most 100. The storage row is bound the
+/// same way (`GetPipMax` grows with a custom foundation's width). A stock
+/// passenger row longer than the bound that carries more than the bound
+/// drops its row, as an overfull one does.
 const PIP_ROW_LIMIT: usize = 256;
 
 /// PIPS2's infantry/unit filler count: the draw owner loads current Type+380
@@ -2844,7 +2847,7 @@ fn scale_pip_rows(
         .count();
     let ore = bales.len() - gems;
     let maximum = object.pip_max(rules);
-    let slots = usize::try_from(maximum).unwrap_or(0);
+    let slots = usize::try_from(maximum).unwrap_or(0).min(PIP_ROW_LIMIT);
     //70A230..29C independently rounds Storage slot1 (gems) and (slot3+2)+0
     //(ore) through amount / current Type.Storage * GetPipMax + binary64 0.5.
     //Ambient0E7F is PC53/chop: stock4/40 remains just below0.5 after the
