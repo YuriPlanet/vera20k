@@ -376,6 +376,8 @@ pub(super) enum Response {
     },
     /// A notice for the lobby's chat, by its `VERA:` label.
     Failure(&'static str),
+    /// An ordinary watch-list refresh failed; the shell retains its last rows.
+    WatchListFailed,
     Offline,
     /// The first event poll of an outage failed; polling keeps retrying.
     LobbyUnreachable,
@@ -1143,6 +1145,29 @@ macro_rules! serial_driver {
         }
     }
 
+    $($asynchronous)? fn matches_finished(
+        &mut self,
+        result: Result<MatchList, RequestFailure>,
+        refused_options: Option<u64>,
+        output: &Sender<Response>,
+    ) {
+        let list = match result {
+            Ok(list) => Some(list.matches),
+            // A lobby from before watching has no watch list.
+            Err(RequestFailure::Status(404)) => None,
+            Err(error) => {
+                let outdated = matches!(error, RequestFailure::UpgradeRequired(_));
+                if !platform_await!(self.session_failed(error, output))
+                    && refused_options.is_none() && !outdated && self.token.is_some()
+                {
+                    let _ = output.send(Response::WatchListFailed);
+                }
+                return;
+            }
+        };
+        let _ = output.send(Response::Matches { list, refused_options });
+    }
+
     $($asynchronous)? fn poll_finished(
         &mut self,
         result: Result<(), RequestFailure>,
@@ -1340,23 +1365,11 @@ macro_rules! serial_driver {
                 platform_await!(client.list_finished(list, &mut refresh_failed, &output));
             }
             Some(Request::Matches { refused_options }) => {
-                match platform_await!(client.request("/v1/matches", None)).and_then(|value| {
+                let list = platform_await!(client.request("/v1/matches", None)).and_then(|value| {
                     serde_json::from_value::<MatchList>(value)
                         .map_err(|_| RequestFailure::Status(0))
-                }) {
-                    Ok(list) => {
-                        let _ = output.send(Response::Matches { list: Some(list.matches), refused_options });
-                    }
-                    // A lobby from before watching lists no match.
-                    Err(RequestFailure::Status(404)) => {
-                        let _ = output.send(Response::Matches { list: None, refused_options });
-                    }
-                    // The game list asked at the same time says when the
-                    // lobby could not be refreshed.
-                    Err(error) => {
-                        let _ = platform_await!(client.session_failed(error, &output));
-                    }
-                }
+                });
+                platform_await!(client.matches_finished(list, refused_options, &output));
             }
             Some(Request::Command {
                 id,
@@ -2255,6 +2268,28 @@ mod tests {
         assert!(matches!(input.try_recv(), Ok(Response::Channels(_))));
         client.list_finished(Err(RequestFailure::Status(503)), &mut failed, &output);
         assert!(matches!(input.try_recv(), Ok(Response::Failure(_))));
+    }
+
+    #[test]
+    fn watch_list_failure_keeps_the_rows_and_legacy_probes_keep_their_revision() {
+        let (output, input) = std::sync::mpsc::channel();
+        let mut client = signed_in_client(1);
+        client.matches_finished(Err(RequestFailure::Status(503)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::WatchListFailed)));
+        // A failed option probe has no watch rows to refresh. A 404 still
+        // reaches the capability owner with the matching options revision.
+        client.matches_finished(Err(RequestFailure::Status(503)), Some(9), &output);
+        client.matches_finished(Err(RequestFailure::Status(404)), Some(9), &output);
+        assert!(matches!(
+            input.try_recv(),
+            Ok(Response::Matches {
+                list: None,
+                refused_options: Some(9)
+            })
+        ));
+        client.matches_finished(Err(RequestFailure::Status(401)), None, &output);
+        assert!(matches!(input.try_recv(), Ok(Response::Offline)));
+        assert!(input.try_recv().is_err());
     }
 
     #[test]

@@ -388,6 +388,13 @@ pub(crate) enum Runner {
     QuickMatch,
 }
 
+/// Result of an ordinary refresh of the public lobby's watch list.
+pub(super) enum WatchListRefresh {
+    Failed,
+    Listed,
+    Unsupported,
+}
+
 /// One runner of the custom lobby.
 #[derive(Debug)]
 pub(crate) struct WolLobby {
@@ -416,6 +423,8 @@ pub(crate) struct WolLobby {
     joining: Option<WolChannel>,
     /// VERA: the running matches the modern list offers to watch.
     matches: Vec<service::WolMatch>,
+    /// This public lobby has already warned about a failed watch-list refresh.
+    watch_list_stale: bool,
     /// VERA: the public lobby this player looks round from their game room
     /// ([`visit_lobby`]).
     visit: Option<LobbyVisit>,
@@ -431,6 +440,20 @@ struct LobbyVisit {
 }
 
 impl WolLobby {
+    fn watch_refresh_notice(&mut self, refresh: WatchListRefresh) -> Option<&'static str> {
+        // Quick Match and the buddy runner have no public watch list.
+        if self.runner != Runner::Lobby || !self.ui.is_modern() {
+            return None;
+        }
+        let stale = matches!(refresh, WatchListRefresh::Failed);
+        let previously_stale = std::mem::replace(&mut self.watch_list_stale, stale);
+        match (refresh, previously_stale) {
+            (WatchListRefresh::Failed, false) => Some("VERA:WatchListStale"),
+            (WatchListRefresh::Listed, true) => Some("VERA:WatchListUpdated"),
+            _ => None,
+        }
+    }
+
     /// The modern lobby lists only VERA20K Online; the Quick Match runner,
     /// which shows no list, looks for its `Lob_40_` lobby in all of them.
     fn set_lobbies(&mut self, mut channels: Vec<WolChannel>) {
@@ -609,6 +632,22 @@ pub(crate) fn leaving(state: &AppState) -> bool {
 
 fn lobby_mut(state: &mut AppState) -> Option<&mut WolLobby> {
     state.frontend.wol.as_mut()?.lobby.as_deref_mut()
+}
+
+/// The request can finish after the player entered a room. The retained public
+/// transcript owns its notice even while the room covers it.
+pub(super) fn watch_list_refresh(state: &mut AppState, refresh: WatchListRefresh) {
+    if let Some(key) = lobby_mut(state).and_then(|lobby| lobby.watch_refresh_notice(refresh)) {
+        crate::app::shell_lan::append_wol_lobby_chat(
+            state,
+            LanChatLine {
+                text: crate::i18n::tr(key).encode_utf16().collect(),
+                color: u32::MAX,
+            },
+            None,
+        );
+        state.platform.window.request_redraw();
+    }
 }
 
 fn request(state: &mut AppState, request: WolServiceRequest) {
