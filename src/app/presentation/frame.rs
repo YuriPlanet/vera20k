@@ -629,6 +629,8 @@ impl ObjectRecord {
                 nav_com: entity.navigation.nav_com(),
             },
             last_fire_frame: entity.last_fire_frame,
+            // The frame owns what it draws: the simulation moves on before
+            // the frame reaches the screen. Only a Structure holds art.
             building_art: entity.building_art.clone(),
             animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
