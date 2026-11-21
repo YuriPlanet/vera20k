@@ -31,6 +31,9 @@ content as work lands; do not append a diary.
 | Decisions: `on_decide`, `DecideRecord`, decision budget and random substreams | `src/sim/ext_modules/decide.rs`; constants `wasm-ext/src/decide.rs` |
 | INI-declared triggers (`Wasm.Tags`, tag and trigger sections of the mod's `rulesmd.ini`) | `src/sim/ext_modules/ini_triggers.rs`; event names `wasm-ext/src/event_kinds.rs` |
 | Property writes (`Health`, `Owner`, `Rank`, `Mission`, `Ammo`, `Online`) | `src/sim/ext_modules/writes.rs` |
+| Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
+| Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
+| Modder guide | `docs/wasm-modules.md` |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
@@ -194,6 +197,34 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
   (`[Warheads]` order; projectiles in weapon order). Their HashSet order differed per
   process, so a module's Warhead ID did too.
 
+- Phase-1 finish:
+  - Events: Ares events 62..86 when Ares is on (TEventExt::HasOccured `1004F7A0`),
+    stock 23 and 50, `AttackedBy`, `FatalDamage`, `TransportExited`,
+    `PassengerRemoved`, `ModifierStart`/`Stacks`/`Expire`; polls `HousePowerPoll`,
+    `ModifierCountPoll`, `DistancePoll`; projectile type bindings; `Timer` together
+    with object events; `Birth` for reinforcements, Chrono reinforcements and
+    trigger-made objects; `HouseTransferred` value 1 for mind control.
+  - Decisions: `ProductionAllowed` (CanBuild `0x004F7870`, asked once per frame) and
+    `CommandAllowed` (EventClass::Execute `0x004C6CB0`, every player command, module
+    order and `SetMission`). A decision inside module A's call still asks module B's
+    links.
+  - Actions: `FireWeapon` (GetFireError `0x006FC0B0`, then the direct fire visit),
+    `AttachAnim` (as team script 51), `AllowType` (checked in CanBuild),
+    `AddPassenger`, timed `Convert`. Modifiers wired for ROF, weapon range
+    (multiplier and extra), crit (Phobos builds), `Unkillable` (Phobos builds),
+    `Cloakable`, `ForceDecloak`, `DisableWeapons`.
+  - Properties: most of 7.1 (layer, target, experience, storage, transport,
+    passengers, disguise, moving, facings, armor, relation with a viewpoint), 7.6
+    `Passable.<SpeedType>`, `Revealed`, `Placeable` (cells `find` with a type), 7.7
+    TechnoType/Weapon/Warhead keys, 7.8 `Difficulty`, mission timer, ambient light,
+    ion storm. `lookup`/`name_of` for Projectile, Anim, VoxelAnim, ParticleSystem.
+  - INI: `Wasm.Tags` on weapon, warhead and projectile sections; names for anim and
+    enum parameters; a match notice when a map sets `Wasm.Tags`; event names for the
+    4.4 and 4.5 kinds.
+  - Hash and checksum: module memory is digested per 64 KiB page and each page
+    re-digested on frames where `page ≡ frame (mod 15)` (plus grown pages); the hash
+    and checksum read the digests (RFC 4/15). Digests are saved.
+
 ## Provisional numbering (open question 5)
 
 - Property IDs: section 7 names in first-appearance order, duplicates merged
@@ -201,9 +232,16 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
 - New events from 1000 in appendix order, 4.3 then 4.4 then 4.5: `TakeDamage` =
   1000, `Killed` = 1004, `Fire` = 1005, `Birth` = 1011, `TransportEntered` = 1012,
   `PassengerAdded` = 1014, `HouseTransferred` = 1019, `Timer` = 1023,
-  `SuperWeaponLaunched` = 1024; polls 1026..1030 (`PropertyPoll` 1026, `VariablePoll`
-  1030); decision-only 1031.. (`ProductionQueued` 1032, `Defeat` 1033). Stock events
-  keep 0..88.
+  `SuperWeaponLaunched` = 1024; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
+  `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
+  (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
+  1034; `Launch` and `ProjectileFrame` reserved). Stock events keep 0..88. One name
+  table: `wasm-ext/src/event_kinds.rs`.
+- `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
+- Houses stay on the bit-47 reference: putting them on the shared creation counter
+  would renumber every object in every game, modules or not (stock state hash, saves,
+  replays), and would break the SDK's `const fn House::from_index`. Documented at
+  `HOUSE_REF_BIT`.
 - Atomic actions from 1000 in appendix 5.3 order (`ATOMIC_ACTIONS`): `LaunchSuperWeapon`
   = 1001, `Remove` = 1004, `Kill` = 1005, `Damage` = 1006, `CreateObject` = 1008,
   `ClearTarget` = 1011, `AddMoney` = 1015, `SetOwner` = 1017, `SetVar` = 1024,
@@ -227,60 +265,56 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
 
 ## Remaining in phase 1
 
-1. Events: the stock kinds not mapped (0, 2, 3, 23, 24, 31, 33, 50, 51, 53, 54, 59,
-   Ares 62..88; reasons in `events.rs`), the other 4.3 and 4.4 kinds, projectile type
-   bindings, `Timer` mixed with object events, `Birth` beyond production.
-2. Decisions: the other 4.5 kinds (`ProductionAllowed`, `CommandAllowed`, `Launch`,
-   `ProjectileFrame`), result areas, decision triggers with actions.
-3. INI: `Wasm.Tags` on Weapon/Warhead/Projectile sections; names for sounds,
-   animations and enum parameters; the lobby warning for `Wasm.Tags` in a map;
-   modder documentation under `docs/`.
-4. Modifiers: the other 7.2 properties, house modifiers, modifier events, Phobos
-   AttachEffect through the same owner, stack limits (open question 13).
-5. Actions: `FireWeapon`, `AttachAnim`, `AllowType`, passengers, projectile and team
-   actions, `Push`, timed `Convert`; the stock actions that need a live trigger.
-6. Properties: the rest of 7.1, 7.6 (`Passable`, `Revealed`, `Placeable`), 7.7, 7.8.
-7. Determinism/perf polish: 1/15 page rotation for hash and checksum; houses on the
-   shared creation counter.
-8. Then phase 2 (`ui.wasm`) and phase 3.
+Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
+left is listed under residuals. Before version 1 (RFC "Process"): the TypeScript SDK
+(deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
+modules, external modders, freeze), and the later items (`Launch`,
+`ProjectileFrame`, module trajectories, peer calls).
 
 ## Residuals
 
 - Policy call for the maintainer: the `Seldom` size ceiling in
   `object_turn_lookup_tests.rs` went from 824 to 832 bytes for the modifier cache
   pointer.
-- Hash and checksum read all module memory each frame, not the 1/15 page rotation.
 - The stopped-module notice is English only.
-- `Health` writes of 0 or less answer `Refused`. An `Ammo` write restarts a running
-  reload clock. `AddExperience` uses the type's base Cost.
-- Module modifiers are clamped to `[0, 32768]` (armor at least 2^-16); `Override`
-  replaces the Phobos product too; `Multiply` folds in handle order.
-- A declared variable's ID shifts if a mod module is installed after a map module
-  (only tests do that).
-- Rules stage: in `vera_init`/`on_rules`, `random` writes 0 with `Ok`; `set` on a
-  type reference in `on_rules` answers `Unsupported`; TeamType names answer
-  `Unsupported` in an `on_rules` module's `vera_init`. The merged rules text is saved
-  with every save that has modules. `MapUI` is not saved. The lobby compares neither
-  `on_rules` results nor the mod's `Api=`.
+- Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
+  `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
+  `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
+  (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
+  survivors and starting objects; garrisons and non-departure cargo removal raise no
+  passenger events; type-bound timers and polls scan every object; `Timer` with only
+  weapon/projectile bindings never fires.
+- Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
+  cannot lift CanBuild's own refusal and also asks Neutral/Special; `CommandAllowed`
+  asks nothing for commands without an 8.3 number or an actor, nor for the AI's own
+  missions; no kind uses a result area; nested decisions get no merged rules text.
+- Actions unsupported: `RemovePassenger`, `Push`, team and projectile actions,
+  `AttachAnim` with a frame count; house modifiers (`PowerOutage`); stock actions that
+  need a live trigger (3, 6, 9, 13, 36..38, 52, 74, 75, 81, 91, 111, 113, 119..124,
+  126, 130, Ares 146, 147), sound IDs (19, 98, 99), 40, 15, 39, 49, 50.
+  Crit and `Unkillable` modifiers exist only in Phobos builds, as their owners do.
+  `ROFMultiplier.ApplyOnCurrentTimer` is not applied; `Cloakable` Override 0 does
+  not remove a type's own `Cloakable=`. Timed conversions are in the state hash, not
+  the MP checksum.
+- Properties not read: `Team`/`Tag` values (no references), `GameMode`, `Name`,
+  `Buildable`, `Points`, the `v1?` object properties; `lookup(Armor)`,
+  `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
+  without a viewpoint.
+- `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running
+  reload clock; `AddExperience` uses the base Cost.
+- Modifiers are clamped to `[0, 32768]` (armor at least 2^-16); `Override` replaces
+  the Phobos product too.
+- Rules stage: `random` writes 0 with `Ok`; `set` on a type reference in `on_rules`
+  answers `Unsupported`; the merged rules text is saved with every module save;
+  `MapUI` is not saved; the lobby compares neither `on_rules` results nor `Api=`.
 - Orders: custom control grants refuse house-wide module orders; `IgnoreOrders` is
-  not honoured; `SuspendProduction`, `EjectBunker`, `Enter` answer `Unsupported`;
-  per-frame limits are provisional. `SetMission` and the `Mission` write run the full
-  command receiver from inside a module call or trigger site.
-- Cells: a tagged cell's `CellTag` answers `Unsupported`; several global properties
-  answer `Unsupported`; a cell `find` with a type or owner answers `Unsupported`.
-- Decisions: a decision inside any module call keeps the native result (stricter
-  than the RFC); for `ProductionQueued`/`Defeat` the record's house is the event's.
-- Events: `HouseTransferred` reports `value` 0 for mind control; garrisons raise no
-  passenger events; stock 19..22 ignore the `id` form; type-bound polls scan every
-  entity; `record_the_kill_by_warhead` is a thin delegate so 15 callers pass −1.
-- INI: an INI trigger naming a country with no house here is left out (logged); all
-  `Wasm:` actions of one trigger address one module.
+  not honoured; `SuspendProduction`, `EjectBunker`, `Enter` answer `Unsupported`.
+- INI: sounds take numbers only; the map `Wasm.Tags` warning is a match notice, not
+  a lobby warning; one module per trigger's `Wasm:` actions.
 - A type name shared by two categories resolves to the first. Houses queries with
   area, type or owner answer `Unsupported`.
 - The Rust SDK's delivery area is fixed at address 8 (9 records); one
   `named_actions!` and one `vars!` per module.
-- `SpawnAnim` takes the animation's array index; `ClearDisguise` does not refresh the
-  mind-control ring; `Teleport` and `Convert` do not exclude each other.
 
 ## Validation commands
 
@@ -302,11 +336,11 @@ VERA20K_SNAPSHOT_LAYOUT=1 python3 -m tools.cargo_run -- \
 python3 -m tools.group_tests check
 ```
 
-Last run (after merging INI triggers, decisions, event coverage and the action
-work): wasm-ext 20/20; `sim::ext_modules::` with `sim::trigger_runtime::` 373 passed,
-5 ignored, all six Rust examples run; the owner modules above 4992 passed, 157
-ignored, 3 failed for this machine only (`ini/` has no `soundmd.ini` or unlayered
-retail rules, and the retail install is Chinese); client check, wasm32 check and
-`group_tests check` pass. Not run: a `--profile fast` retail map load through the app
-loader.
-
+Last run (phase-1 finish merge, HEAD `6eb67b68a`): wasm-ext 20/20;
+`sim::ext_modules::` with `sim::trigger_runtime::` 389 passed, 5 ignored, all six
+Rust examples run; `rules::`, `sim::attach_effect::`, `sim::capture_manager::`,
+`sim::combat::`, `sim::crates::`, `sim::passenger::`, `sim::production::`,
+`sim::team_script_vm::`, `sim::world::`, `sim::movement::` 4867 passed, 151 ignored,
+2 failed for this machine only (Chinese retail CSF; no unlayered retail `ini/`);
+client check, wasm32 check and `group_tests check` pass. Not run: a `--profile fast`
+retail map load through the app loader.
