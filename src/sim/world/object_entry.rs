@@ -1346,9 +1346,14 @@ fn full_foot_entry<'a>(
                 } else {
                     bt.unit_absorb
                 };
+                // Original RA2 has no Grinding= field; the refund-on-entry
+                // behavior lives on Cloning vats. On the RA2 profile treat a
+                // Cloning building as the grinder/eater for these gates.
+                let refund_eater =
+                    bt.grinding || (crate::util::ra2_launch::enabled() && bt.cloning);
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
-                        || (mission == Some(MissionType::Eaten) && bt.grinding))
+                        || (mission == Some(MissionType::Eaten) && refund_eater))
                     && !b.warped_out
                 {
                     return Ok(0);
@@ -1356,7 +1361,7 @@ fn full_foot_entry<'a>(
                 //73F661..6CF: Grinding additionally walks CURRENT ground E4,
                 //without mission/NavCom/radio/warp gates. Do the actual lookup
                 //at this list position, preserving shared-Dummy stamping.
-                if bt.grinding {
+                if refund_eater {
                     let current =
                         crate::sim::movement::ground_pose::position_world_coord(&e.position);
                     let current_cell = live

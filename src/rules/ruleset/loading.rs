@@ -1452,6 +1452,15 @@ impl RuleSet {
             .section_or_empty("AI")
             .read_int("AIBaseSpacing", 1)
             .clamp(-AI_BASE_SPACING_LIMIT, AI_BASE_SPACING_LIMIT);
+        // Original-RA2 `[AI]` ore-scan radii (game.exe 0x0064D005/0x0064D025,
+        // ReadInt into RulesClass+0x13E0/+0x13E4; constructor default 0). YR
+        // has no such keys, so it reads the 0 default with no behavior change.
+        let tiberium_near_scan = ini
+            .section_or_empty("AI")
+            .read_int("TiberiumNearScan", 0);
+        let tiberium_far_scan = ini
+            .section_or_empty("AI")
+            .read_int("TiberiumFarScan", 0);
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`, reached by
         // `RulesClass::ReadGeneral` for AISlaveMinerNumber
         // `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`
@@ -1466,6 +1475,39 @@ impl RuleSet {
         let allied_base_defense_counts = parse_difficulty_vector("AlliedBaseDefenseCounts");
         let soviet_base_defense_counts = parse_difficulty_vector("SovietBaseDefenseCounts");
         let third_base_defense_counts = parse_difficulty_vector("ThirdBaseDefenseCounts");
+        // Original RA2 hardcodes these three difficulty vectors in game.exe and
+        // does not print them into rules.ini (YR moved them to rulesmd.ini with
+        // the "formerly hardcoded" comment). With no INI value VERA would build
+        // empty vectors -> BasePlan preflight fails -> MCV deploy is refused and
+        // the AI never leaves its opening lull. Only the RA2 launch profile
+        // substitutes the native hardcoded values; YR data always carries the
+        // keys, so the YR path is untouched.
+        let (ai_slave_miner_number, ai_extra_refineries, third_base_defense_counts) =
+            if crate::util::ra2_launch::enabled() {
+                (
+                    if ai_slave_miner_number.is_empty() {
+                        vec![4, 3, 2]
+                    } else {
+                        ai_slave_miner_number
+                    },
+                    if ai_extra_refineries.is_empty() {
+                        vec![2, 1, 0]
+                    } else {
+                        ai_extra_refineries
+                    },
+                    if third_base_defense_counts.is_empty() {
+                        vec![25, 22, 6]
+                    } else {
+                        third_base_defense_counts
+                    },
+                )
+            } else {
+                (
+                    ai_slave_miner_number,
+                    ai_extra_refineries,
+                    third_base_defense_counts,
+                )
+            };
         // gamemd-derived: `RulesClass::Constructor @ 0x00666922` stores 20 at
         // +0xE0C; `RulesClass::ReadGeneral @ 0x006701D9..0x006701FE` reads the
         // signed `AINavalYardAdjacency=` override.
@@ -1978,6 +2020,8 @@ impl RuleSet {
             allied_base_defense_counts,
             soviet_base_defense_counts,
             third_base_defense_counts,
+            tiberium_near_scan,
+            tiberium_far_scan,
             ai_naval_yard_adjacency,
             initial_veteran,
             infantry_ids,

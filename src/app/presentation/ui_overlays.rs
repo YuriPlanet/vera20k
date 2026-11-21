@@ -2666,7 +2666,13 @@ fn scale_pip_rows(
     }
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
-    if building && object.show_occupant_pips && object.max_number_occupants > 0 {
+    // Original RA2 never draws occupant pips on garrisoned buildings (the
+    // whole person-frames arm is a YR addition); keep blood/other pips intact.
+    if !crate::util::ra2_launch::enabled()
+        && building
+        && object.show_occupant_pips
+        && object.max_number_occupants > 0
+    {
         let occupants = entity.passenger_role().occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
@@ -3820,4 +3826,53 @@ mod tests {
         assert_eq!(self_heal_pip(Unit, false, 1, 0), None);
         assert_eq!(self_heal_pip(Unit, false, 0, 1), Some(SelfHealPip::Units));
     }
+
+    /// Original RA2 does not draw occupant pips on garrisoned buildings; YR
+    /// does. The RA2 launch profile must skip only that pip row.
+    #[test]
+    fn ra2_skips_garrison_occupant_pips_but_keeps_other_pips() {
+        // This test lives in the main crate; its ra2_launch flag is a
+        // separate process-global from vera20k-core's tests. Serialize within
+        // this crate only.
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let before = crate::util::ra2_launch::enabled();
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=HOUSE\n\
+             [E1]\nStrength=100\n\
+             [HOUSE]\nStrength=800\nCanBeOccupied=yes\nMaxNumberOccupants=2\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let building = sim
+            .spawn_object("HOUSE", "Americans", 12, 12, 0, &rules)
+            .unwrap();
+        let e1 = sim
+            .spawn_object("E1", "Americans", 13, 13, 0, &rules)
+            .unwrap();
+        let e2 = sim
+            .spawn_object("E1", "Americans", 14, 14, 0, &rules)
+            .unwrap();
+        {
+            let b = sim.entities_mut_for_test().get_mut_for_test(building).unwrap();
+            b.passenger_role_mut_for_test()
+                .set_occupants_for_test(vec![e1, e2], 0);
+        }
+        let entity = sim.entities().get(building).unwrap();
+
+        crate::util::ra2_launch::set(false);
+        let yr = scale_pip_rows(&sim, entity, &rules);
+        assert!(yr.len() >= 2, "YR draws one pip per occupant slot");
+
+        crate::util::ra2_launch::set(true);
+        let ra2 = scale_pip_rows(&sim, entity, &rules);
+        assert!(
+            ra2.iter().all(|p| !yr.iter().any(|y| y.frame == p.frame && y.offset_pixels == p.offset_pixels)) || ra2.len() < yr.len(),
+            "RA2 must not draw the occupant pip rows YR draws"
+        );
+        assert!(ra2.len() < yr.len(), "RA2 has fewer pip rows (no garrison row)");
+
+        crate::util::ra2_launch::set(before);
+    }
+
 }

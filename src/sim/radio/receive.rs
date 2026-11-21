@@ -352,8 +352,12 @@ pub(crate) fn can_load(
         }
     }
     // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
-    // anyone the gates above admit.
-    if building_type.grinding {
+    // anyone the gates above admit. Original RA2 has no Grinding= field: the
+    // refund-on-entry behavior is hardcoded on the Cloning vats, so on the
+    // RA2 profile a `Cloning=` building also takes any admitted foot here.
+    if building_type.grinding
+        || (crate::util::ra2_launch::enabled() && building_type.cloning)
+    {
         return CanLoad::Answer(RadioResponse::Roger);
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker
@@ -378,12 +382,17 @@ pub(crate) fn can_load(
     //building Ammo must be nonzero. Techno's constructor starts it at0,
     //and Building43FE98 explicitly excludes hospitals from auto-refill.
     if building_type.hospital && unit.category() == EntityCategory::Infantry {
+        // Original RA2 leaves Hospital Ammo=0 in rules.ini (the "healing
+        // count" field is commented out) and treats that as unlimited healing;
+        // only captives/mind-controlled are refused. On the RA2 profile drop
+        // the Ammo==0 refusal. YR keeps the finite-count contract unchanged.
         let refused = unit
             .capture_manager
             .as_ref()
             .is_some_and(|manager| manager.has_any())
             || unit.mind_control.is_mind_controlled()
-            || building.ammo().map_or(0, |ammo| ammo.current()) == 0;
+            || (!crate::util::ra2_launch::enabled()
+                && building.ammo().map_or(0, |ammo| ammo.current()) == 0);
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
         } else {

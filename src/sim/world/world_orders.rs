@@ -872,11 +872,18 @@ impl Simulation {
         {
             return Some(EntryClickAction::NoEnter);
         }
-        Some(if self.object_type(target.type_ref(), rules)?.grinding {
-            EntryClickAction::Grind
-        } else {
-            EntryClickAction::Enter
-        })
+        {
+            let target_obj = self.object_type(target.type_ref(), rules)?;
+            Some(
+                if target_obj.grinding
+                    || (crate::util::ra2_launch::enabled() && target_obj.cloning)
+                {
+                    EntryClickAction::Grind
+                } else {
+                    EntryClickAction::Enter
+                },
+            )
+        }
     }
 
     /// What a human player's object's class row makes of `target_id`, an
@@ -976,7 +983,8 @@ impl Simulation {
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 (select
                     && target.category() == EntityCategory::Structure
-                    && target_obj.grinding
+                    && (target_obj.grinding
+                        || (crate::util::ra2_launch::enabled() && target_obj.cloning))
                     && control.can_order(actor.owner())
                     && !target_obj.is_1x1_with_undeploy())
                 .then(|| {
@@ -1087,6 +1095,14 @@ impl Simulation {
         // Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) also lets him enter a
         // `Tunnel=` building, whatever its Passengers= (`sim::ares_tunnel`).
         let tunnel = rules.ares() && infantry && self.ares_tunnel_type(target_id, rules).is_some();
+        let target_obj = self.object_type(target.type_ref(), rules)?;
+        // Original RA2 (0x51E8A1) offers a normal infantryman an Enter action
+        // on a Hospital even though it has Passengers=0; VERA's shared
+        // Passengers gate rejects it. Add the RA2-only hospital exception.
+        let hospital_entry = crate::util::ra2_launch::enabled()
+            && infantry
+            && target.category() == EntityCategory::Structure
+            && target_obj.hospital;
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,
@@ -1096,7 +1112,7 @@ impl Simulation {
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
-            || (self.object_type(target.type_ref(), rules)?.passengers <= 0 && !tunnel)
+            || (target_obj.passengers <= 0 && !tunnel && !hospital_entry)
         {
             return None;
         }
@@ -1642,7 +1658,9 @@ impl Simulation {
             );
             return Some(if !full {
                 EngineerBuildingAction::Repair(true)
-            } else if object.grinding {
+            } else if object.grinding
+                || (crate::util::ra2_launch::enabled() && object.cloning)
+            {
                 EngineerBuildingAction::EnterGrinder
             } else {
                 EngineerBuildingAction::Repair(false)

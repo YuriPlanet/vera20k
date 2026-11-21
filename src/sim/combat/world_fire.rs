@@ -1079,7 +1079,10 @@ fn firepower_stages(
         // `vt+0x400`: BuildingClass `0x00458DD0`, CanBeOccupied &&
         // CanOccupyFire && an occupant for FireAt; Phobos' Bullet-init
         // helper applies the same type flags without requiring an occupant.
-        occupied: is_garrison.then(|| f32_bits(multipliers.occupy_damage_multiplier)),
+        // Original RA2 has no OccupyDamageMultiplier: the garrison gun deals
+        // its plain WeaponType damage. YR applies the global multiplier.
+        occupied: (!crate::util::ra2_launch::enabled() && is_garrison)
+            .then(|| f32_bits(multipliers.occupy_damage_multiplier)),
         // `+0x2E4` on a non-building: a unit installed in a Tank Bunker.
         bunkered: firer
             .filter(|firer| firer.category() != EntityCategory::Structure)
@@ -1414,7 +1417,11 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
-            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
+            // RA2 garrison fire uses the building gun's own ROF; the YR
+            // divide-by-occupants and OccupyROFMultiplier do not apply.
+            occupants: (!crate::util::ra2_launch::enabled())
+                .then(|| snap.garrison.as_ref().map(|gs| gs.occupant_count))
+                .flatten(),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
                     matches!(
