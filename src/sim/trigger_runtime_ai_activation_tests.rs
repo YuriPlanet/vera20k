@@ -162,7 +162,7 @@ fn latches(value: &serde_json::Value) -> HouseAiActivationLatches {
 fn supply_rng(sim: &mut Simulation, states: &serde_json::Value) {
     use crate::sim::rng::SimRng;
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 

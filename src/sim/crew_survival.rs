@@ -198,16 +198,12 @@ pub(crate) fn foundation_cells(
     rx: u16,
     ry: u16,
     foundation: &crate::rules::foundation::Foundation,
-) -> Vec<(u16, u16)> {
-    foundation
-        .cell_offsets()
-        .into_iter()
-        .filter_map(|(dx, dy)| {
-            let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
-            let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
-            Some((x, y))
-        })
-        .collect()
+) -> impl Iterator<Item = (u16, u16)> + '_ {
+    foundation.cell_offsets().filter_map(move |(dx, dy)| {
+        let x = u16::try_from(i32::from(rx) + i32::from(dx)).ok()?;
+        let y = u16::try_from(i32::from(ry) + i32::from(dy)).ok()?;
+        Some((x, y))
+    })
 }
 
 /// The unit gate against `CrewEscape=` (`0x00738218..0x0073822D`: FILD,
@@ -409,7 +405,7 @@ impl Simulation {
         let owner = entity.owner();
         let origin = (entity.position.rx(), entity.position.ry());
         let captured = entity.building.has_been_captured.is_set();
-        let cells = foundation_cells(origin.0, origin.1, &object.foundation);
+        let cells: Vec<_> = foundation_cells(origin.0, origin.1, &object.foundation).collect();
         // C4AppliedBy (+0x540); the pointer-expiry broadcast clears it when
         // the planter leaves play.
         let c4_source = entity
@@ -693,8 +689,8 @@ impl Simulation {
                 entity.passenger_role_mut().clear_carrier_relation();
                 entity.on_bridge.store(on_bridge);
                 match spot_offset {
-                    Some((sub_x, sub_y)) => entity.sub_cell.hold_offset(sub_x, sub_y),
-                    None => entity.sub_cell.release(),
+                    Some((sub_x, sub_y)) => entity.seldom.sub_cell.hold_offset(sub_x, sub_y),
+                    None => entity.seldom.sub_cell.release(),
                 }
             }
             let revealed = !no_survivor
@@ -767,7 +763,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let captor_type = entity.capture_infantry_type_index.get();
+        let captor_type = entity.seldom.capture_infantry_type_index.get();
         if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
             return;
         }
@@ -1219,9 +1215,9 @@ impl Simulation {
         };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if holds_spot {
-                entity.sub_cell.hold_offset(sub_x, sub_y);
+                entity.seldom.sub_cell.hold_offset(sub_x, sub_y);
             } else {
-                entity.sub_cell.release();
+                entity.seldom.sub_cell.release();
             }
             // The OnBridge the native caller copies from the object being left
             // before this Unlimbo: `BuildingClass::SpawnSurvivors`

@@ -162,6 +162,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
         .entities
         .get_mut(member)
         .unwrap()
+        .seldom
         .base_defense_response
         .author_recruitable(false, true);
     assert!(
@@ -174,6 +175,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
         .entities
         .get_mut(member)
         .unwrap()
+        .seldom
         .base_defense_response
         .set_team_recruitable(false);
     assert!(!admitted(&sim), "Autocreate requires the team recruit flag");
@@ -181,6 +183,7 @@ fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
         .entities
         .get_mut(member)
         .unwrap()
+        .seldom
         .base_defense_response
         .author_recruitable(true, true);
     let team = sim.create_team(team_type, Some(owner), &rules).unwrap();

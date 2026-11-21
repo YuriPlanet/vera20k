@@ -136,7 +136,7 @@ fn original_positive_zone_prechecks_match_routes_float_costs_and_threat_reads() 
             panic!("{}", row["name"]);
         };
         assert_eq!(
-            result.paths,
+            result.routes(),
             expected_paths(&row["flow"][0]),
             "{} paths",
             row["name"]
@@ -351,7 +351,7 @@ fn native_controls_cover_heap_ties_head_admission_and_binary32_costs() {
             let ZonePrecheckOutcome::Passed(result) = precheck else {
                 panic!("{}", row["name"]);
             };
-            assert_eq!(result.paths, expected_paths(original), "{}", row["name"]);
+            assert_eq!(result.routes(), expected_paths(original), "{}", row["name"]);
             assert_eq!(
                 result.pops,
                 expected_pops(&row["hierarchy"]),
@@ -417,7 +417,12 @@ fn physical_fv_candidate_and_fallback_costs_match_four_native_bridge_states() {
             let ZonePrecheckOutcome::Passed(result) = precheck else {
                 panic!("{}", row["name"]);
             };
-            assert_eq!(result.paths, expected_paths(preflight), "{}", row["name"]);
+            assert_eq!(
+                result.routes(),
+                expected_paths(preflight),
+                "{}",
+                row["name"]
+            );
             assert_eq!(
                 result.pops,
                 expected_pops(&row["hierarchy"]),

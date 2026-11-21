@@ -138,6 +138,14 @@ impl KamikazeTracker {
         self.timer = CdTimer::started(frame as i32, CLEAR_RESTART_FRAMES);
     }
 
+    pub(crate) fn saved_continuation_timer(&self) -> CdTimer {
+        self.timer
+    }
+
+    pub(crate) fn restore_continuation_timer(&mut self, timer: CdTimer) {
+        self.timer = timer;
+    }
+
     /// Whether `child` has a node: its `+0x6CA` while it is alive.
     pub(crate) fn contains(&self, child: u64) -> bool {
         self.nodes.iter().any(|node| node.child == child)

@@ -259,10 +259,16 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
     for id in [ids[1], ids[2]] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.owner(), houses[0]);
-        assert_eq!(entity.mind_control.house_controller(), Some(houses[0]));
-        assert_eq!(entity.mind_control.house_original_owner(), Some(houses[1]));
+        assert_eq!(
+            entity.seldom.mind_control.house_controller(),
+            Some(houses[0])
+        );
+        assert_eq!(
+            entity.seldom.mind_control.house_original_owner(),
+            Some(houses[1])
+        );
         assert!(
-            !entity.mind_control.is_mind_controlled(),
+            !entity.seldom.mind_control.is_mind_controlled(),
             "House control is a separate native gate"
         );
         assert_eq!(sim.techno_original_owner(id), Some(houses[1]));
@@ -320,8 +326,8 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
     for id in [ids[1], ids[2]] {
         let e = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(e.owner(), houses[1]);
-        assert_eq!(e.mind_control.house_controller(), None);
-        assert_eq!(e.mind_control.house_original_owner(), None);
+        assert_eq!(e.seldom.mind_control.house_controller(), None);
+        assert_eq!(e.seldom.mind_control.house_original_owner(), None);
         assert_eq!(loaded.techno_original_owner(id), Some(houses[1]));
     }
     assert!(loaded.can_capture(ids[3], ids[1], &rules));
@@ -348,8 +354,11 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
         FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(ids[1]).unwrap();
-    assert_eq!(entity.mind_control.house_controller(), Some(houses[0]));
-    assert_eq!(entity.mind_control.house_original_owner(), None);
+    assert_eq!(
+        entity.seldom.mind_control.house_controller(),
+        Some(houses[0])
+    );
+    assert_eq!(entity.seldom.mind_control.house_original_owner(), None);
     assert_eq!(sim.techno_original_owner(ids[1]), None);
     assert_ne!(sim.state_hash(), hash);
     assert!(run(
@@ -398,6 +407,7 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
             .entities
             .get(ids[1])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         None
@@ -478,6 +488,7 @@ fn house_directive_self_control_and_retained_selector_keep_native_state_writes()
             .entities
             .get(ids[0])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         Some(houses[0])
@@ -496,6 +507,7 @@ fn house_directive_self_control_and_retained_selector_keep_native_state_writes()
             .entities
             .get(ids[0])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         None

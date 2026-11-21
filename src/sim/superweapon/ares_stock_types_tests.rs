@@ -505,7 +505,7 @@ fn ares_dominator_captures_through_its_state_machine() {
     assert_eq!(sim.psychic_dominator.status_number(), 3);
     let captured = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(captured.owner(), americans);
-    assert!(!captured.mind_control.permanent());
+    assert!(!captured.seldom.mind_control.permanent());
     assert_eq!(
         sim.substrate.entities.get(immune).unwrap().owner(),
         russians

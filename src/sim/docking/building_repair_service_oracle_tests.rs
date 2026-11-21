@@ -207,10 +207,10 @@ impl Scene {
             "unit_nav_aux": self.nav(unit.navigation.nav_com_aux()),
             "unit_archive": self.nav(archive),
             "pending_entry": self.name(unit.pending_entry()),
-            "unit_contacts": (0..unit.radio_contacts.capacity()).map(|n| self.name(unit.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "building_contacts": (0..building.radio_contacts.capacity()).map(|n| self.name(building.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "unit_tether": u8::from(unit.tether.partner().is_some()),
-            "building_tether": u8::from(building.tether.partner().is_some()),
+            "unit_contacts": (0..unit.seldom.radio_contacts.capacity()).map(|n| self.name(unit.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "building_contacts": (0..building.seldom.radio_contacts.capacity()).map(|n| self.name(building.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "unit_tether": u8::from(unit.seldom.tether.partner().is_some()),
+            "building_tether": u8::from(building.seldom.tether.partner().is_some()),
             "building_mission": building.mission.current().raw(),
             "building_queued": building.mission.queued().raw(),
             "status": building.mission.handler_state(),
@@ -438,9 +438,9 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         (depot, tank, "building_contacts", "building_tether"),
     ] {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        entity.radio_contacts.clear_all();
+        entity.seldom.radio_contacts.clear_all();
         entity
-            .radio_contacts
+            .seldom.radio_contacts
             .set_capacity(before[contacts].as_array().unwrap().len());
         for value in before[contacts].as_array().unwrap() {
             let target = match value.as_str() {
@@ -451,11 +451,11 @@ fn scene(golden: &Value, row: &Value) -> Scene {
                 Some(value) => panic!("unrepresented contact {value}"),
             };
             if let Some(target) = target {
-                entity.radio_contacts.insert(target);
+                entity.seldom.radio_contacts.insert(target);
             }
         }
         entity
-            .tether
+            .seldom.tether
             .set_for_test((int(&before[tether]) != 0).then_some(peer));
     }
     {
@@ -608,7 +608,7 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
         let mut scene = scene(&golden, row);
         {
             let unit = scene.sim.substrate.entities.get_mut(scene.tank).unwrap();
-            unit.setter_force_reassign
+            unit.seldom.setter_force_reassign
                 .set_for_test(case["force"] == true);
         }
         {
@@ -704,7 +704,7 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
                 .iter()
                 .any(|event| event["field"] == "other_contact_slot0" && event["value"] == 0);
             assert_eq!(
-                other.radio_contacts.is_empty(),
+                other.seldom.radio_contacts.is_empty(),
                 native_cleared,
                 "{name}: second contact reciprocal cleanup"
             );
@@ -944,7 +944,7 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
         let flags = &row["setter_flags_before"];
         {
             let unit = scene.sim.substrate.entities.get_mut(scene.tank).unwrap();
-            unit.setter_force_reassign
+            unit.seldom.setter_force_reassign
                 .set_for_test(int(&flags["force_reassign"]) != 0);
             unit.mission_leaf
                 .set_unit_deployed(int(&flags["deployed"]) as u8);
@@ -1014,7 +1014,7 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
         scene.compare(&row["steps"][0]["after"], name);
         let unit = scene.sim.substrate.entities.get(scene.tank).unwrap();
         assert_eq!(
-            u8::from(unit.setter_force_reassign.is_raised()),
+            u8::from(unit.seldom.setter_force_reassign.is_raised()),
             int(&row["setter_flags_after"]["force_reassign"]) as u8,
             "{name}: force-reassign byte"
         );

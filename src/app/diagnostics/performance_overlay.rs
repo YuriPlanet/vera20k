@@ -41,6 +41,10 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct PerformanceOverlay {
     visible: bool,
+    /// The frame owner keeps the GPU timer running while it probes the first
+    /// match frames of a GPU that draws from the system's memory
+    /// (`presentation::render::FramePassLog`), panel or no panel.
+    startup_probe: bool,
     /// Whether the panel also draws its Threads and Ticks rows.
     thread_rows: bool,
     /// One white texel, tinted into the row boxes and the core bars.
@@ -197,6 +201,7 @@ impl PerformanceOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
+            startup_probe: false,
             thread_rows: false,
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
@@ -243,6 +248,11 @@ impl PerformanceOverlay {
                 .stats
                 .record_render(phases);
         }
+    }
+
+    /// Keep the GPU timer running for the frame owner's startup probe.
+    pub(crate) fn set_startup_probe(&mut self, on: bool) {
+        self.startup_probe = on;
     }
 
     pub(crate) fn is_visible(&self) -> bool {
@@ -310,7 +320,8 @@ impl PerformanceOverlay {
         let now = Instant::now();
         // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(now);
-        gpu.timer.set_active(self.visible || cfg!(feature = "perf"));
+        gpu.timer
+            .set_active(self.visible || self.startup_probe || cfg!(feature = "perf"));
         if !self.visible {
             frame.stats = PanelStats::default();
             frame.message_top = 0;

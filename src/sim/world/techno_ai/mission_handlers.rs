@@ -132,8 +132,7 @@ pub(crate) fn dispatch_foot_mission(
             infantry_deploy_fire_stance: entity.infantry_deploy_doing()
                 && sim
                     .interner
-                    .try_resolve(entity.type_ref())
-                    .and_then(|name| rules.object(name))
+                    .object_type(entity.type_ref(), rules)
                     .is_some_and(|obj| {
                         obj.deploy_fire
                             && !deploy_shim_desolator(obj, rules.ares())
@@ -371,7 +370,7 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|entity| entity.tesla_charger.is_active())
+                .is_some_and(|entity| entity.seldom.tesla_charger.is_active())
                 && let Some(target) = super::target_scan::direct_greatest_threat(
                     sim,
                     rules,
@@ -385,6 +384,7 @@ pub(crate) fn dispatch_foot_mission(
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .tesla_charger
                     .clear();
             }
@@ -1107,7 +1107,7 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     let object = sim.entity_object_type(entity, rules);
     let area_guard = if !human && !teamed {
         house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
-            && entity.slave.owner().is_none()
+            && entity.seldom.slave.owner().is_none()
             && object.is_some_and(|object| {
                 crate::sim::combat::combat_weapon::is_armed(
                     entity,
@@ -1155,7 +1155,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return saved_base_return;
         };
-        if entity.mega_mission.is_attack_move() {
+        if entity.seldom.mega_mission.is_attack_move() {
             return saved_base_return;
         }
         if entity.mission.effective().known() != Some(MissionType::Deliberate)
@@ -1537,8 +1537,7 @@ fn hunt_scans(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     !sim.substrate
         .entities
         .get(id)
-        .and_then(|entity| sim.interner.try_resolve(entity.type_ref()))
-        .and_then(|name| rules.object(name))
+        .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
         .is_some_and(|obj| obj.stupid_hunt)
 }
 
@@ -1925,6 +1924,7 @@ fn evaluate_foot_rescue(
             .entities
             .get_mut(id)
             .expect("Rescue receiver")
+            .seldom
             .foot_retarget_after_stop
             .clear_for_rescue();
         let archive = sim
@@ -2283,7 +2283,7 @@ fn foot_building_entry_head(
     mission: MissionType,
     ctx: super::ObjectAiCtx<'_>,
 ) -> Option<MissionHandlerEvaluation> {
-    let latches = sim.substrate.entities.get(id)?.building_entry;
+    let latches = sim.substrate.entities.get(id)?.seldom.building_entry;
     if latches.should_enter_absorber() {
         let _ = sim.foot_enter_bio_reactor(id, rules, ctx.effects);
     } else if latches.should_enter_occupiable() {
@@ -2377,6 +2377,7 @@ pub(super) fn evaluate_foot_guard_cadence(
     let queue = guard_queues_sabotage(sim, id, rules).then_some(MissionType::Sabotage);
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
         entity
+            .seldom
             .rearm_timer
             .remaining(sim.session.binary_frame() as i32)
     });
@@ -2781,7 +2782,10 @@ fn foot_type_takes_cadence_band(
     if attacker.category() == EntityCategory::Infantry && object.close_range {
         return true;
     }
-    let Some(primary) = object.primary().and_then(|name| rules.weapon(name)) else {
+    // `Primary`, the base record of slot 0, through its resolved handle.
+    let Some(primary) = crate::sim::combat::combat_weapon::weapon_for_index(object, 0, 0)
+        .and_then(|record| record.weapon(rules))
+    else {
         return false;
     };
     i64::from(primary.range_leptons) < close_primary_range_leptons
@@ -2933,6 +2937,7 @@ mod guard_rearm_tests {
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     field("rearm_start"),
@@ -3000,6 +3005,7 @@ mod guard_rearm_tests {
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     field("start"),
@@ -3084,5 +3090,35 @@ mod terrain_target_tests {
         sim.terrain_objects.objects_mut_for_test().remove(&2);
         assert!(attack_target_is_stale(&sim, 1));
         assert!(!foot_dispatch_in_cadence_band(&sim, &rules, 1));
+    }
+}
+
+#[cfg(all(test, tests_sim_world_techno))]
+mod type_lookup_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::game_entity::GameEntity;
+
+    /// The Hunt gate reads `StupidHunt=` through the interner's type handles,
+    /// not the name, and answers as the name does, also for an id interned
+    /// in another case.
+    #[test]
+    fn hunt_gate_reads_the_type_without_a_name_lookup() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=SEEKER\n1=DOLT\n[SEEKER]\nStrength=100\n\
+             [DOLT]\nStrength=100\nStupidHunt=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(1);
+        for (id, name) in [(1, "SEEKER"), (2, "dolt")] {
+            let mut entity = GameEntity::test_default(id, name, "Americans", 5, 5);
+            entity.set_type_ref_for_test(sim.interner.intern(name));
+            sim.substrate.entities.insert(entity);
+        }
+        sim.interner.bind_types(&rules);
+        let before = RuleSet::type_name_lookups();
+        assert!(hunt_scans(&sim, 1, &rules));
+        assert!(!hunt_scans(&sim, 2, &rules));
+        assert_eq!(RuleSet::type_name_lookups(), before);
     }
 }

@@ -777,7 +777,7 @@ fn stock_squid_third_party_victim_death_uninits_suppressed_owner_and_owned_anim(
     let host = scene.sim.substrate.entities.get(scene.ship).unwrap();
     // The fatal receiver records the loss before Unit737E43..737E58
     // restores Health1/Alive and retains the hull for sinking, not UnInit.
-    assert!(host.kill_record.is_recorded());
+    assert!(host.seldom.kill_record.is_recorded());
     assert!(host.sinking.is_active());
     assert!(host.lifecycle.object_alive());
     assert_eq!(
@@ -875,9 +875,9 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
     );
     // Explicit Rust continuation cursor, not native/app SaveGame semantics.
     loaded.scenario_rng = scene.sim.scenario_rng.clone();
-    let main = scene.sim.main_rng.snapshot_for_test();
-    loaded.main_rng = main.clone().into();
-    scene.sim.main_rng = main.into();
+    let main = scene.sim.main_rng.clone();
+    loaded.main_rng = main.clone();
+    scene.sim.main_rng = main;
     loaded.mapgen_rng = scene.sim.mapgen_rng.clone();
     loaded.restore_after_snapshot_load().unwrap();
     loaded.rebuild_caches_after_load(
@@ -1351,8 +1351,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
     scene.sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["scenario"].as_str().unwrap());
     scene.sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["main"].as_str().unwrap());
     scene.sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["mapgen"].as_str().unwrap());
     let mut compared = 0;

@@ -264,7 +264,7 @@ impl Simulation {
                 && let Some(building) = self.substrate.entities.get(target_id)
                 && building.category() == EntityCategory::Structure
             {
-                let (width, height) = building.type_facts.foundation().dimensions();
+                let (width, height) = building.seldom.type_facts.foundation().dimensions();
                 distance = distance
                     .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
                     .max(0);
@@ -284,7 +284,7 @@ impl Simulation {
                 &FireSource::of_entity(source),
                 obj,
                 0,
-                (source.weapon_burst.index() & 1) as u8,
+                (source.seldom.weapon_burst.index() & 1) as u8,
                 Default::default(),
             )
             .coord;

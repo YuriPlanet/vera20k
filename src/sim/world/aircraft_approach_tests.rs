@@ -54,7 +54,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let state = input["state"].as_u64().unwrap_or(3) as u8;
     entity.mission.set_handler_state(u32::from(state));
     entity.mission_leaf = crate::sim::mission::MissionLeafState::aircraft_raw_for_test(1, state);
-    entity.airstrike.set_test_link(Some(999));
+    entity.seldom.airstrike.set_test_link(Some(999));
     entity
         .navigation
         .set_nav_com_for_test(input["nav"].as_array().map(|xy| {
@@ -72,7 +72,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let mut fly = serde_json::to_value(loco.fly_runtime().unwrap()).unwrap();
     fly["moving"] = json!(input["moving"].as_bool().unwrap_or(true));
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(fly).unwrap();
-    entity.weapon_burst = serde_json::from_value(json!({
+    entity.seldom.weapon_burst = serde_json::from_value(json!({
         "index": input["burst_index"].as_i64().unwrap_or(0),
     }))
     .unwrap();
@@ -98,7 +98,7 @@ fn assert_flh(sim: &Simulation, rules: &RuleSet, row: &Value) {
         &fire_coord::FireSource::from(&snapshot),
         rules.object("TEST").unwrap(),
         0,
-        entity.weapon_burst.index() as u8,
+        entity.seldom.weapon_burst.index() as u8,
         Default::default(),
     )
     .coord;

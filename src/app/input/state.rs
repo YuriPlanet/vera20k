@@ -166,6 +166,7 @@ impl PreparedSavedLocalView {
         sidebar.sell_mode_on = modes.sell;
         sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
+        input.skirmish_spawn = None;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
         // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
@@ -183,6 +184,9 @@ impl PreparedSavedLocalView {
         // same next-press behavior without persisting a wall-clock Instant.
         // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
         input.last_control_group_press = None;
+        // VERA right-click orders: the double-click chain must not pair a
+        // click from before the load with one after it.
+        input.last_selection_click = None;
         input.build_repeat = Default::default();
         input.reset_cheer_clock();
     }
@@ -193,10 +197,16 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
     /// The cursor the last drawn frame showed. Native's SetCursor writes are
     /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    /// A `Cell`: the draw notes it while reading the app state through `&`.
     shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
+    /// `CursorFrame`). A `Cell` like `shown_cursor`: the shell and match draws
+    /// that show the cursor step it while they read the app state through `&`.
+    software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
     /// The cursor's targets and feedback as last read with the world home
     /// (`sim_host::home_answer`): both walk the live objects, which a draw
-    /// beside a lent tick may not read.
+    /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
+    /// `cursor_feedback_seen`: the asking draws hold the app state through `&`.
     pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
     pub(crate) tactical_tip_seen: super::tooltips::TacticalTipAnswer,
     pub(crate) cursor_feedback_seen:
@@ -294,6 +304,11 @@ pub(crate) struct MatchInputState {
     /// state: the original stamps `timeGetTime()` here and only a recall writes
     /// it — assigning with Ctrl+digit never does.
     pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
+    /// VERA right-click orders: the last ordinary tactical selection click,
+    /// for the modern-RTS double-click select-same-type-on-screen shortcut.
+    /// Wall clock, never sim state; the host's double-click time and rectangle
+    /// decide the pair. Only an admitted selection click writes it.
+    pub(crate) last_selection_click: Option<(crate::util::time::Instant, i32, i32)>,
     /// Types the local player builds endlessly (Ctrl + left click on a cameo).
     pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
@@ -303,6 +318,9 @@ pub(crate) struct MatchInputState {
     /// placement OR superweapon). Right-click clears; Options preserves it. Arming one
     /// kind clears the other.
     pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
+    /// An unconfirmed offline chat order temporarily owns the mouse without
+    /// disturbing selected units or a ready sidebar product.
+    pub(crate) skirmish_spawn: Option<super::chat::SpawnOrder>,
     /// Current placement preview for the armed building, if any.
     pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
     pub(crate) foundation_latch: FoundationLatch,
@@ -493,9 +511,63 @@ impl MatchInputState {
         }
     }
 
+    /// Record one tactical selection click and answer whether it is the
+    /// second click of a double-click. The modern-RTS
+    /// select-same-type-on-screen shortcut is a VERA extension of
+    /// `RightClickOrders`: a click it does not admit (the option off, or a
+    /// click a held T, a modifier or an armed attack-move claims) discards the
+    /// chain, so it never pairs with the next plain click.
+    /// `point` is in physical window pixels, the space the host's double-click
+    /// rectangle is measured in.
+    pub(crate) fn note_tactical_selection_click(
+        &mut self,
+        admitted: bool,
+        now: crate::util::time::Instant,
+        point: (i32, i32),
+    ) -> bool {
+        if !admitted {
+            self.last_selection_click = None;
+            return false;
+        }
+        crate::ui::shell::list::is_double_click(
+            &mut self.last_selection_click,
+            now,
+            point.0,
+            point.1,
+            crate::ui::shell::saved_file_input::host_double_click_limits(),
+        )
+    }
+
     /// Record the cursor a drawn frame shows (`None` is the normal arrow).
     pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
         self.shown_cursor.set(kind);
+    }
+
+    /// The index of the frame of `sequence` the software cursor draws for
+    /// `id` right now, stepping its phase
+    /// ([`crate::app::input::cursor::CursorAnimation::frame_index`]).
+    pub(crate) fn software_cursor_frame_index(
+        &self,
+        id: crate::app::types::CursorId,
+        sequence: &crate::app::types::SoftwareCursorSequence,
+    ) -> Option<usize> {
+        let mut animation = self.software_cursor_animation.get();
+        let index = animation.frame_index(id, sequence);
+        self.software_cursor_animation.set(animation);
+        index
+    }
+
+    /// Whether the drawn software cursor's next frame is due.
+    pub(crate) fn software_cursor_step_due(&self) -> bool {
+        self.software_cursor_animation.get().step_due()
+    }
+
+    /// DisplayCancel4AEAD0 resets the cursor shape through its animation
+    /// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary
+    /// draw starts the default shape at frame 0.
+    pub(crate) fn reset_cursor_shape(&mut self) {
+        *self.software_cursor_animation.get_mut() =
+            crate::app::input::cursor::CursorAnimation::new();
     }
 
     /// The cursor the last drawn frame showed, which stays where nothing
@@ -541,6 +613,9 @@ impl MatchInputState {
         Self {
             cursor_visibility: Default::default(),
             shown_cursor: Default::default(),
+            software_cursor_animation: std::cell::Cell::new(
+                crate::app::input::cursor::CursorAnimation::new(),
+            ),
             cursor_targets_seen: Default::default(),
             tactical_tip_seen: Default::default(),
             cursor_feedback_seen: Default::default(),
@@ -554,9 +629,11 @@ impl MatchInputState {
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
+            last_selection_click: None,
             build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
+            skirmish_spawn: None,
             building_placement_preview: None,
             foundation_latch: FoundationLatch::default(),
             saved_building_placement: None,
@@ -821,6 +898,9 @@ impl MatchInputState {
         // reuses the same object ids or has the same buildable types.
         self.ferry = Default::default();
         self.build_repeat = Default::default();
+        self.skirmish_spawn = None;
+        // The double-click chain belongs to the outgoing tactical view.
+        self.last_selection_click = None;
         self.targeting_mode = None;
         self.building_placement_preview = None;
         self.saved_building_placement = None;
@@ -1014,6 +1094,30 @@ mod house_cheer_tests;
 #[cfg(all(test, tests_app_input_d_z))]
 #[path = "house_cheer_retail_tests.rs"]
 mod house_cheer_retail_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+mod double_click_tests {
+    use super::*;
+
+    /// The modern-RTS double-click is a `RightClickOrders` extension: with the
+    /// option off, or after a click it does not admit, no chain accumulates,
+    /// and a pair ends it so the next click starts over. Times and the point are far inside any host window.
+    #[test]
+    fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
+        let mut input = MatchInputState::new(Default::default());
+        let start = crate::util::time::Instant::now();
+        let point = (120, 80);
+        let shortly = |millis| start + crate::util::time::Duration::from_millis(millis);
+        assert!(!input.note_tactical_selection_click(false, start, point));
+        assert!(!input.note_tactical_selection_click(false, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, start, point));
+        assert!(input.note_tactical_selection_click(true, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(10), point));
+        // A Shift-click between two plain clicks ends the chain.
+        assert!(!input.note_tactical_selection_click(false, shortly(15), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(20), point));
+    }
+}
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod pause_resync_tests {

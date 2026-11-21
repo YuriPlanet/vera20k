@@ -58,6 +58,39 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
     assert!(sim.create_team(team_type, None, &rules).is_none());
 }
 
+#[test]
+fn team_limit_scope_can_be_overridden_in_the_same_skirmish() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let mode = ScenarioGameMode::Skirmish;
+    let stock = mode.stock_rule_policy(None);
+    let rules = RuleSet::from_ini(&IniFile::from_str("[Countries]\n0=Americans\n")).unwrap();
+    let map = IniFile::from_str(
+        "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nMax=1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,0\n[TaskForces]\n0=F\n",
+    );
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, stock);
+    let mut sim = Simulation::new();
+    let first = sim.interner.intern("First");
+    let second = sim.interner.intern("Second");
+    for (index, house) in [first, second].into_iter().enumerate() {
+        sim.register_house(HouseState::new(house, index as u8, None, true, 0, 1));
+    }
+    sim.install_team_ai_registry(&registry, &rules);
+    let team_type = sim.interner.get("TT").unwrap();
+
+    sim.install_session_admission(
+        mode,
+        None,
+        stock.with_team_creation_limit_scope(TeamLimitScope::AllHouses),
+    );
+    assert!(sim.create_team(team_type, Some(first), &rules).is_some());
+    assert!(sim.create_team(team_type, Some(second), &rules).is_none());
+
+    sim.install_session_admission(mode, None, stock);
+    assert!(sim.create_team(team_type, Some(second), &rules).is_some());
+}
+
 fn rows(kind: &str, count: usize) -> Vec<Value> {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/team_creation.json",
@@ -831,11 +864,15 @@ fn infantry_reinforcement_building_exits_release_contacts_and_skip_the_review_ri
             .find(|entity| entity.category() == EntityCategory::Infantry)
             .unwrap();
         assert!(!member.lifecycle.in_limbo(), "{kind}");
-        assert!(member.radio_contacts.is_empty(), "{kind}: member BREAK");
+        assert!(
+            member.seldom.radio_contacts.is_empty(),
+            "{kind}: member BREAK"
+        );
         assert!(
             sim.entities()
                 .get(building)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty(),
             "{kind}: producer BREAK"
@@ -905,20 +942,27 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
         (true, None)
     );
     let producer = sim.entities().get(building).unwrap();
-    assert_eq!(producer.radio_contacts.slot(0), None);
+    assert_eq!(producer.seldom.radio_contacts.slot(0), None);
     let retained = producer
+        .seldom
         .radio_contacts
         .slot(1)
         .expect("the first new member retains its slot1 contact");
     assert_ne!(retained, old_contact);
     assert_eq!(
-        sim.entities().get(retained).unwrap().radio_contacts.slot(0),
+        sim.entities()
+            .get(retained)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .slot(0),
         Some(building)
     );
     assert!(
         sim.entities()
             .get(old_contact)
             .unwrap()
+            .seldom
             .radio_contacts
             .is_empty()
     );
@@ -935,7 +979,7 @@ fn reinforcement_exit_breaks_slot_zero_instead_of_the_new_members_contact() {
         members
             .iter()
             .filter(|member| member.stable_id() != retained)
-            .all(|member| member.radio_contacts.is_empty())
+            .all(|member| member.seldom.radio_contacts.is_empty())
     );
 }
 
@@ -1046,8 +1090,20 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
         FrameEffects::default(),
     );
     let before = sim.entities().len();
-    let producer_contacts = sim.entities().get(building).unwrap().radio_contacts.clone();
-    let member_contacts = sim.entities().get(contact).unwrap().radio_contacts.clone();
+    let producer_contacts = sim
+        .entities()
+        .get(building)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
+    let member_contacts = sim
+        .entities()
+        .get(contact)
+        .unwrap()
+        .seldom
+        .radio_contacts
+        .clone();
     assert!(producer_contacts.first_free().is_none());
     let team_type = sim.interner.get("TT").unwrap();
     let (returned, review) = sim.spawn_team_reinforcements(
@@ -1064,11 +1120,11 @@ fn reinforcement_busy_exit_deletes_the_member_without_breaking_the_existing_cont
     assert_eq!(review, None);
     assert_eq!(sim.entities().len(), before);
     assert_eq!(
-        sim.entities().get(building).unwrap().radio_contacts,
+        sim.entities().get(building).unwrap().seldom.radio_contacts,
         producer_contacts
     );
     assert_eq!(
-        sim.entities().get(contact).unwrap().radio_contacts,
+        sim.entities().get(contact).unwrap().seldom.radio_contacts,
         member_contacts
     );
 }
@@ -1252,8 +1308,7 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -1630,8 +1685,7 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -1794,8 +1848,7 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
@@ -2081,7 +2134,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
     sim.run_team_ai_pass(&rules, Some(&overlay), FrameEffects::default());

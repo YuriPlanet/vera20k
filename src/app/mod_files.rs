@@ -478,7 +478,10 @@ pub(crate) fn start(title: String, dir: PathBuf) -> std::io::Result<PageCheck> {
         .name("mod-check".into())
         .spawn(move || {
             // The page may have gone; then nobody waits for the answer.
-            let _ = send.send(check(&thread_dir, &thread_stop));
+            let checked =
+                crate::util::mod_package::ModFolder::open(&thread_dir, Some(&thread_stop))
+                    .and_then(|dir| check(&dir, &thread_stop));
+            let _ = send.send(checked);
         })?;
     Ok(PageCheck {
         title,

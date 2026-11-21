@@ -344,7 +344,7 @@ pub(crate) fn controlled_transport_house(
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
     open_topped
-        .then(|| transport.mind_control.controller())
+        .then(|| transport.seldom.mind_control.controller())
         .flatten()
         .and_then(|controller| entities.get(controller))
         .map(|controller| controller.owner())
@@ -2050,8 +2050,12 @@ mod tests {
             ));
         // The fixture entities' names were interned by `test_default`.
         sim.interner = crate::sim::intern::test_interner();
-        sim.substrate.entities.get_mut(1).unwrap().mind_control =
-            MindControlLink::controlled_by_for_test(3);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .seldom
+            .mind_control = MindControlLink::controlled_by_for_test(3);
         sim.substrate
             .entities
             .get_mut(2)

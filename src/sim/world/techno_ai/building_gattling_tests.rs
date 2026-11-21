@@ -335,7 +335,7 @@ fn count(events: &[Value], name: &str, stream: Option<&str>) -> usize {
 fn with_draws(sim: &mut Simulation, row: &Value, call: impl FnOnce(&mut Simulation) -> i32) -> i32 {
     let name = &row["input"]["name"];
     let events = row["events"].as_array().unwrap();
-    let mut main = sim.main_rng.snapshot_for_test();
+    let mut main = sim.main_rng.clone();
     for _ in 0..count(events, "rng", Some("main")) {
         main.next_u32();
     }
@@ -565,6 +565,7 @@ fn building_fire_finishes_before_the_mission_returns() {
             .entities
             .get(building)
             .unwrap()
+            .seldom
             .rearm_timer
             .remaining(FRAME as i32)
             > 0,
@@ -747,7 +748,7 @@ fn gattling_cadence_matches_the_original() {
                 (event[0].as_u64().unwrap(), kind)
             })
             .collect();
-        sim.main_rng = SimRng::new(input["main_seed"].as_u64().unwrap_or(1)).into();
+        sim.main_rng = SimRng::new(input["main_seed"].as_u64().unwrap_or(1));
         let mut scenario_draws = 0;
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
@@ -794,7 +795,7 @@ fn gattling_cadence_matches_the_original() {
             sim.scenario_rng = scenario;
             let native_events = frame["events"].as_array().unwrap();
             scenario_draws += count(native_events, "rng", Some("scenario_ranged"));
-            let mut main = sim.main_rng.snapshot_for_test();
+            let mut main = sim.main_rng.clone();
             for _ in 0..count(native_events, "rng", Some("main")) {
                 main.next_u32();
             }
@@ -848,6 +849,7 @@ fn gattling_cadence_matches_the_original() {
                     .entities
                     .get_mut(building)
                     .unwrap()
+                    .seldom
                     .rearm_timer
                     .start((base + k as i64) as i32, ROF[weapon]);
             }

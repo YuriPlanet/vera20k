@@ -307,6 +307,7 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
                 .entities
                 .get_mut(factory)
                 .unwrap()
+                .seldom
                 .discovery
                 .set_discovered_by_current_house_for_test(
                     row["discovered"].as_bool().unwrap_or(true),

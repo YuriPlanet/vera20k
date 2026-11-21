@@ -640,7 +640,7 @@ fn retail_planned_depot_and_refinery_orders_reach_their_dock_owners() {
             docked |= sim
                 .entities()
                 .get(actor)
-                .is_some_and(|entity| entity.radio_contacts.slot(0) == Some(target));
+                .is_some_and(|entity| entity.seldom.radio_contacts.slot(0) == Some(target));
             let completed = sim.entities().get(actor).is_some_and(|entity| {
                 if refinery {
                     entity

@@ -789,8 +789,13 @@ fn ini_directives_production_selection_obeys_build_capability() {
             );
             dir.write("root.ini", root.as_bytes());
             dir.write("child.ini", b"[Included]\nValue=child\n");
-            let assets =
-                crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+            let assets = if ares_way {
+                crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(
+                    dir.path(),
+                )
+            } else {
+                crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path())
+            };
             let selected = select_ini(&assets, "root.ini").unwrap();
             assert!(selected.directive_diagnostics.is_empty());
             assert_eq!(selected.included_sources.len(), usize::from(expected));
@@ -980,8 +985,13 @@ fn ini_directives_reach_the_existing_ordered_type_processor_and_fixed_art() {
         dir.write("art-extra.ini", b"[TEST]\nVoxel=yes\n");
         dir.write("mode.ini", b"[#include]\n0=mode-extra.ini\n");
         dir.write("mode-extra.ini", b"[General]\nBuildSpeed=.9\n");
-        let assets =
-            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+        let assets = if ares_way {
+            crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(
+                dir.path(),
+            )
+        } else {
+            crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path())
+        };
         let (_, _, mut owner) = load_startup_rules(&assets, Default::default(), Default::default())
             .unwrap()
             .into_parts();

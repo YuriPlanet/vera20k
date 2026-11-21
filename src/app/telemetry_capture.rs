@@ -498,7 +498,7 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
 fn capture_selection(sim: &Simulation) -> Vec<SelectedDebug> {
     sim.entities()
         .values()
-        .filter(|entity| entity.selection.is_selected())
+        .filter(|entity| entity.seldom.selection.is_selected())
         .take(MAX_SELECTED)
         .map(|entity| capture_selected(sim, entity, sim.path_grid()))
         .collect()
@@ -540,6 +540,7 @@ mod tests {
             );
             sim.entity_mut_for_test(id)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(true);
         }

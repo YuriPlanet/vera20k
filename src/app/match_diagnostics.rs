@@ -32,6 +32,7 @@ pub(crate) struct MatchDiagnosticsState {
     /// by the frame loop, closed by the lifecycle flush points above.
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
+    /// Diagnostic probe the draw fills through `&AppState`, hence a `RefCell`.
     actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
@@ -318,7 +319,7 @@ impl MatchDiagnosticsState {
         runtime: &mut crate::sim::runtime::SimRuntime,
         source: &crate::map::source::LoadedMapSource,
         map_hash: u64,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<crate::sim::trigger_runtime::TriggerEffect>> {
         let replay = match self.replay_playback.take() {
             Some(ReplayPlaybackState::Loading(replay)) => replay,
             other => {
@@ -327,9 +328,10 @@ impl MatchDiagnosticsState {
             }
         };
         match crate::sim::replay::ReplayPlayback::prepare(runtime, replay, source, map_hash) {
-            Ok(playback) => {
+            Ok(mut playback) => {
+                let effects = playback.take_initial_effects();
                 self.replay_playback = Some(ReplayPlaybackState::Playing(playback));
-                Ok(())
+                Ok(effects)
             }
             Err(error) => {
                 self.replay_playback = Some(ReplayPlaybackState::Failed(format!("{error:#}")));
@@ -440,6 +442,12 @@ impl MatchDiagnosticsState {
             }
             _ => None,
         };
+        if let Some(verified) = &verification {
+            log::info!(
+                "Rendered replay verified {} checkpoints through frame {}, final state {:016x}",
+                verified.checked_hashes, verified.final_tick, verified.final_state_hash
+            );
+        }
         let receipt = serde_json::json!({
             "replay_sha256": self.replay_artifact_sha256,
             "png_sha256": crate::util::sha256::sha256_hex(&png),
@@ -492,16 +500,6 @@ impl MatchDiagnosticsState {
             return None;
         }
         let sim = &runtime.simulation;
-        if sim.session().has_custom_control_grants() {
-            const REFUSAL: &str =
-                "Replay recording is unavailable for matches with source-specific control grants.";
-            self.replay_log = None;
-            if self.replay_startup_refusal.as_deref() != Some(REFUSAL) {
-                log::warn!("{REFUSAL}");
-                self.replay_startup_refusal = Some(REFUSAL.to_owned());
-            }
-            return None;
-        }
         // Trainer changes are deliberately outside the ordinary command log.
         // The caller closes the valid prefix before the first such mutation;
         // never emit an apparently replayable continuation afterward.
@@ -530,10 +528,10 @@ impl MatchDiagnosticsState {
     pub(crate) fn retain_replay_startup(
         &mut self,
         runtime: &crate::sim::runtime::SimRuntime,
-        launch: Option<&crate::skirmish_launch::SkirmishLaunchSession>,
+        launch: Option<crate::sim::replay::ReplayLaunchInput<'_>>,
         source: Option<&crate::map::source::LoadedMapSource>,
         map_hash: Option<u64>,
-        every_frame_network: bool,
+        options: crate::sim::replay::ReplayStartOptions,
     ) {
         let Some(log) = self.replay_log.as_mut().filter(|log| {
             log.startup.is_none()
@@ -551,7 +549,7 @@ impl MatchDiagnosticsState {
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,
-            every_frame_network,
+            options,
         ) {
             Ok(startup) => {
                 log.header.version = crate::sim::replay::REPLAY_VERSION;
@@ -836,7 +834,7 @@ mod tests {
     fn sample_log_with(seed: u64, map_name: &str, state_hash: u64) -> ReplayLog {
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
-            version: 71,
+            version: crate::sim::replay::REPLAY_VERSION,
             tick_hz: 15,
             seed,
             map_name: map_name.to_owned(),
@@ -908,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn source_grants_prevent_an_automatic_replay_segment() {
+    fn source_grants_allow_an_automatic_replay_segment() {
         use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
         use crate::sim::house_state::HouseState;
         use crate::sim::scenario_session::ScenarioGameMode;
@@ -931,14 +929,9 @@ mod tests {
 
         let runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
         let mut diagnostics = MatchDiagnosticsState::default();
-        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
-        assert!(diagnostics.replay_log.is_none());
-        assert!(
-            diagnostics
-                .replay_startup_refusal
-                .as_deref()
-                .is_some_and(|reason| reason.contains("source-specific control grants"))
-        );
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_some());
+        assert!(diagnostics.replay_log.is_some());
+        assert!(diagnostics.replay_startup_refusal.is_none());
     }
 
     #[test]

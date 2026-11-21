@@ -623,7 +623,7 @@ impl Simulation {
 
         let mut aim = coord;
         if !hunter_seeker && let Some(building) = self.fly_building_at(coord) {
-            if entity.radio_contacts.contains(building) {
+            if entity.seldom.radio_contacts.contains(building) {
                 if let Some(dock) = crate::sim::movement::building_dock_coordinate(
                     &self.substrate.entities,
                     building,

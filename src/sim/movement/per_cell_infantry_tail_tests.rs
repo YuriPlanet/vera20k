@@ -133,7 +133,7 @@ fn a_tethered_arrival_that_fills_its_cell_scatters_the_men_there() {
         arrive(&mut sim, &rules, arriver);
 
         let arriver_entity = sim.substrate.entities.get(arriver).unwrap();
-        assert_eq!(arriver_entity.tether.partner(), None, "{case}");
+        assert_eq!(arriver_entity.seldom.tether.partner(), None, "{case}");
         assert_eq!(
             arriver_entity.navigation.nav_com(),
             Some(NavTargetRef::cell(CELL.0, CELL.1)),

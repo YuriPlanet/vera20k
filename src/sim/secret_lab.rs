@@ -295,8 +295,7 @@ mod tests {
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
             sim.main_rng =
-                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                    .into();
+                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
             sim.mapgen_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
@@ -322,6 +321,7 @@ mod tests {
                             house_roster: &roster,
                             skirmish_session: None,
                             campaign_map: None,
+                            stage_home_global: None,
                         },
                     )
                     .unwrap();

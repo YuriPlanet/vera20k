@@ -6,18 +6,19 @@
 //! second hop to a precomputed array index, so resolution is two array indexes
 //! with no hashing. It keeps each id's native class-array indexes
 //! (`RuleSet::type_array_index`), its projectile type (`RuleSet::projectile`,
-//! which a bullet's AI reads every frame) and its warhead (`RuleSet::warhead`,
-//! which every hit reads) the same way.
+//! which a bullet's AI reads every frame), its warhead (`RuleSet::warhead`,
+//! which every hit reads) and its weapon (`RuleSet::weapon`, which a
+//! detonation reads for the bullet's installed weapon) the same way.
 //!
 //! The `StringInterner` owns it: `StringInterner::bind_types` builds it from a
 //! `RuleSet` and the strings interned so far (after
 //! `Simulation::intern_rule_type_ids`, so every object type id is present),
 //! `StringInterner::cover_types` adds the strings interned since (a
-//! projectile's or warhead's name is first interned when something fires
-//! it), and `StringInterner::object_type`,
+//! projectile's, warhead's or weapon's name is first interned when something
+//! fires it), and `StringInterner::object_type`,
 //! `StringInterner::object_type_in_category`,
-//! `StringInterner::type_array_index`, `StringInterner::projectile_type` and
-//! `StringInterner::warhead_type` read it. It answers exactly as the name
+//! `StringInterner::type_array_index`, `StringInterner::projectile_type`,
+//! `StringInterner::warhead_type` and `StringInterner::weapon_type` read it. It answers exactly as the name
 //! path does: a `RuleSet`'s name indexes never change after it is built, and
 //! an id interned after the last build or cover, or a `RuleSet` other than
 //! the one it was built from, takes the name path. Debug builds compare every
@@ -31,8 +32,9 @@
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::projectile_type::ProjectileType;
-use crate::rules::ruleset::{ProjectileHandle, RuleSet, TypeHandle, WarheadHandle};
+use crate::rules::ruleset::{ProjectileHandle, RuleSet, TypeHandle, WarheadHandle, WeaponHandle};
 use crate::rules::warhead_type::WarheadType;
+use crate::rules::weapon_type::WeaponType;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::touch_log::live_read_check_enabled;
 
@@ -81,6 +83,12 @@ pub(super) struct TypeHandleTable {
     /// and its damage calls pass that pointer on; here they hold the name's
     /// id, so this column stands in for the pointer.
     warheads: Vec<Option<WarheadHandle>>,
+    /// Each id's weapon, as [`RuleSet::weapon`] answers for its name. Dense
+    /// by `InternedId` index, like `by_interned`. A payload holds its installed
+    /// weapon as the name's id
+    /// ([`ProjectilePayload::with_installed_weapon`](crate::sim::projectile::ProjectilePayload::with_installed_weapon)),
+    /// where gamemd's bullet holds the pointer, so this column stands in for it.
+    weapons: Vec<Option<WeaponHandle>>,
     /// [`RuleSet::serial`] of the set the handles came from; 0 while unbuilt,
     /// which no set has.
     rules_serial: u64,
@@ -119,6 +127,7 @@ impl TypeHandleTable {
                 .push(CLASS_ARRAYS.map(|category| rules.type_handle_in_category(category, name)));
             self.projectiles.push(rules.projectile_handle(name));
             self.warheads.push(rules.warhead_handle(name));
+            self.weapons.push(rules.weapon_handle(name));
         }
     }
 
@@ -165,6 +174,29 @@ impl TypeHandleTable {
                 handle.map(|handle| rules.warhead_by_handle(handle))
             }
             _ => rules.warhead(interner.resolve(id)),
+        }
+    }
+
+    /// The weapon `id` names in `rules`, as
+    /// `rules.weapon(interner.resolve(id))` answers: from the table when it
+    /// was built from `rules` and covers `id`, else by name.
+    #[inline]
+    pub(super) fn weapon<'r>(
+        &self,
+        interner: &StringInterner,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r WeaponType> {
+        match self.weapons.get(id.index() as usize) {
+            Some(&handle) if self.rules_serial == rules.serial() => {
+                debug_assert!(
+                    !live_read_check_enabled()
+                        || handle == rules.weapon_handle(interner.resolve(id)),
+                    "type table answers weapon {handle:?} for {id:?}, unlike its name"
+                );
+                handle.map(|handle| rules.weapon_by_handle(handle))
+            }
+            _ => rules.weapon(interner.resolve(id)),
         }
     }
 
@@ -232,9 +264,9 @@ impl TypeHandleTable {
         }
     }
 
-    /// The object `id` names in `rules`, as `rules.object(interner.resolve(id))`
-    /// answers: from the table when it was built from `rules` and covers `id`,
-    /// else by name.
+    /// The object `id` names in `rules`, as `rules.object(name)` answers for
+    /// the name `interner.try_resolve(id)` gives: from the table when it was
+    /// built from `rules` and covers `id`, else by name.
     #[inline]
     pub(super) fn object<'r>(
         &self,
@@ -247,7 +279,9 @@ impl TypeHandleTable {
     }
 
     /// The handle of the object `id` names in `rules`, as
-    /// `rules.type_handle(interner.resolve(id))` answers, the same way.
+    /// `rules.type_handle(name)` answers for the name
+    /// `interner.try_resolve(id)` gives (none for an id the interner never
+    /// made), the same way.
     #[inline]
     pub(super) fn handle(
         &self,
@@ -263,7 +297,7 @@ impl TypeHandleTable {
                 );
                 handle
             }
-            _ => rules.type_handle(interner.resolve(id)),
+            _ => rules.type_handle(interner.try_resolve(id)?),
         }
     }
 
@@ -394,6 +428,44 @@ mod tests {
             }
             assert!(table.projectile(&interner, bullet, set).is_some());
             assert!(table.warhead(&interner, warhead, set).is_some());
+        }
+    }
+
+    /// A weapon id answers the WeaponType `RuleSet::weapon` answers for its
+    /// name, in any case: one the base rules have and one a later layer
+    /// adds, interned after the build and covered, from the table for the
+    /// set it was built from and by name for another; an id naming no weapon
+    /// answers none.
+    #[test]
+    fn weapons_answer_as_their_names() {
+        let mut ini = IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nPrimary=M60\n\
+             [M60]\nDamage=20\nWarhead=SA\n[SA]\nCellSpread=0\n",
+        );
+        ini.merge(&IniFile::from_str(
+            "[E1]\nSecondary=NewGun\n[NewGun]\nDamage=5\nWarhead=SA\n",
+        ));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let other = RuleSet::from_ini(&ini).unwrap();
+        let mut interner = StringInterner::new();
+        let base = interner.intern("m60");
+        let unarmed = interner.intern("E1");
+        let mut table = TypeHandleTable::build(&rules, &interner);
+        let layered = interner.intern("NEWGUN");
+        table.cover(&rules, &interner);
+        assert!(table.weapons[base.index() as usize].is_some());
+        assert!(table.weapons[layered.index() as usize].is_some());
+        for set in [&rules, &other] {
+            for id in [base, layered, unarmed] {
+                assert_eq!(
+                    table.weapon(&interner, id, set).map(std::ptr::from_ref),
+                    set.weapon(interner.resolve(id)).map(std::ptr::from_ref)
+                );
+            }
+            let damage = |id| table.weapon(&interner, id, set).map(|weapon| weapon.damage);
+            assert_eq!(damage(base), Some(20));
+            assert_eq!(damage(layered), Some(5));
+            assert_eq!(damage(unarmed), None);
         }
     }
 

@@ -142,7 +142,8 @@ pub(super) fn reload(scene: &mut HeadlessScenario) {
     let dummy = sim.effective_shared_cell_dummy();
     dummy.adopt_prepared_load_state(&loaded.effective_shared_cell_dummy());
     loaded.bind_shared_cell_dummy(dummy);
-    loaded.install_fresh_process_main(sim.main_rng());
+    // No app process cell here: the install writes a stand-in nothing reads.
+    loaded.install_fresh_process_main(&crate::sim::rng::MainRng::new(0));
     loaded.publish_scenario_started();
     runtime.replace_simulation(loaded);
 }

@@ -41,7 +41,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return mission;
         };
-        let tethered = entity.tether.partner().is_some();
+        let tethered = entity.seldom.tether.partner().is_some();
         let foot = matches!(
             entity.category(),
             crate::map::entities::EntityCategory::Unit
@@ -50,6 +50,7 @@ impl Simulation {
         );
         let break_tether = tethered
             && entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| self.substrate.entities.get(contact))
@@ -65,7 +66,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if break_tether {
                 // `0x004C7342`.
-                entity.tether.release();
+                entity.seldom.tether.release();
             }
             // `0x004C7353`.
             entity.pending_entry.clear();
@@ -186,7 +187,7 @@ impl Simulation {
         }
         self.queue_order_mission(id, queued, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.suspended_attack_target.clear();
+            entity.seldom.suspended_attack_target.clear();
             if entity.category() != crate::map::entities::EntityCategory::Structure {
                 entity.navigation.clear_suspended_nav_com();
             }

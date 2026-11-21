@@ -91,6 +91,41 @@ pub(crate) fn read_options(input: &str) -> Result<RmgOptions> {
     Ok(options)
 }
 
+/// Resolve the mode and all generation inputs through the same owners used
+/// by the process probe and ordinary Skirmish setup.
+fn prepare_generation(
+    assets: &mut crate::assets::asset_manager::AssetManager,
+    rules: &crate::rules::process_owner::NativeRulesProcessOwner,
+    options: &RmgOptions,
+) -> Result<super::shell_random_map::PreparedRandomMapGeneration> {
+    use super::shell_random_map::{RandomMapRulesPreparation, prepare_random_map_generation};
+    let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
+    let mode = crate::skirmish_modes::default_skirmish_mode(&modes)
+        .context("the selected mode catalog has no Skirmish game mode")?;
+    ensure!(
+        mode.random_maps_allowed,
+        "GameMode={} in {} does not allow random maps",
+        mode.id,
+        assets.ini_roots().modes()
+    );
+    let mode_rules =
+        crate::rules::retail_sources::select_mode_ini(assets, Some(&mode.override_file))
+            .map_err(anyhow::Error::msg)
+            .with_context(|| {
+                format!(
+                    "could not read GameMode={} rules ({})",
+                    mode.id, mode.override_file
+                )
+            })?;
+    prepare_random_map_generation(
+        assets,
+        options,
+        RandomMapRulesPreparation::NetworkAgreement(Some(rules)),
+        mode_rules.as_ref(),
+    )
+    .context("the random map's theater or rules are unavailable")
+}
+
 /// Generate the map `options` describe from the loaded game files and Rules
 /// owner, as a multiplayer map file named `Random Map <seed>` for 2 to its
 /// start count, with its preview and start header.
@@ -99,20 +134,7 @@ pub(crate) fn generate(
     rules: &crate::rules::process_owner::NativeRulesProcessOwner,
     options: &RmgOptions,
 ) -> Result<RandomMapFile> {
-    use super::shell_random_map::{RandomMapRulesPreparation, prepare_random_map_generation};
-    // One mode for every room: the stock Battle row a spawn launch defaults to.
-    let mode = crate::app::frontend::cncnet_spawn::spawn_battle_mode();
-    let mode_rules =
-        crate::rules::retail_sources::select_mode_ini(assets, Some(&mode.override_file))
-            .map_err(anyhow::Error::msg)
-            .context("could not read the Battle mode's rules")?;
-    let prepared = prepare_random_map_generation(
-        assets,
-        options,
-        RandomMapRulesPreparation::NetworkAgreement(Some(rules)),
-        mode_rules.as_ref(),
-    )
-    .context("the random map's theater or rules are unavailable")?;
+    let prepared = prepare_generation(assets, rules, options)?;
     let run = crate::map::rmg::build::generate_map(
         options,
         &prepared.settings,
@@ -180,10 +202,10 @@ pub(crate) fn generate(
 }
 
 /// Read `input` ([`read_options`]), load the game folder `config` names with
-/// the mod in `mod_dir` (`mods::launch_dir`), and generate its map.
+/// the selected `active_mod` (`mods::launch_mod`), and generate its map.
 pub(crate) fn generate_from_game(
     config: &crate::util::config::GameConfig,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     input: &str,
 ) -> Result<RandomMapFile> {
     let options = read_options(input)?;
@@ -191,14 +213,16 @@ pub(crate) fn generate_from_game(
         config,
         Default::default(),
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
-        mod_dir,
+        active_mod,
         // The game's files decide, whatever the player's own setting.
         crate::util::ares_launch::AresSetting::Auto,
         false,
     )?;
     let (assets, rules, _) = process.manager_and_rules_with_tile_cache();
+    let assets = assets.context("the game files are not loaded")?;
+    assets.open_for_play();
     generate(
-        assets.context("the game files are not loaded")?,
+        assets,
         rules.context("the game's rules are not loaded")?,
         &options,
     )
@@ -217,7 +241,7 @@ pub(crate) fn run_desktop(
     let config = crate::util::config::GameConfig::load()?;
     let map = generate_from_game(
         &config,
-        crate::app::mods::launch_dir(&config.paths, mod_switch),
+        crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         input,
     )?;
     let mut partial = output.as_os_str().to_owned();
@@ -334,5 +358,80 @@ mod tests {
             assert!(first.bytes == from_code.bytes, "{sed}: its code differs");
             assert_eq!(first.report.sha256, sha256, "{sed}");
         }
+    }
+
+    #[test]
+    fn selected_mode_rules_reach_generation_and_its_random_map_gate() {
+        let Some((retail, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let startup = owner.startup_compatibility_projection().unwrap();
+        let stock = startup.neutral_tech_buildings();
+        assert!(
+            stock.len() > 1,
+            "retail must provide more than one neutral tech building"
+        );
+        let selected_type = &stock[0];
+        let root = crate::map::source::test_support::TestDirectory::new("rmg-selected-mode");
+        let mod_dir = root.path().join("Mods").join("Catalog");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("mod.ini"), "[Files]\nModes=custom-modes.ini\n").unwrap();
+        // FreeForAll-only catalogs are eligible too; no Battle row is invented.
+        let roster = "[FreeForAll]\n12=GUI:Custom,STT:Custom,selected-mode.ini,standard,true\n";
+        std::fs::write(mod_dir.join("custom-modes.ini"), roster).unwrap();
+        std::fs::write(
+            mod_dir.join("selected-mode.ini"),
+            format!("[AI]\nNeutralTechBuildings={selected_type}\n"),
+        )
+        .unwrap();
+        root.write(
+            "config.toml",
+            format!(
+                "[paths]\nra2_dir='{}'\nsettings_dir='{}'\nmod='Catalog'\n",
+                retail.display(),
+                root.path().display()
+            )
+            .as_bytes(),
+        );
+        let config =
+            crate::util::config::GameConfig::load_from(root.path(), &root.path().join("vera20k"))
+                .unwrap();
+        let load = || {
+            crate::app::spawn_probe::load_process_sources(
+                &config,
+                Default::default(),
+                crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+                crate::app::mods::launch_mod(&config.paths, None).unwrap(),
+                crate::util::ares_launch::AresSetting::Auto,
+                false,
+            )
+            .unwrap()
+            .0
+        };
+        let options = read_options(SMALL_SED).unwrap();
+        let mut process = load();
+        let (assets, rules, _) = process.manager_and_rules_with_tile_cache();
+        let prepared = prepare_generation(assets.unwrap(), rules.unwrap(), &options).unwrap();
+        assert_eq!(
+            prepared
+                .tech_types
+                .iter()
+                .map(|ty| ty.name.as_str())
+                .collect::<Vec<_>>(),
+            [selected_type.as_str()]
+        );
+        std::fs::write(
+            mod_dir.join("custom-modes.ini"),
+            roster.replace(",true", ",false"),
+        )
+        .unwrap();
+        let mut refused = load();
+        let (assets, rules, _) = refused.manager_and_rules_with_tile_cache();
+        let error = prepare_generation(assets.unwrap(), rules.unwrap(), &options)
+            .err()
+            .expect("selected mode refuses random maps");
+        assert!(error.to_string().contains("GameMode=12"));
+        assert!(error.to_string().contains("does not allow random maps"));
     }
 }

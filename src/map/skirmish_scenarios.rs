@@ -47,6 +47,8 @@ pub enum SkirmishScenarioSource {
     LoosePkt(String),
     LooseYro(String),
     LooseYrm(String),
+    /// A map listed by the selected mod's client catalog.
+    ClientCatalog,
     /// VERA: a map only in the lobby's online map library, by SHA-256. Its
     /// row comes from the library's copy of the map's header; Choose Map
     /// downloads the map into VERA's own Maps folder before using it.
@@ -272,6 +274,14 @@ pub fn record_matches_mode(record: &SkirmishScenarioRecord, mode: &SkirmishGameM
         SkirmishScenarioKind::RandomMapSentinel => mode.random_maps_allowed,
         SkirmishScenarioKind::ConcreteMap if record.game_modes.is_empty() => {
             mode.map_filter == "standard"
+        }
+        SkirmishScenarioKind::ConcreteMap
+            if record.source == SkirmishScenarioSource::ClientCatalog =>
+        {
+            record
+                .game_modes
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
         }
         SkirmishScenarioKind::ConcreteMap => record
             .game_modes

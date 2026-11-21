@@ -289,7 +289,7 @@ impl Simulation {
         let Some(object) = self.object_type(controller.type_ref(), rules) else {
             return Vec::new();
         };
-        let selected = controller.selection.is_selected();
+        let selected = controller.seldom.selection.is_selected();
         #[cfg(feature = "phobos")]
         let visible_to = rules.mind_control_link_visible_to_house_for(object);
         // Rendering queries isolate the canonical fallback CellClass.
@@ -302,7 +302,7 @@ impl Simulation {
                 .filter_map(|(index, node)| {
                     let victim = self.substrate.entities.get(node.victim)?;
                     if !selected
-                        && !victim.selection.is_selected()
+                        && !victim.seldom.selection.is_selected()
                         && node
                             .line_timer
                             .remaining(self.session.binary_frame() as i32)
@@ -319,7 +319,7 @@ impl Simulation {
                         &FireSource::of_entity(controller),
                         object,
                         -1 - (index % 5) as i32,
-                        controller.weapon_burst.index() as u8,
+                        controller.seldom.weapon_burst.index() as u8,
                         Flh::default(),
                     )
                     .coord;
@@ -477,8 +477,8 @@ impl CaptureVictimFacts {
         let refused = target_obj.immune_to_psionics
             || (target.category() == EntityCategory::Unit
                 && target.bunker.link().installed_in().is_some())
-            || target.mind_control.is_mind_controlled()
-            || target.mind_control.house_controller.is_some()
+            || target.seldom.mind_control.is_mind_controlled()
+            || target.seldom.mind_control.house_controller.is_some()
             || crate::sim::superweapon::invulnerability::is_invulnerable(
                 target.invulnerability.as_ref(),
                 frame,
@@ -650,11 +650,9 @@ impl Simulation {
                 continue;
             };
             if restore
-                && self
-                    .substrate
-                    .entities
-                    .get(id)
-                    .is_none_or(|entity| entity.mind_control.house_original_owner != Some(selected))
+                && self.substrate.entities.get(id).is_none_or(|entity| {
+                    entity.seldom.mind_control.house_original_owner != Some(selected)
+                })
             {
                 continue;
             }
@@ -662,8 +660,8 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 // Native writes AFTER the entire virtual ChangeOwner. The
                 // shared Techno half has already cleared its old +2E0.
-                entity.mind_control.house_original_owner = (!restore).then_some(selected);
-                entity.mind_control.house_controller = (!restore).then_some(incoming);
+                entity.seldom.mind_control.house_original_owner = (!restore).then_some(selected);
+                entity.seldom.mind_control.house_controller = (!restore).then_some(incoming);
             }
         }
     }
@@ -736,7 +734,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|victim| victim.mind_control.controller)
+            .and_then(|victim| victim.seldom.mind_control.controller)
         else {
             return;
         };
@@ -969,7 +967,7 @@ impl Simulation {
             });
         }
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.mind_control.controller = Some(controller_id);
+            target.seldom.mind_control.controller = Some(controller_id);
         }
         self.reset_captured_orders(target_id, rules, frame_effects);
         self.decide_unit_fate(controller_id, target_id, rules, frame_effects);
@@ -1035,13 +1033,13 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|object| object.mind_control.controller)
+            .and_then(|object| object.seldom.mind_control.controller)
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         if let Some(object) = self.substrate.entities.get_mut(id) {
-            object.mind_control.permanent = true;
+            object.seldom.mind_control.permanent = true;
         }
         if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
             self.attach_control_ring(id, ring, rules);
@@ -1078,17 +1076,17 @@ impl Simulation {
         {
             return false;
         }
-        if let Some(controller) = object.mind_control.controller {
+        if let Some(controller) = object.seldom.mind_control.controller {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = true;
+            object.seldom.mind_control.permanent = true;
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 object,
                 MissionId::from_known(MissionType::Guard),
             );
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(ring) = ring {
             self.destroy_anim(ring, rules);
@@ -1120,14 +1118,14 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|object| object.mind_control.controller)
+            .and_then(|object| object.seldom.mind_control.controller)
         {
             self.free_unit(controller, id, rules, registry, frame_effects);
         }
         self.change_owner_with_rules(id, house, rules, registry, frame_effects);
         let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = permanent;
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.permanent = permanent;
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(old_ring) = old_ring {
             self.destroy_anim(old_ring, rules);
@@ -1141,8 +1139,8 @@ impl Simulation {
     /// and UnInit's the ring after any controller's FreeUnit has finished.
     pub(crate) fn clear_permanent_control_and_ring(&mut self, id: u64, rules: &RuleSet) {
         let ring = self.substrate.entities.get_mut(id).and_then(|object| {
-            object.mind_control.permanent = false;
-            object.mind_control.ring_anim.take()
+            object.seldom.mind_control.permanent = false;
+            object.seldom.mind_control.ring_anim.take()
         });
         if let Some(ring) = ring {
             self.destroy_anim(ring, rules);
@@ -1380,7 +1378,7 @@ impl Simulation {
             }
         };
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.mind_control.ring_anim = Some(anim_id);
+            target.seldom.mind_control.ring_anim = Some(anim_id);
         }
         if building {
             self.substrate
@@ -1397,11 +1395,15 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let Some(ring) = entity.mind_control.ring_anim else {
+        let Some(ring) = entity.seldom.mind_control.ring_anim else {
             return;
         };
         let owner = entity.owner();
-        let disguised = entity.disguise.as_ref().is_some_and(|d| d.is_disguised());
+        let disguised = entity
+            .seldom
+            .disguise
+            .as_ref()
+            .is_some_and(|d| d.is_disguised());
         if disguised && self.session.execution_topology().is_lockstep() {
             self.substrate
                 .set_anim_viewer_hidden(ring, vec![(owner, false)], true);
@@ -1444,7 +1446,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(victim_id)
-                .and_then(|victim| victim.mind_control.ring_anim.take())
+                .and_then(|victim| victim.seldom.mind_control.ring_anim.take())
             {
                 self.destroy_anim(ring, rules);
             }
@@ -1464,7 +1466,7 @@ impl Simulation {
             // DecideUnitFate runs while `+0x2C0` still names the controller.
             self.decide_unit_fate(controller_id, victim_id, rules, frame_effects);
             if let Some(victim) = self.substrate.entities.get_mut(victim_id) {
-                victim.mind_control.controller = None;
+                victim.seldom.mind_control.controller = None;
             }
             if let Some(manager) = self
                 .substrate

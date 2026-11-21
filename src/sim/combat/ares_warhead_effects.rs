@@ -129,8 +129,18 @@ impl Simulation {
                         arg6: false,
                     },
                 );
-                let (death, mut pings) =
-                    commit_entities(self, run, &[event], None, rules, overlay_registry);
+                // The pings follow the receiver's effects in `effects`, so
+                // they gather apart first.
+                let mut pings = Vec::new();
+                let death = commit_entities(
+                    self,
+                    run,
+                    &[event],
+                    None,
+                    rules,
+                    overlay_registry,
+                    &mut pings,
+                );
                 effects.append(death);
                 effects.under_attack_events.append(&mut pings);
             }

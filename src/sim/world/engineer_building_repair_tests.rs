@@ -45,7 +45,7 @@ fn coord(value: &Value) -> DriveCoord {
 }
 
 fn install_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
 }
@@ -395,7 +395,13 @@ impl Fixture {
         // for its admitted Building. Restore that prior after installing the
         // coherent ownership indexes, never after the compared arrival.
         let history = &before["discovery"];
-        let discovery = &mut sim.substrate.entities.get_mut(building).unwrap().discovery;
+        let discovery = &mut sim
+            .substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .seldom
+            .discovery;
         discovery.set_owned_by_current_house_for_test(history["owned_by_current_house"] == 1);
         discovery
             .set_discovered_by_current_house_for_test(history["discovered_by_current_house"] == 1);
@@ -450,17 +456,17 @@ impl Fixture {
         );
         let history = &native["discovery"];
         assert_eq!(
-            entity.discovery.owned_by_current_house(),
+            entity.seldom.discovery.owned_by_current_house(),
             history["owned_by_current_house"] == 1,
             "{boundary}: native41A owner classification"
         );
         assert_eq!(
-            entity.discovery.discovered_by_current_house(),
+            entity.seldom.discovery.discovered_by_current_house(),
             history["discovered_by_current_house"] == 1,
             "{boundary}: native41B current-viewer history"
         );
         assert_eq!(
-            entity.discovery.discovered_by_other_house(),
+            entity.seldom.discovery.discovered_by_other_house(),
             history["discovered_by_other_house"] == 1,
             "{boundary}: native41C other-viewer history"
         );

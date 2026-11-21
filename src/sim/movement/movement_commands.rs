@@ -135,7 +135,7 @@ pub(crate) fn prepare_walk_destination(
 /// `0x00741C4F..0x00741C78`).
 pub(crate) fn enter_without_contact(entity: &GameEntity) -> bool {
     (entity.mission.effective().raw() == 7 || entity.mission.queued().raw() == 7)
-        && entity.radio_contacts.is_empty()
+        && entity.seldom.radio_contacts.is_empty()
 }
 
 /// The setters' one-word PathHead clear, which Enter (current or queued)

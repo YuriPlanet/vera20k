@@ -107,16 +107,12 @@ impl NativeMapTubes {
 
     /// Terrain binding's one take of the constructed receipt.
     pub(crate) fn take_receipt(&mut self) -> Result<NativeMapTubeReceipt, NativeMapTubesTakeError> {
-        match &self.state {
-            NativeMapTubesState::Unconstructed => Err(NativeMapTubesTakeError::NotConstructed),
+        match std::mem::replace(&mut self.state, NativeMapTubesState::Bound) {
+            NativeMapTubesState::Pending(receipt) => Ok(receipt),
             NativeMapTubesState::Bound => Err(NativeMapTubesTakeError::AlreadyBound),
-            NativeMapTubesState::Pending(_) => {
-                let NativeMapTubesState::Pending(receipt) =
-                    std::mem::replace(&mut self.state, NativeMapTubesState::Bound)
-                else {
-                    unreachable!("matched Pending above")
-                };
-                Ok(receipt)
+            NativeMapTubesState::Unconstructed => {
+                self.state = NativeMapTubesState::Unconstructed;
+                Err(NativeMapTubesTakeError::NotConstructed)
             }
         }
     }

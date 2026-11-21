@@ -102,6 +102,7 @@ Thumbs.db
 !/docs/dormant-stock-rules.md
 !/docs/_config.yml
 !/docs/index.md
+!/docs/menu-reference.md
 !/docs/Networking.md
 !/docs/ares-unit-delivery.md
 !/docs/ares-superweapon-building-gates.md
@@ -126,6 +127,7 @@ Thumbs.db
 !/docs/script-action-56.md
 !/docs/interface-layout.md
 !/docs/skirmish-colors.md
+!/docs/behavior-rule-engine-roadmap.md
 !/docs/examples/
 !/docs/ar/
 !/docs/de/

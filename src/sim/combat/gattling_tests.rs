@@ -172,8 +172,9 @@ fn original_stage_histories() {
                         i32_of(&call["arg"]),
                         None,
                         |weapon| ty.report(weapon, elite).map(|items| items.len() as i32),
-                        || reached_stops += 1,
-                        || {
+                        &mut (),
+                        |_| reached_stops += 1,
+                        |_| {
                             let draw = rng.next_u32();
                             draws.push(i64::from(draw));
                             draw
@@ -273,8 +274,9 @@ fn original_fault_inputs_play_nothing() {
             1,
             None,
             |weapon| ty.report(weapon, false).map(|items| items.len() as i32),
-            || {},
-            || panic!("no draw without a WeaponType"),
+            &mut (),
+            |_| {},
+            |_| panic!("no draw without a WeaponType"),
         );
         assert!(effects.report.is_none());
         assert!(!state.report_latch());
@@ -383,7 +385,7 @@ fn original_unit_fire_update_rows() {
                 entity.veterancy.set_elite();
             }
         }
-        sim.main_rng = SimRng::new(0x2A61).into();
+        sim.main_rng = SimRng::new(0x2A61);
         sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(
@@ -823,8 +825,9 @@ fn ares_cycle_hook_tests_the_charged_value_and_restarts_a_cyclic_type() {
             1,
             ares_cycle,
             |_| Some(0),
-            || stops += 1,
-            || 0,
+            &mut (),
+            |_| stops += 1,
+            |_| 0,
         );
         let stage_up = effects.stage_up;
         (

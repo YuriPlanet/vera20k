@@ -67,7 +67,7 @@ fn retail_berserk_infantry_ctrl_ground_shows_no_move() {
         full_visibility: true,
     };
     assert_eq!(
-        query.selection_action((12, 12), None),
+        query.selection_action((12, 12), None).0,
         Some(CursorFeedbackKind::Invalid)
     );
 }
@@ -94,8 +94,10 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
         kind: HoverTargetKind::EnemyUnit,
     };
     let before = sim.state_hash();
+    let control = sim.control_projection();
     assert!(crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,
@@ -113,11 +115,13 @@ fn ares_vehicle_capture_cursor_shares_manual_action_and_preserves_shift_selectio
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::Enter
     );
     assert!(!crate::app::input::context_order::vehicle_capture_action(
         &sim,
+        &control,
         &retail.rules,
         actor,
         target,
@@ -201,6 +205,7 @@ fn no_manual_fire_modifier_cursors(ares_way: bool) {
                         modifier,
                         alt,
                         false,
+                        &mut Default::default(),
                     ),
                     modifier == OrderModifier::AttackMove,
                 )
@@ -304,6 +309,7 @@ fn retail_weapon_cursor_overrides_survive_distance() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             );
             assert_eq!(
                 cursor_id_for_feedback(feedback),
@@ -491,6 +497,7 @@ fn native_modifier_controls_match_production_cursor_queries() {
                 modifier,
                 alt,
                 false,
+                &mut Default::default(),
             );
             promote_attack_move_feedback(feedback, modifier == OrderModifier::AttackMove)
         } else {
@@ -583,6 +590,7 @@ fn infantry_deploy_and_loaded_transport_self_cursors_share_click_admission() {
                 modifier,
                 true,
                 false,
+                &mut Default::default(),
             );
             assert_eq!(
                 cursor_id_for_feedback(feedback),
@@ -729,6 +737,7 @@ fn retail_infantry_self_click_admission_uses_undeploy_delay() {
                         modifier,
                         false,
                         false,
+                        &mut Default::default(),
                     )),
                     Some(expected),
                     "{name} Doing{doing} {modifier:?}"
@@ -802,6 +811,7 @@ fn retail_gi_guardian_and_desolator_self_clicks_complete_both_deployment_directi
                     OrderModifier::Normal,
                     false,
                     false,
+                    &mut Default::default(),
                 )),
                 Some(CursorId::Deploy),
                 "{name}: click toward Doing{destination_doing}"

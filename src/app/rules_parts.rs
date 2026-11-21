@@ -66,8 +66,14 @@ pub(crate) struct RulesSettings {
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
     pub(crate) ares_mix: bool,
-    /// config.toml's `[ini]` roots and theater suffix are YR's.
+    /// The Rules, Art and AI roots, the theater suffix and the mode and map
+    /// catalogs are YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
+    /// The INI roots and archive names the game reads, when a mod requires
+    /// Ares or any of them is not YR's; absent otherwise. The rules digest
+    /// compares them then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) resources: Option<ResourceSelection>,
     #[serde(rename = "mod")]
     pub(crate) mod_in_use: Option<ModIdentity>,
 }
@@ -77,6 +83,20 @@ pub(crate) struct ModIdentity {
     pub(crate) title: String,
     /// `mod.ini`'s `Version=`; empty without one.
     pub(crate) version: String,
+}
+
+/// The resources a game selects (`ProcessAssets::resource_selection`), each
+/// name lowercased.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ResourceSelection {
+    /// The selected mod's `mod.ini` requires Ares.
+    pub(crate) requires_ares: bool,
+    /// The Rules, Art, AI, sound, EVA, theme, campaign, mission, map
+    /// selection, mode and map catalog INIs, in that order.
+    pub(crate) roots: Vec<String>,
+    /// The expansion and map archive prefixes, the multiplayer and theme
+    /// archives and the movie archive prefix, in that order.
+    pub(crate) archives: Vec<String>,
 }
 
 /// Where the mod's files part from its maker's `mod-files.txt`.
@@ -120,8 +140,8 @@ impl RulesParts {
             mod_check,
         };
         // The cap cuts lists first, shorter each time, till the object fits;
-        // then the free text (names, the mod's title and version), and last
-        // the files from the end. The digest is always the emitted object's.
+        // then the free text (names, the mod's title and version, the selected
+        // resources), and last the files from the end. The digest is always the emitted object's.
         for limit in [LISTED, 10, 5, 2, 0] {
             parts.limit_lists(limit);
             if parts.fits() {
@@ -155,6 +175,13 @@ impl RulesParts {
             shorten(&mut identity.title);
             shorten(&mut identity.version);
         }
+        if let Some(selection) = &mut self.settings.resources {
+            selection
+                .roots
+                .iter_mut()
+                .chain(&mut selection.archives)
+                .for_each(shorten);
+        }
     }
 
     /// The object as one line of JSON.
@@ -173,6 +200,7 @@ impl RulesParts {
                 ares: "auto",
                 ares_mix: false,
                 ini_roots_stock: true,
+                resources: None,
                 mod_in_use: None,
             },
             None,

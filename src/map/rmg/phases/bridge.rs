@@ -164,7 +164,7 @@ fn fill_water(ctx: &mut BlobCtx<'_>, rect: [i32; 4], region: i32) {
             }
             let variant = scaled_draw(ctx, VARIANT_SCALE_BITS, VARIANT_MAX);
             let sub = scaled_draw(ctx, SUB_TILE_SCALE_BITS, SUB_TILE_MAX);
-            let cell = ctx.grid.get_mut(x, y).expect("native cell");
+            let cell = ctx.grid.cell_native_mut(x, y);
             cell.tile = ctx.ids.water_base + variant as i32;
             cell.sub_tile = sub as u8;
             ctx.scratch.get_mut(x, y).region = region;
@@ -235,13 +235,10 @@ pub(crate) fn build(ctx: &mut BlobCtx<'_>, args: &BridgeArgs) -> bool {
     // The near-side plateau: everything the region claimed rises one level
     // step. This is the opposite predicate from the canyon's sweep, which
     // raises the cells *outside* its region.
-    let cells: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
-    for &(x, y) in &cells {
-        if ctx.scratch.get(x, y).region != args.region {
-            continue;
+    for ((x, y), cell) in ctx.grid.cells_in_native_order_mut() {
+        if ctx.scratch.get(x, y).region == args.region {
+            cell.level = cell.level.wrapping_add(4);
         }
-        let cell = ctx.grid.get_mut(x, y).expect("native cell");
-        cell.level = cell.level.wrapping_add(4);
     }
 
     fill_water(ctx, layout.fill_far, args.region);

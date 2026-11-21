@@ -417,7 +417,7 @@ impl Simulation {
         } else if to_overlay[0].is_some() {
             (vec![(0, 0)], to_overlay.as_slice())
         } else if ty.gate {
-            (ty.foundation.cell_offsets(), GATE_WALLS)
+            (ty.foundation.cell_offsets().collect(), GATE_WALLS)
         } else {
             return;
         };

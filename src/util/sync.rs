@@ -1,5 +1,5 @@
-//! Locks and once-cells that a tick and the draw can both reach: the Main
-//! RNG, and caches inside state the presentation frame shares with the live
+//! Locks and once-cells that two threads can both reach: the app's Main RNG
+//! cell, and caches inside state the presentation frame shares with the live
 //! world. In the threaded browser build a tick runs on a Web Worker beside
 //! the draw (docs/sim-thread.md, "The browser"), and the browser's main
 //! thread traps when it waits on another thread. There the mutex spins on the

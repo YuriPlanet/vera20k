@@ -18,7 +18,7 @@ use winit::keyboard::KeyCode;
 /// The local house's PLANCOMMIT that leaving Planning Mode issues
 /// (Planning__EndMode ->637A10), stamped for the current tick.
 pub(crate) fn plan_commit_command(sim: &Simulation) -> Option<CommandEnvelope> {
-    let owner = sim.session().current_house()?;
+    let owner = sim.control_projection().local_command_house()?;
     let record = sim.encode_plan_commit_record(owner)?;
     Some(CommandEnvelope::synchronized(record, sim.session().tick()))
 }
@@ -47,7 +47,8 @@ pub(crate) struct PlanningInputState {
     right_hover: Option<Option<u64>>,
     /// The hover node last found with the world home, which a draw beside
     /// a lent tick reads (docs/sim-thread.md): the hover asks the selection,
-    /// which reads the live objects.
+    /// which reads the live objects. A `RefCell`: the draw asks through
+    /// `&AppState`.
     hover_seen: std::cell::RefCell<Option<u64>>,
 }
 
@@ -384,7 +385,7 @@ pub(crate) fn append_output(
 /// beacon when a planned terminal order or fifteenth node executes. Effect:
 /// the beacon is deselected too. Frequency: rare.
 pub(crate) fn frame_pass(state: &mut AppState) {
-    let empty = selected_in_order(state).is_empty();
+    let empty = selected_planning_actors(state).is_empty();
     if let Some(message) = state.match_state.input.planning.begin_frame_pass(empty) {
         crate::app::input::dispatch::unselect_all(state);
         refuse(state, PlanningRefusal::Append(message));
@@ -460,7 +461,7 @@ pub(crate) fn queue_orders(
     let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return false;
     };
-    let Some(owner) = rt.simulation.session().current_house() else {
+    let Some(owner) = rt.simulation.control_projection().local_command_house() else {
         return false;
     };
     match queue_orders_in_sim(&mut rt.simulation, owner, selected, orders, clicked_cell) {
@@ -529,6 +530,18 @@ fn queue_orders_in_sim(
     Ok(added)
 }
 
+fn selected_planning_actors(state: &AppState) -> Vec<u64> {
+    let mut selected = selected_in_order(state);
+    if let Some(rt) = state.match_state.sim_runtime.runtime()
+        && rt.simulation.session().has_custom_control_grants()
+    {
+        let sim = &rt.simulation;
+        let control = sim.control_projection();
+        selected.retain(|&id| super::context_order::projected_actor_can_order(sim, &control, id));
+    }
+    selected
+}
+
 /// The hover node AC4CCC (0x00638E60): an own node under the cursor the
 /// selection may connect to. While a right press holds AC4CB0 it keeps the
 /// node it had at the press (0x00638E60's early return).
@@ -552,11 +565,11 @@ fn live_hover_node(state: &AppState) -> Option<u64> {
 fn find_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = sim.session().current_house()?;
+    let owner = sim.control_projection().local_command_house()?;
     // Only a node under the cursor reads the selection, which walks every
     // object: the cursor asks this at every draw.
-    sim.planning_node_id_at_screen(Some(owner), point)?;
-    sim.planning_hover_node(owner, &selected_in_order(state), point)
+    sim.planning_input_node_at_screen(owner, None, point)?;
+    sim.planning_hover_node(owner, &selected_planning_actors(state), point)
 }
 
 /// Planning__UpdateNodeHoverCursor 0x0063AB60 answers the planning cursor
@@ -576,7 +589,7 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
     let Some(point) = hover_native_screen(state) else {
         return false;
     };
-    let selected = selected_in_order(state);
+    let selected = selected_planning_actors(state);
     let Some(refusal) = state
         .match_state
         .sim_runtime
@@ -630,7 +643,7 @@ fn input_native_screen(input: &crate::app::input::state::MatchInputState) -> [i3
 /// held. Effect: the connect or highlight lands on the release's node.
 /// Frequency: rare.
 pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
-    let selected = selected_in_order(state);
+    let selected = selected_planning_actors(state);
     let Some(node) = live_hover_node(state) else {
         return hover_native_screen(state).is_some_and(|point| {
             state
@@ -648,17 +661,17 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     let point = cursor_native_screen(state);
     let mut collected = false;
     if let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
-        && let Some(owner) = rt.simulation.session().current_house()
+        && let Some(owner) = rt.simulation.control_projection().local_command_house()
     {
         for actor in rt.simulation.planning_connect_actors(&selected) {
-            collected = true;
             if let Some(record) = rt
                 .simulation
                 .encode_plan_connect_record_at_screen(owner, actor, point)
             {
                 let command = CommandEnvelope::synchronized(record, rt.simulation.session().tick());
-                rt.simulation.issue_local_command(command);
+                collected |= rt.simulation.issue_local_command(command);
             }
+            collected |= !rt.simulation.session().has_custom_control_grants();
         }
     }
     if collected && state.match_state.input.planning.admit_help(3, 1) {
@@ -681,7 +694,7 @@ pub(crate) fn delete_highlighted(state: &mut AppState) -> bool {
     if !rt.simulation.planning_node_exists(node) {
         return false;
     }
-    if let Some(owner) = rt.simulation.session().current_house()
+    if let Some(owner) = rt.simulation.control_projection().local_command_house()
         && let Some(record) = rt
             .simulation
             .encode_plan_node_delete_record_for_node(owner, node)
@@ -706,7 +719,7 @@ fn tactical_point(state: &AppState) -> [i32; 2] {
 /// the capture test.
 pub(crate) fn right_press(state: &mut AppState) {
     let hover = hover_node(state);
-    let empty = selected_in_order(state).is_empty();
+    let empty = selected_planning_actors(state).is_empty();
     let point = tactical_point(state);
     state
         .match_state
@@ -718,7 +731,7 @@ pub(crate) fn right_press(state: &mut AppState) {
 /// 0x0063AB00, called on every tactical right release (0x0069338A) before
 /// the capture test.
 pub(crate) fn right_release(state: &mut AppState) {
-    let empty = selected_in_order(state).is_empty();
+    let empty = selected_planning_actors(state).is_empty();
     let point = tactical_point(state);
     state.match_state.input.planning.right_release(empty, point);
 }

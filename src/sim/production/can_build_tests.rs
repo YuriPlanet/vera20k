@@ -528,8 +528,16 @@ fn double_owned_opens_a_foreign_factory_only_outside_campaign() {
 
     sim.session.set_game_mode(ScenarioGameMode::Campaign);
     assert_eq!(query(&sim), None);
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    let mode = ScenarioGameMode::Skirmish;
+    sim.session.set_game_mode(mode);
     assert_eq!(query(&sim), Some(factory));
+    sim.install_session_admission(
+        mode,
+        None,
+        mode.stock_rule_policy(None)
+            .with_double_owned(crate::rules::rule_policy::DoubleOwnedPolicy::OwnerMask),
+    );
+    assert_eq!(query(&sim), None);
 }
 
 /// House4F78E4..4F7925 consults its captured labs before TechLevel,

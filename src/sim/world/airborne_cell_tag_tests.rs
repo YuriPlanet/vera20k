@@ -103,6 +103,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
             .entities
             .get(actor)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(viewer);
         raise(&mut sim, &rules, actor);
@@ -124,6 +125,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
                 .entities
                 .get(actor)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .timer(viewer),
             timer

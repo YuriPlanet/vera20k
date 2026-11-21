@@ -36,10 +36,6 @@ defaults.
 
 ## Intent and autonomy
 
-The user often thinks aloud. Follow intent, keep exact technical values literal,
-and treat proposed causes as hypotheses. Investigate contradictory observations.
-Push back briefly with evidence; respect informed decisions.
-
 Complete authorized work without routine approval. Resolve discoverable questions;
 ask only for missing authority or consequential, undiscoverable preferences.
 Research/review alone does not authorize implementation. Preserve scope amendments,

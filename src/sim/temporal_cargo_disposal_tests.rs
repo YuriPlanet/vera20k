@@ -146,7 +146,7 @@ impl Scene {
         });
         let child = self.actor(child);
         assert!(child.lifecycle.in_limbo());
-        assert!(!child.in_logic_vector.is_member());
+        assert!(!child.seldom.in_logic_vector.is_member());
     }
 
     fn cargo(&self, reactor: u64) -> &[u64] {

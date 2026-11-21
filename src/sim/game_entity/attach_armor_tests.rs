@@ -183,6 +183,7 @@ fn attached_armor_restore_checks_both_values_and_discard_recovers_the_crate() {
         .entities
         .get_mut(victim)
         .unwrap()
+        .seldom
         .crate_multipliers
         .set_armor_multiplier_for_test(NativeF64Bits::ONE);
     loaded

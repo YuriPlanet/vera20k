@@ -229,15 +229,22 @@ pub(crate) fn build_shp_vehicle_sequences(
         let stand = art
             .standing_frames
             .unwrap_or_else(|| implicit_standing_frames(fire));
+        // The unit reader's defaults (`0x00747967..0x00747A11`) are dword
+        // products; one past `u16` is a layout this projection cannot
+        // represent, so it is refused like the retained path above.
         let start_stand = if stand > 0 {
-            walk * u16::from(facings)
+            walk.checked_mul(u16::from(facings))
         } else {
-            0
+            Some(0)
         };
         let start_fire = if fire > 0 {
-            (walk + stand) * u16::from(facings)
+            walk.checked_add(stand)
+                .and_then(|frames| frames.checked_mul(u16::from(facings)))
         } else {
             start_stand
+        };
+        let (Some(start_stand), Some(start_fire)) = (start_stand, start_fire) else {
+            return set;
         };
         (facings, walk, fire, stand, 0, start_stand, start_fire)
     };
@@ -633,6 +640,16 @@ mod tests {
         assert_eq!(stand.facing_multiplier, 4, "strides by WalkFrames");
         assert!(set.get(&SequenceKind::Walk).is_some());
         assert!(set.get(&SequenceKind::Attack).is_none());
+    }
+
+    /// The Aircraft projection refuses a layout past `u16` instead of
+    /// overflowing its start frames.
+    #[test]
+    fn an_aircraft_layout_past_u16_is_refused() {
+        let mut art = make_art_entry(Some(3000), Some(1));
+        art.shp_facings = 32;
+        let set = build_shp_vehicle_sequences(&art, TEST_CADENCE, None, false);
+        assert!(set.is_empty());
     }
 
     #[test]

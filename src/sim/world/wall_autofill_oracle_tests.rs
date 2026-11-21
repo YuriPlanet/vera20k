@@ -37,7 +37,7 @@ fn stream<'a>(corpus: &'a Value, state: &Value, name: &str) -> &'a str {
 }
 
 fn restore_rng(sim: &mut Simulation, corpus: &Value, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main")).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main"));
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "scenario"));
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "mapgen"));
 }
@@ -326,10 +326,10 @@ impl Scene {
                 ]
             );
             assert_eq!(
-                entity.radio_contacts.capacity(),
+                entity.seldom.radio_contacts.capacity(),
                 int(&native["radio_capacity"]) as usize
             );
-            assert!(entity.radio_contacts.is_empty());
+            assert!(entity.seldom.radio_contacts.is_empty());
             // Setup/origin ctor words precede the imported RNG boundary.
             // Only newly constructed filler words are numerical outputs here.
             if entity.native_unique_id() > origin_cursor {

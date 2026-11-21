@@ -235,6 +235,7 @@ impl Fixture {
             });
             entity.mission_leaf.set_building_ready_latch(1);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(FRAME - 100, 0));
         }
@@ -309,6 +310,7 @@ impl Fixture {
                 .as_i64()
                 .map_or(PAUSED_START_FRAME, |relative| FRAME + relative as i32);
             entity
+                .seldom
                 .rearm_timer
                 .set_for_test(CdTimer::started(start, rearm[1].as_i64().unwrap() as i32));
         }
@@ -401,8 +403,8 @@ impl Fixture {
         let rearm = &native["rearm"];
         assert_eq!(
             [
-                entity.rearm_timer.start_frame(),
-                entity.rearm_timer.duration()
+                entity.seldom.rearm_timer.start_frame(),
+                entity.seldom.rearm_timer.duration()
             ],
             [0, 1].map(|index| rearm[index].as_i64().unwrap() as i32),
             "{at} {name} rearm"
@@ -694,6 +696,7 @@ fn prism_support_bonus_matches_the_original() {
             Some(3) => {
                 let entity = fixture.sim.substrate.entities.get_mut(master).unwrap();
                 entity
+                    .seldom
                     .rearm_timer
                     .set_for_test(CdTimer::started(FRAME, ROF));
             }
@@ -1151,6 +1154,7 @@ fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
             .entities
             .get_mut(master)
             .unwrap()
+            .seldom
             .ares
             .ares_prism
             .set_modifier_reserve_for_test(modifier);
@@ -1182,6 +1186,7 @@ fn network(fixture: &Fixture, id: u64) -> crate::sim::world::AresPrismForwarding
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ares
         .ares_prism
         .clone()
@@ -1316,7 +1321,7 @@ fn ares_prism_master_recruits_its_whole_network_in_one_visit() {
         assert!(entity.building.pending_building_fire.pending().is_none());
         let reload = entity.ammo_reload_timer();
         assert_eq!([reload.start_frame(), reload.duration()], [FRAME, 45]);
-        assert_eq!(entity.rearm_timer.remaining(FRAME), 0);
+        assert_eq!(entity.seldom.rearm_timer.remaining(FRAME), 0);
     }
     assert!(network(&fixture, master).senders().is_empty());
     assert_eq!(
@@ -1366,7 +1371,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .sim;
     for id in [master, link, end] {
         let entity = restored.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.ares.ares_prism, network(&fixture, id));
+        assert_eq!(entity.seldom.ares.ares_prism, network(&fixture, id));
     }
     let hash = restored.state_hash();
     restored
@@ -1374,6 +1379,7 @@ fn ares_prism_chains_relay_their_reserves_to_the_master() {
         .entities
         .get_mut(end)
         .unwrap()
+        .seldom
         .ares
         .ares_prism = Default::default();
     assert_ne!(restored.state_hash(), hash);

@@ -61,6 +61,8 @@ pub struct MapPictureRequest {
     max_size: (u32, u32),
     /// Where the start markers' JSON goes, when asked ([`session`]).
     markers: Option<PathBuf>,
+    /// The parent game's temporary mod files, borrowed for this picture.
+    pub(crate) prepared_mod: Option<PathBuf>,
 }
 
 /// The world rectangle a picture shows.
@@ -85,6 +87,7 @@ impl MapPictureRequest {
             area: PictureArea::Preview,
             max_size: canvas::MAX_PICTURE,
             markers: None,
+            prepared_mod: None,
         }
     }
 }
@@ -121,8 +124,8 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
         .context("missing map after --map-picture")?
         .into_string()
         .map_err(|_| anyhow::anyhow!("the map name is not valid UTF-8"))?;
-    let (mut sha256, mut output, mut area, mut max_size, mut markers) =
-        (None, None, None, None, None);
+    let (mut sha256, mut output, mut area, mut max_size, mut markers, mut prepared_mod) =
+        (None, None, None, None, None, None);
     while let Some(flag) = args.next() {
         let value = args
             .next()
@@ -133,6 +136,7 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
             Some("--area") => &mut area,
             Some("--max-size") => &mut max_size,
             Some("--markers") => &mut markers,
+            Some("--prepared-mod") => &mut prepared_mod,
             _ => bail!("unknown map-picture option {}", flag.to_string_lossy()),
         };
         ensure!(
@@ -175,6 +179,7 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
         area,
         max_size,
         markers: markers.map(PathBuf::from),
+        prepared_mod: prepared_mod.map(PathBuf::from),
     })
 }
 
@@ -197,6 +202,9 @@ impl MapPictureRequest {
         }
         if let Some(markers) = &self.markers {
             args.extend(["--markers".into(), markers.clone().into()]);
+        }
+        if let Some(prepared) = &self.prepared_mod {
+            args.extend(["--prepared-mod".into(), prepared.clone().into()]);
         }
         args
     }
@@ -290,6 +298,7 @@ mod tests {
             area: PictureArea::View,
             max_size: (1200, 1200),
             markers: Some(PathBuf::from("markers.json")),
+            prepared_mod: Some(PathBuf::from("prepared files")),
             ..menus
         };
         assert_eq!(parse_args(tool.args()).unwrap(), tool);

@@ -1423,7 +1423,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn reset_owner_burst(&mut self) {
         if let Some(owner) = self.sim.substrate.entities.get_mut(self.owner_id) {
-            owner.weapon_burst.reset();
+            owner.seldom.weapon_burst.reset();
         }
     }
 
@@ -1561,7 +1561,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
 
     fn adopt(&mut self, child: u64) {
         if let Some(entity) = self.sim.substrate.entities.get_mut(child) {
-            entity.spawn_owner_id.owner = Some(self.owner_id);
+            entity.seldom.spawn_owner_id.owner = Some(self.owner_id);
         }
     }
 
@@ -1634,7 +1634,7 @@ fn launch_coordinate(
     let obj = sim.object_type(owner.type_ref(), rules)?;
     let weapon = crate::sim::combat::combat_weapon::primary_for_tier(obj, owner.veterancy.rank())
         .and_then(|id| rules.weapon(id));
-    let burst = burst_parity.unwrap_or_else(|| owner.weapon_burst.index());
+    let burst = burst_parity.unwrap_or_else(|| owner.seldom.weapon_burst.index());
     let base = if burst == 0 {
         Default::default()
     } else {

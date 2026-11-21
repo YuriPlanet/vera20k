@@ -106,6 +106,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
             .entities
             .get(miner)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(refinery)
@@ -119,7 +120,7 @@ fn a_stuck_computer_miner_drives_off_its_refinery_pad() {
 
     let unit = sim.substrate.entities.get(miner).unwrap();
     assert!(
-        unit.radio_contacts.is_empty(),
+        unit.seldom.radio_contacts.is_empty(),
         "OVER_OUT breaks the contact"
     );
     assert!(moving(&sim, miner));

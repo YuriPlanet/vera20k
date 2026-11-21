@@ -48,7 +48,7 @@ impl Simulation {
     /// Queue_Options647040 checks the current House's result/death flags and
     /// appends OPTIONS. Full admission returns false without opening a menu.
     pub fn queue_options_request(&mut self) -> bool {
-        let Some(owner) = self.session.current_house() else {
+        let Some(owner) = self.control_projection().local_command_house() else {
             return false;
         };
         let Some(house) = self.houses.get(&owner) else {
@@ -145,7 +145,8 @@ impl Simulation {
         if self.session.has_custom_control_grants()
             && let Command::PlanningRecord { record } | Command::SynchronizedRecord { record } =
                 &command.payload
-            && super::planning::planning_dispatch_record(record)
+            && (self.local_grant_source().map(|(source, _)| source) != Some(record.house_id())
+                || super::planning::planning_dispatch_record(record))
         {
             return false;
         }
@@ -249,6 +250,9 @@ impl Simulation {
     /// This process's command sender: its current House's index, or its own
     /// network source while players share Houses.
     pub(super) fn local_command_source(&self) -> Option<i8> {
+        if self.session.has_custom_control_grants() {
+            return self.local_grant_source().map(|(source, _)| source);
+        }
         self.local_view_command_source().or_else(|| {
             self.local_commands
                 .iter()
@@ -472,14 +476,17 @@ impl Simulation {
                 _ => None,
             })
             .collect();
+        let control = (!assignments.is_empty()).then(|| self.control_projection());
         let mut slots = std::array::from_fn(|_| Vec::new());
         for entity in entities {
-            let group =
+            let current = entity.control_group();
+            let group = control.as_ref().map_or(current, |control| {
                 assignments
                     .iter()
-                    .fold(entity.control_group(), |current, (group, selected)| {
-                        self.assigned_control_group(entity, current, *group, selected)
-                    });
+                    .fold(current, |current, (group, selected)| {
+                        Self::assigned_control_group(control, entity, current, *group, selected)
+                    })
+            });
             if (0..10).contains(&group) {
                 slots[((group + 1) % 10) as usize].push(entity.stable_id());
             }

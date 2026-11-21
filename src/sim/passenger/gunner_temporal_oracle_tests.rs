@@ -215,11 +215,11 @@ fn install_actor_boundary(sim: &mut Simulation, id: u64, native: &Value) {
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     // The declared initial burst, including signed overflow controls, is a
     // native saved-state boundary. Do not simulate extra shots to obtain it.
-    actor.weapon_burst = serde_json::from_value(json!({
+    actor.seldom.weapon_burst = serde_json::from_value(json!({
         "index": signed(&native["burst_index"]), "radial_index": 0
     }))
     .unwrap();
-    actor.rearm_timer.set_for_test(CdTimer::from_raw(
+    actor.seldom.rearm_timer.set_for_test(CdTimer::from_raw(
         signed(&native["rearm"][0]),
         signed(&native["rearm"][1]),
     ));
@@ -263,14 +263,14 @@ fn assert_state(sim: &Simulation, actors: &Actors, native: &Value, label: &str) 
         let actor = entity(sim, actors.id(role));
         let expected = &native[role];
         assert_eq!(
-            actor.weapon_burst.index(),
+            actor.seldom.weapon_burst.index(),
             signed(&expected["burst_index"]),
             "{label} {role} burst"
         );
         assert_eq!(
             [
-                actor.rearm_timer.start_frame(),
-                actor.rearm_timer.duration()
+                actor.seldom.rearm_timer.start_frame(),
+                actor.seldom.rearm_timer.duration()
             ],
             [signed(&expected["rearm"][0]), signed(&expected["rearm"][1])],
             "{label} {role} rearm"

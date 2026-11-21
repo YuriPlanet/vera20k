@@ -47,7 +47,8 @@ impl Client {
             return Err(RequestFailure::Status(0));
         }
         let body = body.map(Value::to_string);
-        let headers = (path == "/v1/sessions").then(|| json!(sign_in_headers()).to_string());
+        let headers =
+            (path == "/v1/sessions").then(|| json!(sign_in_headers(&self.changes)).to_string());
         let value = JsFuture::from(fetch(
             self.browser,
             path,

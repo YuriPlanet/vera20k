@@ -115,7 +115,8 @@ impl Replay {
         // Foot+5C4: the corpus supplies MegaMission 29 with neither a
         // MegaDestination nor a MegaTarget.
         if int(&before["saved_mission"]) == 29 {
-            entity.mega_mission = crate::sim::mission::mega_mission::MegaMission::attack_move(None);
+            entity.seldom.mega_mission =
+                crate::sim::mission::mega_mission::MegaMission::attack_move(None);
         }
         entity
             .passive_scan
@@ -142,7 +143,7 @@ impl Replay {
         }
         if let Some(control) = input.get("idle_control") {
             let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
-            entity.weapon_burst =
+            entity.seldom.weapon_burst =
                 serde_json::from_value(json!({"index": control["burst"]})).unwrap();
             let object = scene.rules.object("HARV").unwrap();
             let entity = scene.sim.substrate.entities.get(scene.miner).unwrap();
@@ -176,7 +177,7 @@ impl Replay {
         if input["area_guard_comparison"] == true {
             // Independent native seed controls declared by the additive
             // AreaGuard corpus, installed after the scene's construction.
-            scene.sim.main_rng = crate::sim::rng::MainRng::new(31);
+            scene.sim.main_rng = crate::sim::rng::SimRng::new(31);
             scene.sim.mapgen_rng = crate::sim::rng::SimRng::new(42);
         }
         Self {
@@ -210,7 +211,7 @@ impl Replay {
             "{context}: suspended"
         );
         assert_eq!(
-            e.mega_mission.is_attack_move(),
+            e.seldom.mega_mission.is_attack_move(),
             int(&native["saved_mission"]) == 29,
             "{context}: MegaMission"
         );
@@ -254,7 +255,11 @@ impl Replay {
         if let Some(index) = native.get("burst_index")
             && !s.rules.ares()
         {
-            assert_eq!(e.weapon_burst.index(), int(index), "{context}: burst index");
+            assert_eq!(
+                e.seldom.weapon_burst.index(),
+                int(index),
+                "{context}: burst index"
+            );
         }
         assert_eq!(
             e.navigation.nav_queue().len(),
@@ -319,6 +324,7 @@ impl Replay {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .map_or(Value::Null, |id| s.name(id));

@@ -351,7 +351,7 @@ fn v3_launcher_gets_a_missile_pool_on_spawn() {
         "a docked spawn child sits in limbo until launch"
     );
     assert_eq!(
-        child.spawn_owner_id.owner(),
+        child.seldom.spawn_owner_id.owner(),
         Some(v3),
         "back-pointer to the parent"
     );
@@ -718,7 +718,10 @@ fn a_launch_asks_the_missiles_aircraft_entry_query() {
         }
         sim.fog.by_owner_mut_for_test().insert(owner, view);
         let child = sim.substrate.entities.get_mut(child_id).unwrap();
-        child.discovery.set_owned_by_current_house_for_test(true);
+        child
+            .seldom
+            .discovery
+            .set_owned_by_current_house_for_test(true);
         assert!(!child.is_mission_only());
         let before = position_world_coord(&child.position);
         if let Some(manager) = sim
@@ -1183,6 +1186,7 @@ fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
             .entities
             .get(rebuilt)
             .unwrap()
+            .seldom
             .spawn_owner_id
             .owner(),
         Some(v3)
@@ -1782,7 +1786,7 @@ fn a_dead_carriers_airborne_hornet_crashes() {
         .expect("a crashing Hornet stays represented until its impact");
     assert!(hornet.crash.is_crashing() && hornet.lifecycle.object_alive());
     assert_eq!(hornet.health.current(), 0);
-    assert_eq!(hornet.spawn_owner_id.owner(), None);
+    assert_eq!(hornet.seldom.spawn_owner_id.owner(), None);
     assert!(
         hornet
             .rocking
@@ -2481,6 +2485,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         .attack_target
         .set_for_test(Some(crate::sim::combat::TargetKind::Entity(target)));
     child
+        .seldom
         .rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(frame, 7));
     child.mission.set_current_for_test(
@@ -2501,7 +2506,7 @@ fn a_hornet_mid_pass_keeps_its_run_through_the_managers_re_issue() {
         "the same target is not re-assigned"
     );
     assert_eq!(
-        child.rearm_timer.timer(),
+        child.seldom.rearm_timer.timer(),
         crate::sim::timer::CdTimer::started(frame, 7)
     );
 
@@ -2817,8 +2822,8 @@ fn retail_launches(
         .is_some()
     );
     let entity = sim.substrate.entities.get_mut(owner).unwrap();
-    entity.weapon_burst.complete_shot(2);
-    assert_eq!(entity.weapon_burst.index(), 1);
+    entity.seldom.weapon_burst.complete_shot(2);
+    assert_eq!(entity.seldom.weapon_burst.index(), 1);
     let manager = entity.spawn_manager.as_mut().expect("missile pool");
     manager.current_target = Some(TargetKind::Cell(20, 10));
     manager.mode = SpawnManagerMode::Launching;
@@ -2859,7 +2864,7 @@ fn retail_launches(
                 owner: position_world_coord(&owner_entity.position),
                 owner_facing: owner_entity.body_facing.current(frame),
                 owner_dir: owner_entity.body_facing_dir(frame),
-                owner_burst: owner_entity.weapon_burst.index(),
+                owner_burst: owner_entity.seldom.weapon_burst.index(),
             },
         ));
     }

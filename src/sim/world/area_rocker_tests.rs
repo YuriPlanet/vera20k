@@ -456,6 +456,7 @@ impl AreaScene {
                 warhead,
                 true,
                 origin,
+                &mut Vec::new(),
             );
         } else {
             world_receiver::apply_area_damage(

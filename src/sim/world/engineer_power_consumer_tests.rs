@@ -80,6 +80,7 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     // The original fixture supplies +41B=1 for the plant, drain and radar
     // providers (house_power_consumers.py:51/59/70).
     entity
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     entity.set_in_playfield(true);

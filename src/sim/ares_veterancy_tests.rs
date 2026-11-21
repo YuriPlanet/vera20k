@@ -116,6 +116,7 @@ fn airstrike_kill_credits_the_designator_scaled() {
             .entities
             .get_mut(drone)
             .unwrap()
+            .seldom
             .airstrike
             .set_test_link(Some(boris));
         sim.record_the_kill(

@@ -129,6 +129,7 @@ fn destination(sim: &mut Simulation, rules: &RuleSet, dock_contact: bool) -> boo
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .set_slot(0, 2);
     }
@@ -211,7 +212,7 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
             entity.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::cell(12, 8))
         );
-        assert!(entity.setter_force_reassign.is_raised());
+        assert!(entity.seldom.setter_force_reassign.is_raised());
         assert_eq!(
             entity.mission.current(),
             crate::sim::mission::MissionId::NONE

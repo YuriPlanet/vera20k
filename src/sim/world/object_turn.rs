@@ -1258,7 +1258,7 @@ impl Simulation {
             Self::tick_move_sound_after_process(
                 &sim.interner,
                 &sim.session,
-                &sim.main_rng,
+                &mut sim.main_rng,
                 &mut sim.substrate,
                 &mut sim.sound_events,
                 &sim.houses,

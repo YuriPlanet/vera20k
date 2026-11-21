@@ -120,24 +120,18 @@ pub struct SimRng {
     state: Vec<u32>,
 }
 
-/// Owner of process Main886B88. The frontend and retained playback
-/// capabilities address the app's cell; a scenario's simulation draws its own
-/// cell, seeded from the app's at install, so the simulation thread and the
-/// app share no RNG (docs/sim-thread.md). Main remains outside Scenario saves
-/// and the deterministic world hash.
-#[derive(Debug)]
+/// Owner of the app's process Main886B88 cell. It sits behind a lock because
+/// two threads draw it: the frontend and presentation on the main thread, and
+/// the audio output thread, which draws playlist picks on refill through a
+/// retained [`MainRngDraws`]. A scenario's simulation owns its Main as a plain
+/// [`SimRng`] drawn through `&mut`, seeded from this cell at install
+/// ([`crate::sim::world::Simulation::install_fresh_process_main`]), so the
+/// simulation thread and the app share no RNG (docs/sim-thread.md). Main
+/// remains outside Scenario saves and the deterministic world hash. A clone
+/// shares this one cell.
+#[derive(Debug, Clone)]
 pub struct MainRng {
     state: Arc<Mutex<SimRng>>,
-}
-
-/// A copy shares the one process cell, as every Main owner does: the
-/// presentation frame of a world draws the same cursor as the world.
-impl Clone for MainRng {
-    fn clone(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
 }
 
 impl MainRng {
@@ -152,52 +146,14 @@ impl MainRng {
         }
     }
 
-    /// Bind another owner slot at a process/scenario handoff. The native
-    /// object stays in place, including draws made while a load is prepared.
-    pub(super) fn shared_owner(&self) -> Self {
-        Self {
-            state: Arc::clone(&self.state),
-        }
-    }
-
-    /// A cell of its own at this cursor, sharing nothing with this one: the
-    /// presentation copy of the world's (docs/sim-thread.md), and the
-    /// simulation's own cell at a scenario install
-    /// ([`crate::sim::world::Simulation::install_fresh_process_main`]).
-    pub(crate) fn detached_copy(&self) -> Self {
-        self.staged_copy()
-    }
-
-    /// Stage a transactional saved-load candidate. Draws made while the load
-    /// is prepared advance this copy; `install_from` moves it into the process
-    /// cell on commit, and a rejected load drops it with the cell untouched.
-    pub(super) fn staged_copy(&self) -> Self {
-        self.state.lock().expect("Main RNG poisoned").clone().into()
-    }
-
-    /// Move the finished bootstrap cursor into the retained process cell.
-    /// The app must synchronously cancel outgoing playback before this seam;
-    /// the staged bootstrap must have relinquished its terrain draw handles.
-    pub(super) fn install_from(&self, staged: Self) {
-        if Arc::ptr_eq(&self.state, &staged.state) {
-            return;
-        }
-        let state = Arc::try_unwrap(staged.state)
-            .expect("fresh Main bootstrap has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned");
-        *self.state.lock().expect("Main RNG poisoned") = state;
+    /// Move a finished bootstrap or loaded cursor into the process cell. The
+    /// app must synchronously cancel outgoing playback before this seam.
+    pub(super) fn install(&self, cursor: SimRng) {
+        *self.state.lock().expect("Main RNG poisoned") = cursor;
     }
 
     pub fn next_u32(&self) -> u32 {
         self.state.lock().expect("Main RNG poisoned").next_u32()
-    }
-
-    pub(crate) fn next_range_i32_inclusive(&self, low: i32, high: i32) -> i32 {
-        self.state
-            .lock()
-            .expect("Main RNG poisoned")
-            .next_range_i32_inclusive(low, high)
     }
 
     /// Observe one coherent boundary while callback draws can run elsewhere.
@@ -209,7 +165,7 @@ impl MainRng {
     }
 
     /// A detached, draw-free cursor checkpoint. It never grants another live
-    /// owner of the process cell; replay construction may retain this value.
+    /// owner of the process cell.
     pub fn checkpoint(&self) -> SimRng {
         self.state.lock().expect("Main RNG poisoned").clone()
     }
@@ -222,25 +178,6 @@ impl MainRng {
     pub fn native_state_hex(&self) -> String {
         self.logical_state().native_state_hex()
     }
-
-    /// An explicitly detached test reference, never a live draw capability.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn snapshot_for_test(&self) -> SimRng {
-        self.checkpoint()
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn into_rng_for_test(self) -> SimRng {
-        Arc::try_unwrap(self.state)
-            .expect("test Main has no retained draw capabilities")
-            .into_inner()
-            .expect("Main RNG poisoned")
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn index_b(&self) -> i32 {
-        self.logical_state().index_b
-    }
 }
 
 impl From<SimRng> for MainRng {
@@ -251,30 +188,9 @@ impl From<SimRng> for MainRng {
     }
 }
 
-// Native fixture adapters only. The live Simulation field is serde-skipped:
-// saves never serialize or replace process Main886B88.
-#[cfg(any(test, feature = "test-support"))]
-impl serde::Serialize for MainRng {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(&*self.state.lock().expect("Main RNG poisoned"), serializer)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl<'de> serde::Deserialize<'de> for MainRng {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        <SimRng as serde::Deserialize>::deserialize(deserializer).map(Self::from)
-    }
-}
-
-/// Retained process Main draws. Clone shares the owner's cell; it cannot
-/// seed, replace, borrow simulation state or expose an independent cursor.
+/// Retained draws on the app's process Main cell, for the main thread and
+/// the audio output thread. Clone shares the owner's cell; it cannot seed,
+/// replace, borrow simulation state or expose an independent cursor.
 #[derive(Clone)]
 pub struct MainRngDraws {
     state: Arc<Mutex<SimRng>>,

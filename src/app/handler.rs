@@ -121,6 +121,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA right-click orders: a double-click cannot span a focus change.
+        state.match_state.input.last_selection_click = None;
         // VERA formation line: a line being drawn goes with the band box.
         state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
@@ -406,22 +408,31 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup built every renderer and its shaders on this device:
+                // its API works here, and a loss from now on is play's
+                // (`persistence::startup_backend`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                crate::app::persistence::startup_backend::start_finished();
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
-                    let loading = crate::app::loading::pump::LoadingRequest::replay(
-                        request
-                            .replay
-                            .standalone_startup()
-                            .expect("validated replay request"),
-                        request.map_beside.as_deref(),
-                    );
-                    state.match_state.match_diagnostics.begin_playback(
-                        request.replay,
-                        request.capture_output,
-                        request.replay_sha256,
-                    );
-                    crate::app::loading::pump::begin_loading(&mut state, loading);
+                    let loading = request.replay.standalone_startup().and_then(|startup| {
+                        crate::app::loading::pump::LoadingRequest::replay(
+                            startup,
+                            request.map_beside.as_deref(),
+                        )
+                    });
+                    match loading {
+                        Ok(loading) => {
+                            state.match_state.match_diagnostics.begin_playback(
+                                request.replay,
+                                request.capture_output,
+                                request.replay_sha256,
+                            );
+                            crate::app::loading::pump::begin_loading(&mut state, loading);
+                        }
+                        Err(error) => log::error!("The diagnostic replay cannot start: {error:#}"),
+                    }
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 let mut browser_spawn_failure = None;
@@ -471,7 +482,7 @@ impl App {
                 for event in events {
                     self.window_event(event_loop, window_id, event);
                 }
-                if let Some(state) = self.state.as_ref() {
+                if let Some(state) = self.state.as_mut() {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -1116,6 +1127,8 @@ impl ApplicationHandler for App {
                     // the next tap into a two-finger pan.
                     crate::app::input::cursor::release_cursor_confinement(state);
                     Self::release_in_game_pointer_state(state);
+                    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                    super::shell_mod_import::pointer_button(state, false);
                     if let Some(browser) = state
                         .frontend
                         .skirmish_shell_state
@@ -1698,6 +1711,8 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::ShellMessageBox) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::cursor_moved(state);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::cursor_moved(state);
                         Self::shell_menu_pointer(state, None);
                         return;
                     }
@@ -1957,6 +1972,8 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::ShellMessageBox) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::wheel(state, lines);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::wheel(state, lines);
                         return;
                     }
                     // ComboDropWin consumes no mouse-wheel selection/scroll;
@@ -2025,6 +2042,8 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            WindowEvent::DroppedFile(path) => Self::mod_import_drop(state, path),
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
                 let state = {
@@ -2162,6 +2181,8 @@ impl ApplicationHandler for App {
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
                 Self::poll_mod_files(state),
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                Self::poll_mod_import(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.

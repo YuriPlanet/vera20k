@@ -327,6 +327,7 @@ fn an_unloading_factory_takes_over_its_products_draw() {
             .entities()
             .get(factory)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .expect("the product stays in contact");

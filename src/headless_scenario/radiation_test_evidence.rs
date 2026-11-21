@@ -200,7 +200,7 @@ pub fn visit_paid_deso_light_lifecycle(
                 .get(deso)
                 .expect("actual paid DESO before Deploy");
             assert!(delivered && actor.is_object_alive() && !actor.lifecycle.in_limbo());
-            assert!(actor.lifecycle.cell_marked() && actor.in_logic_vector.is_member());
+            assert!(actor.lifecycle.cell_marked() && actor.seldom.in_logic_vector.is_member());
             assert_eq!(
                 (actor.position.rx(), actor.position.ry()),
                 center,

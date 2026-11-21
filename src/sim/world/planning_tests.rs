@@ -188,7 +188,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         );
         let entity = sim.substrate.entities.get_mut(actor).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.in_logic_vector.set_for_test(true);
+        entity.seldom.in_logic_vector.set_for_test(true);
         entity.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("TEST").unwrap(),
@@ -303,6 +303,35 @@ fn append_shared(
         )
         .unwrap();
     execute_shared_plan(sim, rules, sender, record);
+}
+
+#[test]
+fn custom_snapshot_resumes_a_shared_plan_through_source_scoped_commands() {
+    use crate::sim::mission::{MissionId, MissionType};
+    use crate::sim::snapshot::GameSnapshot;
+
+    let (mut sim, rules, primary) = shared_plan_world();
+    for actor in [1, 2] {
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    }
+    append_shared(&mut sim, &rules, primary, 0, 1, (12, 15));
+    append_shared(&mut sim, &rules, primary, 1, 2, (12, 15));
+
+    let bytes = GameSnapshot::save_validated(&sim, 17, 19, "shared plan", 0);
+    let snapshot = GameSnapshot::load_validated(&bytes, 17, 19, sim.session.map_name()).unwrap();
+    let mut restored = snapshot.restore_references_for_test().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+
+    let commit = sim.encode_plan_commit_record(primary).unwrap();
+    execute_shared_plan(&mut restored, &rules, 1, commit.clone());
+    execute_shared_plan(&mut sim, &rules, 1, commit);
+    assert!(restored.planning.paths[&1].executing && restored.planning.paths[&2].executing);
+    assert_eq!(restored.state_hash(), sim.state_hash());
 }
 
 #[test]
@@ -1969,7 +1998,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         entity
             .attack_target
             .set_for_test(Some(TargetKind::Entity(2)));
-        entity.mega_mission =
+        entity.seldom.mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(16, 15)), None, true);
     }
     let graph = sim.planning_draw_graph(owner, None, None);
@@ -2004,8 +2033,12 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
                 .collect(),
         ),
     );
-    sim.substrate.entities.get_mut(1).unwrap().mega_mission =
-        MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .seldom
+        .mega_mission = MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
     let dummy = sim.effective_shared_cell_dummy().snapshot();
     let graph = sim.planning_draw_graph(owner, None, None);
     assert!(graph.actors[0].mega_leg.is_some());
@@ -2194,7 +2227,7 @@ fn an_aircraft_starts_its_planned_node_only_with_its_arrival_byte_set() {
     );
     let jet = sim.substrate.entities.get_mut(4).unwrap();
     jet.lifecycle.set_in_limbo_for_test(false);
-    jet.in_logic_vector.set_for_test(true);
+    jet.seldom.in_logic_vector.set_for_test(true);
     append(&mut sim, &rules, owner, 4, (12, 15));
     append(&mut sim, &rules, owner, 4, (16, 15));
     let path = sim.planning.paths.get_mut(&4).unwrap();
@@ -2252,6 +2285,7 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(discovered);
         sim.lifecycle_outputs.clear_for_test();
@@ -2272,6 +2306,7 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             })

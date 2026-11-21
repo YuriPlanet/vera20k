@@ -166,7 +166,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     /// A missile's Rocket never Enters: no idle arm picks Enter for an
@@ -263,7 +263,7 @@ impl EnterHost for WorldEnter<'_> {
         if !self.sim.is_carryall(self.id, self.rules) {
             return false;
         }
-        let contact = self.entity().radio_contacts.slot(0);
+        let contact = self.entity().seldom.radio_contacts.slot(0);
         let Some((cargo, size)) = self
             .sim
             .substrate

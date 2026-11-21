@@ -62,7 +62,7 @@ fn seed_native(sim: &mut Simulation, state: &Value) {
         }
     };
     sim.scenario_rng = restore("scenario");
-    sim.main_rng = restore("main").into();
+    sim.main_rng = restore("main");
     sim.mapgen_rng = restore("mapgen");
     assert_rng_state(sim, state);
 }

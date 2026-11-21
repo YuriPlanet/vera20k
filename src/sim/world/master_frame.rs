@@ -176,6 +176,10 @@ struct LogicRequest<'a> {
 }
 
 impl Simulation {
+    pub(crate) fn has_suspended_frame(&self) -> bool {
+        self.frame_continuation.is_some()
+    }
+
     /// Mark the step the frame enters: it advances the world's revision, and
     /// tests observe the step itself.
     #[inline]
@@ -1307,7 +1311,7 @@ impl Simulation {
         // animation advancement remains in the live-object scheduler, which
         // owns the single pending-delete drain above.
         if frame_committed {
-            let game_options = self.session.game_options().clone();
+            let game_options = *self.session.game_options();
             let binary_frame = self.session.binary_frame();
             let (entities, interner) = self.entities_mut_and_interner();
             animation::tick_non_dying_animations(
@@ -1331,7 +1335,7 @@ impl Simulation {
         // ScoreDialog__FillEntries `0x5C9700` and `ScoreDialog__Run `0x5C9720`.
         // Keep their survivor bonus and Scenario RNG draws out of campaigns;
         // Campaign's standalone result dialog reads its own House statistics.
-        let terminal_score_finalized = self.session.game_mode_nonzero()
+        let terminal_score_finalized = !self.session.uses_campaign_world()
             && self.natural_outcome_exit_ready()
             && Self::finalize_terminal_score_snapshot(
                 &self.session,

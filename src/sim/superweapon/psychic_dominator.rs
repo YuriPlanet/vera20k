@@ -694,7 +694,7 @@ fn ares_fire(
     };
     let launch = metadata.launch();
     let targeting = metadata.targeting();
-    let dominator = launch.dominator().clone();
+    let dominator = launch.dominator();
     let general = &rules.general;
     let owner = sim.psychic_dominator.owner;
     let centre = sim.psychic_dominator.cell;
@@ -718,8 +718,8 @@ fn ares_fire(
     }
     sim.psychic_dominator.anim = None;
     let second = match &dominator.second_anim {
-        Some(anim) => anim.clone(),
-        None => Some(general.dominator_second_anim.clone()),
+        Some(anim) => anim.as_deref(),
+        None => Some(general.dominator_second_anim.as_str()),
     };
     if let Some(second) = second {
         let at = [
@@ -727,7 +727,7 @@ fn ares_fire(
             coords[1],
             coords[2].wrapping_add(dominator.second_anim_height),
         ];
-        sim.psychic_dominator.anim = super::spawn_super_anim(sim, rules, &second, at);
+        sim.psychic_dominator.anim = super::spawn_super_anim(sim, rules, second, at);
     }
     let mut bridge_changed = false;
     let damage = launch.damage().unwrap_or(general.dominator_damage);
@@ -762,8 +762,8 @@ fn ares_fire(
         range => range,
     };
     let ring = match &dominator.control_anim {
-        Some(anim) => anim.clone(),
-        None => rules.mind_control.perma_controlled_anim.clone(),
+        Some(anim) => anim.as_deref(),
+        None => rules.mind_control.perma_controlled_anim.as_deref(),
     };
     let frame = sim.session.binary_frame();
     let mut minions = Vec::new();
@@ -779,7 +779,7 @@ fn ares_fire(
             || object
                 .promotion_abilities()
                 .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()));
-        let controlled = entity.mind_control.controller().is_some();
+        let controlled = entity.seldom.mind_control.controller().is_some();
         if crate::sim::superweapon::invulnerability::is_invulnerable(
             entity.invulnerability.as_ref(),
             frame,
@@ -795,7 +795,7 @@ fn ares_fire(
                 .intersects(sim.ares_house_relation(owner, entity.owner()))
             || !super::protect::techno_affected(sim, entity, targeting.affects_target())
             || controlled && !dominator.capture_mind_controlled
-            || entity.mind_control.permanent()
+            || entity.seldom.mind_control.permanent()
                 && !controlled
                 && !dominator.capture_perma_mind_controlled
             || immune && !dominator.capture_immune_to_psionics
@@ -807,7 +807,7 @@ fn ares_fire(
             id,
             owner,
             dominator.permanent_capture,
-            ring.as_deref(),
+            ring,
             rules,
             overlay_registry,
             frame_effects,

@@ -334,7 +334,8 @@ fn run_inner(
     ) {
         log::warn!("Could not enumerate retail skirmish scenarios: {error:#}");
     }
-    let roster = select_ini(assets, "MPModesMD.ini")?;
+    let roster_name = assets.ini_roots().modes().to_owned();
+    let roster = select_ini(assets, &roster_name)?;
     let modes = crate::skirmish_modes::skirmish_modes_from_selected_ini(
         assets,
         &roster.ini,
@@ -343,7 +344,7 @@ fn run_inner(
     .map_err(|e| e.to_string())?;
     let id = options.mode_id.expect("validated mode id");
     let mode = crate::skirmish_modes::mode_by_id(&modes, id)
-        .ok_or_else(|| format!("mode id {id} is absent from MPModesMD.ini"))?;
+        .ok_or_else(|| format!("mode id {id} is absent from {roster_name}"))?;
     if !mode.class.policy().lists_in_skirmish {
         return Err(format!(
             "mode id {id} is not in the supported noncampaign skirmish list"
@@ -449,16 +450,19 @@ mod tests {
     }
 
     #[test]
-    fn ini_roots_art_probe_reads_selected_mo_source_and_reports_choice() {
+    fn ini_roots_art_probe_reads_custom_source_and_reports_choice() {
         use crate::util::ini_roots::{IniProfile, IniRootConfig};
         let dir = crate::map::source::test_support::TestDirectory::new("ini-roots-art-tool");
-        dir.write("rulesmo.ini", b"[General]\nBuildSpeed=.7\n");
-        dir.write("artmo.ini", b"[TEST]\nVoxel=yes\n");
-        dir.write("aimo.ini", b"[Marker]\nValue=MO\n");
+        dir.write("custom-rules.ini", b"[General]\nBuildSpeed=.7\n");
+        dir.write("custom-art.ini", b"[TEST]\nVoxel=yes\n");
+        dir.write("custom-ai.ini", b"[Marker]\nValue=custom\n");
         dir.write("artmd.ini", b"[TEST]\nVoxel=no\n");
         let mut assets = AssetManager::from_loose_root_for_test(dir.path())
             .with_ini_roots(&IniRootConfig {
-                profile: IniProfile::Mo,
+                profile: IniProfile::Custom,
+                rules: Some("custom-rules.ini".into()),
+                art: Some("custom-art.ini".into()),
+                ai: Some("custom-ai.ini".into()),
                 ..Default::default()
             })
             .unwrap();
@@ -472,10 +476,10 @@ mod tests {
             &options("bool", "false"),
         )
         .unwrap();
-        assert_eq!(report["ini_roots"]["art"], "artmo.ini");
+        assert_eq!(report["ini_roots"]["art"], "custom-art.ini");
         assert_eq!(
             report["authored_layers"][0]["source"]["logical_name"],
-            "artmo.ini"
+            "custom-art.ini"
         );
         assert_eq!(report["accessor_result"], serde_json::json!(true));
     }
@@ -724,7 +728,7 @@ mod tests {
             &retail,
             false,
             Default::default(),
-            crate::assets::asset_manager::ArchiveFamily::Yr,
+            &crate::util::archive_names::ArchiveNames::default(),
         )
         .expect("retail manager");
         let query = IniOptions {

@@ -764,7 +764,7 @@ fn assert_retained_naval_ship(
     assert_eq!(actor.lifecycle.cell_marked(), native["marked"] == 1);
     assert_eq!(actor.sinking.is_active(), native["sinking"] == 1);
     assert_eq!(
-        actor.in_logic_vector.is_member(),
+        actor.seldom.in_logic_vector.is_member(),
         native["logic_registered"] == 1
     );
     assert_eq!(

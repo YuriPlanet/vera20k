@@ -1,6 +1,6 @@
 //! Tests for the retries of `AStar_pathfind_search` (`0x0042C900`).
 
-use super::super::super::zone_hierarchy::ZoneEdgeRecord;
+use super::super::super::zone_hierarchy::{ZONE_PRECHECK_LEVELS, ZoneEdgeRecord};
 use super::super::super::zone_map_tests::terrain_from_zone_classes;
 use super::super::super::{
     BlockerNeighborCounts, LayeredPathStep, MoverSearchFacts, PathGrid, find_layered_path_marker,
@@ -172,7 +172,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
         movement_zone: MovementZone::Normal,
         threat_coefficient: NativeF64Bits::POSITIVE_ZERO,
     };
-    let corridor = precheck
+    let mut corridor = precheck
         .run(&ZonePrecheckExclusions::default(), &foot, (1, 1))
         .expect("a precheck")
         .expect("the top pass is the precheck's route");
@@ -193,8 +193,11 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
 
     // The furthest route zone the search reached is the last before the
     // refused cells, and it floods from the first cell it gave a node there.
-    let progress = corridor.progress.get();
-    assert_eq!(corridor.routes[0][progress.index], map.zone(0, (6, 0)));
+    let progress = corridor.progress;
+    assert_eq!(
+        corridor.routes.route(0)[progress.index],
+        map.zone(0, (6, 0))
+    );
     assert_eq!(map.zone(0, progress.cell), map.zone(0, (6, 0)));
 
     // At each level that flood stops at the refused cells and finds the zone
@@ -217,7 +220,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
         .run(&exclusions, &foot, (1, 1))
         .expect("a precheck")
         .expect("the bottom pass is the next route");
-    assert!(retried.routes[0].contains(&map.zone(0, (6, 10))));
+    assert!(retried.routes.route(0).contains(&map.zone(0, (6, 10))));
 }
 
 #[test]
@@ -242,7 +245,7 @@ fn a_split_zone_on_a_one_zone_route_runs_the_plain_search() {
         movement_zone: MovementZone::Normal,
         threat_coefficient: NativeF64Bits::POSITIVE_ZERO,
     };
-    let corridor = precheck
+    let mut corridor = precheck
         .run(&ZonePrecheckExclusions::default(), &foot, (1, 1))
         .expect("a precheck")
         .expect("a corridor");
@@ -263,7 +266,7 @@ fn a_split_zone_on_a_one_zone_route_runs_the_plain_search() {
     let usable = update_hierarchical_edges(
         &map.retry_inputs(&foot),
         &corridor.routes,
-        corridor.progress.get().cell,
+        corridor.progress.cell,
         &mut ZonePrecheckExclusions::default(),
     );
     assert_eq!(usable, Ok(false), "the split clears +0x38");

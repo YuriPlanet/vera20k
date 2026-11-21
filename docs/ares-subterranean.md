@@ -7,6 +7,7 @@ every build, so a mod can select it:
 ```ini
 [DIGGER]                                              ; rulesmd.ini VehicleType
 Locomotor={4A582743-9839-11D1-B709-00A024DDAFD1}      ; Tunnel (Phobos alias: Tunnel)
+MovementZone=Subterannean
 ROT=8                                                 ; dig-in/dig-out time is 64/ROT frames
 
 [General]
@@ -16,6 +17,9 @@ TunnelSpeed=1        ; scales the sink and rise speed, divides the dig-in time (
 DigSound=...         ; played as the unit digs in and out (retail: the nuke siren)
 Dig=...              ; anim spawned as it digs in and out (retail: unset)
 ```
+
+In VERA20K, `MovementZone=Subterranean` is an alias for the retail spelling
+`MovementZone=Subterannean`.
 
 Theater INIs gate where a unit may surface with `[TileSetNNNN]
 AllowBurrowing=` (default yes).

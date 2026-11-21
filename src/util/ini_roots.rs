@@ -1,11 +1,10 @@
 //! One root-file choice for Rules, fixed Art and standalone AI, plus optional
-//! SOUNDMD/EVAMD roots, the theater control-file suffix and the profile's
-//! fixed THEMEMD, BATTLEMD, MISSIONMD and MAPSELMD names.
+//! audio, theater, campaign and skirmish catalog names.
 //!
 //! Adapted from my ra2-mono GameConfig/GameIniLoader file selection. VERA
 //! keeps one root per family and its existing native layer processing; this
-//! does not import mono's multi-file AI merging. The archive names a profile
-//! mounts are `assets::asset_manager::ArchiveFamily`'s.
+//! does not import mono's multi-file AI merging. Archive selection is separate
+//! from the file names a game reads.
 //!
 //! SOUNDMD and EVAMD are unlayered presentation readers, not part of the
 //! rules/art/AI triplet: their overrides are optional for every profile and a
@@ -13,16 +12,14 @@
 //! root selection. The theater suffix is optional for every profile too and is
 //! never probed: the theater loader reports its own missing INI.
 //!
-//! The theme and campaign names (THEMEMD, BATTLEMD, MISSIONMD, MAPSELMD) come
-//! only from the preset: they have no config key, are never probed and have no
-//! stock fallback. Each reader treats a missing file as gamemd does.
+//! Optional catalogs keep their stock names when omitted. They are never
+//! probed here; each reader retains its own missing-file behavior.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IniProfile {
     #[default]
     Yr,
-    Mo,
     Auto,
     Custom,
 }
@@ -33,11 +30,10 @@ impl std::str::FromStr for IniProfile {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "yr" => Ok(Self::Yr),
-            "mo" => Ok(Self::Mo),
             "auto" => Ok(Self::Auto),
             "custom" => Ok(Self::Custom),
             _ => Err(format!(
-                "unknown INI profile '{value}'; use yr, mo, auto or custom"
+                "unknown INI profile '{value}'; use yr, auto or custom with explicit file names"
             )),
         }
     }
@@ -49,16 +45,19 @@ pub struct IniRootConfig {
     pub rules: Option<String>,
     pub art: Option<String>,
     pub ai: Option<String>,
-    /// Optional SOUNDMD root for any profile. Absent keeps the profile's
-    /// preset: `soundmd.ini` for YR/custom, `soundmo.ini` for MO.
+    /// Optional SOUNDMD root for any profile. Defaults to `soundmd.ini`.
     pub sound: Option<String>,
-    /// Optional EVAMD root for any profile. Absent keeps the profile's preset:
-    /// `evamd.ini` for YR/custom, `evamo.ini` for MO.
+    /// Optional EVAMD root for any profile. Defaults to `evamd.ini`.
     pub eva: Option<String>,
     /// Optional theater control-file suffix for any profile, the `MD` of
-    /// `SNOWMD.INI`. Absent keeps the profile's preset: `md` for YR/custom,
-    /// `mo` for MO.
+    /// `SNOWMD.INI`. Defaults to `md`.
     pub theater_suffix: Option<String>,
+    pub theme: Option<String>,
+    pub battle: Option<String>,
+    pub mission: Option<String>,
+    pub mapsel: Option<String>,
+    pub modes: Option<String>,
+    pub map_catalog: Option<String>,
 }
 
 /// Frozen file names, resolved once before any consumer builds game data.
@@ -76,59 +75,31 @@ pub struct IniRoots {
     battle: String,
     mission: String,
     mapsel: String,
+    modes: String,
+    map_catalog: String,
 }
 
 impl Default for IniRoots {
     fn default() -> Self {
-        Self::preset(IniProfile::Yr)
+        Self {
+            profile: IniProfile::Yr,
+            rules: "rulesmd.ini".into(),
+            art: "artmd.ini".into(),
+            ai: "aimd.ini".into(),
+            sound: "soundmd.ini".into(),
+            eva: "evamd.ini".into(),
+            theater_suffix: "md".into(),
+            theme: "thememd.ini".into(),
+            battle: "BATTLEMD.INI".into(),
+            mission: "MISSIONMD.INI".into(),
+            mapsel: "MAPSELMD.INI".into(),
+            modes: "MPModesMD.ini".into(),
+            map_catalog: "missionsmd.pkt".into(),
+        }
     }
 }
 
 impl IniRoots {
-    fn preset(profile: IniProfile) -> Self {
-        let (rules, art, ai, sound, eva, theater_suffix, theme, battle, mission, mapsel) =
-            match profile {
-                IniProfile::Yr => (
-                    "rulesmd.ini",
-                    "artmd.ini",
-                    "aimd.ini",
-                    "soundmd.ini",
-                    "evamd.ini",
-                    "md",
-                    "thememd.ini",
-                    "BATTLEMD.INI",
-                    "MISSIONMD.INI",
-                    "MAPSELMD.INI",
-                ),
-                IniProfile::Mo => (
-                    "rulesmo.ini",
-                    "artmo.ini",
-                    "aimo.ini",
-                    "soundmo.ini",
-                    "evamo.ini",
-                    "mo",
-                    "thememo.ini",
-                    "BATTLEMO.INI",
-                    "MISSIONMO.INI",
-                    "MAPSELMO.INI",
-                ),
-                _ => unreachable!("only concrete built-in profiles have presets"),
-            };
-        Self {
-            profile,
-            rules: rules.into(),
-            art: art.into(),
-            ai: ai.into(),
-            sound: sound.into(),
-            eva: eva.into(),
-            theater_suffix: theater_suffix.into(),
-            theme: theme.into(),
-            battle: battle.into(),
-            mission: mission.into(),
-            mapsel: mapsel.into(),
-        }
-    }
-
     pub fn profile(&self) -> IniProfile {
         self.profile
     }
@@ -159,32 +130,35 @@ impl IniRoots {
         format!("{control_name}{}.ini", self.theater_suffix)
     }
 
-    // The four names below are gamemd's literals under YR and custom. Under
-    // MO they take the spelling MO's spawner patches over those literals
-    // (contributor-reported from the spawner's patch table, not native
-    // evidence).
-
     /// The Theme catalog: `THEMEMD.INI` (`0x00825D94`), pushed by Init_Game at
-    /// `0x0052C8B9` for `ThemeClass::ReadINI` (`0x00720590`); MO `thememo.ini`.
+    /// `0x0052C8B9` for `ThemeClass::ReadINI` (`0x00720590`).
     pub fn theme(&self) -> &str {
         &self.theme
     }
     /// The campaign catalog: `BATTLEMD.INI` (`0x00826198`), read by
-    /// Load_Campaigns (`0x0052CB90`) at `0x0052CC4E`/`0x0052CCCD`; MO
-    /// `BATTLEMO.INI`.
+    /// Load_Campaigns (`0x0052CB90`) at `0x0052CC4E`/`0x0052CCCD`.
     pub fn battle(&self) -> &str {
         &self.battle
     }
     /// Mission metadata: `MISSIONMD.INI` (`0x00839724`), read by
     /// InitializeScenarioFromINI (`0x00686D46`) and, through `[0x00839710]`,
-    /// by ShowMissionRestateBriefing at `0x0065F57F`; MO `MISSIONMO.INI`.
+    /// by ShowMissionRestateBriefing at `0x0065F57F`.
     pub fn mission(&self) -> &str {
         &self.mission
     }
     /// The map-select stages: `MAPSELMD.INI` (`0x00830370`), read by
-    /// MapSelect__LoadStagesFromINI (`0x005CEF62`); MO `MAPSELMO.INI`.
+    /// MapSelect__LoadStagesFromINI (`0x005CEF62`).
     pub fn mapsel(&self) -> &str {
         &self.mapsel
+    }
+
+    /// The skirmish mode roster read by `0x005D7CE0`.
+    pub fn modes(&self) -> &str {
+        &self.modes
+    }
+
+    pub fn map_catalog(&self) -> &str {
+        &self.map_catalog
     }
 
     pub fn names(&self) -> [&str; 3] {
@@ -208,19 +182,26 @@ impl IniRootConfig {
         } else {
             for (family, file) in ["rules", "art", "ai"].into_iter().zip(files) {
                 let name = file.ok_or_else(|| format!("custom INI profile requires '{family}'"))?;
-                validate_ini_basename(family, name)?;
+                validate_basename(family, name, ".ini")?;
             }
         }
-        // SOUNDMD/EVAMD are optional presentation roots for every profile:
-        // validated here, but never required and never part of the
-        // rules/art/AI completeness gate.
+        // Optional catalogs retain their readers' own missing-file policies
+        // and never enter the required Rules/Art/AI completeness gate.
         for (family, name) in [
             ("sound", self.sound.as_deref()),
             ("eva", self.eva.as_deref()),
+            ("theme", self.theme.as_deref()),
+            ("battle", self.battle.as_deref()),
+            ("mission", self.mission.as_deref()),
+            ("mapsel", self.mapsel.as_deref()),
+            ("modes", self.modes.as_deref()),
         ] {
             if let Some(name) = name {
-                validate_ini_basename(family, name)?;
+                validate_basename(family, name, ".ini")?;
             }
+        }
+        if let Some(name) = self.map_catalog.as_deref() {
+            validate_basename("map_catalog", name, ".pkt")?;
         }
         if let Some(suffix) = self.theater_suffix.as_deref()
             && (suffix.is_empty() || !suffix.bytes().all(|c| c.is_ascii_alphanumeric()))
@@ -234,92 +215,71 @@ impl IniRootConfig {
 
     /// Probe only the existing resource provider. Missing, unreadable and empty
     /// winners are unavailable; do not fall through to a lower-priority source.
-    /// SOUNDMD/EVAMD overrides are not probed: a missing presentation file keeps
-    /// the audio reader's tolerant empty catalog, as it does for the fixed names.
+    /// Optional catalogs are not probed: their readers keep the same missing-file
+    /// behavior as for the default names. Auto validates only the stock triplet;
+    /// other games name their triplet explicitly with Custom.
     pub fn resolve(&self, mut available: impl FnMut(&str) -> bool) -> Result<IniRoots, String> {
         self.validate()?;
         // Preserve legacy YR admission: consumers still report missing roots
         // at their original load stage. Merely constructing an asset manager
         // must not eagerly require AI in asset-only tools or small fixtures.
-        if self.profile == IniProfile::Yr {
-            let mut roots = IniRoots::default();
-            self.apply_optional_roots(&mut roots);
-            return Ok(roots);
-        }
-        if self.profile == IniProfile::Auto {
-            let yr = IniRoots::preset(IniProfile::Yr);
-            let mo = IniRoots::preset(IniProfile::Mo);
-            let yr_count = yr
-                .names()
-                .into_iter()
-                .filter(|name| available(name))
-                .count();
-            let mo_count = mo
-                .names()
-                .into_iter()
-                .filter(|name| available(name))
-                .count();
-            let mut selected = match (yr_count, mo_count) {
-                (3, 0) => yr,
-                (0, 3) => mo,
-                _ => {
-                    return Err(format!(
-                        "automatic INI selection is ambiguous or incomplete (YR {yr_count}/3, MO {mo_count}/3); explicitly select yr/mo or a complete custom profile; no files were mixed"
-                    ));
+        let mut selected = IniRoots::default();
+        if self.profile == IniProfile::Custom {
+            selected.profile = IniProfile::Custom;
+            for (target, name) in [
+                (&mut selected.rules, &self.rules),
+                (&mut selected.art, &self.art),
+                (&mut selected.ai, &self.ai),
+            ] {
+                if let Some(name) = name {
+                    target.clone_from(name);
                 }
-            };
-            self.apply_optional_roots(&mut selected);
-            return Ok(selected);
+            }
         }
-        let mut selected = if self.profile == IniProfile::Mo {
-            IniRoots::preset(IniProfile::Mo)
-        } else {
-            // Start from the YR preset so the optional audio roots and the
-            // theater suffix keep one default source, then replace the
-            // required triplet.
-            let mut custom = IniRoots::preset(IniProfile::Yr);
-            custom.profile = IniProfile::Custom;
-            custom.rules = self.rules.clone().unwrap();
-            custom.art = self.art.clone().unwrap();
-            custom.ai = self.ai.clone().unwrap();
-            custom
-        };
-        let missing: Vec<_> = selected
-            .names()
-            .into_iter()
-            .filter(|name| !available(name))
-            .collect();
-        if !missing.is_empty() {
-            return Err(format!(
-                "selected {:?} INI profile has missing, unreadable or empty roots: {}; no YR fallback is allowed",
-                selected.profile,
-                missing.join(", ")
-            ));
+        if self.profile != IniProfile::Yr {
+            let missing: Vec<_> = selected
+                .names()
+                .into_iter()
+                .filter(|name| !available(name))
+                .collect();
+            if !missing.is_empty() {
+                return Err(format!(
+                    "selected {:?} INI profile has missing, unreadable or empty roots: {}; use custom with a complete triplet for other file names; no files were mixed",
+                    self.profile,
+                    missing.join(", ")
+                ));
+            }
         }
         self.apply_optional_roots(&mut selected);
         Ok(selected)
     }
 
     fn apply_optional_roots(&self, roots: &mut IniRoots) {
-        if let Some(sound) = &self.sound {
-            roots.sound.clone_from(sound);
-        }
-        if let Some(eva) = &self.eva {
-            roots.eva.clone_from(eva);
-        }
-        if let Some(suffix) = &self.theater_suffix {
-            roots.theater_suffix.clone_from(suffix);
+        for (target, name) in [
+            (&mut roots.sound, &self.sound),
+            (&mut roots.eva, &self.eva),
+            (&mut roots.theater_suffix, &self.theater_suffix),
+            (&mut roots.theme, &self.theme),
+            (&mut roots.battle, &self.battle),
+            (&mut roots.mission, &self.mission),
+            (&mut roots.mapsel, &self.mapsel),
+            (&mut roots.modes, &self.modes),
+            (&mut roots.map_catalog, &self.map_catalog),
+        ] {
+            if let Some(name) = name {
+                target.clone_from(name);
+            }
         }
     }
 }
 
 /// Root references are logical basenames, never host paths. Includes and the
 /// existing VFS retain their own lookup policy.
-fn validate_ini_basename(family: &str, name: &str) -> Result<(), String> {
+fn validate_basename(family: &str, name: &str, extension: &str) -> Result<(), String> {
     if name.is_empty()
         || name.trim() != name
-        || !name.to_ascii_lowercase().ends_with(".ini")
-        || name == ".ini"
+        || !name.to_ascii_lowercase().ends_with(extension)
+        || name.len() == extension.len()
         || name.bytes().any(|c| {
             c < 32
                 || matches!(
@@ -329,7 +289,7 @@ fn validate_ini_basename(family: &str, name: &str) -> Result<(), String> {
         })
     {
         return Err(format!(
-            "{family} root must be a plain nonempty INI basename: '{name}'"
+            "{family} root must be a plain nonempty {extension} basename: '{name}'"
         ));
     }
     Ok(())
@@ -346,65 +306,75 @@ mod tests {
             .unwrap();
         assert_eq!(roots.names(), ["rulesmd.ini", "artmd.ini", "aimd.ini"]);
         assert_eq!((roots.sound(), roots.eva()), ("soundmd.ini", "evamd.ini"));
+        assert_eq!(
+            [
+                roots.theme(),
+                roots.battle(),
+                roots.mission(),
+                roots.mapsel()
+            ],
+            [
+                "thememd.ini",
+                "BATTLEMD.INI",
+                "MISSIONMD.INI",
+                "MAPSELMD.INI"
+            ]
+        );
+        assert_eq!(roots.modes(), "MPModesMD.ini");
+        assert_eq!(roots.map_catalog(), "missionsmd.pkt");
     }
 
     #[test]
-    fn ini_roots_auto_accepts_only_one_complete_unmixed_set() {
-        for (files, expected) in [
-            (
-                vec!["rulesmd.ini", "artmd.ini", "aimd.ini"],
-                Some(IniProfile::Yr),
-            ),
-            (
-                vec!["rulesmo.ini", "artmo.ini", "aimo.ini"],
-                Some(IniProfile::Mo),
-            ),
-            (
-                vec!["rulesmd.ini", "artmd.ini", "aimd.ini", "rulesmo.ini"],
-                None,
-            ),
-            (vec!["rulesmo.ini", "artmo.ini"], None),
-            (
-                vec![
-                    "rulesmd.ini",
-                    "artmd.ini",
-                    "aimd.ini",
-                    "rulesmo.ini",
-                    "artmo.ini",
-                    "aimo.ini",
-                ],
-                None,
-            ),
-            (vec![], None),
-        ] {
-            let result = IniRootConfig {
-                profile: IniProfile::Auto,
-                ..Default::default()
-            }
-            .resolve(|name| files.contains(&name));
-            assert_eq!(
-                result.ok().map(|roots| roots.profile()),
-                expected,
-                "{files:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn ini_roots_explicit_mo_ignores_yr_and_rejects_missing_ai() {
+    fn ini_roots_auto_requires_only_the_complete_stock_triplet() {
         let request = IniRootConfig {
-            profile: IniProfile::Mo,
+            profile: IniProfile::Auto,
             ..Default::default()
         };
-        let roots = request.resolve(|_| true).unwrap();
-        assert_eq!(roots.names(), ["rulesmo.ini", "artmo.ini", "aimo.ini"]);
-        assert_eq!((roots.sound(), roots.eva()), ("soundmo.ini", "evamo.ini"));
+        let mut probed = Vec::new();
+        let roots = request
+            .resolve(|name| {
+                probed.push(name.to_owned());
+                true
+            })
+            .unwrap();
+        assert_eq!(roots.profile(), IniProfile::Yr);
+        assert_eq!(probed, ["rulesmd.ini", "artmd.ini", "aimd.ini"]);
         assert!(
             request
-                .resolve(|name| name != "aimo.ini")
+                .resolve(|name| name != "aimd.ini")
                 .unwrap_err()
-                .contains("aimo.ini")
+                .contains("aimd.ini")
         );
+    }
+
+    #[test]
+    fn ini_roots_optional_catalogs_use_explicit_names_without_probing() {
+        let request = IniRootConfig {
+            theme: Some("music-custom.ini".into()),
+            battle: Some("campaigns-custom.ini".into()),
+            mission: Some("missions-custom.ini".into()),
+            mapsel: Some("stages-custom.ini".into()),
+            modes: Some("modes-custom.ini".into()),
+            map_catalog: Some("maps-custom.pkt".into()),
+            ..Default::default()
+        };
+        let roots = request.resolve(|_| panic!("YR must not probe")).unwrap();
+        assert_eq!(
+            [
+                roots.theme(),
+                roots.battle(),
+                roots.mission(),
+                roots.mapsel()
+            ],
+            [
+                "music-custom.ini",
+                "campaigns-custom.ini",
+                "missions-custom.ini",
+                "stages-custom.ini"
+            ]
+        );
+        assert_eq!(roots.modes(), "modes-custom.ini");
+        assert_eq!(roots.map_catalog(), "maps-custom.pkt");
     }
 
     #[test]
@@ -435,7 +405,7 @@ mod tests {
         }
         request.rules = None;
         assert!(request.validate().is_err());
-        request.profile = IniProfile::Mo;
+        request.profile = IniProfile::Yr;
         assert!(request.validate().is_err());
     }
 
@@ -463,28 +433,6 @@ mod tests {
         .unwrap();
         assert_eq!((yr.sound(), yr.eva()), ("my-sound.ini", "my-eva.ini"));
 
-        // MO's preset carries its own SOUNDMO/EVAMO pair; Auto follows the
-        // family its rules triplet selected.
-        let mo = IniRootConfig {
-            profile: IniProfile::Mo,
-            ..Default::default()
-        }
-        .resolve(|_| true)
-        .unwrap();
-        assert_eq!((mo.sound(), mo.eva()), ("soundmo.ini", "evamo.ini"));
-
-        let auto_mo = IniRootConfig {
-            profile: IniProfile::Auto,
-            ..Default::default()
-        }
-        .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
-        .unwrap();
-        assert_eq!(auto_mo.profile(), IniProfile::Mo);
-        assert_eq!(
-            (auto_mo.sound(), auto_mo.eva()),
-            ("soundmo.ini", "evamo.ini")
-        );
-
         let auto = IniRootConfig {
             profile: IniProfile::Auto,
             eva: Some("my-eva.ini".into()),
@@ -496,19 +444,11 @@ mod tests {
     }
 
     #[test]
-    fn ini_roots_theater_suffix_follows_the_profile_and_its_override() {
+    fn ini_roots_theater_suffix_uses_stock_or_explicit_names() {
         let yr = IniRootConfig::default()
             .resolve(|_| panic!("legacy YR must not probe"))
             .unwrap();
         assert_eq!(yr.theater_ini("snow"), "snowmd.ini");
-        let mo = IniRootConfig {
-            profile: IniProfile::Mo,
-            ..Default::default()
-        }
-        .resolve(|_| true)
-        .unwrap();
-        assert_eq!(mo.theater_ini("urbann"), "urbannmo.ini");
-
         let custom = IniRootConfig {
             theater_suffix: Some("x2".into()),
             ..Default::default()
@@ -557,5 +497,25 @@ mod tests {
                 "eva {bad}"
             );
         }
+    }
+
+    #[test]
+    fn ini_roots_catalogs_reject_paths_and_wrong_extensions() {
+        assert!(
+            IniRootConfig {
+                modes: Some("../modes.ini".into()),
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            IniRootConfig {
+                map_catalog: Some("maps.ini".into()),
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
     }
 }

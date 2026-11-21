@@ -100,6 +100,7 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         actor.set_owner_for_test(owner);
         actor.set_type_ref_for_test(sim.intern("MTNK"));
         actor
+            .seldom
             .selection
             .set_selected_for_test(actor_input["selected"].as_bool().unwrap_or(true));
         actor.set_on_bridge(actor_input["on_bridge"].as_bool().unwrap_or(false));
@@ -287,7 +288,7 @@ fn drawing_fixture(
     let mut target = GameEntity::test_default(2, "MTNK", "Americans", 20, 20);
     target.set_owner_for_test(owner);
     target.set_type_ref_for_test(type_ref);
-    target.selection.set_selected_for_test(false);
+    target.seldom.selection.set_selected_for_test(false);
     let [x, y, z] = point(&input["target_xyz"]);
     target.position.put_location(DriveCoord { x, y, z });
     let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);

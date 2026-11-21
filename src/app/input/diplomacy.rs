@@ -78,6 +78,13 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
             (session.execution_topology(), session.rule_policy())
         },
     );
+    if request == DiplomacyRequest::SidebarButton
+        && topology.is_lockstep()
+        && rule_policy.restates_mission_for_network_diplomacy()
+        && crate::app::input::briefing_diplomacy::open(state)
+    {
+        return;
+    }
     match requested_state(request, topology, rule_policy) {
         RequestedState::Nothing => {}
         RequestedState::Diplomacy => {
@@ -462,7 +469,7 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
 /// event natively; VERA's far larger queue refuses the click instead.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
-    let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
+    let Some(local) = crate::app::input::commands::preferred_command_owner(state) else {
         return;
     };
     let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
@@ -470,12 +477,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     };
     let rules = &runtime.resources.rules;
     let sim = &mut runtime.simulation;
-    if !sim.session().game_mode_nonzero()
-        || sim.session().fixed_alliance()
-        || !rules.general.allies_allowed
-        || !rules.general.ally_change_allowed
-        || !sim.session().game_options().ally_change_allowed
-    {
+    if !alliance_change_allowed(sim.session(), rules) {
         return;
     }
     let Some(index) = sim.houses().index_of(house) else {
@@ -488,6 +490,17 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
             house_index: index as i32,
         },
     );
+}
+
+fn alliance_change_allowed(
+    session: &crate::sim::scenario_session::ScenarioSession,
+    rules: &RuleSet,
+) -> bool {
+    session.rule_policy().allows_manual_alliances()
+        && !session.fixed_alliance()
+        && rules.general.allies_allowed
+        && rules.general.ally_change_allowed
+        && session.game_options().ally_change_allowed
 }
 
 /// `AllianceCommandClass::Execute 0x00536F20` → `0x007318F0`: toggle the

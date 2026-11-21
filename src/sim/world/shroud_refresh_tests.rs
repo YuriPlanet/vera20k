@@ -79,6 +79,7 @@ fn actor(
     // The corpus executes original6F322F before the callback corridor.
     // This is its declared constructor prestate, not an alternative producer.
     entity
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house());
     sim.substrate.entities.insert(entity)
@@ -101,7 +102,7 @@ fn put(sim: &mut Simulation, id: u64, cell: (u16, u16), upper: bool) {
 }
 
 fn discovery(sim: &Simulation, id: u64) -> Value {
-    let h = sim.substrate.entities.get(id).unwrap().discovery;
+    let h = sim.substrate.entities.get(id).unwrap().seldom.discovery;
     json!([
         u8::from(h.owned_by_current_house()),
         u8::from(h.discovered_by_current_house()),
@@ -428,10 +429,14 @@ fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_historie
             false,
         );
         let restored: TechnoDiscoveryHistory = save_codec::deserialize(
-            &save_codec::serialize(&sim.substrate.entities.get(id).unwrap().discovery).unwrap(),
+            &save_codec::serialize(&sim.substrate.entities.get(id).unwrap().seldom.discovery)
+                .unwrap(),
         )
         .unwrap();
-        assert_eq!(restored, sim.substrate.entities.get(id).unwrap().discovery);
+        assert_eq!(
+            restored,
+            sim.substrate.entities.get(id).unwrap().seldom.discovery
+        );
     }
 }
 
@@ -680,10 +685,10 @@ fn discovery_building(sim: &mut Simulation, owner: InternedId, input: &Value) ->
     };
     entity.mission.apply_test_fixture(fixture);
     if let Some(contacts) = input["contacts"].as_array() {
-        entity.radio_contacts.set_capacity(contacts.len());
+        entity.seldom.radio_contacts.set_capacity(contacts.len());
         for (slot, contact) in contacts.iter().enumerate() {
             if contact != &json!(0) {
-                entity.radio_contacts.set_slot(slot, 99);
+                entity.seldom.radio_contacts.set_slot(slot, 99);
             }
         }
     }
@@ -1443,7 +1448,7 @@ fn a_network_shroud_deselect_probe_leaves_the_shared_dummy_alone() {
             .spawn_object_with_overlay_registry("ENGINEER", "Russians", 2, 2, 0, &rules, &registry)
             .unwrap();
         let entity = sim.substrate.entities.get_mut(enemy).unwrap();
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         // Level 6 moves IsShrouded's Cell three west and north, to (-1, -1).
         entity.position.set_exact_z_leptons_for_test(Some(
             6 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
@@ -1473,6 +1478,7 @@ fn a_campaign_enemy_jumpjet_is_discovered_flying_over_mapped_ground() {
             .entities
             .get(enemy)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     };
@@ -1670,6 +1676,7 @@ fn selected(sim: &Simulation, id: u64) -> bool {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .selection
         .is_selected()
 }
@@ -1699,6 +1706,7 @@ fn move_east_selected(
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1774,7 +1782,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
         let id = sim
             .spawn_object("SPYP", "Americans", 40, 40, 0, &rules)
             .unwrap();
-        assert!(sim.entities().get(id).unwrap().sight.is_zero());
+        assert!(sim.entities().get(id).unwrap().seldom.sight.is_zero());
         // Supplied native camera cache, before its current position changes.
         sim.refresh_object_sight(id, &rules, 6, crate::sim::world::FrameEffects::default());
         assert!(sim.fog.sight_is_latched(id, player));
@@ -1782,6 +1790,7 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.position.set_rx_for_test(41);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
         entity
@@ -1872,6 +1881,7 @@ fn initial_house_sight_matches_original_update_tail() {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.position.set_rx_for_test(41);
         entity
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
         entity
@@ -1903,6 +1913,7 @@ fn initial_house_sight_matches_original_update_tail() {
                         house_roster: &roster,
                         skirmish_session: None,
                         campaign_map: None,
+                        stage_home_global: None,
                     },
                 )
                 .unwrap();

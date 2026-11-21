@@ -92,6 +92,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt,
                 rules: &rules,
                 map_data: &map,
@@ -193,6 +194,7 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         &rules,
         &roster,
         crate::rules::rule_policy::RulePolicy::stock_campaign(),
+        None,
         None,
     )
     .unwrap();
@@ -300,7 +302,7 @@ fn stock_all01_spy_satellite_sale_reshrouds_then_reveals_waypoint() {
     let trigger_type = trigger.type_index;
     let definition = &sim.trigger_runtime.definitions.trigger_types[trigger_type];
     assert_eq!(definition.events.len(), 1);
-    assert_eq!(definition.events[0].kind, 48);
+    assert_eq!(definition.events[0].condition.kind, 48);
     assert_eq!(
         definition
             .actions
@@ -459,7 +461,7 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
     let barricade = find(&scene, "CABARR02", (137, 103));
     let entity = scene.sim().entities().get(flak).unwrap();
     assert!(!entity.in_playfield());
-    assert!(!entity.discovery.discovered_by_current_house());
+    assert!(!entity.seldom.discovery.discovered_by_current_house());
     assert!(
         !entity.building_art.actually_placed(),
         "unseen player turret must not GrandOpen"
@@ -496,7 +498,7 @@ fn stock_all02_hidden_player_flak_waits_for_discovery() {
         .simulation
         .reveal_entire_map(Some(player), UninitContext::new(&runtime.resources.rules));
     let entity = runtime.simulation.entities().get(flak).unwrap();
-    assert!(entity.discovery.discovered_by_current_house());
+    assert!(entity.seldom.discovery.discovered_by_current_house());
     assert!(
         entity.building_art.actually_placed(),
         "real discovery must run the shared opening"

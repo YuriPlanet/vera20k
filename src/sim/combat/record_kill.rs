@@ -69,7 +69,11 @@ fn award_kill_experience(
         Some((killer_id, cost_of(killer_type)))
     } else if killer_type.missile_spawn {
         // Branch 3: a spawned missile pays its launcher.
-        killer.spawn_owner_id.owner().and_then(trainable_cost)
+        killer
+            .seldom
+            .spawn_owner_id
+            .owner()
+            .and_then(trainable_cost)
     } else {
         // Branch 4: an occupied building pays the occupant at its fire index.
         combat_weapon::firing_occupant_id(killer, killer_type).and_then(|occupant| {
@@ -217,6 +221,7 @@ fn award_ares_kill_experience(
         Some(killer_id)
     } else if killer_type.missile_spawn {
         killer
+            .seldom
             .spawn_owner_id
             .owner()
             .filter(|&owner| trainable(entities, owner))
@@ -237,7 +242,7 @@ fn award_ares_kill_experience(
     let mut spawn = None;
     let mut spawn_factor = NativeF64Bits::ONE;
     let mut owner_factor = NativeF64Bits::ONE;
-    if let Some(spawner) = entities.get(recipient)?.spawn_owner_id.owner()
+    if let Some(spawner) = entities.get(recipient)?.seldom.spawn_owner_id.owner()
         && let Some(spawner_type) = techno_type(entities, interner, rules, spawner)
         && !spawner_type.missile_spawn
         && spawner_type.trainable
@@ -277,7 +282,7 @@ fn award_ares_kill_experience(
         .map(crate::sim::game_entity::GameEntity::owner);
     if let Some(controller) = entities
         .get(recipient)
-        .and_then(|entity| entity.mind_control.controller())
+        .and_then(|entity| entity.seldom.mind_control.controller())
         && let Some(controller_owner) = entities
             .get(controller)
             .map(crate::sim::game_entity::GameEntity::owner)
@@ -495,7 +500,7 @@ impl crate::sim::world::Simulation {
                 .substrate
                 .entities
                 .get(victim_id)
-                .is_some_and(|victim| victim.capture_infantry_type_index.get() != -1)
+                .is_some_and(|victim| victim.seldom.capture_infantry_type_index.get() != -1)
                 && self.trigger_runtime.object_tag_is_transferable(victim_id);
             if !captor_has_tag {
                 for kind in [7, 48, 29] {
@@ -736,13 +741,13 @@ fn record_kill_credit(
     count_killer: bool,
     callback: KillCallback,
 ) {
-    victim.kill_record.killed_by = killer_owner;
+    victim.seldom.kill_record.killed_by = killer_owner;
     if callback == KillCallback::Terminal
         || victim.health.current() == 0
         || killer_owner.is_some()
         || victim.crash.is_crashing()
     {
-        victim.kill_record.destruction_recorded = true;
+        victim.seldom.kill_record.destruction_recorded = true;
     }
     // Score is added before the Building Insignificant branch703045.
     if let Some(killer) = killer_owner

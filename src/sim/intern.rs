@@ -70,7 +70,7 @@ pub struct StringInterner {
     to_id: Synced<LookupMap<String, InternedId>>,
     /// ID (index) → display string (first-seen casing).
     to_str: Synced<Vec<String>>,
-    /// Derived: each id's object, projectile and warhead handles in the
+    /// Derived: each id's object, projectile, warhead and weapon handles in the
     /// bound rules ([`Self::bind_types`], [`Self::cover_types`]). Never
     /// serialized; a load binds again.
     types: Synced<TypeHandleTable>,
@@ -143,9 +143,22 @@ impl StringInterner {
         self.types.warhead(self, id, rules)
     }
 
-    /// The object type `id` names in `rules`, as
-    /// `rules.object(self.resolve(id))` answers, through the bound handles
+    /// The weapon `id` names in `rules`, as
+    /// `rules.weapon(self.resolve(id))` answers, through the bound handles
     /// where they apply.
+    #[inline]
+    pub fn weapon_type<'r>(
+        &self,
+        id: InternedId,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+        self.types.weapon(self, id, rules)
+    }
+
+    /// The object type `id` names in `rules`, as `rules.object(name)`
+    /// answers for the name `self.try_resolve(id)` gives (none for an id
+    /// this interner never made), through the bound handles where they
+    /// apply.
     #[inline]
     pub fn object_type<'r>(&self, id: InternedId, rules: &'r RuleSet) -> Option<&'r ObjectType> {
         self.types.object(self, id, rules)
@@ -167,7 +180,8 @@ impl StringInterner {
     }
 
     /// The handle of the object type `id` names in `rules`, as
-    /// `rules.type_handle(self.resolve(id))` answers, the same way.
+    /// `rules.type_handle(name)` answers for `self.try_resolve(id)`, the
+    /// same way.
     #[inline]
     pub fn type_handle(&self, id: InternedId, rules: &RuleSet) -> Option<TypeHandle> {
         self.types.handle(self, id, rules)

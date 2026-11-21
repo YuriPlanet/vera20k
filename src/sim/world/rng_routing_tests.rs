@@ -52,7 +52,7 @@ fn assert_native_rng_state(rng: &SimRng, native_hex: &str, label: &str) {
 }
 
 fn assert_native_rng_streams(sim: &Simulation, native: &serde_json::Value, label: &str) {
-    let main = sim.main_rng.snapshot_for_test();
+    let main = sim.main_rng.clone();
     for (name, rng) in [
         ("scenario", &sim.scenario_rng),
         ("main", &main),
@@ -176,7 +176,7 @@ fn scenario_accessors_route_to_the_scenario_stream() {
 // --- Test 6: authoritative hash boundary (design §7.6) ---
 #[test]
 fn offline_only_the_scenario_stream_reaches_the_state_hash() {
-    let sim = Simulation::with_seed(99);
+    let mut sim = Simulation::with_seed(99);
     let before = sim.state_hash();
     sim.main_rng.next_u32();
     assert_eq!(
@@ -408,8 +408,7 @@ fn saved_load_then_menu_reseed_matches_native_complete_rng_states() {
             SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
         let bytes = GameSnapshot::save(&saved, 0, 0, "menu-rng.map", 0);
         let mut live = Simulation::with_seed(load["global_seed_before"].as_u64().unwrap());
-        live.main_rng =
-            SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+        live.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
         live.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
         let live_before = live.rng_state();
@@ -493,7 +492,7 @@ fn cold_saved_load_retains_frontend_main_until_native_menu_reseed() {
             label,
         );
         assert_native_rng_state(
-            &restored.main_rng.snapshot_for_test(),
+            &restored.main_rng,
             load["after"]["main"].as_str().unwrap(),
             label,
         );
@@ -508,7 +507,7 @@ fn cold_saved_load_retains_frontend_main_until_native_menu_reseed() {
             label,
         );
         assert_native_rng_state(
-            &restored.main_rng.snapshot_for_test(),
+            &restored.main_rng,
             row["menu_after"]["main"].as_str().unwrap(),
             label,
         );
@@ -560,14 +559,23 @@ fn mapgen_fresh_state_matches_native_seed_zero_full_object() {
 }
 
 #[test]
-fn scenario_main_reseed_does_not_change_mapgen() {
+fn direct_reseed_updates_scenario_and_main_even_with_non_stock_rules() {
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
     let mut sim = Simulation::with_seed(7);
+    let mode = ScenarioGameMode::Skirmish;
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_allow_win_tags(AllowWinTagsPolicy::RequireClear);
+    sim.install_session_admission(mode, None, policy);
     for _ in 0..5 {
         sim.mapgen_rng.next_u32();
     }
     let before = sim.mapgen_rng.logical_state();
     sim.initialize_random_number_system(99);
     assert_eq!(sim.mapgen_rng.logical_state(), before);
+    assert_eq!(sim.session.seed(), 99);
     assert_eq!(
         sim.scenario_rng.logical_state(),
         SimRng::new(99).logical_state()
@@ -580,8 +588,10 @@ fn scenario_main_reseed_does_not_change_mapgen() {
 
 #[test]
 fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
+    // The app's process cell, with a playback capability retained on it.
+    let process = crate::sim::rng::MainRng::new(0x2A61);
+    let callback = process.draws();
     let live = Simulation::with_seed(0x2A61);
-    let callback = live.presentation_main_draws();
     let mut reference = SimRng::new(0x2A61);
     let bytes = GameSnapshot::save(&live, 0, 0, "main-capability", 0);
     let mut prepared = GameSnapshot::load(&bytes).unwrap().sim;
@@ -590,18 +600,19 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     let mapgen = prepared.mapgen_rng.logical_state();
 
     // Preparation draws advance only the staged candidate; a rejected load
-    // would drop them with the process cell untouched.
+    // would drop them with the live world and the process cell untouched.
     assert_eq!(prepared.main_rng.next_u32(), reference.next_u32());
     assert_eq!(
         live.main_rng.logical_state(),
         SimRng::new(0x2A61).logical_state()
     );
+    assert_eq!(process.logical_state(), SimRng::new(0x2A61).logical_state());
 
     // Commit moves them into the process cell, then drops the old Simulation
     // while a playback capability remains. The scenario continues from that
-    // cursor in a cell of its own (docs/sim-thread.md).
-    prepared.install_fresh_process_main(&live.main_rng);
-    assert_eq!(live.main_rng.logical_state(), reference.logical_state());
+    // cursor in a generator of its own (docs/sim-thread.md).
+    prepared.install_fresh_process_main(&process);
+    assert_eq!(process.logical_state(), reference.logical_state());
     assert_eq!(prepared.main_rng.logical_state(), reference.logical_state());
     let mut world = reference.clone();
     drop(live);
@@ -613,12 +624,9 @@ fn in_scenario_load_retains_main_callback_draws_after_prepare_and_commit() {
     .unwrap();
     assert_eq!(late_draw, reference.next_range_i32_inclusive(0, 4));
     assert_eq!(callback.next_u32(), reference.next_u32());
-    // The app's draws leave the scenario's cell where it was.
+    // The app's draws leave the scenario's generator where it was.
     assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
-    assert_eq!(
-        prepared.presentation_main_draws().next_u32(),
-        world.next_u32()
-    );
+    assert_eq!(prepared.main_rng.next_u32(), world.next_u32());
     assert_eq!(prepared.main_rng.logical_state(), world.logical_state());
     assert_eq!(prepared.scenario_rng.logical_state(), scenario);
     assert_eq!(prepared.mapgen_rng.logical_state(), mapgen);

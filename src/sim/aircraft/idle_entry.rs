@@ -579,7 +579,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn in_radio_contact(&mut self) -> bool {
-        !self.entity().radio_contacts.is_empty()
+        !self.entity().seldom.radio_contacts.is_empty()
     }
 
     fn queue(&mut self, mission: MissionType) {

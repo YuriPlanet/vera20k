@@ -172,12 +172,7 @@ pub(crate) fn select_with_context(
             #[cfg(feature = "phobos")]
             let splash_names = warhead.phobos_anim.splash_list_names(rules);
             #[cfg(not(feature = "phobos"))]
-            let splash_names: Vec<&str> = rules
-                .combat_damage
-                .splash_list
-                .iter()
-                .map(String::as_str)
-                .collect();
+            let splash_names = rules.combat_damage.splash_list.as_slice();
             #[cfg(feature = "phobos")]
             let pick_random = warhead.phobos_anim.splash_list_pick_random;
             #[cfg(not(feature = "phobos"))]
@@ -195,8 +190,8 @@ pub(crate) fn select_with_context(
             if splash_names.is_empty() {
                 return None;
             }
-            let name = match random_index {
-                Some(index) => splash_names[index as usize],
+            let name: &str = match random_index {
+                Some(index) => splash_names[index as usize].as_ref(),
                 None => damage_band(&splash_names, damage, 35)?,
             };
             return Some(SelectedAnim {
@@ -405,6 +400,7 @@ pub(crate) fn bullet_effects(
         && let Some(source) = world.substrate.entities.get_mut(source_id)
     {
         source
+            .seldom
             .wh_anim_remaining_creation_interval
             .interval_allows(interval)
     } else {
@@ -1584,6 +1580,7 @@ CreateUnit.Owner=special
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .wh_anim_remaining_creation_interval
                 .remaining(),
             2

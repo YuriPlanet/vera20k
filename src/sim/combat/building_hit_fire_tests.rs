@@ -58,6 +58,7 @@ fn hit(world: &mut Simulation, rules: &RuleSet, building: u64, amount: i32) {
         None,
         rules,
         Some(rules.overlay_registry()),
+        &mut Vec::new(),
     );
 }
 

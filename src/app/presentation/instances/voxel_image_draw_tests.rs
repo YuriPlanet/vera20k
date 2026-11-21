@@ -187,6 +187,7 @@ fn a_miners_unloading_type_owns_its_voxel_drawer_flags() {
     for id in [miner, deployer] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .display_type_override
             .set_for_test(Some(unloading));
     }
@@ -204,6 +205,7 @@ fn a_miners_unloading_type_owns_its_voxel_drawer_flags() {
     assert_eq!(drawer(&sim, deployer), ("PLAIN".to_owned(), false));
     sim.entity_mut_for_test(miner)
         .unwrap()
+        .seldom
         .display_type_override
         .set_for_test(None);
     assert_eq!(drawer(&sim, miner), ("MINER".to_owned(), false));

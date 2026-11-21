@@ -242,7 +242,7 @@ fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
     let building = entity(sim, bunker);
     (
         building.building.bunker_runtime.unwrap().state(),
-        building.radio_contacts.slot(0),
+        building.seldom.radio_contacts.slot(0),
     )
 }
 
@@ -545,7 +545,7 @@ fn the_nearest_own_reactor_with_room_takes_the_foot() {
     assert!(seek(&mut sim, &rules, foot));
 
     let entity = sim.substrate.entities.get(foot).unwrap();
-    assert!(entity.building_entry.should_enter_absorber());
+    assert!(entity.seldom.building_entry.should_enter_absorber());
     assert_eq!(
         entity.mission.queued(),
         MissionId::from_known(MissionType::Enter)
@@ -554,7 +554,7 @@ fn the_nearest_own_reactor_with_room_takes_the_foot() {
         entity.navigation.nav_com(),
         Some(NavTargetRef::object(room))
     );
-    assert_eq!(entity.radio_contacts.slot(0), Some(room));
+    assert_eq!(entity.seldom.radio_contacts.slot(0), Some(room));
 }
 
 /// Equidistant absorbers through the production walk: the house's list is
@@ -609,16 +609,19 @@ fn the_latches_are_saved_and_hashed() {
 
     assert!(
         entity(&restored, foot)
+            .seldom
             .building_entry
             .should_enter_absorber()
     );
     assert!(
         entity(&restored, occupier)
+            .seldom
             .building_entry
             .should_enter_occupiable()
     );
     assert!(
         entity(&restored, occupier)
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable()
     );
@@ -658,7 +661,7 @@ fn script_action_62_sends_the_members_a_reactor_takes() {
     assert!(state.advance_pending());
     assert_eq!(sim.team_script_vm.team_for_member(infantry), None);
     let entity = sim.substrate.entities.get(infantry).unwrap();
-    assert!(entity.building_entry.seeking());
+    assert!(entity.seldom.building_entry.seeking());
     assert_eq!(
         entity.mission.queued(),
         MissionId::from_known(MissionType::Enter)
@@ -668,6 +671,7 @@ fn script_action_62_sends_the_members_a_reactor_takes() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .building_entry
             .seeking()
     );
@@ -708,6 +712,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
         assert!(seek(&mut sim, &rules, passenger));
         assert!(
             entity(&sim, passenger)
+                .seldom
                 .building_entry
                 .should_enter_absorber()
         );
@@ -798,8 +803,8 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
         let passenger = entity(&sim, passenger_id);
         assert!(passenger.lifecycle.object_alive());
         assert!(passenger.lifecycle.cell_marked());
-        assert!(passenger.in_logic_vector.is_member());
-        assert!(!passenger.building_entry.should_enter_absorber());
+        assert!(passenger.seldom.in_logic_vector.is_member());
+        assert!(!passenger.seldom.building_entry.should_enter_absorber());
         assert!(passenger.house_tracking_latches().is_counted());
         assert!(!passenger.house_tracking_latches().is_absorbed());
     }
@@ -1424,6 +1429,7 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
     }));
     assert!(
         entity(&sim, passenger)
+            .seldom
             .building_entry
             .should_enter_absorber()
     );
@@ -1438,6 +1444,7 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
     assert!(!entity(&sim, passenger).lifecycle.in_limbo());
     assert!(
         entity(&sim, passenger)
+            .seldom
             .building_entry
             .should_enter_absorber()
     );
@@ -1566,13 +1573,13 @@ fn a_seeker_whose_reactor_dies_gives_up_and_can_be_recruited() {
     let infantry = spawn(&mut sim, &rules, "INIT", "YuriCountry", 10, 10);
     let _team = seek_team(&mut sim, 62, vec![infantry]);
     assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
-        entity(sim, infantry).radio_contacts.slot(0) == Some(reactor)
+        entity(sim, infantry).seldom.radio_contacts.slot(0) == Some(reactor)
     }));
 
     sim.despawn_entity(reactor);
 
     assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
-        !entity(sim, infantry).building_entry.seeking()
+        !entity(sim, infantry).seldom.building_entry.seeking()
     }));
     let foot = entity(&sim, infantry);
     assert!(foot.passenger_role().is_none());
@@ -1602,12 +1609,12 @@ fn a_seeker_beaten_to_the_last_slot_gives_up() {
     assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
         [near, far]
             .iter()
-            .all(|&id| entity(sim, id).building_entry.seeking())
+            .all(|&id| entity(sim, id).seldom.building_entry.seeking())
     }));
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {
         entity(sim, near).passenger_role().inside_transport_id() == Some(reactor)
-            && !entity(sim, far).building_entry.seeking()
+            && !entity(sim, far).seldom.building_entry.seeking()
     }));
     assert_eq!(
         entity(&sim, reactor)
@@ -1653,7 +1660,10 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         &rules,
         FrameEffects::default(),
     );
-    assert_eq!(entity(&sim, foot).radio_contacts.slot(0), Some(reactor));
+    assert_eq!(
+        entity(&sim, foot).seldom.radio_contacts.slot(0),
+        Some(reactor)
+    );
     absorb(&mut sim, &rules, reactor, 5);
     sim.foot_set_location_marked(
         foot,
@@ -1701,7 +1711,10 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
         FrameEffects::default(),
     );
     assert_eq!(entity(&sim, tank).pending_entry(), None);
-    assert_eq!(entity(&sim, tank).radio_contacts.slot(0), Some(absorber));
+    assert_eq!(
+        entity(&sim, tank).seldom.radio_contacts.slot(0),
+        Some(absorber)
+    );
     assert_eq!(
         entity(&sim, tank).navigation.nav_com(),
         Some(NavTargetRef::object(absorber))
@@ -1869,7 +1882,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
     assert!(!garrison_seek(&mut sim, &rules, tank));
 
     let foot = entity(&sim, infantry);
-    assert!(foot.building_entry.should_enter_occupiable());
+    assert!(foot.seldom.building_entry.should_enter_occupiable());
     assert_eq!(
         foot.mission.current(),
         MissionId::from_known(MissionType::Capture)
@@ -1878,7 +1891,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         foot.navigation.nav_com(),
         Some(NavTargetRef::Object { id }) if id == near
     ));
-    assert!(!entity(&sim, tank).building_entry.seeking());
+    assert!(!entity(&sim, tank).seldom.building_entry.seeking());
 
     // Full, then red: neither admits, and the latch clears.
     for id in 1000..1005 {
@@ -1900,7 +1913,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
     // is civilian (TechLevel -1).
     if !rules.ares_form() {
         assert!(!garrison_seek(&mut sim, &rules, infantry));
-        assert!(!entity(&sim, infantry).building_entry.seeking());
+        assert!(!entity(&sim, infantry).seldom.building_entry.seeking());
     }
 }
 
@@ -1924,10 +1937,11 @@ fn script_action_63_sends_the_members_a_bunker_admits() {
     assert_eq!(sim.team_script_vm.team_for_member(infantry), None);
     assert!(
         entity(&sim, infantry)
+            .seldom
             .building_entry
             .should_enter_occupiable()
     );
-    assert!(!entity(&sim, tank).building_entry.seeking());
+    assert!(!entity(&sim, tank).seldom.building_entry.seeking());
 }
 
 /// Occupants are kept in admission order (`Occupants.AddItem`,
@@ -1965,14 +1979,16 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
     }
 
     assert_eq!(occupants(&sim, bunker), [first, second]);
-    assert!(!entity(&sim, first).building_entry.seeking());
+    assert!(!entity(&sim, first).seldom.building_entry.seeking());
     assert!(
         entity(&sim, second)
+            .seldom
             .building_entry
             .should_enter_occupiable()
     );
     assert!(
         entity(&sim, second)
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable()
     );
@@ -2038,6 +2054,7 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
     let _team = seek_team(&mut sim, 63, vec![infantry]);
     assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
         entity(sim, infantry)
+            .seldom
             .building_entry
             .should_enter_occupiable()
     }));
@@ -2052,7 +2069,7 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
     }
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {
-        !entity(sim, infantry).building_entry.seeking()
+        !entity(sim, infantry).seldom.building_entry.seeking()
     }));
     let foot = entity(&sim, infantry);
     assert!(!foot.lifecycle.in_limbo());
@@ -2107,14 +2124,16 @@ fn an_ejected_human_occupant_drops_its_seek() {
         ejected.push(occupant);
     }
 
-    assert!(!entity(&sim, ejected[0]).building_entry.seeking());
+    assert!(!entity(&sim, ejected[0]).seldom.building_entry.seeking());
     assert!(
         entity(&sim, ejected[1])
+            .seldom
             .building_entry
             .should_enter_occupiable()
     );
     assert!(
         entity(&sim, ejected[1])
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable()
     );
@@ -2234,7 +2253,7 @@ fn the_nearest_free_own_tank_bunker_takes_the_tank() {
         foot.mission.current(),
         MissionId::from_known(MissionType::Enter)
     );
-    assert_eq!(foot.radio_contacts.slot(0), Some(free));
+    assert_eq!(foot.seldom.radio_contacts.slot(0), Some(free));
     assert_eq!(foot.navigation.nav_com(), Some(NavTargetRef::object(free)));
     assert_eq!(install_state(&sim, free), (BunkerState::Idle, Some(tank)));
     assert_eq!(install_state(&sim, far), (BunkerState::Idle, None));
@@ -2257,7 +2276,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
         assert!(!tank_bunker_seek(&mut sim, &rules, id));
         assert_eq!(entity(&sim, id).mission, mission);
         assert_eq!(entity(&sim, id).bunker.link(), BunkerLink::None);
-        assert!(entity(&sim, id).radio_contacts.is_empty());
+        assert!(entity(&sim, id).seldom.radio_contacts.is_empty());
     }
     assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
 
@@ -2277,7 +2296,7 @@ fn a_refused_foot_or_a_held_tank_bunker_gets_no_order() {
     assert_eq!(foot.mission, mission);
     assert_eq!(foot.navigation.nav_com(), None);
     assert_eq!(foot.bunker.link(), BunkerLink::None);
-    assert!(foot.radio_contacts.is_empty());
+    assert!(foot.seldom.radio_contacts.is_empty());
 }
 
 /// Equidistant tank bunkers through the production walk: the house's list
@@ -2302,7 +2321,10 @@ fn of_equidistant_tank_bunkers_the_later_built_takes_the_tank() {
 
         assert!(tank_bunker_seek(&mut sim, &rules, tank));
 
-        assert_eq!(entity(&sim, tank).radio_contacts.slot(0), Some(bunkers[1]));
+        assert_eq!(
+            entity(&sim, tank).seldom.radio_contacts.slot(0),
+            Some(bunkers[1])
+        );
         assert_eq!(
             entity(&sim, tank).navigation.nav_com(),
             Some(NavTargetRef::object(bunkers[1]))
@@ -2331,7 +2353,7 @@ fn script_action_61_sends_the_members_a_tank_bunker_takes() {
     assert!(state.advance_pending());
     assert_eq!(sim.team_script_vm.team_for_member(first), None);
     let foot = entity(&sim, first);
-    assert_eq!(foot.radio_contacts.slot(0), Some(bunker));
+    assert_eq!(foot.seldom.radio_contacts.slot(0), Some(bunker));
     assert_eq!(
         foot.navigation.nav_com(),
         Some(NavTargetRef::object(bunker))
@@ -2341,7 +2363,7 @@ fn script_action_61_sends_the_members_a_tank_bunker_takes() {
         MissionId::from_known(MissionType::Enter)
     );
     assert_eq!(entity(&sim, second).bunker.link(), BunkerLink::None);
-    assert!(entity(&sim, second).radio_contacts.is_empty());
+    assert!(entity(&sim, second).seldom.radio_contacts.is_empty());
 }
 
 #[test]
@@ -2378,7 +2400,7 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
             }
         };
         assert!(sim.apply_command("Americans", &cancel, Some(&rules)));
-        assert!(entity(&sim, first).radio_contacts.is_empty());
+        assert!(entity(&sim, first).seldom.radio_contacts.is_empty());
         assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
         assert!(
             sim.apply_command(
@@ -2452,7 +2474,10 @@ fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
                 Some(&rules)
             ));
         }
-        assert_eq!(entity(&sim, first).radio_contacts.slot(0), Some(next));
+        assert_eq!(
+            entity(&sim, first).seldom.radio_contacts.slot(0),
+            Some(next)
+        );
         assert_eq!(
             entity(&sim, first).navigation.nav_com(),
             Some(NavTargetRef::object(next))
@@ -2538,7 +2563,7 @@ fn a_tank_bunker_approach_ends_with_either_side() {
 
         if bunker_goes {
             assert_eq!(entity(&sim, tank).bunker.link(), BunkerLink::None);
-            assert!(entity(&sim, tank).radio_contacts.is_empty());
+            assert!(entity(&sim, tank).seldom.radio_contacts.is_empty());
         } else {
             assert_eq!(install_state(&sim, bunker), (BunkerState::Idle, None));
         }
@@ -2587,7 +2612,7 @@ fn a_retail_tank_bunker_admits_the_lasher_and_the_gattling_tank() {
 
     assert!(tank_bunker_seek(&mut sim, rules, admitted[0].1));
     assert_eq!(
-        entity(&sim, admitted[0].1).radio_contacts.slot(0),
+        entity(&sim, admitted[0].1).seldom.radio_contacts.slot(0),
         Some(bunker)
     );
     assert_eq!(
@@ -2647,6 +2672,7 @@ fn nearest_occupiable_production_matches_native_controls() {
                 let entity = sim.substrate.entities.get_mut(building).unwrap();
                 //1x1 makes Location the native fixture's substituted GetCoords.
                 entity
+                    .seldom
                     .type_facts
                     .set_foundation_for_test("1x1".to_owned().into());
                 entity.position.put_world_xy([coord[0], coord[1]]);
@@ -2679,7 +2705,10 @@ fn nearest_occupiable_production_matches_native_controls() {
         assert_eq!(returned, row["result"] == 1, "row {number}: result");
         let actor = entity(&sim, foot);
         assert_eq!(
-            actor.building_entry.should_enter_nearest_occupiable(),
+            actor
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable(),
             row["latch_after"] == 1,
             "row {number}: retained691"
         );
@@ -2740,6 +2769,7 @@ fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
     );
     assert!(
         entity(&sim, occupier)
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable()
     );
@@ -2748,6 +2778,7 @@ fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
     }));
     assert!(
         entity(&sim, occupier)
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable(),
         "a computer occupant retains691 for ejection/retry"
@@ -2773,6 +2804,7 @@ fn nearest_occupiable_uses_native_playfield_instead_of_navigation_rectangle() {
     assert!(!whole_map_garrison_seek(&mut sim, &rules, occupier));
     assert!(
         !entity(&sim, occupier)
+            .seldom
             .building_entry
             .should_enter_nearest_occupiable()
     );

@@ -426,7 +426,7 @@ fn break_first_contact(
         .substrate
         .entities
         .get(building_id)
-        .and_then(|building| building.radio_contacts.slot(0));
+        .and_then(|building| building.seldom.radio_contacts.slot(0));
     if let Some(contact) = contact {
         transmit(
             sim,
@@ -826,6 +826,7 @@ mod tests {
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         sim.substrate
@@ -845,13 +846,13 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::Installed(2));
         assert!(
-            unit.in_logic_vector.is_member(),
+            unit.seldom.in_logic_vector.is_member(),
             "install leaves the unit active"
         );
         assert!(unit.lifecycle.object_alive());
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
-        assert!(!unit.selection.is_selected());
+        assert!(!unit.seldom.selection.is_selected());
         assert_eq!(unit.object_group(), -1);
         let follow: Vec<_> = sim
             .take_lifecycle_outputs_for_test()
@@ -953,12 +954,14 @@ mod tests {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(1);
         sim.substrate
             .entities
             .get_mut(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(2);
         let event = EntityDamageEvent::direct_receiver(
@@ -980,6 +983,7 @@ mod tests {
             None,
             &rules,
             Some(crate::sim::tiberium::test_support::overlay_registry()),
+            &mut Vec::new(),
         );
         assert!(
             !sim.substrate
@@ -1066,6 +1070,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         assert!(
@@ -1220,6 +1225,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         assert!(
@@ -1303,6 +1309,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         let tank = sim.substrate.entities.get(1).unwrap();
@@ -1362,6 +1369,7 @@ mod tests {
             .entities
             .get_mut(3)
             .unwrap()
+            .seldom
             .airstrike
             .set_test_link(Some(3));
         assert_eq!(stored(&sim, 3, &rules), Some(TargetKind::Entity(2)));
@@ -1414,7 +1422,7 @@ mod tests {
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
-        assert!(unit.in_logic_vector.is_member(), "unit revealed");
+        assert!(unit.seldom.in_logic_vector.is_member(), "unit revealed");
         assert!(unit.lifecycle.object_alive());
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
@@ -1493,7 +1501,10 @@ mod tests {
         );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
-        assert!(unit.in_logic_vector.is_member(), "unit remains active");
+        assert!(
+            unit.seldom.in_logic_vector.is_member(),
+            "unit remains active"
+        );
         assert!(unit.lifecycle.object_alive());
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
@@ -1529,7 +1540,7 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
         assert!(
-            unit.in_logic_vector.is_member(),
+            unit.seldom.in_logic_vector.is_member(),
             "clear preserves live membership"
         );
         assert!(unit.lifecycle.object_alive());
@@ -1668,7 +1679,7 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
         assert!(
-            unit.in_logic_vector.is_member(),
+            unit.seldom.in_logic_vector.is_member(),
             "occupant remains active after sell"
         );
         assert_eq!((unit.position.rx(), unit.position.ry()), (12, 12));

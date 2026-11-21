@@ -85,8 +85,7 @@ fn f64_hex(value: f64) -> String {
 /// no Rust seed/search supplies a replacement Random2 decision.
 fn import_rng(sim: &mut Simulation, native: &Value) {
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap())
-            .into();
+        SimRng::from_native_state_hex_for_test(native["main"]["before_hex"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["scenario"]["before_hex"].as_str().unwrap());
     sim.mapgen_rng =
@@ -166,9 +165,10 @@ fn original_foundation_startup_rows_feed_the_factory_track_head() {
             );
         }
         assert_eq!(
-            json!(crate::sim::docking::building_dock::foundation_exit_list(
-                &object.foundation
-            )),
+            json!(
+                crate::sim::docking::building_dock::foundation_exit_list(&object.foundation)
+                    .collect::<Vec<_>>()
+            ),
             row["list_before_terminator"],
             "{} original sentinel list",
             def.name
@@ -396,6 +396,7 @@ fn actor_input(actor: &mut GameEntity, native: &Value) {
         .lifecycle
         .set_cell_marked_for_test(native["marked"] == 1);
     actor
+        .seldom
         .in_logic_vector
         .set_for_test(native["logic_registered"] == 1);
     actor.set_in_playfield(native["in_playfield"] == 1);
@@ -496,6 +497,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
             .entities
             .get(*product)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .is_none()
@@ -521,6 +523,7 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
             .entities
             .get(*product)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0)
             .is_some()
@@ -552,7 +555,7 @@ fn assert_actor(actor: &GameEntity, native: &Value, name: &str) {
         ("alive", actor.lifecycle.object_alive()),
         ("limbo", actor.lifecycle.in_limbo()),
         ("marked", actor.lifecycle.cell_marked()),
-        ("logic_registered", actor.in_logic_vector.is_member()),
+        ("logic_registered", actor.seldom.in_logic_vector.is_member()),
         ("in_playfield", actor.in_playfield()),
         ("on_bridge", actor.on_bridge()),
     ] {
@@ -616,17 +619,17 @@ fn assert_snapshot(fixture: &Fixture, native: &Value, name: &str) {
     ] {
         let expected = &native["radio_pair"][role];
         assert_eq!(
-            json!(actor.radio_contacts.capacity()),
+            json!(actor.seldom.radio_contacts.capacity()),
             expected["contact_capacity"]
         );
         let contact = (expected["contacts"][0] != "0x0").then_some(other);
         assert_eq!(
-            actor.radio_contacts.slot(0),
+            actor.seldom.radio_contacts.slot(0),
             contact,
             "{name}: {role} Contact0"
         );
         assert_eq!(
-            actor.tether.partner(),
+            actor.seldom.tether.partner(),
             (expected["tether"] == 1).then_some(other),
             "{name}: {role} tether"
         );
@@ -951,16 +954,19 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             entity
                 .lifecycle
                 .set_cell_marked_for_test(actor["marked"] == 1);
-            entity.in_logic_vector.set_for_test(actor["logic"] == 1);
+            entity
+                .seldom
+                .in_logic_vector
+                .set_for_test(actor["logic"] == 1);
             entity.set_in_playfield(actor["in_playfield"] == 1);
             assert_eq!(actor["contacts"], json!([0]));
-            assert!(entity.radio_contacts.is_empty());
+            assert!(entity.seldom.radio_contacts.is_empty());
             assert_eq!(
-                json!(entity.radio_contacts.capacity()),
+                json!(entity.seldom.radio_contacts.capacity()),
                 actor["radio_capacity"]
             );
             assert_eq!(actor["tether"], 0);
-            assert_eq!(entity.tether.partner(), None);
+            assert_eq!(entity.seldom.tether.partner(), None);
             entity.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_raw(int(&actor["current"])),
                 suspended: MissionId::NONE,
@@ -1036,7 +1042,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         }
         sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["scenario"].as_str().unwrap());
         sim.mapgen_rng =
@@ -1552,7 +1558,7 @@ fn retail_factory_guard_clears_its_exit_after_idle_entry() {
                             unit.navigation.nav_com(),
                             unit.mission.current(),
                             unit.mission.queued(),
-                            unit.radio_contacts.slot(0),
+                            unit.seldom.radio_contacts.slot(0),
                             unit.locomotor.as_ref().map(|loco| loco.active_kind()),
                         )
                     })
@@ -1779,8 +1785,8 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                     && !unit.lifecycle.in_limbo()
                     && unit.mission.current().known() == Some(MissionType::Move)
                     && unit.mission.queued() == MissionId::NONE
-                    && unit.radio_contacts.slot(0) == Some(factory)
-                    && unit.tether.partner() == Some(factory)
+                    && unit.seldom.radio_contacts.slot(0) == Some(factory)
+                    && unit.seldom.tether.partner() == Some(factory)
                     && bay_head(&sim, unit.stable_id()).is_some()
             })
             .map(|unit| unit.stable_id());
@@ -1835,8 +1841,8 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
         unit.navigation.nav_com(),
         Some(NavTargetRef::Object { id: transport })
     );
-    assert_eq!(unit.radio_contacts.slot(0), Some(factory));
-    assert_eq!(unit.tether.partner(), Some(factory));
+    assert_eq!(unit.seldom.radio_contacts.slot(0), Some(factory));
+    assert_eq!(unit.seldom.tether.partner(), Some(factory));
     assert_eq!(bay_head(&sim, product), Some(head));
 
     radio::take_transmit_log();
@@ -1864,12 +1870,13 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                 "Unit73A981 sends CanDock to the retained foreign NavCom after clearance: {sends:?}"
             );
             let unit = sim.substrate.entities.get(product).unwrap();
-            assert_eq!(unit.radio_contacts.slot(0), Some(transport));
+            assert_eq!(unit.seldom.radio_contacts.slot(0), Some(transport));
             assert_eq!(
                 sim.substrate
                     .entities
                     .get(transport)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .slot(0),
                 Some(product)
@@ -1879,11 +1886,12 @@ fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
                     .entities
                     .get(factory)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(product)
             );
-            assert!(!unit.radio_contacts.contains(factory));
-            assert_ne!(unit.tether.partner(), Some(factory));
+            assert!(!unit.seldom.radio_contacts.contains(factory));
+            assert_ne!(unit.seldom.tether.partner(), Some(factory));
             break;
         }
     }

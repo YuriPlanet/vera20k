@@ -102,8 +102,8 @@ pub(super) fn candidate_admitted(
             .team_script_vm
             .team_for_member(candidate.stable_id())
             .is_some_and(|(_, is_base_defense)| !is_base_defense)
-        || !candidate.base_defense_response.recruitable_a
-        || !candidate.base_defense_response.recruitable_b
+        || !candidate.seldom.base_defense_response.recruitable_a
+        || !candidate.seldom.base_defense_response.recruitable_b
         || !is_armed(
             candidate,
             candidate_object,

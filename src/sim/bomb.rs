@@ -984,7 +984,7 @@ impl Simulation {
             return false;
         };
         let combat = &rules.combat_damage;
-        if !self.house_is_human_player(bomb.planter_house) {
+        if !self.control_projection().can_order(bomb.house()) {
             return false;
         }
         if rules.ares_form() {
@@ -1090,7 +1090,8 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
-    ) -> Option<(DeathEffects, Vec<UnderAttackEvent>)> {
+        pings: &mut Vec<UnderAttackEvent>,
+    ) -> Option<DeathEffects> {
         let blast = Self::take_bomb_blast(
             &self.interner,
             &self.session,
@@ -1108,7 +1109,7 @@ impl Simulation {
             return None;
         };
         let origin = blast.origin(&mut self.interner, warhead);
-        let (mut effects, pings, crit_active, _area_result) = apply_area_damage_in_run(
+        let (mut effects, crit_active, _area_result) = apply_area_damage_in_run(
             self,
             run,
             rules,
@@ -1118,10 +1119,11 @@ impl Simulation {
             warhead,
             true,
             origin,
+            pings,
         );
         effects.bridge_state_changed |=
             self.bomb_blast_tail(&blast, carrier, warhead, rules, crit_active, run.effects());
-        Some((effects, pings))
+        Some(effects)
     }
 
     /// `BombClass::Detonate` after its Apply_area_damage (`0x004387A3`): the
@@ -1180,7 +1182,7 @@ fn ivan_bomb_settings<'r>(
 ) -> &'r AresIvanBomb {
     static CONSTRUCTED: AresIvanBomb = AresIvanBomb::CONSTRUCTED;
     weapon
-        .and_then(|weapon| rules.weapon(interner.resolve(weapon)))
+        .and_then(|weapon| interner.weapon_type(weapon, rules))
         .map_or(&CONSTRUCTED, |weapon| &weapon.ares_ivan_bomb)
 }
 

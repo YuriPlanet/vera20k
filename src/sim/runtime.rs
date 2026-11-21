@@ -125,6 +125,10 @@ impl<'a> SimView<'a> {
         self.simulation.entities()
     }
 
+    pub fn control_projection(&self) -> crate::sim::world::ControlProjection<'a> {
+        self.simulation.control_projection()
+    }
+
     pub fn session(&self) -> &'a crate::sim::scenario_session::ScenarioSession {
         &self.simulation.session
     }
@@ -810,22 +814,32 @@ pub fn spawn_terrain_tile_animations(
             draw_runtime: AnimDrawRuntime::default(),
             owner: None,
         };
-        let id = sim
-            .spawn_anim_at_world(
-                rules,
-                descriptor,
-                AnimWorldCoord {
-                    x: tile.world_x,
-                    y: tile.world_y,
-                    z: tile.world_z,
-                },
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "resolved terrain animation [{}] must be bound before map spawn: {error}",
-                    tile.anim_name
-                )
-            });
+        let world = AnimWorldCoord {
+            x: tile.world_x,
+            y: tile.world_y,
+            z: tile.world_z,
+        };
+        // The loader binds every `Tile%02dAnim` name as a scheduler root, so
+        // the type resolves; construction can still refuse a mod's own ART
+        // for it, such as a `Bouncer=` launch outside the modelled x87 domain
+        // or an invalid Tiberium image start. VERA then loads the map
+        // without this tile's producer write (VERA's choice: gamemd's
+        // constructor 0x00421EA0 has no refusal path). A refused launch
+        // removes the anim; a refused Tiberium start, which fails after the
+        // constructor registered and revealed the anim, leaves it registered
+        // without its ZAdjust (residual, in the anim constructor).
+        let id = match sim.spawn_anim_at_world(rules, descriptor, world) {
+            Ok(id) => id,
+            Err(error) => {
+                log::warn!(
+                    "tile animation [{}] at ({}, {}) not spawned: {error}",
+                    tile.anim_name,
+                    tile.rx,
+                    tile.ry
+                );
+                continue;
+            }
+        };
         assert!(
             sim.substrate
                 .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
@@ -1441,6 +1455,8 @@ pub enum ScenarioFinalizeError {
     ControlGrants(#[from] crate::sim::control_authority::ControlGrantError),
     #[error(transparent)]
     Overlay(#[from] crate::sim::crates::RuntimeOverlayError),
+    #[error(transparent)]
+    StageCarryOver(#[from] crate::sim::campaign_carry_over::StageCarryOverError),
 }
 
 /// Post-funnel scenario finalization shared by the app loader and the
@@ -1455,6 +1471,7 @@ pub fn finalize_constructed_scenario(
     house_roster: &crate::map::houses::HouseRoster,
     construction_rules: RulePolicy,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
+    stage_carry_over: Option<&crate::sim::campaign_carry_over::StageCarryOver>,
 ) -> Result<crate::sim::scenario_post_map::ScenarioPostMapOutput, ScenarioFinalizeError> {
     if let Some(launch) = skirmish_session {
         sim.install_control_grants(launch.control_grants().to_vec())?;
@@ -1543,11 +1560,7 @@ pub fn finalize_constructed_scenario(
     }
     // The caller submits one immutable initialization command; Simulation owns
     // every match-affecting write and Scenario RNG draw in the post-map tail.
-    let campaign_map = sim
-        .session
-        .campaign_mission_counter()
-        .filter(|_| !sim.session.game_mode_nonzero())
-        .map(|_| map_data);
+    let campaign_map = sim.session.campaign_mission_counter().map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
@@ -1559,8 +1572,14 @@ pub fn finalize_constructed_scenario(
             construction_rules,
             skirmish_session,
             campaign_map,
+            stage_home_global: stage_carry_over
+                .and_then(|record| record.globals())
+                .map(|globals| globals[0]),
         })?;
     sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules));
+    if let Some(record) = stage_carry_over {
+        sim.restore_stage_carry_over(record, rules)?;
+    }
     // Fresh source changes and Anim intensity reads transfer together to the
     // lighting owner. Discarding this prefix loses pre-building CellAnim light.
     Ok(output)
@@ -1599,6 +1618,7 @@ fn finalization_keeps_populated_neighbor_counts() {
         &rules,
         &roster,
         RulePolicy::stock_campaign(),
+        None,
         None,
     )
     .unwrap();

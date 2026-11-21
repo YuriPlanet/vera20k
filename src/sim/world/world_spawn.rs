@@ -247,7 +247,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return false;
         };
-        if entity.in_logic_vector.is_member() {
+        if entity.seldom.in_logic_vector.is_member() {
             return false;
         }
         entity.position.put_location(coord);
@@ -574,7 +574,7 @@ impl Simulation {
                     // separately from this exact caller coordinate.
                     ge.position.put_location(requested);
                 }
-                ge.base_defense_response
+                ge.seldom.base_defense_response
                     .author_recruitable(map_ent.recruitable_a, map_ent.recruitable_b);
                 // gamemd.exe Unit7434CA/Aircraft41B33D/Infantry51FD89, before Unlimbo.
                 ge.assign_object_group(map_ent.group);
@@ -601,7 +601,7 @@ impl Simulation {
                 // constructor and before the Unlimbo (`BuildingClass::ReadFromINI`
                 // `0x0044FB5B`, `0x0044FB70`).
                 if map_ent.category == EntityCategory::Structure {
-                    ge.ai_sell_repair.read_map_line(
+                    ge.seldom.ai_sell_repair.read_map_line(
                         map_ent.structure_ai_sellable,
                         map_ent.structure_ai_repairable,
                     );
@@ -1633,8 +1633,14 @@ impl Simulation {
         if building.category() != EntityCategory::Structure {
             return None;
         }
-        //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once.
-        let foundation = building.type_facts.foundation().cell_offsets();
+        //458A92 reads Object5F5B90 -> Type45EC20's sentinel list once. The
+        // walk changes the world, so the list is copied out of the building.
+        let foundation: Vec<_> = building
+            .seldom
+            .type_facts
+            .foundation()
+            .cell_offsets()
+            .collect();
         let origin = (
             crate::util::lepton::lepton_to_cell_packed(coord.x),
             crate::util::lepton::lepton_to_cell_packed(coord.y),
@@ -1990,8 +1996,8 @@ impl Simulation {
         // facts explicit so storage can never imply cell or logic presence.
         ge.lifecycle.reset_constructed();
         // ObjectClass's constructor clears IsInLogic (`0x005F398D`).
-        ge.in_logic_vector.mark(false);
-        ge.kill_record.reset_constructed();
+        ge.seldom.in_logic_vector.mark(false);
+        ge.seldom.kill_record.reset_constructed();
 
         substrate.entities.insert(ge);
         // Phobos TechnoExt::InitializeState, hook 0x006F42F7: every Foot
@@ -2269,6 +2275,7 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
             entity
+                .seldom
                 .sub_cell
                 .hold_offset(position.sub_x(), position.sub_y());
         }
@@ -2564,7 +2571,7 @@ impl Simulation {
         // its refusal clears Unit+0x68C (0x00739AA7).
         if !self.can_deploy_slash_unload(stable_id, rules) {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.mcv_deploy_pending.clear();
+                entity.seldom.mcv_deploy_pending.clear();
             }
             return false;
         }
@@ -2592,7 +2599,7 @@ impl Simulation {
                 yard_obj.id.clone(),
                 yard_obj.deploy_facing,
                 (
-                    entity.selection.is_selected(),
+                    entity.seldom.selection.is_selected(),
                     entity.veterancy.clone(),
                     entity.object_group_copy(),
                     entity.attack_target.target(),
@@ -2684,6 +2691,7 @@ impl Simulation {
                 .entities
                 .get_mut(stable_id)
                 .unwrap()
+                .seldom
                 .mcv_deploy_pending
                 .clear();
             crate::sim::mcv_deploy::queue_guard(self, stable_id, rules);
@@ -2713,7 +2721,7 @@ impl Simulation {
                 frame_effects,
             );
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.mcv_deploy_pending.raise();
+                entity.seldom.mcv_deploy_pending.raise();
             }
             return true;
         }
@@ -2745,7 +2753,7 @@ impl Simulation {
                 // Controlled unavailable Rust prerequisite; no native
                 // constructor/placement transaction has started here.
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                    entity.mcv_deploy_pending.clear();
+                    entity.seldom.mcv_deploy_pending.clear();
                 }
                 return false;
             };
@@ -2760,7 +2768,7 @@ impl Simulation {
             {
                 log::warn!("MCV deploy refused: no usable AI base plan for {country_name}");
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                    entity.mcv_deploy_pending.clear();
+                    entity.seldom.mcv_deploy_pending.clear();
                 }
                 return false;
             }
@@ -2777,7 +2785,7 @@ impl Simulation {
             ))
         }) else {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.mcv_deploy_pending.clear();
+                entity.seldom.mcv_deploy_pending.clear();
             }
             return false;
         };
@@ -2809,7 +2817,7 @@ impl Simulation {
             self.locomotor_mark_all_occupation_bits(stable_id, true, rules.ares_form());
             self.foot_mark_put(stable_id, rules, registry, frame_effects);
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.mcv_deploy_pending.clear();
+                entity.seldom.mcv_deploy_pending.clear();
             }
             return false;
         };
@@ -2827,7 +2835,7 @@ impl Simulation {
         // so only its discovery/IsHumanPlayer gate differs from this raw
         // flag; `techno_select` would refuse the still-limboed building here.
         if was_selected {
-            destination.selection.select();
+            destination.seldom.selection.select();
         }
         // Construction is queued before the Unlimbo (0x007396D5), so its
         // cell-put and owner discoveries leave the yard shut while that
@@ -2851,7 +2859,7 @@ impl Simulation {
             self.foot_mark_put(stable_id, rules, registry, frame_effects);
             //739AA7 clears+68C only after both original restoration calls.
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.mcv_deploy_pending.clear();
+                entity.seldom.mcv_deploy_pending.clear();
             }
             return false;
         }
@@ -2911,7 +2919,7 @@ impl Simulation {
         if !self.owner_is_human(owner_id)
             && let Some(building) = self.substrate.entities.get_mut(new_sid)
         {
-            building.ai_sell_repair.make_repairable();
+            building.seldom.ai_sell_repair.make_repairable();
         }
         // 0x0073982C: the building takes the unit's target.
         let _ = self.assign_target_represented(new_sid, source_target, rules, frame_effects);
@@ -3007,19 +3015,18 @@ impl Simulation {
     pub(crate) fn undeploy_building(
         &mut self,
         stable_id: u64,
+        delegated: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        self.can_undeploy_building_runtime(stable_id, rules)
-            && production::sell_back(
-                self,
-                rules,
-                stable_id,
-                production::SellOrder::Undeploy,
-                registry,
-                frame_effects,
-            )
+        let order = if delegated {
+            production::SellOrder::DelegatedRedeploy { explicit: true }
+        } else {
+            production::SellOrder::Undeploy
+        };
+        self.can_undeploy_building_runtime(stable_id, delegated, rules)
+            && production::sell_back(self, rules, stable_id, order, registry, frame_effects)
     }
 
     /// `BuildingClass::Mission_Selling`'s UndeploysInto conversion (`0x00449CEA`), on
@@ -3066,7 +3073,7 @@ impl Simulation {
                     rx,
                     ry,
                     entity.position.z(),
-                    entity.selection.is_selected(),
+                    entity.seldom.selection.is_selected(),
                     // Selling449FED..44A002: the unit's Unlimbo direction is
                     // the building type's DeployFacing (+0xEDC, 0x00465D70).
                     building_type.deploy_facing,
@@ -3201,7 +3208,7 @@ impl Simulation {
             // skips its discovery/IsHumanPlayer gate, ObjectClass::Select and
             // tag event 0x21.
             if was_selected {
-                unit.selection.select();
+                unit.seldom.selection.select();
             }
             // gamemd.exe BuildingClass::Mission_Selling copies +214 at44A052.
             unit.assign_object_group_copy(source_group);
@@ -3251,7 +3258,12 @@ impl Simulation {
         );
     }
 
-    pub(crate) fn can_undeploy_building_runtime(&self, stable_id: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn can_undeploy_building_runtime(
+        &self,
+        stable_id: u64,
+        delegated: bool,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -3274,10 +3286,26 @@ impl Simulation {
         if !obj.construction_yard {
             return true;
         }
-        self.construction_yard_redeploy_core_gate(entity)
+        (!delegated
+            || self
+                .session
+                .rule_policy()
+                .allows_construction_yard_redeploy())
+            && self.construction_yard_redeploy_core_gate(
+                entity,
+                delegated
+                    || self
+                        .houses
+                        .get(&entity.owner())
+                        .is_some_and(|house| house.is_human()),
+            )
     }
 
-    pub(super) fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
+    pub(crate) fn construction_yard_redeploy_core_gate(
+        &self,
+        entity: &GameEntity,
+        authorized: bool,
+    ) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
         // contacts. Selling44AB68/44A2EE notifies and breaks them later.
         if !self.session.game_options().mcv_redeploy {
@@ -3286,12 +3314,10 @@ impl Simulation {
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and
         // `ShouldShowDeployButton @ 0x0044F614`: a mind-controlled yard (+0x2C0)
         // cannot repack.
-        if entity.mind_control.controller().is_some() {
+        if entity.seldom.mind_control.controller().is_some() {
             return false;
         }
-        self.houses
-            .get(&entity.owner())
-            .is_some_and(|house| house.is_human())
+        authorized
     }
 }
 

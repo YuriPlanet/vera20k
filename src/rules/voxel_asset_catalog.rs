@@ -503,7 +503,7 @@ mod tests {
         );
         let changed = read("[SOURCE]\nImage=ALT\nTurret=?\nNoSpawnAlt=?\n");
         assert!(changed.object("SOURCE").unwrap().has_turret);
-        assert!(changed.object("SOURCE").unwrap().no_spawn_alt);
+        assert!(changed.object("SOURCE").unwrap().no_spawn_alt());
         assert_eq!(
             changed
                 .loaded_voxel_model("SOURCE")

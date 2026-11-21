@@ -4,6 +4,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::movement::locomotor::{LocomotorState, MovementLayer};
+use crate::sim::vision;
 use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
 
 fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
@@ -97,6 +98,7 @@ fn insert(
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
     }
@@ -561,6 +563,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
                 .entities
                 .get(10)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .timer(viewer),
             crate::sim::timer::CdTimer::started(239, 15)

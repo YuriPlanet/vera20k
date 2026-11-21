@@ -547,7 +547,7 @@ impl Simulation {
             return;
         }
         let (rof, damage, paralyzes) = (weapon.rof, weapon.damage, warhead.paralyzes);
-        let anims = weapon.anim.clone();
+        let anims = &weapon.anim;
         let warhead_id = self.interner.intern(warhead_name);
         self.substrate
             .entities
@@ -1207,7 +1207,7 @@ impl Simulation {
         // of a human player's house (IsHumanPlayer 0x0050B6F0, 0x006FF786)
         // jumping an Infantry target.
         let reselect = object.reselect_if_limboed
-            && entity.selection.is_selected()
+            && entity.seldom.selection.is_selected()
             && self.house_is_human_player(entity.owner())
             && target_infantry;
         if reselect {

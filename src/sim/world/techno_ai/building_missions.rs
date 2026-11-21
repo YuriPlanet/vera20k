@@ -536,8 +536,8 @@ fn mission_factory_unload(
     let ticks = object.deploy_time_ticks;
     let naval = object.naval;
     let phase = entity.door_phase();
-    let contact = entity.radio_contacts.slot(0);
-    let tethered = entity.tether.partner().is_some();
+    let contact = entity.seldom.radio_contacts.slot(0);
+    let tethered = entity.seldom.tether.partner().is_some();
     let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
     let track = crate::sim::movement::factory_exit_track_coordinate(location, object);
     let damaged = requested_damage_state(
@@ -813,18 +813,16 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
     }
     // `0x00449817..0x00449833`: UnitRepair, UnitReload or Bunker
     // (`+0x16A9/+0x16AA/+0x16AB`) takes the contact arm.
-    if status == 1 && (obj.unit_repair || obj.unit_reload || obj.bunker) {
+    if status == 1
+        && (obj.unit_repair || obj.unit_reload || obj.bunker)
+        && let Some(depot) = sim.substrate.entities.get(id)
+    {
         //449839..44994A: scan contacts in slot order, raw GetCoords 3D
         //distance <64 (no Building foundation discount), then NEED_MOVE;
-        //on ROGER queue Repair and return 1 with no Scenario draw.
-        let contacts: Vec<_> = sim
-            .substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .radio_contacts
-            .iter_live()
-            .collect();
+        //on ROGER queue Repair and return 1 with no Scenario draw. Each
+        //NEED_MOVE runs the contact's receivers, so the scan walks the
+        //contacts as they stood when it began.
+        let contacts: Vec<_> = depot.seldom.radio_contacts.iter_live().collect();
         for contact in contacts {
             let Some(unit) = sim.substrate.entities.get(contact) else {
                 continue;
@@ -832,8 +830,11 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             if unit.mission.effective() != MissionId::from_known(MissionType::Enter) {
                 continue;
             }
+            let Some(depot) = sim.substrate.entities.get(id) else {
+                break;
+            };
             let center = crate::sim::movement::ground_pose::object_get_coords(
-                sim.substrate.entities.get(id).unwrap(),
+                depot,
                 sim.resolved_terrain.as_ref(),
             );
             let position = crate::sim::movement::ground_pose::object_get_coords(
@@ -891,7 +892,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| !entity.radio_contacts.is_empty())
+            .is_some_and(|entity| !entity.seldom.radio_contacts.is_empty())
     {
         use crate::sim::radio::{RadioMessage, RadioResponse, transmit_to_contact};
         if transmit_to_contact(sim, id, RadioMessage::QueryReloaded, rules, ctx.effects)
@@ -1407,7 +1408,7 @@ fn prism_arm(
         &fire_coord::FireSource::of_entity(master),
         obj,
         0,
-        (master.weapon_burst.index() & 1) as u8,
+        (master.seldom.weapon_burst.index() & 1) as u8,
         crate::rules::flh::Flh::default(),
     )
     .coord;
@@ -1457,7 +1458,7 @@ fn prism_supporter(
         };
         let admitted = candidate.lifecycle.object_alive()
             && candidate.type_ref() == master.type_ref()
-            && candidate.rearm_timer.remaining(now) == 0
+            && candidate.seldom.rearm_timer.remaining(now) == 0
             && candidate.building.pending_building_fire.remaining_ticks() == 0
             && candidate.drain.draining_me().is_none()
             && candidate.mission.effective() != attack
@@ -1575,6 +1576,7 @@ fn stock_delayed_fire(
                 .expect("live support source");
             entity.building.prism_support_count.reset();
             entity
+                .seldom
                 .rearm_timer
                 .start(now, rules.general.prism_support.delay);
         }

@@ -196,8 +196,8 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
             assert!(ship.lifecycle.cell_marked());
             assert_eq!(producer.mission.current().known(), Some(MissionType::Guard));
             assert_eq!(producer.mission.queued().known(), Some(MissionType::Unload));
-            assert!(producer.radio_contacts.is_empty());
-            assert_eq!(ship.tether.partner(), None);
+            assert!(producer.seldom.radio_contacts.is_empty());
+            assert_eq!(ship.seldom.tether.partner(), None);
             assert_eq!(sim.houses[&owner].economy().spent_credits(), cost);
             assert_eq!(sim.houses[&owner].economy().credits(), 10_000 - cost);
         }
@@ -229,7 +229,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
                 "expired Production is retired"
             );
             assert_eq!(producer.mission.current().known(), Some(MissionType::Guard));
-            assert!(producer.radio_contacts.is_empty());
+            assert!(producer.seldom.radio_contacts.is_empty());
             recovered = true;
             break;
         }
@@ -404,8 +404,7 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
             let before = &row["observation"]["rng_before"];
             sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(before["scenario"].as_str().unwrap());
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap()).into();
+            sim.main_rng = SimRng::from_native_state_hex_for_test(before["main"].as_str().unwrap());
             sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(before["mapgen"].as_str().unwrap());
 
@@ -2260,7 +2259,8 @@ pub(super) fn children(sim: &Simulation, parent: u64) -> Vec<u64> {
             .expect("held manager child remains represented");
         assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked());
         assert!(
-            child.spawn_owner_id.owner() == Some(parent) || child.slave.owner() == Some(parent)
+            child.seldom.spawn_owner_id.owner() == Some(parent)
+                || child.seldom.slave.owner() == Some(parent)
         );
     }
     ids
@@ -2467,7 +2467,7 @@ fn a_produced_slave_miner_leaves_tethered_without_hunting_yet() {
     assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     let entity = sim.substrate.entities.get(produced).unwrap();
     assert!(!entity.lifecycle.in_limbo(), "SMIN delivered");
-    assert_eq!(entity.tether.partner(), Some(1));
+    assert_eq!(entity.seldom.tether.partner(), Some(1));
     assert_eq!(
         entity.slave_manager.as_ref().unwrap().state(),
         crate::sim::slave_manager::ManagerState::Ready,
@@ -2524,7 +2524,7 @@ fn produced_infantry_retains_its_barracks_rally_until_exit_handoff() {
         Some(crate::sim::components::NavTargetRef::cell(30, 30))
     );
     assert!(entity.has_live_contact_with(2));
-    assert_eq!(entity.tether.partner(), Some(2));
+    assert_eq!(entity.seldom.tether.partner(), Some(2));
 }
 
 /// `TechnoClass::ChangeOwner @ 0x007014A0` clears the ArchiveTarget
@@ -3555,7 +3555,7 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     assert!(dispatch_production_changes_for_tests(&mut sim, &rules));
     assert!(sim.pending_command_snapshot().is_empty());
     let first_entity = sim.substrate.entities.get(first).unwrap();
-    assert!(!first_entity.lifecycle.in_limbo() && first_entity.in_logic_vector.is_member());
+    assert!(!first_entity.lifecycle.in_limbo() && first_entity.seldom.in_logic_vector.is_member());
     assert_eq!(
         sim.sound_events
             .iter()
@@ -3567,15 +3567,15 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
         1,
         "the first successful GI has one creation request"
     );
-    let first_contacts = first_entity.radio_contacts.clone();
+    let first_contacts = first_entity.seldom.radio_contacts.clone();
     assert_eq!(first_contacts.slot(0), Some(producer));
-    assert_eq!(first_entity.tether.partner(), Some(producer));
+    assert_eq!(first_entity.seldom.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
-    let producer_contacts = producer_entity.radio_contacts.clone();
+    let producer_contacts = producer_entity.seldom.radio_contacts.clone();
     assert_eq!(producer_contacts.capacity(), 1);
     assert_eq!(producer_contacts.slot(0), Some(first));
     assert_eq!(producer_contacts.first_free(), None);
-    assert_eq!(producer_entity.tether.partner(), Some(first));
+    assert_eq!(producer_entity.seldom.tether.partner(), Some(first));
     assert!(
         sim.production
             .factories()
@@ -3684,13 +3684,13 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
     );
     let successor_entity = sim.substrate.entities.get(successor).unwrap();
     assert!(successor_entity.lifecycle.in_limbo() && !successor_entity.lifecycle.cell_marked());
-    assert!(!successor_entity.in_logic_vector.is_member());
+    assert!(!successor_entity.seldom.in_logic_vector.is_member());
     let first_entity = sim.substrate.entities.get(first).unwrap();
-    assert_eq!(first_entity.radio_contacts, first_contacts);
-    assert_eq!(first_entity.tether.partner(), Some(producer));
+    assert_eq!(first_entity.seldom.radio_contacts, first_contacts);
+    assert_eq!(first_entity.seldom.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
-    assert_eq!(producer_entity.radio_contacts, producer_contacts);
-    assert_eq!(producer_entity.tether.partner(), Some(first));
+    assert_eq!(producer_entity.seldom.radio_contacts, producer_contacts);
+    assert_eq!(producer_entity.seldom.tether.partner(), Some(first));
     assert!(
         sim.production
             .factories()

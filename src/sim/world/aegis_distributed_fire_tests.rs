@@ -184,13 +184,13 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
             // keeps the index instead.
             if !scene.rules.ares() {
                 assert_eq!(
-                    source.weapon_burst.index(),
+                    source.seldom.weapon_burst.index(),
                     0,
                     "changed NULL target resets elite Burst2 too"
                 );
             }
             assert_eq!(
-                source.weapon_burst.radial_index(),
+                source.seldom.weapon_burst.radial_index(),
                 index + 1,
                 "radial launch state is independent"
             );
@@ -260,10 +260,10 @@ fn distributed_explicit_attack_retains_target_and_elite_burst() {
             assert_eq!(source.attack_target.target(), Some(target));
             assert!(source.distributed_fire_history().is_empty());
             assert_eq!(
-                source.weapon_burst.index(),
+                source.seldom.weapon_burst.index(),
                 if elite { (index + 1) % 2 } else { 0 }
             );
-            assert_eq!(source.weapon_burst.radial_index(), index + 1);
+            assert_eq!(source.seldom.weapon_burst.radial_index(), index + 1);
         }
     }
 }

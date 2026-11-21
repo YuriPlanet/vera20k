@@ -127,14 +127,14 @@ pub(crate) fn broadcast(
         .substrate
         .entities
         .get(sender_sid)
-        .map_or(0, |sender| sender.radio_contacts.capacity());
+        .map_or(0, |sender| sender.seldom.radio_contacts.capacity());
 
     for slot in 0..capacity {
         let target_sid = sim
             .substrate
             .entities
             .get(sender_sid)
-            .and_then(|sender| sender.radio_contacts.slot(slot));
+            .and_then(|sender| sender.seldom.radio_contacts.slot(slot));
 
         #[cfg(any(test, feature = "test-support"))]
         record_test_event(RadioTestEvent::BroadcastSlotRead {
@@ -223,7 +223,7 @@ pub(crate) fn transmit_to_contact(
         .substrate
         .entities
         .get(sender_sid)
-        .and_then(|sender| sender.radio_contacts.slot(0))
+        .and_then(|sender| sender.seldom.radio_contacts.slot(0))
     else {
         return RadioResponse::None;
     };
@@ -266,13 +266,13 @@ fn transmit_hello(
     let Some(sender) = sim.substrate.entities.get(sender_sid) else {
         return RadioResponse::Negatory;
     };
-    if sender.radio_contacts.contains(target_sid) {
+    if sender.seldom.radio_contacts.contains(target_sid) {
         return RadioResponse::Roger;
     }
-    let slot = match sender.radio_contacts.first_free() {
+    let slot = match sender.seldom.radio_contacts.first_free() {
         Some(slot) => slot,
         None => {
-            if let Some(evicted) = sender.radio_contacts.slot(0) {
+            if let Some(evicted) = sender.seldom.radio_contacts.slot(0) {
                 transmit(
                     sim,
                     sender_sid,
@@ -299,7 +299,7 @@ fn transmit_hello(
         return RadioResponse::Negatory;
     }
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-        sender.radio_contacts.set_slot(slot, target_sid);
+        sender.seldom.radio_contacts.set_slot(slot, target_sid);
     }
     RadioResponse::Roger
 }
@@ -315,7 +315,7 @@ fn transmit_over_out(
     effects: FrameEffects<'_>,
 ) -> RadioResponse {
     if let Some(sender) = sim.substrate.entities.get_mut(sender_sid) {
-        while sender.radio_contacts.remove(target_sid).is_some() {}
+        while sender.seldom.radio_contacts.remove(target_sid).is_some() {}
     }
 
     #[cfg(any(test, feature = "test-support"))]

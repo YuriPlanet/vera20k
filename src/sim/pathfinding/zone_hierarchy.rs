@@ -154,7 +154,7 @@ const ZONE_BASE_COSTS: [i32; passability::TERRAIN_TYPE_COUNT] = [1, 0, 0, 1, 1, 
 /// `parent` links to the next coarser level (`level + 1`) and is zero at the
 /// top level. `zone_type` is the reduced 0..7 type consumed by the movement-zone
 /// passability matrix and base-cost table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ZoneRecord {
     pub zone_id: ZoneId,
     pub parent: ZoneId,
@@ -198,7 +198,7 @@ impl ZoneRecord {
 }
 
 /// Ordered edge record. The order inside a zone's edge list is load-bearing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ZoneEdgeRecord {
     pub neighbor: ZoneId,
     pub flag: u8,
@@ -211,7 +211,7 @@ impl ZoneEdgeRecord {
 }
 
 /// One hierarchy level. Index 0 is the invalid sentinel zone.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZoneLevelGraph {
     records: Vec<Option<ZoneRecord>>,
     edges: Vec<Vec<ZoneEdgeRecord>>,
@@ -429,6 +429,61 @@ pub struct ZoneHierarchy {
 }
 
 impl ZoneHierarchy {
+    pub(crate) fn saved_levels(&self) -> &[ZoneLevelGraph; ZONE_PRECHECK_LEVELS] {
+        &self.levels
+    }
+
+    /// Retain native record IDs and ordered edges after a custom checkpoint.
+    /// Rebuild precheck answers from the validated history on demand.
+    pub(crate) fn from_saved_levels(
+        levels: [ZoneLevelGraph; ZONE_PRECHECK_LEVELS],
+        dimensions: (u16, u16),
+        native_source_size: Option<(i32, i32)>,
+    ) -> Result<Self, &'static str> {
+        let cell_count = usize::from(dimensions.0) * usize::from(dimensions.1);
+        let native_slot_count = native_source_size
+            .and_then(|(width, height)| width.checked_add(height)?.checked_add(1))
+            .and_then(|side| usize::try_from(side).ok())
+            .and_then(|side| side.checked_mul(side))
+            .unwrap_or(cell_count);
+        for (index, graph) in levels.iter().enumerate() {
+            let slots = graph.records.len();
+            if (graph.width, graph.height) != dimensions
+                || graph.cell_zone_ids.len() != cell_count
+                || graph.edges.len() != slots
+                || slots == 0
+            {
+                return Err("saved zone level dimensions or record slots differ");
+            }
+            let parent_slots = levels
+                .get(index + 1)
+                .map_or(1, |parent| parent.records.len());
+            let valid = |zone: ZoneId| (zone as usize) < slots;
+            if graph.records.iter().enumerate().any(|(slot, record)| {
+                record.is_some_and(|record| {
+                    record.zone_id as usize != slot
+                        || record.parent as usize >= parent_slots
+                        || usize::from(record.zone_type) >= passability::TERRAIN_TYPE_COUNT
+                })
+            }) || graph
+                .edges
+                .iter()
+                .flatten()
+                .any(|edge| !valid(edge.neighbor))
+                || graph.cell_zone_ids.iter().any(|&zone| !valid(zone))
+                || graph.native_padding_zone_ids.iter().any(|(&slot, &zone)| {
+                    slot >= native_slot_count || zone == ZONE_INVALID || !valid(zone)
+                })
+            {
+                return Err("saved zone level references an invalid slot");
+            }
+        }
+        Ok(Self {
+            levels,
+            memo: PrecheckMemo::default(),
+        })
+    }
+
     /// Fold the retained navigation history, including ordered native edges.
     /// Original584550 appends/replaces records after local changes;581F90 can
     /// produce a different graph from the same current Cell facts. Record+20
@@ -592,23 +647,29 @@ impl FromIterator<ZoneId> for MarkedZones {
     }
 }
 
-/// Successful precheck output: selected paths and marker sets per hierarchy level.
+/// Successful precheck output: each hierarchy level's selected route and the
+/// zones it marks. A level the memo answered shares the memo's own copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZonePrecheckResult {
-    pub paths: [Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
-    pub marked: [MarkedZones; ZONE_PRECHECK_LEVELS],
+    levels: [Arc<PrecheckLevelResult>; ZONE_PRECHECK_LEVELS],
     #[cfg(any(test, feature = "test-support"))]
     pub pops: Vec<(usize, ZoneId, u32, u32)>,
 }
 
 impl ZonePrecheckResult {
-    fn new() -> Self {
-        Self {
-            paths: std::array::from_fn(|_| Vec::new()),
-            marked: std::array::from_fn(|_| MarkedZones::default()),
-            #[cfg(any(test, feature = "test-support"))]
-            pops: Vec::new(),
-        }
+    /// `level`'s route, start zone first.
+    pub fn route(&self, level: usize) -> &[ZoneId] {
+        &self.levels[level].path
+    }
+
+    /// Every level's route, level 0 first.
+    pub fn routes(&self) -> [&[ZoneId]; ZONE_PRECHECK_LEVELS] {
+        std::array::from_fn(|level| self.route(level))
+    }
+
+    /// The zones `level`'s route marks.
+    pub fn marked(&self, level: usize) -> &MarkedZones {
+        &self.levels[level].marked
     }
 }
 
@@ -666,9 +727,11 @@ fn precheck_edge_cost(cost: NativeF32Bits, base: i32, threat: i32, flag: u8) -> 
     X87Chop53::store_f32(total).expect("bounded hierarchy cost")
 }
 
-#[derive(Clone, Debug, PartialEq)]
+/// One level search's answer: its route and the zones the route marks.
+#[derive(Debug, PartialEq, Eq)]
 struct PrecheckLevelResult {
     path: Vec<ZoneId>,
+    marked: MarkedZones,
     #[cfg(any(test, feature = "test-support"))]
     pops: Vec<(usize, ZoneId, u32, u32)>,
 }
@@ -683,12 +746,12 @@ struct PrecheckLevelResult {
 /// each time. The answers are exact, so the memo changes no result;
 /// [`ZoneHierarchy::levels_mut`] clears it. Each level's answers are split
 /// over [`PRECHECK_MEMO_SHARDS`] locks by start zone, so a path batch's
-/// workers seldom wait on each other; a kept answer is shared, and copied
-/// outside the lock.
+/// workers seldom wait on each other; a kept answer, route and marked zones,
+/// is shared with every precheck it answers, never copied.
 #[derive(Default)]
 struct PrecheckMemo([[Mutex<PrecheckAnswers>; PRECHECK_MEMO_SHARDS]; ZONE_PRECHECK_LEVELS]);
 
-type PrecheckAnswers = LookupMap<PrecheckKey, Arc<Option<PrecheckLevelResult>>>;
+type PrecheckAnswers = LookupMap<PrecheckKey, Option<Arc<PrecheckLevelResult>>>;
 
 /// Locks per memo level.
 const PRECHECK_MEMO_SHARDS: usize = 16;
@@ -718,23 +781,26 @@ impl PrecheckMemo {
         level: usize,
         key: PrecheckKey,
         search: impl FnOnce() -> Result<Option<PrecheckLevelResult>, String>,
-    ) -> Result<Option<PrecheckLevelResult>, String> {
+    ) -> Result<Option<Arc<PrecheckLevelResult>>, String> {
         let shard = self.shard(level, &key);
         let kept = lock(shard).get(&key).cloned();
         if let Some(answer) = kept {
-            let answer = Option::clone(&answer);
             // Every test that prechecks also checks the memo against a new
             // search, including after production hierarchy repairs.
             #[cfg(any(test, feature = "test-support"))]
-            assert_eq!(answer, search()?, "a kept precheck answer went stale");
+            assert_eq!(
+                answer.as_deref(),
+                search()?.as_ref(),
+                "a kept precheck answer went stale"
+            );
             return Ok(answer);
         }
-        let answer = search()?;
+        let answer = search()?.map(Arc::new);
         let mut answers = lock(shard);
         if answers.len() >= PRECHECK_MEMO_ANSWERS {
             answers.clear();
         }
-        answers.insert(key, Arc::new(answer.clone()));
+        answers.insert(key, answer.clone());
         Ok(answer)
     }
 
@@ -803,10 +869,12 @@ pub fn zone_precheck_flat(
 
     // Exclusions and threat costs are inputs the memo key does not hold.
     let memo = (exclusions.is_empty() && active_threat.is_none()).then_some(&hierarchy.memo);
-    let mut result = ZonePrecheckResult::new();
+    let mut levels: [Option<Arc<PrecheckLevelResult>>; ZONE_PRECHECK_LEVELS] = Default::default();
+    #[cfg(any(test, feature = "test-support"))]
+    let mut pops = Vec::new();
     for level in (0..ZONE_PRECHECK_LEVELS).rev() {
         let parent_marked = if level < TOP_LEVEL {
-            Some(&result.marked[level + 1])
+            levels[level + 1].as_deref().map(|parent| &parent.marked)
         } else {
             None
         };
@@ -832,18 +900,21 @@ pub fn zone_precheck_flat(
                 },
                 search,
             )?,
-            None => search()?,
+            None => search()?.map(Arc::new),
         };
         let Some(selected) = selected else {
             return Ok(ZonePrecheckOutcome::Failed);
         };
-        result.marked[level] = selected.path.iter().copied().collect();
-        result.paths[level] = selected.path;
         #[cfg(any(test, feature = "test-support"))]
-        result.pops.extend(selected.pops);
+        pops.extend_from_slice(&selected.pops);
+        levels[level] = Some(selected);
     }
 
-    Ok(ZonePrecheckOutcome::Passed(result))
+    Ok(ZonePrecheckOutcome::Passed(ZonePrecheckResult {
+        levels: levels.map(|level| level.expect("every level passed or the precheck failed")),
+        #[cfg(any(test, feature = "test-support"))]
+        pops,
+    }))
 }
 
 /// Active threat coefficient paired with the padded House threat lookup.
@@ -930,6 +1001,7 @@ fn search_precheck_level_in(
     if start == goal {
         return Ok(Some(PrecheckLevelResult {
             path: vec![start],
+            marked: [start].into_iter().collect(),
             #[cfg(any(test, feature = "test-support"))]
             pops: Vec::new(),
         }));
@@ -957,8 +1029,10 @@ fn search_precheck_level_in(
         #[cfg(any(test, feature = "test-support"))]
         pops.push((level, zone, cost.bits(), depth));
         if zone == goal {
+            let path = reconstruct_zone_path(nodes, index);
             return Ok(Some(PrecheckLevelResult {
-                path: reconstruct_zone_path(nodes, index),
+                marked: path.iter().copied().collect(),
+                path,
                 #[cfg(any(test, feature = "test-support"))]
                 pops,
             }));
@@ -1088,10 +1162,10 @@ mod tests {
         let ZonePrecheckOutcome::Passed(result) = outcome else {
             panic!("precheck should pass");
         };
-        assert_eq!(result.paths[2], vec![1, 2]);
-        assert_eq!(result.paths[1], vec![1, 2, 3, 4]);
-        assert_eq!(result.paths[0], vec![1, 2, 3, 4, 5, 6]);
-        assert!(result.marked[0].contains(&4));
+        assert_eq!(result.route(2), vec![1, 2]);
+        assert_eq!(result.route(1), vec![1, 2, 3, 4]);
+        assert_eq!(result.route(0), vec![1, 2, 3, 4, 5, 6]);
+        assert!(result.marked(0).contains(&4));
     }
 
     #[test]
@@ -1136,7 +1210,7 @@ mod tests {
         .unwrap() else {
             panic!("precheck should pass");
         };
-        assert_eq!(result.paths[0], vec![1, 3, 4]);
+        assert_eq!(result.route(0), vec![1, 3, 4]);
     }
 
     #[test]
@@ -1166,7 +1240,7 @@ mod tests {
         .unwrap() else {
             panic!("precheck should pass");
         };
-        assert_eq!(result.paths[0], vec![1, 3, 4]);
+        assert_eq!(result.route(0), vec![1, 3, 4]);
     }
 
     #[test]
@@ -1189,7 +1263,7 @@ mod tests {
             panic!("precheck should pass");
         };
         assert_eq!(
-            result.paths[0],
+            result.route(0),
             vec![1, 2, 3, 4, 5, 6],
             "level-0 shortcut through an off-corridor parent is rejected"
         );
@@ -1213,7 +1287,7 @@ mod tests {
         .unwrap() else {
             panic!("precheck should pass");
         };
-        assert_eq!(result.paths[0], vec![1, 2, 7, 6]);
+        assert_eq!(result.route(0), vec![1, 2, 7, 6]);
     }
 
     #[test]
@@ -1257,7 +1331,7 @@ mod tests {
         .unwrap() else {
             panic!("crusher should be allowed through type 1");
         };
-        assert_eq!(result.paths[0], vec![1, 7, 6]);
+        assert_eq!(result.route(0), vec![1, 7, 6]);
     }
 
     #[test]
@@ -1301,7 +1375,7 @@ mod tests {
         else {
             panic!("precheck should pass through another route");
         };
-        assert_eq!(result.paths[0], vec![1, 2, 3, 5, 6]);
+        assert_eq!(result.route(0), vec![1, 2, 3, 5, 6]);
     }
 
     #[test]
@@ -1317,7 +1391,7 @@ mod tests {
         else {
             panic!("precheck should pass through alternate edge into zone 5");
         };
-        assert_eq!(result.paths[0], vec![1, 2, 3, 5, 6]);
+        assert_eq!(result.route(0), vec![1, 2, 3, 5, 6]);
     }
 
     #[test]
@@ -1333,7 +1407,7 @@ mod tests {
         else {
             panic!("precheck should treat reversed exclusion as the same edge");
         };
-        assert_eq!(result.paths[0], vec![1, 2, 3, 5, 6]);
+        assert_eq!(result.route(0), vec![1, 2, 3, 5, 6]);
     }
 
     #[test]
@@ -1425,12 +1499,39 @@ mod tests {
             .unwrap() else {
                 panic!("precheck should pass");
             };
-            result.paths[0].clone()
+            result.route(0).to_vec()
         };
         assert_eq!(route(&hierarchy), vec![1, 2, 3, 4, 5, 6]);
         let level0 = &mut hierarchy.levels_mut()[0];
         level0.push_edge(2, ZoneEdgeRecord::new(5, 0));
         level0.push_edge(5, ZoneEdgeRecord::new(2, 0));
         assert_eq!(route(&hierarchy), vec![1, 2, 5, 6]);
+    }
+
+    /// A kept answer is handed out as the memo holds it: a second precheck's
+    /// routes and marked zones are the first one's, not copies, at every level.
+    #[test]
+    fn a_kept_answer_is_shared_not_copied() {
+        let hierarchy = fixture_hierarchy();
+        let precheck = || {
+            let ZonePrecheckOutcome::Passed(result) = zone_precheck_flat(
+                &hierarchy,
+                1,
+                6,
+                MovementZone::Normal,
+                &ZonePrecheckExclusions::default(),
+                None,
+            )
+            .unwrap() else {
+                panic!("precheck should pass");
+            };
+            result
+        };
+        let (first, second) = (precheck(), precheck());
+        assert_eq!(first, second);
+        for level in 0..ZONE_PRECHECK_LEVELS {
+            assert!(std::ptr::eq(first.route(level), second.route(level)));
+            assert!(std::ptr::eq(first.marked(level), second.marked(level)));
+        }
     }
 }

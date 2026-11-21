@@ -25,7 +25,7 @@ export const LIMITS = Object.freeze({
 // src/app/shell_wol/live_service/http.rs). The lobby's trust headers, such as
 // vera-gateway-key and vera-client-address, come only from this gateway.
 const FORWARDED_HEADERS = Object.freeze(['authorization', 'content-type', 'vera-version',
-  'vera-build', 'vera-quick-match', 'vera-host-handover', 'vera-watch-ai', 'vera-language']);
+  'vera-build', 'vera-quick-match', 'vera-host-handover', 'vera-watch-ai', 'vera-language', 'vera-changes']);
 
 function originUrl(value, allowLocalHttp = false) {
   const url = new URL(value);

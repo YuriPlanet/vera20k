@@ -42,6 +42,29 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
     Some(line)
 }
 
+/// A lobby from before the room's Building Production Queue refuses options
+/// that carry it, whether or not it lists matches: the host turns the queue
+/// off and sends its options again. `None` when the refused options did not
+/// carry it, so the refusal stands.
+pub(crate) fn lobby_refused_building_queue(state: &mut AppState) -> Option<&'static str> {
+    let line = refused_building_queue(&mut state.match_state.session)?;
+    actions::queue(state, NetworkSetupRequest::PublishOptions);
+    Some(line)
+}
+
+fn refused_building_queue(session: &mut MatchSession) -> Option<&'static str> {
+    if !session.host() {
+        return None;
+    }
+    let mut options = session.network_setup()?.options.clone();
+    if !options.host_rules.building_production_queue {
+        return None;
+    }
+    options.host_rules.building_production_queue = false;
+    session.set_network_options(options).ok()?;
+    Some("VERA:BuildingQueueNotTaken")
+}
+
 fn refused_room_rule(
     session: &mut MatchSession,
     lobby_watches: Option<bool>,
@@ -491,6 +514,31 @@ fn hue_gap(a: i32, b: i32) -> i32 {
 mod tests {
     use super::*;
     use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;
+
+    /// Any lobby that refuses options carrying the building queue may be
+    /// from before it, so the host drops the queue and keeps its other rules;
+    /// a refusal of options without it stands.
+    #[test]
+    fn a_refused_building_queue_is_dropped_and_the_other_rules_kept() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(rooms["rooms"]["generated_map_for_thirty"]["launch"].clone())
+                .unwrap();
+        launch.options.host_rules.building_production_queue = true;
+        launch.options.host_rules.superweapon_limit = 7;
+        let mut room = MatchSession::default();
+        room.enter_network(NetworkReturnContext::Wol);
+        room.accept_network_setup(launch, true, None, true).unwrap();
+        assert_eq!(
+            refused_building_queue(&mut room),
+            Some("VERA:BuildingQueueNotTaken")
+        );
+        let rules = &room.network_setup().unwrap().options.host_rules;
+        assert!(!rules.building_production_queue);
+        assert_eq!(rules.superweapon_limit, 7);
+        assert_eq!(refused_building_queue(&mut room), None);
+    }
 
     #[test]
     fn only_a_confirmed_legacy_lobby_can_drop_a_host_rule() {

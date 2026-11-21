@@ -117,6 +117,13 @@ impl InGameGadgets {
         }
     }
 
+    /// Whether a live control, including a layout button over the battlefield,
+    /// owns this frame pixel. The full-map tactical catcher is terrain.
+    pub(crate) fn control_at(&self, x: i32, y: i32) -> bool {
+        crate::ui::gadget::tick::hit_test(&self.list, x, y)
+            .is_some_and(|hit| Some(hit) != self.tactical)
+    }
+
     fn is_cameo(&self, h: GadgetHandle) -> bool {
         self.cameos.contains(&h)
     }
@@ -173,16 +180,24 @@ fn frame_rect_px(r: sidebar::Rect) -> GadgetRect {
 /// this pins ONE order for hit priority + draw, study O7/G20), then re-sync
 /// every tick: rects from the live view, disabled bits + is_on from app state
 /// (the native external latch-on/latch-off equivalent — tabs are externally
-/// driven, study §2.1).
-fn sync_gadgets(state: &mut AppState, view: &SidebarView) {
+/// driven, study §2.1). False without a retained sidebar view, which leaves
+/// the gadgets alone.
+///
+/// The view is read where its owner keeps it, beside the gadgets it syncs:
+/// nothing here changes the sidebar projection.
+fn sync_gadgets(state: &mut AppState) -> bool {
     let frame = state.sidebar_frame();
+    let presentation = &mut state.match_state.match_presentation;
+    let Some(view) = presentation.sidebar_projection.view() else {
+        return false;
+    };
     let tab_rects: Vec<GadgetRect> = view.tabs.iter().map(|t| rect_px(frame, t.rect)).collect();
     let tab_active: Vec<bool> = view.tabs.iter().map(|t| t.active).collect();
     let tab_disabled: Vec<bool> = view.tabs.iter().map(|t| t.disabled).collect();
     let repair_rect = rect_px(frame, view.repair_button.rect);
     let sell_rect = rect_px(frame, view.sell_button.rect);
 
-    let gadgets = &mut state.match_state.match_presentation.in_game_gadgets;
+    let gadgets = &mut presentation.in_game_gadgets;
     if gadgets.handles.is_none() {
         let list = &mut gadgets.list;
         let zero = GadgetRect::new(0, 0, 0, 0);
@@ -274,8 +289,13 @@ fn sync_gadgets(state: &mut AppState, view: &SidebarView) {
             None,
         );
     }
-    sync_regions(state, view);
-    sync_cameos(state, view);
+    // The regions join the list before the cameos (chrome → tactical →
+    // minimap → cameos).
+    sync_regions(state);
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(view) = presentation.sidebar_projection.view() {
+        sync_cameos(&mut presentation.in_game_gadgets, frame, view);
+    }
     command_bar::sync(state);
     let rect = state
         .match_state
@@ -296,6 +316,7 @@ fn sync_gadgets(state: &mut AppState, view: &SidebarView) {
         rect,
     );
     sync_layout_buttons(state);
+    true
 }
 
 /// The buttons the side's layout adds take clicks where they are drawn: one
@@ -364,7 +385,7 @@ fn sync_timer_dock(gadgets: &mut InGameGadgets, rect: Option<GadgetRect>) {
 /// relative order is observationally irrelevant — the broadcast walk's
 /// first-consumer-by-rect and the smallest-area hover both resolve to the unique
 /// containing gadget regardless (study tactical/minimap lanes §6/§4).
-fn sync_regions(state: &mut AppState, _view: &SidebarView) {
+fn sync_regions(state: &mut AppState) {
     let frame = state.sidebar_frame();
     if state
         .match_state
@@ -453,69 +474,24 @@ fn sync_regions(state: &mut AppState, _view: &SidebarView) {
 /// normal cursor (6AAD61) and passes flags 0 on (6AAD79 -> 6AB94F).
 /// The pool grows on demand and is never auto-shrunk; growth is gated to NOT run while a region
 /// holds capture (defensive — cameos themselves are never sticky).
-fn sync_cameos(state: &mut AppState, view: &SidebarView) {
-    let frame = state.sidebar_frame();
+fn sync_cameos(
+    gadgets: &mut InGameGadgets,
+    frame: crate::ui::sidebar::SidebarFrame,
+    view: &SidebarView,
+) {
     let want = view.items.len();
-    if state
-        .match_state
-        .match_presentation
-        .in_game_gadgets
-        .cameos
-        .len()
-        < want
-        && state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .focus
-            .sticky
-            .is_none()
-    {
+    if gadgets.cameos.len() < want && gadgets.focus.sticky.is_none() {
         let zero = GadgetRect::new(0, 0, 0, 0);
-        while state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .cameos
-            .len()
-            < want
-        {
-            let slot = state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cameos
-                .len();
+        while gadgets.cameos.len() < want {
+            let slot = gadgets.cameos.len();
             let id = ID_CAMEO_BASE + slot as u16;
-            let h = state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .list
-                .add_tail(GadgetSpec::cameo(zero, id));
-            state
-                .match_state
-                .match_presentation
-                .in_game_gadgets
-                .cameos
-                .push(h);
+            let h = gadgets.list.add_tail(GadgetSpec::cameo(zero, id));
+            gadgets.cameos.push(h);
         }
     }
-    let cameos = state
-        .match_state
-        .match_presentation
-        .in_game_gadgets
-        .cameos
-        .clone();
-    for (slot, h) in cameos.iter().enumerate() {
+    for (slot, h) in gadgets.cameos.iter().enumerate() {
         let rect = view.items.get(slot).map(|it| rect_px(frame, it.rect));
-        if let Some(g) = state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .list
-            .get_mut(*h)
-        {
+        if let Some(g) = gadgets.list.get_mut(*h) {
             match rect {
                 Some(r) => {
                     g.rect = r;
@@ -552,10 +528,9 @@ pub(crate) fn handle_mouse_button_event(
     {
         return GadgetConsume::Consumed;
     }
-    let Some(view) = current_sidebar_view(state).cloned() else {
+    if !sync_gadgets(state) {
         return GadgetConsume::NotConsumed;
-    };
-    sync_gadgets(state, &view);
+    }
     let key = match (button, pressed) {
         (MouseButton::Left, true) => KEY_LMB_DOWN,
         (MouseButton::Left, false) => KEY_LMB_UP,
@@ -563,7 +538,7 @@ pub(crate) fn handle_mouse_button_event(
         (MouseButton::Right, false) => KEY_RMB_UP,
         _ => return GadgetConsume::NotConsumed,
     };
-    run_tick(state, &view, key)
+    run_tick(state, key)
 }
 
 /// Once-per-frame idle tick: drives the masked-0 sticky re-dispatch that pops
@@ -572,19 +547,18 @@ pub(crate) fn handle_mouse_button_event(
 /// Each unlocked pass also republishes the complete sidebar projection,
 /// including the retained House power pair consumed by the tooltip driver.
 pub(crate) fn idle_tick(state: &mut AppState) {
-    let Some(view) = current_sidebar_view(state).cloned() else {
+    if !sync_gadgets(state) {
         return;
-    };
-    sync_gadgets(state, &view);
+    }
     if crate::app::input::campaign_input::is_locked(state) {
         publish_pressed_visuals(state);
         return;
     }
-    let _ = run_tick(state, &view, 0);
+    let _ = run_tick(state, 0);
     crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
 }
 
-fn run_tick(state: &mut AppState, view: &SidebarView, key: u16) -> GadgetConsume {
+fn run_tick(state: &mut AppState, key: u16) -> GadgetConsume {
     // We tick synchronously on the edge, so event coords == live coords
     // (gamemd latches coords at enqueue; with no queue lag the two sources
     // are identical — G6 still selects per the key's low byte).
@@ -626,7 +600,7 @@ fn run_tick(state: &mut AppState, view: &SidebarView, key: u16) -> GadgetConsume
         .or(prev_sticky);
     let fired = (result & RESULT_BUTTON) != 0;
     if fired {
-        apply_gadget_result(state, view, result);
+        apply_gadget_result(state, result);
     }
     publish_pressed_visuals(state);
     apply_cameo_hover_tooltip(state);
@@ -720,11 +694,15 @@ fn play_gui_main_button_sound(state: &mut AppState) {
 
 /// Map a fired `ID|0x8000[|0x4000]` onto the existing app actions. Consumers
 /// mask the right-release marker off (study §2.2: `key & ~0x4000`), so a
-/// right-click scrolls identically.
-fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
+/// right-click scrolls identically. The retained sidebar view the tick ran
+/// on is read before the action that may change it.
+fn apply_gadget_result(state: &mut AppState, result: u16) {
     if command_bar::apply(state, result) {
         return;
     }
+    let (side2_tiles, cameos) = current_sidebar_view(state).map_or((0, 0), |view| {
+        (view.layout.side2_tile_count, view.items.len())
+    });
     let id = result & !(RESULT_BUTTON | RESULT_RIGHT);
     match id {
         ID_TIMER_DOCK => state
@@ -770,8 +748,8 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
             let queued = presentation.sidebar_projection.queue_scroll(
                 presentation.active_sidebar_tab,
                 id == ID_SCROLL_DOWN,
-                view.layout.side2_tile_count,
-                view.layout.side2_tile_count,
+                side2_tiles,
+                side2_tiles,
             );
             let sound = state.rules().and_then(|rules| {
                 if queued {
@@ -787,14 +765,14 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
         // button and Shift the ABANDON_ALL variant (`SelectClass::Action`
         // reads modifier bit 0 at `0x006AAD66`); the click decision plays
         // `GUIBuildSound` itself (`dispatch::sidebar_cameo_press`).
-        _ if (ID_CAMEO_BASE..ID_CAMEO_BASE.saturating_add(view.items.len() as u16))
-            .contains(&id) =>
-        {
+        _ if (ID_CAMEO_BASE..ID_CAMEO_BASE.saturating_add(cameos as u16)).contains(&id) => {
             let slot = (id - ID_CAMEO_BASE) as usize;
-            if let Some(item) = view.items.get(slot) {
-                let right = (result & RESULT_RIGHT) != 0;
-                let shift = crate::app::input::dispatch::is_shift_held(state);
-                let action = crate::ui::sidebar::hit_test_item(item, right, shift);
+            let right = (result & RESULT_RIGHT) != 0;
+            let shift = crate::app::input::dispatch::is_shift_held(state);
+            let action = current_sidebar_view(state)
+                .and_then(|view| view.items.get(slot))
+                .map(|item| crate::ui::sidebar::hit_test_item(item, right, shift));
+            if let Some(action) = action {
                 crate::app::input::dispatch::apply_sidebar_action(state, action);
             }
         }
@@ -882,11 +860,14 @@ mod tests {
             GadgetRect::new(0, 0, 800, 600),
             TACTICAL_REGION_FLAGS,
         ));
+        gadgets.tactical = Some(tactical);
         // The layout's first part is a text, its second a button.
         sync_layout_button_rects(
             &mut gadgets,
             &[None, Some(GadgetRect::new(20, 100, 60, 17))],
         );
+        assert!(gadgets.control_at(25, 105));
+        assert!(!gadgets.control_at(400, 300));
         let click = |gadgets: &mut InGameGadgets, x: i32, y: i32| {
             let mut input = GadgetInput {
                 queued_key: KEY_LMB_DOWN,

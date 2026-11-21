@@ -475,7 +475,7 @@ impl Simulation {
             .is_some_and(|kind| kind.flak_scatter);
         let Some(weapon) = payload
             .installed_weapon()
-            .and_then(|id| rules.weapon(self.interner.resolve(id)))
+            .and_then(|id| self.interner.weapon_type(id, rules))
         else {
             return placement;
         };

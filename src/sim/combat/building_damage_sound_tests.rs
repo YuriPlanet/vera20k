@@ -229,8 +229,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
     assert_eq!(weapon.warhead.as_deref(), Some("AP"));
     let warhead = world.interner.intern(weapon.warhead.as_deref().unwrap());
     world.main_rng =
-        SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "main"))
-            .into();
+        SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "main"));
     world.scenario_rng =
         SimRng::from_native_state_hex_for_test(rng_boundary(history, &first["before"], "scenario"));
     world.mapgen_rng =
@@ -329,6 +328,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
                 None,
                 rules,
                 None,
+                &mut Vec::new(),
             )
         });
         // Reuse the native observer's actual raw words, including ranged

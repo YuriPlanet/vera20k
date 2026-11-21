@@ -78,14 +78,32 @@ pub(super) fn mission_patrol(
                 let mut post = sim
                     .object_navigation_cell_identity(id, rules)
                     .expect("Patrol post requires its navigation cell");
-                sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = Some(post);
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .seldom
+                    .patrol_post
+                    .cell = Some(post);
                 if cell_bridge(sim, post) && !should_bridge(sim, id, rules) {
                     let Some(found) = bridge_post(sim, id, post, rules) else {
-                        sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = None;
+                        sim.substrate
+                            .entities
+                            .get_mut(id)
+                            .unwrap()
+                            .seldom
+                            .patrol_post
+                            .cell = None;
                         return 60;
                     };
                     post = found;
-                    sim.substrate.entities.get_mut(id).unwrap().patrol_post.cell = Some(post);
+                    sim.substrate
+                        .entities
+                        .get_mut(id)
+                        .unwrap()
+                        .seldom
+                        .patrol_post
+                        .cell = Some(post);
                 }
                 let actor = sim.substrate.entities.get(id).unwrap();
                 if actor.archive_target().is_none() {
@@ -143,7 +161,7 @@ pub(super) fn mission_patrol(
                         destination(sim, id, archive.map(NavTargetRef::from), rules, ctx);
                         let actor = sim.substrate.entities.get_mut(id).unwrap();
                         actor.set_archive_target(None);
-                        actor.patrol_post.cell = None;
+                        actor.seldom.patrol_post.cell = None;
                         actor.mission.set_handler_state(0);
                         return 45;
                     }
@@ -257,7 +275,7 @@ pub(super) fn mission_patrol(
                 destination(sim, id, Some(archive.into()), rules, ctx);
                 let actor = sim.substrate.entities.get_mut(id).unwrap();
                 actor.set_archive_target(None);
-                actor.patrol_post.cell = None;
+                actor.seldom.patrol_post.cell = None;
                 actor.mission.set_handler_state(0);
             }
         }
@@ -285,6 +303,7 @@ fn post(sim: &Simulation, id: u64) -> NativeCellIdentity {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .patrol_post
         .cell
         .expect("Patrol states1/2 require the retained post")

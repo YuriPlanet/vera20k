@@ -745,7 +745,7 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
-        actor.slave = SlaveLink::for_test(
+        actor.seldom.slave = SlaveLink::for_test(
             owner.then_some(123),
             vec![
                 CargoBale {

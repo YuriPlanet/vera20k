@@ -77,7 +77,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     // Constructor/Unlimbo draws and full map admission are outside this join.
     sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(0));
     let seed = input["seed"].as_u64().unwrap();
-    sim.main_rng = SimRng::new(seed).into();
+    sim.main_rng = SimRng::new(seed);
     sim.scenario_rng = SimRng::new(seed);
     sim.set_logic_order_for_test(vec![id]);
     assert_eq!(sim.main_rng.native_state_hex(), row["rng_before"]["main"]);
@@ -295,7 +295,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         .collect();
     assert_eq!(json!(slots), frame["slots"], "{context}: retained slots");
     assert!(
-        entity.radio_contacts.slot(0).is_none(),
+        entity.seldom.radio_contacts.slot(0).is_none(),
         "{context}: contact cleanup"
     );
 }

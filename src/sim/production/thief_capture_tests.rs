@@ -92,7 +92,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
     assert_eq!(sim.interner.resolve(car.owner()), "Americans");
     assert_eq!(car.health.current(), 300);
     assert_eq!(
-        car.capture_infantry_type_index.get(),
+        car.seldom.capture_infantry_type_index.get(),
         rules
             .type_array_index(crate::rules::object_type::ObjectCategory::Infantry, "THIEF",)
             .unwrap()

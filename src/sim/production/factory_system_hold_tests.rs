@@ -172,8 +172,7 @@ impl PaidHead {
         // All fixture constructors/payments precede this recorded boundary.
         // Streams are installed once and retained through every measured phase.
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                .into();
+            SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
         sim.mapgen_rng =

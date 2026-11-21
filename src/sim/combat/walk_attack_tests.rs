@@ -650,7 +650,7 @@ fn walk_null_setter_matches_original_caller_rows() {
                 .push_nav_queue_for_test(NavTargetRef::Object { id: victim });
         }
         if input["contact"] == true {
-            e.radio_contacts.insert(victim);
+            e.seldom.radio_contacts.insert(victim);
         }
         e.navigation.path_runtime_mut().start_movement(0, 5);
         e.navigation.path_runtime_mut().start_blocked(0, 6);

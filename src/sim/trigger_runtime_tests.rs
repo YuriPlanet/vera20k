@@ -2211,6 +2211,7 @@ fn mind_control_tags_precede_capture_admission_and_use_object_alive() {
                 .entities
                 .get(victim)
                 .unwrap()
+                .seldom
                 .mind_control
                 .controller(),
             (manager && !immune).then_some(source),
@@ -2250,7 +2251,7 @@ fn mind_control_event6_owner_change_updates_source_house_before_event44_and_capt
     assert_eq!(victim.owner(), houses[1]);
     assert_eq!(victim.health.current(), 100);
     assert_eq!(
-        victim.mind_control.controller(),
+        victim.seldom.mind_control.controller(),
         None,
         "event6 transfers both actors to the same house before the capture attempt"
     );
@@ -2290,6 +2291,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
             .entities
             .get(victim)
             .unwrap()
+            .seldom
             .mind_control
             .controller()
             .is_some()
@@ -2299,7 +2301,7 @@ fn mind_control_attack_order_fires_attacked_tags_without_hp_damage() {
     }
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.health.current(), 100);
-    assert_eq!(victim.mind_control.controller(), Some(source));
+    assert_eq!(victim.seldom.mind_control.controller(), Some(source));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
 }
 
@@ -2367,6 +2369,7 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
             .entities
             .get(victim)
             .unwrap()
+            .seldom
             .ai_sell_repair
             .was_attacked_by_enemy(),
         "the Techno continuation must consume the changed, now-allied owners"
@@ -2398,7 +2401,7 @@ fn object_damage_tag_owner_change_precedes_the_hostile_hit_latch() {
     let victim = sim.substrate.entities.get(victim).unwrap();
     assert_eq!(victim.owner(), houses[1]);
     assert!(
-        !victim.ai_sell_repair.was_attacked_by_enemy(),
+        !victim.seldom.ai_sell_repair.was_attacked_by_enemy(),
         "capturing pre-Tag hostility would latch an enemy hit after ownership changed"
     );
 }
@@ -4612,7 +4615,7 @@ fn physical_readers_take_each_record_by_the_type_id() {
         trigger
             .events
             .iter()
-            .map(|event| event.value)
+            .map(|event| event.condition.value)
             .collect::<Vec<_>>(),
         [7, 7]
     );

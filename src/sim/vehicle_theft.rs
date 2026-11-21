@@ -110,12 +110,13 @@ impl Simulation {
     /// Command producers and cursor feedback share this read-only action.
     pub fn ares_vehicle_capture_action(
         &self,
+        control: &crate::sim::world::ControlProjection<'_>,
         actor_id: u64,
         target_id: u64,
         rules: &RuleSet,
     ) -> bool {
         self.substrate.entities.get(actor_id).is_some_and(|actor| {
-            self.house_is_human_player(actor.owner())
+            control.can_order(actor.owner())
                 && self
                     .ares_vehicle_capture_mode(actor_id, target_id, rules)
                     .is_some()
@@ -177,9 +178,14 @@ impl Simulation {
             return false;
         };
         actor
+            .seldom
             .building_entry
             .set_nearest_occupiable_seek(best.is_some());
-        actor.ares.vehicle_driver.set_vehicle_seek(best.is_some());
+        actor
+            .seldom
+            .ares
+            .vehicle_driver
+            .set_vehicle_seek(best.is_some());
         let Some((_, _, target)) = best else {
             return false;
         };
@@ -262,7 +268,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target_id)
-            .and_then(|target| target.mind_control.controller())
+            .and_then(|target| target.seldom.mind_control.controller())
         {
             self.free_unit(controller, target_id, rules, registry, effects);
         }
@@ -300,7 +306,7 @@ impl Simulation {
             .substrate
             .entities
             .get(actor_id)
-            .and_then(|actor| actor.mind_control.controller());
+            .and_then(|actor| actor.seldom.mind_control.controller());
         if let Some(controller) = controller {
             self.with_object_placement_scope(|sim| {
                 sim.free_unit(controller, actor_id, rules, registry, effects);
@@ -346,10 +352,14 @@ impl Simulation {
             .map(|actor| (actor.owner(), actor.health.current(), actor.veterancy.raw()))
             .ok_or("vehicle captor retired before metadata commit")?;
         if let Some(target) = self.substrate.entities.get_mut(target_id) {
-            target.ares.vehicle_driver.restore_driver();
+            target.seldom.ares.vehicle_driver.restore_driver();
             if mode == VehicleCaptureMode::Hijack {
-                target.capture_infantry_type_index.record(captor_index);
                 target
+                    .seldom
+                    .capture_infantry_type_index
+                    .record(captor_index);
+                target
+                    .seldom
                     .ares
                     .vehicle_driver
                     .record_captor(captor.0, captor.1, captor.2);
@@ -524,7 +534,7 @@ impl Simulation {
                 self.session.binary_frame(),
             )
             || actor_type.vehicle_thief
-                && target.mind_control.is_mind_controlled()
+                && target.seldom.mind_control.is_mind_controlled()
                 && !driver.break_mind_control()
         {
             return None;
@@ -630,8 +640,13 @@ mod tests {
             seeking.navigation.nav_com(),
             Some(crate::sim::components::NavTargetRef::object(host))
         );
-        assert!(seeking.building_entry.should_enter_nearest_occupiable());
-        assert!(seeking.ares.vehicle_driver.vehicle_seek());
+        assert!(
+            seeking
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable()
+        );
+        assert!(seeking.seldom.ares.vehicle_driver.vehicle_seek());
         sim.change_owner_with_rules(host, no_drive, &rules, None, FrameEffects::default());
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert_eq!(
@@ -647,7 +662,12 @@ mod tests {
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, FrameEffects::default()));
         let stopped = sim.substrate.entities.get(driver).unwrap();
-        assert!(!stopped.building_entry.should_enter_nearest_occupiable());
-        assert!(!stopped.ares.vehicle_driver.vehicle_seek());
+        assert!(
+            !stopped
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable()
+        );
+        assert!(!stopped.seldom.ares.vehicle_driver.vehicle_seek());
     }
 }

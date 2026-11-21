@@ -65,18 +65,15 @@ impl<T> ObserverArt<T> {
     }
 }
 
-pub(super) fn load(
-    assets: &AssetManager,
-    mix: &MixArchive,
-    mix_name: &str,
-    ares: bool,
-) -> ObserverArt<RenderedChromeEntry> {
-    let palette =
-        |name| resolve_theme_palette_with_source(assets, mix, mix_name, name, ares).map(|(p, _)| p);
+pub(super) fn load(route: SidebarThemeRoute<'_>) -> ObserverArt<RenderedChromeEntry> {
+    let palette = |name: &str| route.palette(name).map(|(palette, _)| palette);
     let (observer, yuri) = (palette("OBSERVER.PAL"), palette("YRII.PAL"));
     let picture = |name: &str, palette: Option<&Palette>| {
-        let shp = ShpFile::from_bytes(assets.get_ref(name)?).ok()?;
-        render_shp(&shp, palette?, 0)
+        let palette = palette?;
+        ui_art_candidates(route.assets, name).find_map(|asset| {
+            let shp = parse_sidebar_shape(route.assets, asset.bytes)?;
+            render_shp(&shp, palette, 0)
+        })
     };
     ObserverArt {
         backgrounds: ["OBSALLI.SHP", "OBSSOVI.SHP", "OBSYURI.SHP"]

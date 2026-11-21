@@ -668,7 +668,10 @@ fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
             },
             FrameEffects::default(),
         );
-        assert_eq!(marks, foundation_cells(10, 10, &"3x3".into()));
+        assert_eq!(
+            marks,
+            foundation_cells(10, 10, &"3x3".into()).collect::<Vec<_>>()
+        );
         if pending {
             assert_eq!(sim.substrate.entities.keys_sorted(), before_ids);
             assert_eq!(sim.scenario_rng.logical_state(), expected);
@@ -872,10 +875,7 @@ fn a_bio_reactor_releases_its_absorbed_infantry_before_its_crew() {
     }
     let mut expected_marks = Vec::new();
     let mut owed = 1;
-    for cell in foundation_cells(10, 10, &"2x2".into())
-        .into_iter()
-        .skip(absorbed.len())
-    {
+    for cell in foundation_cells(10, 10, &"2x2".into()).skip(absorbed.len()) {
         if owed > 0 && replay.next_range_u32_inclusive(0, 2) == 1 {
             let _engineer = replay.next_range_u32_inclusive(0, 99);
             let _constructor = replay.next_u32();
@@ -1049,6 +1049,7 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
         .entities
         .get_mut(unit)
         .unwrap()
+        .seldom
         .capture_infantry_type_index
         .record(captor);
     assert!(!rules.object("APC").unwrap().crewed);
@@ -1073,7 +1074,7 @@ fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
     assert_eq!(type_name(&sim, added[0]), "E2");
     assert_eq!(escaped.owner(), owner);
     assert_eq!(escaped.health.current(), health);
-    assert!(escaped.selection.is_selected());
+    assert!(escaped.seldom.selection.is_selected());
     assert_eq!(sim.scenario_rng.state(), expected_rng.state());
 }
 
@@ -1110,6 +1111,7 @@ fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
         .entities
         .get_mut(unit)
         .unwrap()
+        .seldom
         .capture_infantry_type_index
         .record(captor);
     sim.attach_object_trigger_tag(unit, Some("TAG"));
@@ -1387,8 +1389,8 @@ fn a_killing_hit_lets_the_passengers_out() {
             assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
             assert!(passenger.passenger_role().is_none());
             assert_eq!((passenger.position.rx(), passenger.position.ry()), (10, 10));
-            assert_eq!(passenger.kill_record.killer(), None);
-            assert!(!passenger.selection.is_selected());
+            assert_eq!(passenger.seldom.kill_record.killer(), None);
+            assert!(!passenger.seldom.selection.is_selected());
             assert_eq!(queued(&sim, id), mission, "{owner}");
             assert!(!sim.substrate.pending_delete.contains_object(&id));
         }
@@ -1419,7 +1421,7 @@ fn an_ignore_defenses_kill_takes_the_passengers_along() {
         let passenger = sim.substrate.entities.get(id).unwrap();
         assert!(sim.substrate.pending_delete.contains_object(&id));
         assert!(!passenger.lifecycle.object_alive());
-        assert_eq!(passenger.kill_record.killer(), Some(russians));
+        assert_eq!(passenger.seldom.kill_record.killer(), Some(russians));
     }
 }
 
@@ -1444,7 +1446,13 @@ fn an_exploding_transport_kills_its_passengers_first() {
     assert!(order[0] < order[1] && order[1] < order[2], "{deleted:?}");
     for id in passengers {
         assert_eq!(
-            sim.substrate.entities.get(id).unwrap().kill_record.killer(),
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .kill_record
+                .killer(),
             Some(russians)
         );
     }
@@ -1482,10 +1490,10 @@ fn a_gunner_transport_on_its_suicide_weapon_explodes() {
             < 200;
         if explodes {
             assert!(!passenger.lifecycle.object_alive());
-            assert_eq!(passenger.kill_record.killer(), Some(russians));
+            assert_eq!(passenger.seldom.kill_record.killer(), Some(russians));
         } else {
             assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
-            assert_eq!(passenger.kill_record.killer(), None);
+            assert_eq!(passenger.seldom.kill_record.killer(), None);
         }
         assert_eq!(bystander_hit, explodes, "IFVMode {ifv_mode}");
     }
@@ -1581,6 +1589,7 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .selection
                     .set_selected_for_test(selected);
             }
@@ -1593,6 +1602,7 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
                         .entities
                         .get(id)
                         .unwrap()
+                        .seldom
                         .selection
                         .is_selected(),
                     selected
@@ -1619,13 +1629,14 @@ fn a_selected_foreign_vehicle_selects_nothing() {
         .entities
         .get_mut(apc)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     kill(&mut sim, &rules, apc, ORDINARY);
     for id in passengers {
         let passenger = sim.substrate.entities.get(id).unwrap();
         assert!(passenger.lifecycle.object_alive() && !passenger.lifecycle.in_limbo());
-        assert!(!passenger.selection.is_selected());
+        assert!(!passenger.seldom.selection.is_selected());
     }
 }
 
@@ -1684,6 +1695,7 @@ fn a_reselected_escapee_in_planning_mode_selects_its_node_partner() {
             .entities
             .get_mut(apc)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         let boundary = PlanningMode(planning);
@@ -1708,6 +1720,7 @@ fn a_reselected_escapee_in_planning_mode_selects_its_node_partner() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .selection
                 .is_selected()
         };
@@ -1878,7 +1891,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
         sim.substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.selection.is_selected())
+            .is_some_and(|entity| entity.seldom.selection.is_selected())
     };
     assert!(
         sim.substrate
@@ -1906,6 +1919,7 @@ fn selection_ejects_partner_passenger(power_loss: bool) {
         .entities
         .get_mut(passenger)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(false);
     assert!(sim.techno_select(
@@ -2362,6 +2376,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
             .entities
             .get_mut(mcv)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         let before = sim.substrate.entities.keys_sorted();
@@ -2377,6 +2392,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
                     .entities
                     .get(crewman)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             );
@@ -2450,7 +2466,7 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
         None,
         reactor,
         None,
-        &foundation_cells(10, 10, &"2x2".into()),
+        &foundation_cells(10, 10, &"2x2".into()).collect::<Vec<_>>(),
         crate::sim::world::FrameEffects::default(),
     );
     for &id in &absorbed {
@@ -2663,6 +2679,7 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
         .entities
         .get_mut(passenger)
         .unwrap()
+        .seldom
         .building_entry
         .set_nearest_occupiable_seek(true);
     let before = sim.substrate.entities.keys_sorted();
@@ -2707,7 +2724,12 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
         let entity = sim.entities().get(id).unwrap();
         assert!(entity.is_object_alive() && !entity.lifecycle.in_limbo());
         assert!(entity.passenger_role().inside_transport().is_none());
-        assert!(!entity.building_entry.should_enter_nearest_occupiable());
+        assert!(
+            !entity
+                .seldom
+                .building_entry
+                .should_enter_nearest_occupiable()
+        );
     }
 }
 

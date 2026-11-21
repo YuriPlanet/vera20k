@@ -475,6 +475,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let rules = self.rules;
         let factory_contact = self
             .owner()
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|contact| self.sim.substrate.entities.get(contact))
@@ -605,7 +606,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let deploy_to_land = self.owner_kind() == FlightOwnerKind::Unit && self.type_flag_6ad();
         let owner = self.sim.substrate.entities.get_mut(id).unwrap();
         owner.lift.allow_end();
-        owner.drop_credit.land();
+        owner.seldom.drop_credit.land();
         owner.crash.lower();
         if deploy_to_land {
             owner.clear_landing_for_deploy();
@@ -667,7 +668,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     /// Owner `+0x427`: a Magnetron dropped it.
     fn dropped(&self) -> bool {
-        self.owner().drop_credit.being_manipulated()
+        self.owner().seldom.drop_credit.being_manipulated()
     }
     fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool {
         let rules = self.rules;
@@ -728,7 +729,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// (`0x0054CFEE..0x0054CFF7`).
     fn clear_drop_credit(&mut self) {
         let owner = self.sim.substrate.entities.get_mut(self.stable_id).unwrap();
-        owner.drop_credit.forget();
+        owner.seldom.drop_credit.forget();
     }
     /// The crash's OnBridge raise (`0x0054D012`).
     fn set_on_bridge(&mut self) {
@@ -767,8 +768,8 @@ impl Simulation {
         };
         let location = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        self.represented_player_maps()
-            .into_iter()
+        // Usually no map is due, and an empty collect allocates nothing.
+        self.each_represented_player_map()
             .filter(|&player| {
                 !self.techno_discovered_by_viewer(id, player)
                     && entity.owner() != player
@@ -801,7 +802,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(owner.type_ref(), rules) else {
             return;
         };
-        if !(object.balloon_hover || object.jumpjet) || owner.radio_contacts.is_empty() {
+        if !(object.balloon_hover || object.jumpjet) || owner.seldom.radio_contacts.is_empty() {
             return;
         }
         crate::sim::radio::transmit_to_contact(
@@ -1130,7 +1131,7 @@ mod tests {
         e.on_bridge.store(true);
         e.position
             .put_z(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        e.drop_credit.set_being_manipulated_for_test(true);
+        e.seldom.drop_credit.set_being_manipulated_for_test(true);
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         *runtime = runtime.clone().with_destination_for_test(DriveCoord::cell(
             10,
@@ -1149,7 +1150,7 @@ mod tests {
             "aborted touchdown must not collect its crate"
         );
         assert!(!e.lift.may_end());
-        assert!(e.drop_credit.being_manipulated());
+        assert!(e.seldom.drop_credit.being_manipulated());
         assert!(
             e.air_spatial_bucket().is_some(),
             "the landing did not remove its tracker"
@@ -1185,7 +1186,7 @@ mod tests {
             let (mut sim, rules) = touchdown_crate_fixture();
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.crash.set_crashing_for_test(true);
-            e.drop_credit.set_being_manipulated_for_test(true);
+            e.seldom.drop_credit.set_being_manipulated_for_test(true);
             match name {
                 "dead" => e.lifecycle.set_object_alive_for_test(false),
                 "limbo" => e.lifecycle.set_in_limbo_for_test(true),
@@ -1213,7 +1214,7 @@ mod tests {
             );
             assert_eq!(e.lift.may_end(), !aborted, "{name}: lift-end permission");
             assert_eq!(
-                e.drop_credit.being_manipulated(),
+                e.seldom.drop_credit.being_manipulated(),
                 aborted,
                 "{name}: drop credit"
             );
@@ -2162,7 +2163,7 @@ mod tests {
             );
             held_target |= entity.attack_target.target()
                 == Some(crate::sim::combat::TargetKind::Entity(plant));
-            fired |= entity.rearm_timer.duration() > 0;
+            fired |= entity.seldom.rearm_timer.duration() > 0;
             let at = center(sim, kirov);
             closest = closest.min(((at.x - goal.x) as f64).hypot((at.y - goal.y) as f64) as i32);
             damaged |= sim

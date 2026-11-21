@@ -141,7 +141,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
         let rng = &native["rng_full_seed31"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng["scenario"].as_str().unwrap());
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
         let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
         let actual = sim.apply_live_trigger_action(

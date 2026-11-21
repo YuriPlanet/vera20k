@@ -32,7 +32,7 @@ no such page can still be open.
 `VERA_LOBBY_URL` defaults to `https://lobby.vera20k.org`. It must be an HTTPS
 origin. `/v1/*` forwards the existing method, path, Authorization, the headers a
 game signs in with (`Vera-Version`, `Vera-Build`, `Vera-Quick-Match`,
-`Vera-Host-Handover`, `Vera-Watch-AI` and `Vera-Language`) and body without JSON
+`Vera-Host-Handover`, `Vera-Watch-AI`, `Vera-Language` and `Vera-Changes`) and body without JSON
 conversion, following redirects or replaying requests. It preserves the upstream
 status and body. CORS permits only `VERA_WEB_ORIGIN`, GET/POST and those headers with
 Content-Type. Ambient cookies are not forwarded. Deploy a gateway at least as new as

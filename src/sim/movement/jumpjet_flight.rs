@@ -1076,6 +1076,15 @@ fn claim_or_scatter(
     }
 }
 
+/// The widest `[JumpjetControls] LandNearby=` range: its reader clamps the
+/// key to 0..=8 (VERA's own bound).
+const LAND_NEARBY_MAX_RANGE: i32 = 8;
+
+/// The cells of the widest range's square, its centre left out: a bound on
+/// the candidates [`nearby_landing_cell`] sorts.
+const LAND_NEARBY_MAX_CELLS: usize =
+    ((2 * LAND_NEARBY_MAX_RANGE + 1) * (2 * LAND_NEARBY_MAX_RANGE + 1) - 1) as usize;
+
 /// VERA `[JumpjetControls] LandNearby=`: among the cells within the key's
 /// range of `refused`, the one nearest the owner's own cell `here` that the
 /// owner may enter outright (`Can_Enter_Cell` 0), that is neither water nor
@@ -1086,23 +1095,26 @@ fn nearby_landing_cell(
     here: (i16, i16),
     host: &mut impl JumpjetFlightHost,
 ) -> Option<(i16, i16)> {
-    let range = host.land_nearby_range();
+    let range = host.land_nearby_range().min(LAND_NEARBY_MAX_RANGE);
     if range <= 0 {
         return None;
     }
-    let mut cells: Vec<(i32, i32, i32)> = Vec::new();
+    let mut cells = [(0, 0, 0); LAND_NEARBY_MAX_CELLS];
+    let mut count = 0;
     for dy in -range..=range {
         for dx in -range..=range {
             if (dx, dy) != (0, 0) && dx * dx + dy * dy <= range * range {
                 let x = i32::from(refused.0) + dx;
                 let y = i32::from(refused.1) + dy;
                 let (hx, hy) = (x - i32::from(here.0), y - i32::from(here.1));
-                cells.push((hx * hx + hy * hy, y, x));
+                cells[count] = (hx * hx + hy * hy, y, x);
+                count += 1;
             }
         }
     }
+    let cells = &mut cells[..count];
     cells.sort_unstable();
-    cells.into_iter().find_map(|(_, y, x)| {
+    cells.iter().find_map(|&(_, y, x)| {
         let x = i16::try_from(x).ok().filter(|x| *x >= 0)?;
         let y = i16::try_from(y).ok().filter(|y| *y >= 0)?;
         let centre = [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128];

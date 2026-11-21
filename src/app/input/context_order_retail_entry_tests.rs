@@ -102,6 +102,7 @@ fn chord_cursor(
         modifier,
         force_move_key,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -184,6 +185,172 @@ fn a_players_vehicle_and_rifleman_grind_at_their_own_grinder() {
     assert!(
         sim.houses()[&owner].economy().credits() > credits,
         "refunded"
+    );
+}
+
+#[test]
+fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
+    use crate::app::input::entity_pick::hover_object_by_id;
+    use crate::sim::command::MEGAMISSION_OPCODE;
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::TickLane;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let mut sim = arena(rules);
+    sim.spawn_object("GAPOWR", "Americans", 3, 3, 0, rules)
+        .unwrap();
+    let grinder = sim
+        .spawn_object("YAGRND", "Russians", 20, 16, 0, rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object("E1", "Russians", 14, 17, 0, rules)
+        .unwrap();
+    sim.session_mut_for_test()
+        .set_game_mode(ScenarioGameMode::Lan);
+    sim.install_network_timing(10);
+    sim.network_command_queues()
+        .install_timing(0, std::num::NonZeroU8::new(5).unwrap(), [0]);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    let Some(HoverObject::Techno(hover)) = hover_object_by_id(&sim, grinder, "Americans") else {
+        panic!("expected the grinder's live hover classification");
+    };
+    assert_eq!(hover.kind, HoverTargetKind::EnemyStructure);
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[infantry],
+            Some(infantry),
+            &hover,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        )),
+        Some(CursorId::Enter)
+    );
+    let mut selected = vec![infantry];
+    let orders = entry_orders(
+        &sim,
+        rules,
+        &[infantry],
+        &mut selected,
+        &hover,
+        OrderModifier::Normal,
+        false,
+        Some(&registry),
+    )
+    .unwrap();
+    assert_eq!(orders, [eaten(infantry, grinder)]);
+    let delegated = sim.interner().get("Russians").unwrap();
+    let credits = sim.houses()[&delegated].economy().credits();
+    for order in orders {
+        assert!(
+            crate::app::input::commands::schedule_command_in_sim(&mut sim, "Americans", order)
+                .is_some()
+        );
+    }
+    let mut queue = sim.network_command_queues();
+    let records: Vec<_> = queue
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| (record.house_id(), record.opcode()))
+            .collect::<Vec<_>>(),
+        [(0, MEGAMISSION_OPCODE)]
+    );
+    queue.commit_local_mirrors(&records).unwrap();
+    for _ in 0..900 {
+        let commands = sim.take_due_commands();
+        sim.advance_app_frame(&commands, rules, 67, TickLane::Ordinary, Default::default())
+            .unwrap();
+        if sim.entities().get(infantry).is_none() {
+            break;
+        }
+    }
+    assert!(sim.entities().get(infantry).is_none());
+    assert!(sim.houses()[&delegated].economy().credits() > credits);
+}
+
+/// An unarmed Infantryman reaches the Grinder row through base Select
+/// (0x0070056C..0x007005E6), even across an alliance. Delegated command
+/// authority over that Grinder does not let a different House feed it.
+#[test]
+fn allied_delegated_grinder_refuses_other_house_infantry_on_hover_and_click() {
+    use crate::app::input::entity_pick::hover_object_by_id;
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, grinder, _, _) = scene(rules, "Russians");
+    let infantry = sim
+        .spawn_object("CIV1", "Americans", 14, 17, 0, rules)
+        .unwrap();
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::FullControl,
+    }])
+    .unwrap();
+
+    let Some(HoverObject::Techno(hover)) = hover_object_by_id(&sim, grinder, "Americans") else {
+        panic!("expected the Grinder's live hover classification");
+    };
+    assert_eq!(hover.kind, HoverTargetKind::FriendlyStructure);
+    assert_eq!(
+        cursor_id_for_feedback(capability_cursor_for_hover(
+            &sim,
+            &[infantry],
+            Some(infantry),
+            &hover,
+            Some(rules),
+            Some(&registry),
+            OrderModifier::Normal,
+            false,
+            false,
+            &mut Default::default(),
+        )),
+        Some(CursorId::NoEnter)
+    );
+    assert_eq!(
+        entry_orders(
+            &sim,
+            rules,
+            &[infantry],
+            &mut vec![infantry],
+            &hover,
+            OrderModifier::Normal,
+            false,
+            Some(&registry),
+        ),
+        Some(Vec::new())
     );
 }
 
@@ -573,6 +740,7 @@ fn screen_overlap_with_hovering_rocketeer_keeps_bunker_enter_action() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -698,6 +866,7 @@ fn carrier_cursor(
         modifier,
         modifier == OrderModifier::ForceMove,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -941,6 +1110,7 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     for id in [gi, ifv] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1146,6 +1316,7 @@ fn a_carryall_over_the_players_tank_totes_it() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Tote)
     );
@@ -1188,7 +1359,7 @@ fn a_loaded_carryall_offers_unload() {
     let unload = |sim: &Simulation| {
         let entity = sim.entities().get(carryall).unwrap();
         let object = sim.interner().object_type(entity.type_ref(), &rules);
-        crate::app::input::transport_orders::unload_command(entity, object, owner)
+        crate::app::input::transport_orders::unload_command(sim, entity, object, owner)
     };
     assert_eq!(unload(&sim), None, "empty");
     let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);

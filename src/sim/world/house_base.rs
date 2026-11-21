@@ -337,8 +337,9 @@ impl Simulation {
             .rev()
             .find_map(|&id| {
                 let building = self.substrate.entities.get(id)?;
-                (!building.lifecycle.in_limbo() && building.type_facts.build_const_eligible())
-                    .then_some(id)
+                (!building.lifecycle.in_limbo()
+                    && building.seldom.type_facts.build_const_eligible())
+                .then_some(id)
             });
         let Some(cell) = candidate.and_then(|id| self.raw_building_base_cell(id)) else {
             return true;

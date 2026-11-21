@@ -7,7 +7,7 @@
 //! and colour indices spawn.ini fields address, and the campaigns a
 //! single-player launch may start. Every value comes from the
 //! owner the match itself uses: [`agreement::version`], the process
-//! [`ProcessAssets`] rules digest for the Battle mode, and
+//! [`ProcessAssets`] rules digest for the loaded default Skirmish mode, and
 //! [`crate::map::source::load_network_map_ini`] for the map, so two
 //! installations whose probes agree pass each other's agreement.
 //!
@@ -18,9 +18,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use crate::app::frontend::cncnet_spawn::{
-    max_spawn_color_index, max_spawn_country_index, spawn_battle_mode, spawn_modes,
-};
+use crate::app::frontend::cncnet_spawn::{max_spawn_color_index, max_spawn_country_index};
 use crate::app::process_assets::ProcessAssets;
 use crate::app::rules_parts::RulesParts;
 use crate::app::shell_network_setup::agreement;
@@ -41,8 +39,8 @@ pub(crate) struct ProbeReport {
     /// build hash. `ExpectedVersion`.
     pub version: String,
     pub build_identity: BuildIdentity,
-    /// The multiplayer rules agreement for spawn Battle launches
-    /// (`MPBattleMD.ini`). `ExpectedRulesDigest`.
+    /// The multiplayer rules agreement for the loaded default Skirmish mode:
+    /// eligible id 1, else the first eligible row. `ExpectedRulesDigest`.
     pub rules_digest: String,
     /// `rules_digest` in parts, which say what differs when two games'
     /// digests do (docs/spawn.md, "Rules parts"). An older build's report
@@ -210,7 +208,7 @@ pub(crate) fn build_identity() -> BuildIdentity {
 }
 
 /// The process sources startup loads (config INI roots, personal rules,
-/// neutral archives) from the game folder and the mod in `mod_dir`, with the
+/// neutral archives) from the game folder and the selected `active_mod`, with the
 /// startup Rules and shell projection their first load returns
 /// (`ProcessAssets::initialize_sources_if_needed`). `load_audio_index` reads
 /// the audio bag's index too, as startup does; it costs a hash of the bag.
@@ -218,7 +216,7 @@ pub(crate) fn load_process_sources(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
     load_audio_index: bool,
 ) -> Result<(
@@ -226,27 +224,32 @@ pub(crate) fn load_process_sources(
     Option<crate::rules::ruleset::RuleSet>,
     Option<crate::rules::ini_parser::IniFile>,
 )> {
+    let (resources, ares_setting) =
+        crate::app::mods::resources_for(active_mod.as_ref(), &config.ini, ares_setting)
+            .map_err(anyhow::Error::msg)?;
     let mut assets = AssetManager::with_mod_and_ares(
         &config.paths.ra2_dir,
-        mod_dir.as_deref(),
+        resources.mod_folder.as_deref(),
         media_archive_mode,
         ares_setting,
-        crate::assets::asset_manager::ArchiveFamily::for_ini_profile(config.ini.profile),
+        &resources.archives,
     )
-    .and_then(|assets| assets.with_ini_roots(&config.ini))
+    .and_then(|assets| assets.with_resource_config(&resources))
     .context("could not load the game archives")?;
-    let mut process = ProcessAssets::new_with_ini_config(
-        media_archive_mode,
-        load_audio_index,
-        config.ini.clone(),
-    )
-    .with_personal_rules(personal_rules)
-    .with_mod_dir(mod_dir)
-    .with_ares_setting(ares_setting);
-    let (startup_rules, projection) = process
-        .initialize_sources_if_needed(&assets)
-        .map_err(anyhow::Error::msg)
-        .context("could not load the retail rules")?;
+    let mut process = ProcessAssets::new(media_archive_mode, load_audio_index)
+        .with_resources(resources)
+        .with_mod_name(active_mod.map(|active| active.folder))
+        .with_personal_rules(personal_rules)
+        .with_ares_setting(ares_setting);
+    // Startup reads this game's INIs as its launch does
+    // (`rules::ares_switch::ares_way`); a caller that plays the game says so
+    // after (`AssetManager::open_for_play`).
+    let (startup_rules, projection) = {
+        let _ares_way = crate::rules::ares_switch::read_ares_way(assets.ships_ares());
+        process.initialize_sources_if_needed(&assets)
+    }
+    .map_err(anyhow::Error::msg)
+    .context("could not load the retail rules")?;
     // Startup registers these before any match computes its agreement.
     let _ = assets.register_neutral_archives();
     process.return_from_loading(assets);
@@ -254,14 +257,14 @@ pub(crate) fn load_process_sources(
 }
 
 /// Load the process sources as startup does ([`load_process_sources`]) and
-/// report them; `map` is a path to the launcher's map file, and `mod_dir`
-/// the folder of the mod the launch would read (`mods::launch_dir`).
+/// report them; `map` is a path to the launcher's map file, and `active_mod`
+/// the mod the launch would read (`mods::launch_mod`).
 pub(crate) fn probe(
     config: &crate::util::config::GameConfig,
     personal_rules: crate::rules::personal_rules::PersonalRules,
     media_archive_mode: MediaArchiveMode,
     map: Option<&str>,
-    mod_dir: Option<std::path::PathBuf>,
+    active_mod: Option<crate::app::mods::ActiveMod>,
     ares_setting: crate::util::ares_launch::AresSetting,
 ) -> Result<ProbeReport> {
     let root = &config.paths.ra2_dir;
@@ -269,15 +272,19 @@ pub(crate) fn probe(
         config,
         personal_rules,
         media_archive_mode,
-        mod_dir,
+        active_mod,
         ares_setting,
         true,
     )?;
-    let modes: Vec<_> = std::iter::once(spawn_battle_mode())
-        .chain(spawn_modes())
-        .collect();
-    let files: Vec<&str> = modes
-        .iter()
+    let assets = process.manager().context("retail sources missing")?;
+    assets.open_for_play();
+    let modes = crate::skirmish_modes::skirmish_modes_from_assets(assets)?;
+    let default_mode = crate::skirmish_modes::default_skirmish_mode(&modes)
+        .context("the selected mode catalog has no Skirmish game mode")?;
+    // The default mode first, then each mode; the parts read each source
+    // once for all of them.
+    let files: Vec<&str> = std::iter::once(default_mode)
+        .chain(&modes)
         .map(|mode| mode.override_file.as_str())
         .collect();
     let digests = files
@@ -288,8 +295,8 @@ pub(crate) fn probe(
         .map_err(anyhow::Error::msg)
         .context("could not digest the multiplayer rules")?;
     let mut digests = digests.0.into_iter().zip(digests.1);
-    let (rules_digest, rules_parts) = digests.next().context("no Battle mode")?;
-    let game_modes = modes[1..]
+    let (rules_digest, rules_parts) = digests.next().context("no default mode")?;
+    let game_modes = modes
         .iter()
         .zip(digests)
         .map(|(mode, (rules_digest, rules_parts))| ProbeGameMode {
@@ -598,7 +605,7 @@ pub(crate) fn run_desktop(
         personal_rules,
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
-        crate::app::mods::launch_dir(&config.paths, mod_switch),
+        crate::app::mods::launch_mod(&config.paths, mod_switch).map_err(anyhow::Error::msg)?,
         ares,
     )
 }
@@ -636,7 +643,8 @@ pub(crate) fn existing_personal_rules(
     rules.set_terrain_deformation(profile.terrain_deformation);
     rules.set_superweapon_limit(i32::from(profile.superweapon_limit));
     // Building Production Queue stays off: the probe reports the digest a
-    // network launch agrees on, and no room plays that box.
+    // launcher's network match agrees on, which plays without it
+    // (`App::start_spawn_session`).
     Ok(rules)
 }
 
@@ -894,5 +902,78 @@ mod tests {
         );
         assert_eq!(identity.map.effective_digest.len(), 64);
         assert_eq!(identity.start_waypoints, 3);
+    }
+
+    #[test]
+    fn selected_catalog_probe_reports_custom_mode_and_its_actual_rules() {
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let root = crate::map::source::test_support::TestDirectory::new("probe-selected-mode");
+        let mod_dir = root.path().join("Mods").join("Catalog");
+        std::fs::create_dir_all(&mod_dir).unwrap();
+        std::fs::write(mod_dir.join("mod.ini"), "[Files]\nModes=custom-modes.ini\n").unwrap();
+        std::fs::write(
+            mod_dir.join("custom-modes.ini"),
+            "[Battle]\n12=GUI:Custom,STT:Custom,selected-mode.ini,standard,true\n",
+        )
+        .unwrap();
+        std::fs::write(mod_dir.join("selected-mode.ini"), "[General]\nGravity=17\n").unwrap();
+        root.write(
+            "config.toml",
+            format!(
+                "[paths]\nra2_dir='{}'\nsettings_dir='{}'\nmod='Catalog'\n",
+                retail.display(),
+                root.path().display()
+            )
+            .as_bytes(),
+        );
+        let config =
+            crate::util::config::GameConfig::load_from(root.path(), &root.path().join("vera20k"))
+                .unwrap();
+        let selected = || crate::app::mods::launch_mod(&config.paths, None).unwrap();
+        let report = probe(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            None,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+        )
+        .unwrap();
+        let (process, _, _) = load_process_sources(
+            &config,
+            Default::default(),
+            MediaArchiveMode::STOCK_DIGITAL,
+            selected(),
+            crate::util::ares_launch::AresSetting::Auto,
+            false,
+        )
+        .unwrap();
+        let expected = process
+            .multiplayer_rules_digest("selected-mode.ini")
+            .unwrap();
+        assert_eq!(
+            report
+                .game_modes
+                .iter()
+                .map(|mode| mode.id)
+                .collect::<Vec<_>>(),
+            [12]
+        );
+        assert_eq!(report.game_modes[0].rules_digest, expected);
+        assert_eq!(report.rules_digest, expected);
+        // The parts name the mode catalog the digest compares, and the mod
+        // by its folder in `Mods`.
+        let parts = serde_json::to_value(&report.rules_parts).unwrap();
+        assert_eq!(
+            parts["settings"]["resources"]["roots"][9],
+            "custom-modes.ini"
+        );
+        assert_eq!(parts["settings"]["mod"]["title"], "Catalog");
+        assert_ne!(
+            report.rules_digest,
+            process.multiplayer_rules_digest("MPBattleMD.ini").unwrap()
+        );
     }
 }

@@ -1021,7 +1021,7 @@ impl Simulation {
             object.strength,
             rules.general.condition_yellow,
         );
-        let servicing = entity.radio_contacts.iter_live().next().is_some()
+        let servicing = entity.seldom.radio_contacts.iter_live().next().is_some()
             && entity.mission.effective()
                 == crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Repair,

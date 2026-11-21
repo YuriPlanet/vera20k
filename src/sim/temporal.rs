@@ -648,6 +648,7 @@ impl Simulation {
                 return false;
             }
             let naval_factory = entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| self.substrate.entities.get(contact))

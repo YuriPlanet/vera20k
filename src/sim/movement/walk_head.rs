@@ -352,7 +352,7 @@ mod tests {
                 0,
                 Some((3, 4)),
             ));
-        slave.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
+        slave.seldom.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(1), Vec::new());
         let current = super::super::ground_pose::position_world_coord(&slave.position);
         entities.insert(slave);
         let terrain = ResolvedTerrainGrid::from_cells(

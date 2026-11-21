@@ -9,6 +9,11 @@ that add to the map the generator makes. Every choice starts at Original or Off,
 there is the same map as before. In a room the host's Extras travel with the random map's options,
 and every player's game builds the same map from them.
 
+After generating a map, click **Save** and give it a name. To play it later,
+open **Choose Map → Random Maps**, select its name and click **Use Map**.
+VERA keeps new saves in `Maps/Random Maps/`. The folder in Choose Map also
+lists seeds saved by earlier versions.
+
 ## Advanced — building sliders
 
 Three VERA sliders open the Advanced scroll range after the original seven. All are

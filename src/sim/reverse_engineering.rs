@@ -160,7 +160,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(vehicle) else {
             return;
         };
-        let captor = entity.capture_infantry_type_index.get();
+        let captor = entity.seldom.capture_infantry_type_index.get();
         let owner = entity.owner();
         if captor < 0 {
             return;

@@ -187,8 +187,9 @@ pub fn tunnel_locomotor_matrix(facing_step: u8, angle: f32) -> Mat4 {
 /// Native initialization/executable controls: tools/native_slope.py.
 pub fn compute_slope_rotation(slope_type: u8) -> Mat4 {
     slope_matrix_to_mat4(
-        crate::map::voxel_slope::slope_matrix(slope_type)
-            .unwrap_or_else(|| crate::map::voxel_slope::slope_matrix(0).unwrap()),
+        crate::map::voxel_slope::slope_matrix(slope_type).unwrap_or_else(|| {
+            crate::map::voxel_slope::slope_matrix(0).expect("slope 0 heads the slope table")
+        }),
     )
 }
 

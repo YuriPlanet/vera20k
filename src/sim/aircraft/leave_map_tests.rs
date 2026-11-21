@@ -80,7 +80,7 @@ fn world(row: &Value) -> Simulation {
     });
     plane.set_in_playfield(flag(row, "in_playfield"));
     if flag(row, "mission_only") {
-        plane.mission_only.mark();
+        plane.seldom.mission_only.mark();
     }
     let mut sim = Simulation::with_seed(0);
     sim.substrate.entities.insert(plane);
@@ -292,6 +292,7 @@ fn dummy_cleanup_rereads_the_target_after_idle_restores_a_mission() {
         .navigation
         .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(16, 15)));
     entity
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Cell(701, 701)));
     sim.cleanup_aircraft_dummy_cells(plane, &rules, Default::default());

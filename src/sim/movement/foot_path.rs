@@ -178,18 +178,10 @@ impl crate::sim::pathfinding::SearchFootEntry for FootSearchEntry<'_> {
     }
     fn prepare_search_markers(
         &self,
-    ) -> Result<
-        Option<(
-            u8,
-            std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>,
-        )>,
-        String,
-    > {
+    ) -> Result<Option<(u8, &crate::sim::pathfinding::SearchMarkerOverlay)>, String> {
         Ok(Some(self.markers.prepare()))
     }
-    fn prepared_search_markers(
-        &self,
-    ) -> Option<std::cell::Ref<'_, crate::sim::pathfinding::SearchMarkerOverlay>> {
+    fn prepared_search_markers(&self) -> Option<&crate::sim::pathfinding::SearchMarkerOverlay> {
         self.markers.prepared()
     }
     fn is_passive_unit(&self) -> bool {
@@ -1512,7 +1504,7 @@ impl Simulation {
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
         let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
-        let fine_path = &path.paths[0];
+        let fine_path = path.route(0);
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
 

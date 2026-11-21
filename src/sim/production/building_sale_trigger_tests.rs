@@ -86,7 +86,14 @@ fn building_sale_sentinel_suppresses_only_the_victim_building_loss() {
                 700
             }
         );
-        assert!(sim.entities().get(1).unwrap().kill_record.is_recorded());
+        assert!(
+            sim.entities()
+                .get(1)
+                .unwrap()
+                .seldom
+                .kill_record
+                .is_recorded()
+        );
         Simulation::close_kill_record(&mut sim.substrate, 1);
         assert_eq!(
             sim.houses[&victim].stats().losses(),

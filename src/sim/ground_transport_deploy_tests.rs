@@ -59,6 +59,7 @@ fn supplied_fixture(rules: &RuleSet, fixture: &Value, row: &Value) -> (Simulatio
         .set_suspended_nav_com_for_test(nav(&before["suspended_nav"]));
     entity.attack_target.set_for_test(target(&before["target"]));
     entity
+        .seldom
         .suspended_attack_target
         .set_for_test(target(&before["suspended_target"]));
     entity.set_archive_target(target(&before["archive"]));
@@ -115,7 +116,7 @@ fn assert_mission_state(sim: &Simulation, id: u64, expected: &Value) {
         nav(&expected["suspended_nav"])
     );
     assert_eq!(
-        entity.suspended_attack_target.target(),
+        entity.seldom.suspended_attack_target.target(),
         target(&expected["suspended_target"])
     );
     assert_eq!(entity.archive_target(), target(&expected["archive"]));

@@ -68,6 +68,7 @@ fn insert_structure(
     // These aggregate/map controls supply already-discovered providers.
     // Controlled campaign Houses require this retained +41B (508FCE).
     entity
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(stable_id + 1));
@@ -684,6 +685,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers;
         clocks.reload(a, 104);
         clocks.reload(b, 119);
@@ -703,6 +705,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(a),
         CdTimer::started(104, 15)
@@ -715,7 +718,13 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         crate::sim::world::FrameEffects::default(),
     )
     .expect("fixture frame must complete");
-    let clocks = &sim.substrate.entities.get(2).unwrap().sight_refresh_timers;
+    let clocks = &sim
+        .substrate
+        .entities
+        .get(2)
+        .unwrap()
+        .seldom
+        .sight_refresh_timers;
     assert_eq!(clocks.timer(a), CdTimer::started(119, 15));
     assert_eq!(clocks.timer(b), CdTimer::started(119, 15));
     assert_eq!(
@@ -782,11 +791,18 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(c),
         CdTimer::started(119, 15)
     );
-    let clocks = &sim.substrate.entities.get(2).unwrap().sight_refresh_timers;
+    let clocks = &sim
+        .substrate
+        .entities
+        .get(2)
+        .unwrap()
+        .seldom
+        .sight_refresh_timers;
     // Process advanced the physical height after a's earlier sight visit.
     // The newly allied client samples that current height, not a's history.
     assert_eq!(clocks.last_height(c), 213);
@@ -829,6 +845,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner),
         CdTimer::started(0, 0),
@@ -858,6 +875,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner),
         CdTimer::started(0, 0),
@@ -885,6 +903,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner),
         CdTimer::started(119, 15)
@@ -907,6 +926,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner),
         CdTimer::started(119, 15),
@@ -916,7 +936,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         let entity = sim.substrate.entities.get_mut(2).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.set_in_playfield(true);
-        entity.sight.stamp_type_sight(-1);
+        entity.seldom.sight.stamp_type_sight(-1);
     }
     sim.refresh_high_flying_sight_before_process(
         2,
@@ -928,6 +948,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(owner),
         CdTimer::started(134, 15)
@@ -958,6 +979,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             .entities
             .get_mut(source)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(true);
         sim.update_object_sight_in_view(
@@ -1155,6 +1177,7 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
     insert_structure(&mut sim, 2, ally, "GSI418SIGHT", 18);

@@ -3,7 +3,7 @@
 
 use super::{
     ARRIVE_CELLS, CHECK_INTERVAL, DROP_RADIUS_CELLS, FerryAction, FerryRoute, FerryState, Leg,
-    QUIET_TICKS, RESEND_TICKS, TransportFacts, route_for, within,
+    QUIET_TICKS, RESEND_TICKS, TransportFacts, within,
 };
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{Command, CommandEnvelope};
@@ -12,6 +12,25 @@ use crate::sim::world::Simulation;
 
 const PICKUP: (u16, u16) = (3, 5);
 const DROP: (u16, u16) = (13, 5);
+
+fn route_for(
+    sim: &Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner: crate::sim::intern::InternedId,
+    transport: u64,
+    clicked: (u16, u16),
+    now: u64,
+) -> Option<FerryRoute> {
+    super::route_for(
+        sim,
+        &sim.control_projection(),
+        rules,
+        owner,
+        transport,
+        clicked,
+        now,
+    )
+}
 
 #[test]
 fn a_previous_worlds_ferry_cannot_board_units_in_a_fresh_world() {
@@ -204,6 +223,62 @@ fn a_round_trip_unloads_and_returns_and_a_detour_ends_it() {
     // Moving, then stopped away from the drop spot: the ferry is over.
     assert_eq!(route.step(&facts((6, 9), false, 4), 124), FerryAction::None);
     assert_eq!(route.step(&facts((6, 12), true, 4), 132), FerryAction::End);
+}
+
+#[test]
+fn ferry_and_autoload_accept_only_locally_delegated_carriers_and_passengers() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+    let local = sim.interner().get("Local").unwrap();
+    let delegated = sim.intern("Delegated");
+    sim.register_house(HouseState::new(delegated, 1, None, false, 0, 10));
+    let delegated_index = sim.houses().index_of(delegated).unwrap() as u8;
+    let transport = sim
+        .spawn_object("LCRF", "Delegated", 4, 8, 0, &rules)
+        .unwrap();
+    let passenger = sim
+        .spawn_object("E1", "Delegated", 5, 8, 0, &rules)
+        .unwrap();
+    sim.resolve_type_handles(&rules);
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    let now = sim.session().tick();
+    assert!(route_for(&sim, &rules, local, transport, (13, 2), now).is_none());
+    assert!(
+        crate::app::input::autoload::autoload_orders(&sim, &rules, &[passenger, transport])
+            .is_empty()
+    );
+
+    let frame = sim.session().binary_frame();
+    sim.session_mut_for_test().set_binary_frame_for_test(0);
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: delegated_index,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    sim.session_mut_for_test().set_binary_frame_for_test(frame);
+    let mut ferry = FerryState::default();
+    ferry.add(route_for(&sim, &rules, local, transport, (13, 2), now).unwrap());
+    let boards = |orders: &[Command]| {
+        orders.iter().any(|order| {
+            matches!(order, Command::MegaMission {
+            entity_id, mission: MissionType::Enter,
+            destination: Some(TargetKind::Entity(target)), ..
+        } if *entity_id == passenger && *target == transport)
+        })
+    };
+    assert!(boards(&ferry.check(&sim, &rules, local, now)));
+    assert!(boards(&crate::app::input::autoload::autoload_orders(
+        &sim,
+        &rules,
+        &[passenger, transport]
+    )));
 }
 
 /// One whole trip through the simulation, on a 16 x 16 scene with water on
