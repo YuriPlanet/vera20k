@@ -35,18 +35,17 @@ const NETWORK_SECTION: &str = "Network";
 /// VERA's own display preferences. gamemd never reads this section.
 const VERA_SECTION: &str = "VERA";
 
-/// `[VERA] GraphicsAPI=`: the graphics API the game asks wgpu for, on Windows,
-/// which has two. `auto`, the default, lets wgpu choose and the start record
-/// switch to the other API after a start that lost its device or never
-/// finished (`persistence::startup_backend`); `vulkan` and `dx12` ask for that
-/// one alone. The key has no Options control: it is for a player a maintainer
-/// walks through a driver problem. wgpu's own `WGPU_BACKEND` still wins.
+/// `[VERA] GraphicsAPI=` selects the renderer at startup. With `auto`, the
+/// Windows startup record can switch between Vulkan and DirectX 12 after a
+/// failed start. `opengl` requests the desktop OpenGL compatibility renderer.
+/// wgpu's `WGPU_BACKEND` environment variable takes precedence.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum GraphicsApi {
     #[default]
     Auto,
     Vulkan,
     DirectX12,
+    OpenGl,
 }
 
 impl GraphicsApi {
@@ -54,6 +53,7 @@ impl GraphicsApi {
         match value.trim().to_ascii_lowercase().as_str() {
             "vulkan" | "vk" => Self::Vulkan,
             "dx12" | "directx12" | "directx 12" | "d3d12" => Self::DirectX12,
+            "opengl" => Self::OpenGl,
             _ => Self::Auto,
         }
     }
@@ -63,6 +63,7 @@ impl GraphicsApi {
             Self::Auto => "auto",
             Self::Vulkan => "vulkan",
             Self::DirectX12 => "dx12",
+            Self::OpenGl => "opengl",
         }
     }
 
@@ -72,6 +73,7 @@ impl GraphicsApi {
             Self::Auto => None,
             Self::Vulkan => Some(wgpu::Backend::Vulkan),
             Self::DirectX12 => Some(wgpu::Backend::Dx12),
+            Self::OpenGl => Some(wgpu::Backend::Gl),
         }
     }
 }
@@ -1951,8 +1953,19 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Dx12));
         let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI= Vulkan \n").retained_profile;
         assert_eq!(typed.graphics_api.backend(), Some(wgpu::Backend::Vulkan));
-        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=opengl\n").retained_profile;
+        let typed = load_snapshot(&startup, b"[VERA]\nGraphicsAPI=unknown\n").retained_profile;
         assert_eq!(typed.graphics_api, GraphicsApi::Auto);
+    }
+
+    #[test]
+    fn opengl_in_vera_ini_selects_gl_and_survives_a_settings_save() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nGraphicsAPI=OpenGL\n";
+        let profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.graphics_api.backend(), Some(wgpu::Backend::Gl));
+        let saved = profile.transform_settings(b"");
+        let reloaded = load_snapshot(&startup, &saved).retained_profile;
+        assert_eq!(reloaded.graphics_api.backend(), Some(wgpu::Backend::Gl));
     }
 
     #[test]
