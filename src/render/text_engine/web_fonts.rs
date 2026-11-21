@@ -208,7 +208,9 @@ mod browser {
     }
 
     thread_local! {
-        /// [`preload`]'s promise, made once.
+        /// [`preload`]'s promise, made once. A thread-local because a JS
+        /// promise is a `!Send` handle on the browser's main thread, and the
+        /// host asks for it through a `#[wasm_bindgen]` export with no receiver.
         static PRELOAD: std::cell::OnceCell<js_sys::Promise> = const { std::cell::OnceCell::new() };
     }
 
