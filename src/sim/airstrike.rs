@@ -248,6 +248,9 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) {
         let m = self.substrate.airstrike_manager(owner).unwrap();
+        // A copy: each aircraft's target and mission below go through
+        // `&mut self`, as do this list's writers (pointer expiry, a mission
+        // effect's clear), so the walk keeps the list the reset read.
         let aircraft = m.aircraft.clone();
         let old_target = m.target;
         let remaining = m.remaining.max(0) as usize;
@@ -311,6 +314,9 @@ impl Simulation {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
             return;
         };
+        // A copy: the Retreat orders below go through `&mut self`, as do
+        // this list's writers (pointer expiry, a mission effect's clear), so
+        // the walk keeps the list the clear read.
         let aircraft = m.aircraft.clone();
         let target = m.target;
         let empty = aircraft.iter().any(|&id| {
@@ -471,6 +477,7 @@ impl Simulation {
             return;
         }
         if owner == expired {
+            // A copy: the walk below removes each aircraft from this list.
             let aircraft = m.aircraft.clone();
             if m.active
                 && let Some(first) = aircraft.first().copied()

@@ -1188,7 +1188,7 @@ enum FireDisclosurePath {
 /// represents that client's PlayerPtr; computer Houses have no client shroud.
 /// On each client the victim leaf asks IsHumanPlayer (`0x0050B6F0`) of the
 /// victim's House with that client's PlayerPtr
-/// ([`Simulation::human_player_clients`]), and Map5673A0's House gate
+/// ([`Simulation::human_player_client_set`]), and Map5673A0's House gate
 /// (`0x0056756A..0x005675D0`) writes that client's map for its own House or,
 /// under `AllyReveal=`, an ally ([`crate::sim::vision::reveal_admits`]): a
 /// shot at a campaign PlayerControl ally reveals its attacker on the

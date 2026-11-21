@@ -478,14 +478,18 @@ impl Simulation {
     /// TechnoClass::ClearAllInOpenTransport @ 0x007104C0: clear only each
     /// Cargo member's +82 byte; do not detach +11C or pop its cargo link.
     pub(crate) fn clear_all_in_open_transport(&mut self, transport_id: u64) {
-        let passengers = self
-            .substrate
-            .entities
-            .get(transport_id)
-            .and_then(|transport| transport.passenger_role().cargo())
-            .map(|cargo| cargo.passengers().to_vec())
-            .unwrap_or_default();
-        for id in passengers {
+        // Each write is the passenger's own link, never the transport's
+        // cargo, so the walk reads the list in place.
+        for index in 0.. {
+            let Some(id) = self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|transport| transport.passenger_role().cargo())
+                .and_then(|cargo| cargo.passengers().get(index).copied())
+            else {
+                break;
+            };
             if let Some(passenger) = self.substrate.entities.get_mut(id)
                 && let Some(link) = passenger.passenger_role().carrier_link()
             {
