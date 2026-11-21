@@ -39,9 +39,20 @@
 |---|---|---|---|---|
 | baseline-v2（驻扎上限后） | `7934c2764` | timeout own=130 army=68 | timeout own=108 army=63 | timeout own=121 army=72 |
 | raid（支队不再看军队大小） | `cbeb8ec34` | **won 33977** own=155 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
+| 基地锚点不再被第二个指挥中心夺走 | `e75815a59` | **won 32491** own=158 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 
 读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
 两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
+
+### 试过并且更差的（不要重试）
+
+- **`ARMY_TO_ATTACK` 10 → 20**（军队门槛抬高，想「屯更多兵再出门」）：三局
+  全部 timeout，连原本 32491 胜的那局也丢了。原因不是门槛本身——`army at first
+  push` 三局都还是 10，说明门不是它在把；抬它把 `fist_needs` 一起抬到 20，
+  支队被饿死，袭扰线没了。
+- **推进目标的三种改法**（按角色权重分配目标 / 从军队中心瞄准拳头 / 一个目标
+  打到最后）都输掉原本 tick 25636 赢的那局，见 `src/sim/strategy/assist/mod.rs`
+  的模块头注。
 
 ### 为什么基线必须是 36000 ticks
 
