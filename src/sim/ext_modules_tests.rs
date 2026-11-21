@@ -120,9 +120,30 @@ fn a_runaway_module_is_disabled_and_the_match_goes_on() {
         .install_ext_module(ModuleSource::Mod, &runaway)
         .expect("module installs");
     let start = scene.sim().session.binary_frame();
+    // The players are told once, through the frame's output.
+    let mut notices = 0;
     for _ in 0..5 {
-        scene.tick();
+        let output = scene
+            .runtime
+            .advance_frame(
+                &[],
+                crate::headless_scenario::SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("frame advances");
+        notices += output
+            .trigger_effects
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    crate::sim::trigger_runtime::TriggerEffect::ExtModuleStopped { .. }
+                )
+            })
+            .count();
     }
+    assert_eq!(notices, 1);
     assert_eq!(scene.sim().session.binary_frame(), start + 5);
     let status = scene.sim().ext_modules().status();
     let reason = status[0].1.as_deref().expect("the module stopped");

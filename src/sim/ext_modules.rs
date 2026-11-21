@@ -22,7 +22,7 @@
 //! Residuals before this leaves preview:
 //! - The state hash and the multiplayer frame checksum read all of a
 //!   module's memory each time, not the RFC's 1/15 page rotation.
-//! - A fault is logged, not shown to players.
+//! - The in-game notice of a stopped module is English only.
 //! - House references use a provisional encoding ([`house_ref`]).
 //! - Modules come only from [`Simulation::install_ext_module`]. Map packs and
 //!   mod folders are not read yet.
@@ -425,7 +425,10 @@ impl Simulation {
         );
         log::warn!(target: "ext_module", "{reason}");
         self.ext_modules.log.push(reason.clone());
-        slot.disabled = Some(reason);
+        slot.disabled = Some(reason.clone());
+        self.publish_trigger_effects([
+            crate::sim::trigger_runtime::TriggerEffect::ExtModuleStopped { reason },
+        ]);
     }
 }
 

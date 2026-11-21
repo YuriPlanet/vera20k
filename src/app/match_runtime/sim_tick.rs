@@ -3270,6 +3270,10 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             TriggerEffect::LocalizedMessage { csf_label } => {
                 crate::app::input::messages::post_trigger_message(state, csf_label);
             }
+            TriggerEffect::ExtModuleStopped { reason } => {
+                let text = format!("{reason}. The match continues without it.");
+                crate::app::input::messages::post_chat_line(state, "Module", &text, [1.0, 0.4, 0.4]);
+            }
             TriggerEffect::SelectSidebarTab { index } => {
                 refresh_sidebar = true;
                 let presentation = &mut state.match_state.match_presentation;

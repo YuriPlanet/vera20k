@@ -90,6 +90,11 @@ pub enum TriggerEffect {
     LocalizedMessage {
         csf_label: String,
     },
+    /// A Wasm extension module stopped (`sim::ext_modules`); the players are
+    /// told which and why (RFC 0001 section 3).
+    ExtModuleStopped {
+        reason: String,
+    },
     /// Execute114 asks the retained client sidebar to select a nonempty strip.
     SelectSidebarTab {
         index: i32,
