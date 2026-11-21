@@ -22,7 +22,7 @@
 | 项 | 结果 |
 |---|---|
 | `--profile fast` 构建 | 通过，`vera20k.exe` 约 91 MB |
-| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **175 passed** |
+| `cargo test -p vera20k-core --lib -- sim::strategy::assist` | **176 passed** |
 | 改名 `retail` → `assist` | 无行为改动，构建与测试通过 |
 | 会话重构（`AutoplaySession`） | 行为保持：同一 host 调用、同一 take_back、同一顺序 |
 | 上游合并 `0e831f2c3` | 上游 377 提交并入，冲突四处，测试通过 |
@@ -42,6 +42,8 @@
 | 基地锚点不再被第二个指挥中心夺走 | `e75815a59` | **won 32491** own=158 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 | 每座精炼厂三辆采矿车 | `f4189fa6e` | **won 35276** own=158 army=86 | timeout own=126 army=66 | timeout own=147 army=82 enemy=10 |
 | 防守上限 8 → 12 | `f9ea878bd` | **won 29484** own=154 army=79 | timeout own=158 army=90 idle=82 | **won 35820** own=157 army=93 |
+| limbo 单位不再占据编制 | `27d285395` | **won 31893** own=138 army=73 | timeout own=162 enemy=52 army=88 | **won 35437** own=143 army=69 |
+| 掉队的单位补一道命令 | `c593d5ed7` | **won 31957** own=121 army=56 | timeout own=162 enemy=13 army=93 | **won 33912** own=162 army=86 |
 
 读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
 两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
@@ -65,6 +67,38 @@
 seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158、army 66→90），
 卡住它的是 `push=outgunned`：军队 90 人却 idle=82，门在军队自己更强的时候把它按在家里。
 那是下一件事。
+
+### 掉队的兵补一道命令（这条留下来了）
+
+`advance.rs` 的 push 循环原来对 `mission == Move` 无条件 `continue`。到达之后任务号不会
+自己变回 Sleep，所以「走到位、没有目标了」的兵会被永远跳过——它站在那儿，直到比赛结束。
+
+先在循环里加了一条 `AUTOPLAY_TRACE_PUSH` 探针（量每个 fighter 到目标的平方距离、有
+destination 或 attack_target 的人数、以及 max-min 的散布）。Death.mmx seed 24301 第 31876 帧：
+
+```
+fighters=65  moving=7  near=19  spread=17232   # 17232 的平方根约 131 格
+```
+
+六十五个兵里只有七个在动，十九个在目标十二格内，整条队形摊了 131 格。这就是用户说的
+「一个个散着去打」：不是跑得快，是队尾一起步就再没接到第二条命令。
+
+改法：以离目标最近的 fighter 为队首（`tip`），掉队超过 `STAGGER_BEHIND = 10` 格的兵重新接。
+已经到位的（在队首十格圈内）保持不动——这正是上一版「无条件接回」丢掉胜利的原因。
+
+| seed | 上一版（`27d285395`） | 掉队补命令（`c593d5ed7`） |
+|---|---|---|
+| 24301 | **won 31893** own=138 army=73 lost=48:111 inc=5512 | **won 31957** own=121 army=56 lost=58:108 inc=8556 |
+| 19 | timeout own=162 enemy=52 army=88 lost=46:70 | timeout own=162 enemy=13 army=93 lost=52:94 |
+| 10 | **won 35437** own=143 army=69 | **won 33912** own=162 army=86 |
+
+两胜保住，第二场提前 1525 帧、多 19 辆坦克；从不获胜的那局从「还差 52 个目标」变成
+「还差 13 个」。代价是参考局 own 138 -> 121、army 73 -> 56：兵活得更久但到得没那么齐。
+跑两遍逐字节一致。
+
+没有单测：这条规则只对「任务号是 Move 且没有 destination」的兵生效，而这个状态只有
+引擎自己的移动能产生——fixture 里的 Outbox 不会被应用，第二次 `advance()` 看到的还是 Sleep，
+两种版本都会给所有兵下命令。测不出来。
 
 ### 防守队按突袭规模给（测过，三局都没有收益，留下了）
 
