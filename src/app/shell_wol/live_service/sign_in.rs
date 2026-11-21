@@ -2,7 +2,11 @@
 //! the remembered name, the credential a sign-in uses, and remembering or
 //! forgetting it in `Account.json`.
 
-use super::{LiveService, http, lobby_base_url};
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+use super::DEFAULT_LOBBY_URL;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use super::lobby_base_url;
+use super::{LiveService, http};
 use crate::app::AppState;
 use crate::app::persistence::account;
 

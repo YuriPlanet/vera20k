@@ -289,7 +289,8 @@ impl GpuContext {
         window: Arc<Window>,
         display: OwnedDisplayHandle,
     ) -> Result<Self> {
-        Self::new_async(window, display, false, wgpu::Backends::empty()).await
+        // The browser picks its one API itself; there is no start record to name the adapter in.
+        Self::new_async(window, display, false, wgpu::Backends::empty(), |_| {}).await
     }
 
     /// Initialize wgpu with the given window.

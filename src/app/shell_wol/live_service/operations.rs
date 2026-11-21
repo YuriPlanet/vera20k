@@ -2,11 +2,15 @@
 //! retrying commands, and the finish, leave, logout, relay-renewal and report
 //! bookkeeping the service keeps for its visit.
 
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use super::DEFAULT_LOBBY_URL;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use super::lobby_base_url;
 use super::{
     ENDED_AGO_LIMIT, LiveService, MatchReport, RELAY_GRANT_LIFETIME, RELAY_RENEWAL_MARGIN,
     RELAY_RENEWAL_RETRY_MS, RELAY_TIMEOUT, RetryingCommand, RoomAgreement, Translations,
-    WatchStart, Watching, decode, http, lobby_base_url, maps, relay_failure_line, relay_uuid,
-    update_required_text, wire,
+    WatchStart, Watching, decode, http, maps, relay_failure_line, relay_uuid, update_required_text,
+    wire,
 };
 use crate::util::time::Instant;
 use anyhow::{Context, Result, ensure};
