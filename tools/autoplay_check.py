@@ -100,6 +100,13 @@ CENSUS = re.compile(r"^\s*(\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(\d+)\s+(\d+)\s+(\d+
 # order, unclaimed how many nobody has claimed. The old log called these
 # army/stuck/unowned; the report keeps the old names so a history file written
 # before the rename still reads.
+#
+# idle is an upper bound, not a count of units doing nothing: a unit on a Guard
+# pose has no destination by definition and is idle here while it stands
+# exactly where the base defence put it. On Death.mmx seed 10 a mid-match
+# sample reads idle=43 with idle_missions=[E1/Guard:28, MGTK/Guard:8], so 36
+# of the 43 were the garrison holding home. Read idle next to the guard count
+# before calling a house idle.
 UNCLAIMED = re.compile(r"unclaimed=(\d+)")
 IDLE = re.compile(r"idle=(\d+)")
 # The gate the push waits on. A gate that changes during a match is a turn the
