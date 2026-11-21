@@ -41,6 +41,7 @@
 | raid（支队不再看军队大小） | `cbeb8ec34` | **won 33977** own=155 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 | 基地锚点不再被第二个指挥中心夺走 | `e75815a59` | **won 32491** own=158 army=84 | timeout own=128 army=66 | timeout own=106 army=55 |
 | 每座精炼厂三辆采矿车 | `f4189fa6e` | **won 35276** own=158 army=86 | timeout own=126 army=66 | timeout own=147 army=82 enemy=10 |
+| 防守上限 8 → 12 | `f9ea878bd` | **won 29484** own=154 army=79 | timeout own=158 army=90 idle=82 | **won 35820** own=157 army=93 |
 
 读法：三局都打满 36000 ticks 之前，只有第一场胜。第一场胜利来自「屯兵 + 袭扰」
 两条线分开：fist 留在家里等 1.2 倍优势，支队去打法娘的采矿与精炼。
