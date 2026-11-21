@@ -1671,6 +1671,17 @@ fn a_huge_spawn_count_stops_at_the_spawn_bound() {
 }
 
 #[test]
+fn a_huge_slave_count_stops_at_the_slave_bound() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=SLAV\n[VehicleTypes]\n0=SMIN\n\
+             [SLAV]\nStrength=100\n[SMIN]\nEnslaves=SLAV\nSlavesNumber=2147483647\n",
+    ))
+    .unwrap();
+    let limit = crate::rules::object_type::SLAVES_NUMBER_LIMIT;
+    assert_eq!(rules.object("SMIN").unwrap().slaves_number, limit);
+}
+
+#[test]
 fn sides_past_one_byte_are_not_allocated() {
     let sides: String = (0..257).map(|i| format!("S{i}=Americans\n")).collect();
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!("[Sides]\n{sides}"))).unwrap();
