@@ -96,6 +96,8 @@ pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 pub(crate) const HAS_VSYNC: bool = !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const VSYNC_LABEL: &str = "VERA:VSync";
 pub(crate) const VSYNC_HELP: &str = "VERA:VSyncHelp";
+pub(crate) const HIGH_REFRESH_RATE_IN_BATTLE_LABEL: &str = "VERA:HighRefreshRateInBattle";
+pub(crate) const HIGH_REFRESH_RATE_IN_BATTLE_HELP: &str = "VERA:HighRefreshRateInBattleHelp";
 /// The General page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -972,6 +974,8 @@ pub(crate) enum LauncherCheckboxId {
     /// (`GpuContext::set_vsync`). On by default; saved, and the next frame
     /// follows it.
     VSync,
+    /// Use the monitor refresh rate for battlefield draws when draw time permits.
+    HighRefreshRateInBattle,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -1080,6 +1084,7 @@ pub(crate) enum LauncherOptionsEvent {
     SmoothSidebarChanged(bool),
     SmoothOnlineMenusChanged(bool),
     VSyncChanged(bool),
+    HighRefreshRateInBattleChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     ShowStringKeysChanged(bool),
@@ -1149,6 +1154,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) smooth_sidebar: bool,
     pub(crate) smooth_online_menus: bool,
     pub(crate) vsync: bool,
+    pub(crate) high_refresh_rate_in_battle: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) auto_repair: bool,
@@ -1222,6 +1228,7 @@ impl Default for LauncherOptionsValues {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             shift_queue: false,
             auto_repair: false,
@@ -1707,6 +1714,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
             LauncherCheckboxId::VSync => &mut self.values.vsync,
+            LauncherCheckboxId::HighRefreshRateInBattle => {
+                &mut self.values.high_refresh_rate_in_battle
+            }
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
@@ -1770,6 +1780,12 @@ impl OptionsDialogState {
             LauncherCheckboxId::VSync => self
                 .pending_events
                 .push(LauncherOptionsEvent::VSyncChanged(checked)),
+            LauncherCheckboxId::HighRefreshRateInBattle => {
+                self.pending_events
+                    .push(LauncherOptionsEvent::HighRefreshRateInBattleChanged(
+                        checked,
+                    ))
+            }
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -2056,6 +2072,7 @@ impl Category {
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
+                Setting::Checkbox(Check::HighRefreshRateInBattle),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
@@ -2072,6 +2089,7 @@ impl Category {
                 Setting::Slider(Slider::Detail),
                 Setting::Checkbox(Check::FullScreen),
                 Setting::Checkbox(Check::VSync),
+                Setting::Checkbox(Check::HighRefreshRateInBattle),
                 Setting::Checkbox(Check::OriginalShape),
                 Setting::Checkbox(Check::PerformanceStats),
             ],
@@ -2838,6 +2856,7 @@ mod tests {
                 Check::SmoothSidebar,
                 Check::SmoothOnlineMenus,
                 Check::VSync,
+                Check::HighRefreshRateInBattle,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::AutoRepair,

@@ -869,6 +869,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
             LauncherCheckboxId::VSync => super::VSYNC_LABEL,
+            LauncherCheckboxId::HighRefreshRateInBattle => super::HIGH_REFRESH_RATE_IN_BATTLE_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
@@ -955,6 +956,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => self.values.smooth_online_menus,
             LauncherCheckboxId::VSync => self.values.vsync,
+            LauncherCheckboxId::HighRefreshRateInBattle => self.values.high_refresh_rate_in_battle,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => self.values.auto_repair,
@@ -1296,6 +1298,9 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Vera(SMOOTH_ONLINE_MENUS_HELP)
                 }
                 LauncherCheckboxId::VSync => LauncherStatusHelp::Vera(super::VSYNC_HELP),
+                LauncherCheckboxId::HighRefreshRateInBattle => {
+                    LauncherStatusHelp::Vera(super::HIGH_REFRESH_RATE_IN_BATTLE_HELP)
+                }
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::AutoRepair => LauncherStatusHelp::Vera(AUTO_REPAIR_HELP),
@@ -2320,6 +2325,26 @@ mod tests {
                 );
                 state.shell_mouse_up(x, y, &layout);
             }
+        }
+    }
+
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[test]
+    fn high_refresh_checkbox_sends_both_choices_with_vsync_off() {
+        let layout = LauncherOptionsLayout::new(640, 480, Category::Display);
+        let mut dialog = state();
+        dialog.values.vsync = false;
+        let id = LauncherCheckboxId::HighRefreshRateInBattle;
+        let rect = checkbox(&layout, id);
+        assert!(!dialog.shell_checkbox_checked(id));
+        for enabled in [true, false] {
+            dialog.shell_mouse_down(rect.x + 2, rect.y + 2, &layout);
+            dialog.shell_mouse_up(rect.x + 2, rect.y + 2, &layout);
+            assert_eq!(dialog.shell_checkbox_checked(id), enabled);
+            assert!(dialog.drain_output().events.contains(
+                &LauncherOptionsEvent::HighRefreshRateInBattleChanged(enabled)
+            ));
+            assert!(!dialog.shell_checkbox_checked(LauncherCheckboxId::VSync));
         }
     }
 

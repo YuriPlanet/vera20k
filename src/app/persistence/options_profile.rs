@@ -197,6 +197,8 @@ pub(crate) struct RetailOptionsProfile {
     /// (`GpuContext::set_vsync`). On by default; untick it for lower input
     /// latency, with tearing. Presentation only.
     pub(crate) vsync: bool,
+    /// `[VERA] HighRefreshRateInBattle=`: allow battlefield draws at the monitor's refresh rate.
+    pub(crate) high_refresh_rate_in_battle: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -428,6 +430,7 @@ impl Default for RetailOptionsProfile {
             smooth_sidebar: false,
             smooth_online_menus: false,
             vsync: true,
+            high_refresh_rate_in_battle: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -473,7 +476,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 42],
+    pub(crate) vera: [(&'static str, String); 43],
 }
 
 impl RetailOptionsLoad {
@@ -690,6 +693,8 @@ impl RetailOptionsProfile {
             self.smooth_online_menus =
                 vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.vsync = vera.read_bool("VSync", self.vsync);
+            self.high_refresh_rate_in_battle =
+                vera.read_bool("HighRefreshRateInBattle", self.high_refresh_rate_in_battle);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -909,6 +914,10 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_online_menus).to_string(),
                 ),
                 ("VSync", format_bool(self.vsync).to_string()),
+                (
+                    "HighRefreshRateInBattle",
+                    format_bool(self.high_refresh_rate_in_battle).to_string(),
+                ),
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
@@ -1941,6 +1950,30 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let ini = IniFile::from_bytes(&off).unwrap();
         assert!(!ini.section(VERA_SECTION).unwrap().read_bool("VSync", true));
         assert!(!load_snapshot(&startup, &off).retained_profile.vsync);
+    }
+
+    #[test]
+    fn high_refresh_rate_in_battle_round_trips_independently_of_vsync() {
+        let startup = RetailStartupOptions::default();
+        let saved = b"[VERA]\nVSync=no\n";
+        let mut profile = load_snapshot(&startup, saved).retained_profile;
+        assert!(!profile.high_refresh_rate_in_battle);
+
+        profile.high_refresh_rate_in_battle = true;
+        let enabled = profile.transform_settings(saved);
+        let mut profile = load_snapshot(&startup, &enabled).retained_profile;
+        assert!(profile.high_refresh_rate_in_battle);
+        assert!(!profile.vsync);
+
+        profile.high_refresh_rate_in_battle = false;
+        let disabled = profile.transform_settings(&enabled);
+        let vera = IniFile::from_bytes(&disabled).unwrap();
+        assert!(
+            !vera
+                .section(VERA_SECTION)
+                .unwrap()
+                .read_bool("HighRefreshRateInBattle", true)
+        );
     }
 
     #[test]
