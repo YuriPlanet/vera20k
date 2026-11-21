@@ -18,8 +18,9 @@ use super::text::{
     combo_face_text_draw_rect, combo_face_text_fit_width, fit_owner_draw_label, rect_to_text_rect,
 };
 use super::{
-    COMBODROPWIN_TEXT_INSET_X, SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
-    SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
+    COMBODROPWIN_TEXT_INSET_X, SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH,
+    SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
+    SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB,
 };
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -49,14 +50,27 @@ pub(crate) enum ButtonArt {
     /// Not at all: the host paints them, or a slide's column covers them.
     Host,
     /// The right panel's owner-draw type-1 buttons (`0x00612B70`, SDBTNANM),
-    /// pushed while their press holds them (under the pointer or not), with
-    /// the type-1 caption, or one in their rect in their own `Align`.
+    /// pushed while their press holds them (under the pointer or not), lit
+    /// while `Toggled` (record `+0xC5`), with the type-1 caption, or one in
+    /// their rect in their own `Align`.
     Panel,
     /// Owner-draw type-3 buttons (MNBTTN), pushed under the pointer, with
     /// their caption centred.
     Modal,
     /// A framed plate with its caption in its `Align` (VERA's Extras rows).
     Plate,
+}
+
+/// How a dialog's combos paint their face.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ComboArt {
+    /// The owner-draw face, arrow and caption.
+    Plain,
+    /// [`Self::Plain`] in the owner-draw two-pixel bevel (`0x105`'s).
+    Framed,
+    /// No face: the host paints it (VERA's roster cells); only an open
+    /// list paints.
+    Host,
 }
 
 /// What a dialog's widgets take from their host rather than their props.
@@ -82,8 +96,8 @@ pub(crate) struct GuiStyle<'a> {
     /// frame, selection, the control scrollbar) rather than as the WOL
     /// pages' over their art ([`super::list::paint_list`]).
     pub(crate) control_lists: bool,
-    /// Combo faces wear the owner-draw two-pixel bevel (`0x105`'s).
-    pub(crate) framed: bool,
+    /// The combos' faces.
+    pub(crate) combos: ComboArt,
     /// An edit's caret shows (it has the focus, in its blink) by the host's
     /// word, for a tree the shell controller does not own.
     pub(crate) caret_of: Option<&'a dyn Fn(NodeId) -> bool>,
@@ -104,7 +118,7 @@ impl Default for GuiStyle<'_> {
             rows_of: None,
             enabled_of: None,
             control_lists: false,
-            framed: false,
+            combos: ComboArt::Plain,
             caret_of: None,
             text_factor: None,
             rgb: SHELL_LABEL_TEXT_RGB,
@@ -382,7 +396,10 @@ pub(crate) fn paint_gui_with(
                         &mut paint.controls,
                         atlas,
                         rect,
-                        pressed,
+                        crate::ui::shell::button::ButtonVisual {
+                            pressed,
+                            highlighted: flag(gui, node, Prop::Toggled, false),
+                        },
                         !enabled,
                         SHELL_CONTROL_DEPTH,
                     ),
@@ -530,7 +547,7 @@ pub(crate) fn paint_gui_with(
                     .and(style.rows_of)
                     .zip(id(node))
                     .and_then(|(rows_of, id)| rows_of(id));
-                if style.framed {
+                if style.combos == ComboArt::Framed {
                     let out = &mut paint.controls;
                     super::chrome::push_ownerdraw_two_pixel_bevel_frame(
                         out,
@@ -540,7 +557,7 @@ pub(crate) fn paint_gui_with(
                     );
                 }
                 paint_combo(
-                    &mut paint, state, atlas, gui, node, rect, enabled, scale, depth, host_rows,
+                    &mut paint, state, atlas, gui, node, rect, enabled, scale, style, host_rows,
                 );
             }
             NodeKind::List => {
@@ -656,7 +673,8 @@ pub(crate) fn paint_gui_with(
     paint
 }
 
-/// An owner-draw combo's face, and its drop-down while it is open.
+/// An owner-draw combo's face, and its drop-down while it is open, its
+/// rows in the style's colour and glyph scale.
 #[allow(clippy::too_many_arguments)]
 fn paint_combo(
     paint: &mut GuiPaint,
@@ -667,7 +685,7 @@ fn paint_combo(
     rect: RectPx,
     enabled: bool,
     scale: ShellScale,
-    depth: f32,
+    style: GuiStyle<'_>,
     host_rows: Option<HostRows>,
 ) {
     let drop_down = gui.combo_drop_down(node);
@@ -680,46 +698,53 @@ fn paint_combo(
     };
     let face_swatch = selected.and_then(swatch);
     let open = drop_down.is_some();
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Combo {
-            rect,
-            swatch: face_swatch,
-            open,
-            disabled: !enabled,
-        },
-        scale,
-    );
     let items = items(gui, node, Prop::Items);
-    // A host caption (`Text`) stands in for the selected row's; captions are
-    // cut to gamemd's arrow and scrollbar reserves (`0x00617250`,
-    // `0x0060DF38`), squeezed first.
-    let face = match gui.get(node, Prop::Text).ok().flatten() {
-        Some(Value::Text(face)) => Some(face),
-        _ => selected.and_then(|row| items.get(row)),
+    // A host-counted combo's rows are the host's.
+    let rows: Vec<&str> = match &host_rows {
+        Some(rows) => rows.iter().map(|(row, _)| row.as_str()).collect(),
+        None => items.iter().map(String::as_str).collect(),
     };
-    let rgb = text_rgb(
-        gui,
-        node,
-        enabled,
-        SHELL_LABEL_TEXT_RGB,
-        Some(combo_face_text_color(true)),
-    );
     let font = &state.renderer.bit_font;
-    if let Some(face) = face {
-        let at = combo_face_text_draw_rect(rect, scale);
-        fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
-            paint.texts.push(text(
-                state,
-                face,
-                at,
-                ShellAlign::V_CENTER,
-                scale.factor(),
-                rgb,
-                depth,
-            ));
-        });
+    if style.combos != ComboArt::Host {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Combo {
+                rect,
+                swatch: face_swatch,
+                open,
+                disabled: !enabled,
+            },
+            scale,
+        );
+        // The host's caption, or `Text`, stands in for the selected row's.
+        let host = (style.text_of.zip(gui.id_of(node))).and_then(|(text_of, id)| text_of(id));
+        let face = match (&host, gui.get(node, Prop::Text).ok().flatten()) {
+            (Some(face), _) | (None, Some(Value::Text(face))) => Some(face.as_str()),
+            _ => selected.and_then(|row| items.get(row)).map(String::as_str),
+        };
+        let rgb = text_rgb(
+            gui,
+            node,
+            enabled,
+            SHELL_LABEL_TEXT_RGB,
+            Some(combo_face_text_color(true)),
+        );
+        if let Some(face) = face {
+            // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first.
+            let at = combo_face_text_draw_rect(rect, scale);
+            fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {
+                paint.texts.push(text(
+                    state,
+                    face,
+                    at,
+                    ShellAlign::V_CENTER,
+                    scale.factor(),
+                    rgb,
+                    SHELL_CONTROL_TEXT_DEPTH,
+                ));
+            });
+        }
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
@@ -730,7 +755,7 @@ fn paint_combo(
         drop_down.hot_row.and_then(|row| popup.row_rect(row)),
         (popup.first..popup.first + popup.visible_rows).filter_map(|row| {
             let at = scale.derive_rect(popup.row_rect(row)?, |r| {
-                RectPx::new(r.x + 2, r.y + 2, r.w - 4, 19)
+                RectPx::new(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
             });
             Some((at, swatch(row)?))
         }),
@@ -739,12 +764,9 @@ fn paint_combo(
         scale,
         SHELL_DROPDOWN_DEPTH - 0.00002,
     );
-    let content = popup.content();
-    // A host-counted combo's open list shows the host's rows.
-    let rows: Vec<&str> = match &host_rows {
-        Some(rows) => rows.iter().map(|(row, _)| row.as_str()).collect(),
-        None => items.iter().map(String::as_str).collect(),
-    };
+    // The rows fit the list in their own glyph size.
+    let glyph = style.text_factor.unwrap_or(scale.factor());
+    let fit = combo_dropdown_text_fit_width(popup.content(), scale) as f32 * scale.factor() / glyph;
     for row in popup.first..popup.first + popup.visible_rows {
         let (Some(at), Some(item)) = (popup.row_rect(row), rows.get(row).copied()) else {
             continue;
@@ -753,21 +775,16 @@ fn paint_combo(
         // scrollbar reserve (`0x0060DF38`).
         let inset = COMBODROPWIN_TEXT_INSET_X;
         let at = scale.derive_rect(at, |r| RectPx::new(r.x + inset, r.y, r.w - 2 * inset, r.h));
-        fit_owner_draw_label(
-            font,
-            item,
-            combo_dropdown_text_fit_width(content, scale),
-            |item| {
-                paint.popup_texts.push(text(
-                    state,
-                    item,
-                    at,
-                    ShellAlign::V_CENTER,
-                    scale.factor(),
-                    SHELL_LABEL_TEXT_RGB,
-                    SHELL_DROPDOWN_TEXT_DEPTH,
-                ));
-            },
-        );
+        fit_owner_draw_label(font, item, fit.round() as u32, |item| {
+            paint.popup_texts.push(text(
+                state,
+                item,
+                at,
+                ShellAlign::V_CENTER,
+                glyph,
+                style.rgb,
+                SHELL_DROPDOWN_TEXT_DEPTH,
+            ));
+        });
     }
 }

@@ -1,48 +1,36 @@
 //! The family pages' shared shell: the right-panel pages (main menu `0xE2`,
-//! Single Player `0x100`, Movies & Credits `0x101`, campaign `0x94`, Load
-//! Saved Game `0xB7`) paint their panel, monitor, button column, captions,
-//! heading and status line through [`encode_family_page`], each with what it
-//! draws under and over them. [`FamilyPage`] names the pages whose buttons
-//! are `vera20k-gui` nodes (`ui::shell::menu_page`).
+//! Single Player `0x100`, Movies & Credits `0x101`, the movie list `0x129`,
+//! Mods, campaign `0x94`, Load Saved Game `0xB7` and the score pages) paint
+//! their panel, monitor, heading and status line, and their button column's
+//! `vera20k-gui` nodes through `gui_paint`, in [`encode_family_page`], each
+//! with what it draws under and over them. [`FamilyPage`] names the pages
+//! whose buttons are `ui::shell::menu_page` specs.
 
 use crate::app::shell_route::ShellRoute;
 use crate::util::time::Instant;
 
 use anyhow::Result;
 
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
+
 use crate::app::AppState;
-use crate::app::frontend::main_menu_shell_render::{Ra2tsDialogOwner, shell_reveal_path_a};
+use crate::app::frontend::main_menu_shell_render::{
+    Ra2tsDialogOwner, shell_parent_background_instances, shell_reveal_path_a,
+};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect,
-    software_cursor,
+    ShellComposition, TexturedDraw, encode_shell_pass, software_cursor,
 };
 use crate::app::frontend::shell_transition::{ColumnDraw, ShellSlideKind};
-use crate::render::batch::SpriteInstance;
-use crate::render::shell_paint::{
-    self, ArtFit, ButtonPolicy, CURSOR_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_DISABLED,
-    SHELL_TEXT_RGB_ENABLED,
+use crate::app::frontend::skirmish_shell_render::gui_paint::{
+    ButtonArt, GuiPaint, GuiStyle, paint_gui_ids,
 };
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_paint::{self, CURSOR_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED};
+use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{RectPx, SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
-
-/// Family pages paint the 156x42 SDBTNANM frame filling its cell,
-/// right-anchored and vertically centred — the native placement at the
-/// authored cell size, and a proportional stretch of it on a stretched layout.
-/// Mouse hover updates static 0x695 but does not select frame 3. Press selects
-/// frame 4 without moving the art; a runtime-disabled button keeps its art and
-/// shows its caption in the disabled colour (owner-draw type 1, `0x006135F3`).
-pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
-    art_fit: ArtFit::FitRightAnchored {
-        panel_w: SDBTNANM_CELL_W_NARROW as f32,
-        tile_h: SDBTNANM_CELL_H as f32,
-    },
-    hover_flash: false,
-    art_sink_y: 0.0,
-};
 
 pub(crate) enum MenuPageRenderResult {
     Rendered,
@@ -145,55 +133,50 @@ impl FamilyPage {
             .flatten()
     }
 
-    /// The steady buttons with the live instance's press and hover.
-    pub(crate) fn buttons(self, state: &AppState, layout: &MenuPageLayout) -> Vec<PageButton> {
-        let controller = &state.frontend.shell_controller;
-        let reads = self.reads(controller);
-        let dialog = self.dialog();
-        page_buttons(
-            layout,
-            reads
-                .then(|| menu_page::pressed_id(controller, dialog))
-                .flatten(),
-            reads
-                .then(|| menu_page::hovered_id(controller, dialog))
-                .flatten(),
-            self.enabled(state).filter(|(_, on)| !on).map(|(id, _)| id),
+    /// The page's button tree ([`page_tree`]).
+    pub(crate) fn tree(self, state: &mut AppState) -> Option<(Gui, NodeId)> {
+        let layout = self.layout(state);
+        let campaign = (self == Self::Campaign).then(|| shell_layout::campaign_layout(state));
+        let rect_of = |id| match &campaign {
+            Some(campaign) => campaign.control_rect(id),
+            None => layout.button_rect(id),
+        };
+        let enabled = self.enabled(state);
+        page_tree(
+            state,
+            self.dialog(),
+            || self.nodes(),
+            rect_of,
+            enabled.as_slice(),
         )
     }
 }
 
-/// One right-panel button as it paints.
-#[derive(Clone, Copy)]
-pub(crate) struct PageButton {
-    pub(crate) id: u16,
-    pub(crate) paint: PaintButton,
-}
-
-/// `layout`'s buttons with the `pressed` and `hovered` control and the
-/// `disabled` one. A disabled control never paints pressed or hovered.
-pub(crate) fn page_buttons(
-    layout: &MenuPageLayout,
-    pressed: Option<u16>,
-    hovered: Option<u16>,
-    disabled: Option<u16>,
-) -> Vec<PageButton> {
-    layout
-        .buttons
-        .iter()
-        .map(|b| {
-            let enabled = disabled != Some(b.id);
-            PageButton {
-                id: b.id,
-                paint: PaintButton {
-                    rect: b.rect,
-                    pressed: enabled && pressed == Some(b.id),
-                    hovered: enabled && hovered == Some(b.id),
-                    enabled,
-                },
-            }
-        })
-        .collect()
+/// A page's button tree: `nodes` kept on `rect_of` with the `enabled`
+/// overrides under `dialog`'s live instance (`None`), or, while it has none
+/// (before its first pointer message, or under a box that took the stack),
+/// a scratch tree of them, which paints released.
+pub(crate) fn page_tree(
+    state: &mut AppState,
+    dialog: DialogId,
+    nodes: impl FnOnce() -> NodeSpec,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    enabled: &[(u16, bool)],
+) -> Option<(Gui, NodeId)> {
+    use crate::ui::shell::page;
+    let controller = &mut state.frontend.shell_controller;
+    if controller.root_in(dialog).is_some() {
+        menu_page::sync_nodes(controller, dialog, nodes, rect_of, enabled);
+        return None;
+    }
+    let mut gui = Gui::new(64);
+    let root = gui.create(NodeKind::Dialog, None).ok()?;
+    page::ensure_built(&mut gui, root, nodes);
+    page::sync_rects(&mut gui, root, rect_of);
+    for &(id, on) in enabled {
+        page::set(&mut gui, root, id, Prop::Enabled, Value::Bool(on));
+    }
+    Some((gui, root))
 }
 
 /// A family page frame's slide and statics.
@@ -376,9 +359,7 @@ pub(crate) fn render_menu_page(
 ) -> Result<MenuPageRenderResult> {
     use crate::app::frontend::main_menu_shell_render as movie;
     movie::ensure_movie_for_current_layout(state, page.movie_owner())?;
-    if state.frontend.main_menu_shell_error.is_some()
-        || state.frontend.main_menu_shell_chrome.is_none()
-    {
+    if state.frontend.main_menu_shell_error.is_some() || !family_art_ready(state) {
         state
             .frontend
             .main_menu_shell_error
@@ -394,6 +375,7 @@ pub(crate) fn render_menu_page(
     if !movie::step_ra2ts_movie(state, !sliding) {
         return Ok(MenuPageRenderResult::Fallback);
     }
+    let tree = page.tree(state);
     let layout = page.layout(state);
     let panel = page_panel_state(
         state,
@@ -402,51 +384,50 @@ pub(crate) fn render_menu_page(
         |state| page.status_key(state),
         layout.status_help,
     );
-    let buttons = page.buttons(state, &layout);
-    let chrome = state
-        .frontend
-        .main_menu_shell_chrome
-        .as_ref()
-        .expect("checked before render");
+    let title = page.spec().title_key;
+    let mut frame = FamilyFrame::new("Menu Page Shell", &layout, panel, title);
     // Menu pages have no parent background under the movie; while a slide
     // runs the RA2TS area shows the shell background instead.
-    let under = if sliding {
-        vec![TexturedDraw {
-            texture: &chrome.texture,
-            instances: movie::shell_parent_background_instances(
-                chrome,
-                layout.screen.w,
-                layout.screen.h,
-                layout.scale,
-            ),
-        }]
-    } else {
-        movie::movie_draw(state, layout.movie).into_iter().collect()
-    };
-    let mut frame = FamilyFrame::new("Menu Page Shell", page.spec(), &layout, panel, buttons);
-    frame.under = under;
+    frame.backdrop = sliding;
+    frame
+        .under
+        .extend(movie::movie_draw(state, layout.movie).filter(|_| !sliding));
+    let frame = frame.on(state, page.dialog(), &tree);
     encode_family_page(state, encoder, destination, frame);
     Ok(MenuPageRenderResult::Rendered)
+}
+
+/// Whether the family shell's art is ready: the right panel's, and the
+/// Skirmish family's that the pages' buttons and lists paint with.
+pub(crate) fn family_art_ready(state: &mut AppState) -> bool {
+    state.frontend.main_menu_shell_chrome.is_some()
+        && crate::app::App::ensure_skirmish_shell_chrome(state)
 }
 
 /// One family page frame for [`encode_family_page`].
 pub(crate) struct FamilyFrame<'a> {
     pub(crate) label: &'static str,
-    pub(crate) spec: &'static MenuPageSpec,
     pub(crate) layout: &'a MenuPageLayout,
     pub(crate) panel: PanelState,
-    pub(crate) buttons: Vec<PageButton>,
+    /// Heading `0x694`'s CSF key, shown while `panel.title` reveals it.
+    pub(crate) title_key: &'static str,
+    /// The tree whose nodes `ids` the column's buttons are (its root): the
+    /// owner-draw type-1 buttons with their captions, in `style`.
+    pub(crate) buttons: Option<(&'a Gui, NodeId)>,
+    pub(crate) ids: Vec<u16>,
+    pub(crate) style: GuiStyle<'a>,
+    /// The family parent background ([`shell_parent_background_instances`])
+    /// goes under everything.
+    pub(crate) backdrop: bool,
     /// The page's own art under the right panel, in draw order.
     pub(crate) under: Vec<TexturedDraw<'a>>,
-    /// Chrome-atlas sprites over the panel, under its button column (a list).
-    pub(crate) over_panel: Vec<SpriteInstance>,
     /// Other art over the panel, under the buttons (a score page's own).
     pub(crate) over_panel_art: Vec<TexturedDraw<'a>>,
-    /// The page's own text, drawn before the captions and statics.
+    /// The page's own text, drawn before the heading and status line.
     pub(crate) labels: Vec<PaintLabel<'a>>,
-    /// Drawn over the buttons, with text after all other text (a prompt).
-    pub(crate) over: Option<TexturedDraw<'a>>,
-    pub(crate) over_text: Vec<ShellTextDraw>,
+    /// Skirmish-atlas sprites over the buttons (a list, a prompt), with
+    /// their text after all other text.
+    pub(crate) over: GuiPaint,
     /// Whether this pass draws the cursor (a box painted over the page next
     /// draws it instead).
     pub(crate) cursor: bool,
@@ -455,25 +436,43 @@ pub(crate) struct FamilyFrame<'a> {
 impl<'a> FamilyFrame<'a> {
     pub(crate) fn new(
         label: &'static str,
-        spec: &'static MenuPageSpec,
         layout: &'a MenuPageLayout,
         panel: PanelState,
-        buttons: Vec<PageButton>,
+        title_key: &'static str,
     ) -> Self {
         Self {
             label,
-            spec,
             layout,
             panel,
-            buttons,
+            title_key,
+            buttons: None,
+            ids: layout.buttons.iter().map(|button| button.id).collect(),
+            style: GuiStyle::default(),
+            backdrop: false,
             under: Vec::new(),
-            over_panel: Vec::new(),
             over_panel_art: Vec::new(),
             labels: Vec::new(),
-            over: None,
-            over_text: Vec::new(),
+            over: GuiPaint::default(),
             cursor: true,
         }
+    }
+
+    /// The column's buttons are `dialog`'s nodes on the shell controller,
+    /// or `scratch`'s ([`page_tree`]).
+    pub(crate) fn on(
+        self,
+        state: &'a AppState,
+        dialog: DialogId,
+        scratch: &'a Option<(Gui, NodeId)>,
+    ) -> Self {
+        let controller = &state.frontend.shell_controller;
+        let buttons = match scratch {
+            Some((gui, root)) => Some((gui, *root)),
+            None => controller
+                .root_in(dialog)
+                .map(|root| (controller.gui(), root)),
+        };
+        Self { buttons, ..self }
     }
 }
 
@@ -487,63 +486,63 @@ pub(crate) fn encode_family_page(
     destination: &wgpu::Texture,
     frame: FamilyFrame<'_>,
 ) {
-    let Some(chrome) = state.frontend.main_menu_shell_chrome.as_ref() else {
+    let (Some(chrome), Some(atlas)) = (
+        state.frontend.main_menu_shell_chrome.as_ref(),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) else {
         return;
     };
     let FamilyFrame {
         label,
-        spec,
         layout,
         panel,
+        title_key,
         buttons,
-        mut under,
-        over_panel,
+        ids,
+        style,
+        backdrop,
+        under,
         over_panel_art,
         mut labels,
         over,
-        over_text,
         cursor,
     } = frame;
+    let (screen, scale) = (layout.screen, layout.scale);
+    let mut draws = Vec::new();
+    if backdrop {
+        draws.push(TexturedDraw {
+            texture: &chrome.texture,
+            instances: shell_parent_background_instances(chrome, screen.w, screen.h, scale),
+        });
+    }
+    draws.extend(under);
     let mut panel_sprites = shell_paint::paint_chrome(
         chrome,
         layout.right_panel,
         Some(layout.lower_strip),
-        layout.screen.w,
+        screen.w,
     );
     panel_sprites.extend(panel.monitor.and_then(|frame| {
-        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, layout.scale)
+        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, scale)
     }));
-    panel_sprites.extend(over_panel);
-    let buttons = match &panel.column {
-        Some(draws) => {
-            panel_sprites.extend(shell_paint::paint_slide_column(
-                chrome,
-                layout.right_panel,
-                draws,
-            ));
-            Vec::new()
+    let mut widgets = match (&panel.column, buttons) {
+        (Some(draws), _) => {
+            let column = shell_paint::paint_slide_column(chrome, layout.right_panel, draws);
+            panel_sprites.extend(column);
+            GuiPaint::default()
         }
-        None => buttons,
+        (None, Some((gui, root))) => {
+            let style = GuiStyle {
+                buttons: ButtonArt::Panel,
+                ..style
+            };
+            paint_gui_ids(state, gui, root, ids, scale, style)
+        }
+        (None, None) => GuiPaint::default(),
     };
-    for PageButton { id, paint } in &buttons {
-        let Some(spec_button) = spec.button(*id) else {
-            continue;
-        };
-        labels.push(PaintLabel {
-            text: state.csf_text(spec_button.csf_key).into(),
-            rect: owner_draw_button_label_rect(paint.rect, paint.pressed),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: if paint.enabled {
-                SHELL_TEXT_RGB_ENABLED
-            } else {
-                SHELL_TEXT_RGB_DISABLED
-            },
-            path_a_reveal: None,
-        });
-    }
     if let Some(window) = panel.title {
         labels.push(PaintLabel {
-            text: state.csf_text(spec.title_key).into(),
+            text: state.csf_text(title_key).into(),
             rect: layout.title,
             align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -551,34 +550,26 @@ pub(crate) fn encode_family_page(
         });
     }
     labels.extend(panel.status);
-    let buttons: Vec<PaintButton> = buttons.iter().map(|b| b.paint).collect();
-    let button_sprites = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        MENU_PAGE_BUTTON_POLICY,
-        Instant::now(),
-        None,
-    );
     let mut text =
-        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, layout.scale.factor());
-    text.extend(over_text);
-    under.push(TexturedDraw {
+        shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
+    widgets.extend(over);
+    text.extend(widgets.texts);
+    draws.push(TexturedDraw {
         texture: &chrome.texture,
         instances: panel_sprites,
     });
-    under.extend(over_panel_art);
-    under.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: button_sprites,
+    draws.extend(over_panel_art);
+    draws.push(TexturedDraw {
+        texture: &atlas.texture,
+        instances: widgets.controls,
     });
-    under.extend(over);
     encode_shell_pass(
         state,
         encoder,
         destination,
         label,
         ShellComposition {
-            draws: &under,
+            draws: &draws,
             text: &text,
             cursor: if cursor {
                 software_cursor(state, CURSOR_DEPTH)
@@ -595,21 +586,6 @@ pub(crate) fn encode_family_page(
 mod tests {
     use super::*;
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;
-
-    #[test]
-    fn menu_page_policy_fills_the_authored_cell_without_mouse_hover_flash() {
-        // The fit is keyed on the authored 156x42 cell, so an unstretched
-        // layout gets the native placement; a stretched cell stretches the art.
-        assert_eq!(
-            MENU_PAGE_BUTTON_POLICY.art_fit,
-            ArtFit::FitRightAnchored {
-                panel_w: 156.0,
-                tile_h: 42.0
-            }
-        );
-        const { assert!(!MENU_PAGE_BUTTON_POLICY.hover_flash) };
-        assert_eq!(MENU_PAGE_BUTTON_POLICY.art_sink_y, 0.0);
-    }
 
     #[test]
     fn status_help_includes_disabled_load() {
@@ -631,18 +607,6 @@ mod tests {
             menu_page::hovered_help(&c, dialog).as_deref(),
             Some("STT:SingleButtonLoadSavedGame")
         );
-    }
-
-    #[test]
-    fn disabled_page_button_never_paints_pressed_or_hovered() {
-        let layout = crate::ui::single_player_shell::compute_layout(800, 600);
-        let buttons = page_buttons(&layout, Some(0x0689), Some(0x0689), Some(0x0689));
-        let load = buttons
-            .iter()
-            .find(|button| button.id == 0x0689)
-            .map(|button| button.paint)
-            .expect("load button");
-        assert!(!load.enabled && !load.pressed && !load.hovered);
     }
 
     #[test]

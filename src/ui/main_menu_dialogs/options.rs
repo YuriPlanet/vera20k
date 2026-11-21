@@ -7,13 +7,12 @@
 //! Retail's controls and VERA's own share one dialog, sorted into the
 //! [`Category`] pages its right-hand column picks between. Each control's
 //! caption, status help and value come from one table per kind
-//! ([`LauncherCheckboxId::spec`], [`LauncherTrackbarId::text`],
+//! ([`LauncherCheckboxId::keys`], [`LauncherTrackbarId::text`],
 //! [`LauncherComboId::text`]).
 
 pub(crate) mod shell;
 
 use crate::ui::shell::page::PageCue;
-use shell::LauncherStatusHelp::{self as Key, Csf, Vera};
 
 /// gamemd-derived: launcher owner `OptionsClass__ShowLauncherDialog @
 /// 0x0055FC80` and its primary-proc slice `0x0055FDB0..0x0056047A` bind the
@@ -754,21 +753,21 @@ impl LauncherTrackbarId {
     /// handler (0x0055FF68) names the position (tables 0x0082A248, of which
     /// Detail shows entries 0 and 2, 0x0082A254 and 0x0082A260), so the
     /// resource captions never show.
-    const fn text(self) -> (Key, Key, &'static [&'static str]) {
+    const fn text(self) -> (&'static str, &'static str, &'static [&'static str]) {
         match self {
             Self::Detail => (
-                Csf("GUI:VisualDetails"),
-                Csf("STT:MainOptSliderVisual"),
+                "GUI:VisualDetails",
+                "STT:MainOptSliderVisual",
                 &["TXT_LOW", "TXT_HIGH"],
             ),
             Self::Difficulty => (
-                Csf("GUI:Difficulty"),
-                Csf("STT:MainOptSliderDifficulty"),
+                "GUI:Difficulty",
+                "STT:MainOptSliderDifficulty",
                 &["TXT_EASY", "TXT_NORMAL", "TXT_HARD"],
             ),
             Self::Scroll => (
-                Csf("GUI:ScrollRate"),
-                Csf("STT:MainOptSliderScroll"),
+                "GUI:ScrollRate",
+                "STT:MainOptSliderScroll",
                 &[
                     "TXT_SLOWEST",
                     "TXT_SLOWER",
@@ -779,17 +778,17 @@ impl LauncherTrackbarId {
                     "TXT_FASTEST",
                 ],
             ),
-            Self::Score => (Csf("GUI:MusicVolume"), Csf("STT:MainOptSliderMusic"), &[]),
-            Self::Sound => (Csf("GUI:SoundVolume"), Csf("STT:MainOptSliderSound"), &[]),
-            Self::Voice => (Csf("GUI:VoiceVolume"), Csf("STT:MainOptSliderVoice"), &[]),
+            Self::Score => ("GUI:MusicVolume", "STT:MainOptSliderMusic", &[]),
+            Self::Sound => ("GUI:SoundVolume", "STT:MainOptSliderSound", &[]),
+            Self::Voice => ("GUI:VoiceVolume", "STT:MainOptSliderVoice", &[]),
             // VERA's own slider: retail has no string for it.
             Self::HouseColorStrength => (
-                Vera("VERA:HouseColorStrength"),
-                Vera("VERA:HouseColorStrengthHelp"),
+                "VERA:HouseColorStrength",
+                "VERA:HouseColorStrengthHelp",
                 &[],
             ),
             // Retail's string for the Game Options speed slider.
-            Self::GameSpeed => (Csf(""), Csf("STT:GameOptSliderSpeed"), &[]),
+            Self::GameSpeed => ("", "STT:GameOptSliderSpeed", &[]),
         }
     }
 
@@ -922,195 +921,90 @@ pub(crate) enum LauncherCheckboxId {
     CompactSuperTimers,
 }
 
-/// A box's caption and status help, where its value lives, and what a toggle
-/// publishes. Retail's three apply with the accepted pack (`0x0055FAA0`);
-/// VERA's publish each change.
-type CheckboxSpec = (
-    Key,
-    Key,
-    fn(&mut LauncherOptionsValues) -> &mut bool,
-    Option<fn(bool) -> LauncherOptionsEvent>,
-);
-
 impl LauncherCheckboxId {
-    pub(crate) fn spec(self) -> CheckboxSpec {
-        use LauncherOptionsEvent as E;
+    /// The box's caption and status help.
+    pub(crate) const fn keys(self) -> (&'static str, &'static str) {
         match self {
-            Self::Tooltips => (
-                Csf("GUI:Tooltips"),
-                Csf("STT:MainOptCBoxTooltips"),
-                |v| &mut v.tooltips,
-                None,
-            ),
-            Self::TargetLines => (
-                Csf("GUI:TargetLines"),
-                Csf("STT:MainOptCBoxTargetLines"),
-                |v| &mut v.target_lines,
-                None,
-            ),
-            Self::ShowHidden => (
-                Csf("GUI:ShowHidden"),
-                Csf("STT:MainOptCBoxHidden"),
-                |v| &mut v.show_hidden,
-                None,
-            ),
-            Self::FullScreen => (
-                Vera(FULL_SCREEN_LABEL),
-                Vera(FULL_SCREEN_HELP),
-                |v| &mut v.full_screen,
-                Some(E::FullScreenChanged),
-            ),
-            Self::OriginalShape => (
-                Vera(ORIGINAL_SHAPE_LABEL),
-                Vera(ORIGINAL_SHAPE_HELP),
-                |v| &mut v.original_shape,
-                Some(E::OriginalShapeChanged),
-            ),
-            Self::YrOriginalStyle => (
-                Vera(YR_ORIGINAL_STYLE_LABEL),
-                Vera("VERA:YrOriginalStyleHelp"),
-                |v| &mut v.yr_original_style,
-                Some(E::YrOriginalStyleChanged),
-            ),
-            Self::ShiftQueue => (
-                Vera("VERA:ShiftQueue"),
-                Vera("VERA:ShiftQueueHelp"),
-                |v| &mut v.shift_queue,
-                Some(E::ShiftQueueChanged),
-            ),
-            Self::AutoRepair => (
-                Vera("VERA:AutoRepair"),
-                Vera("VERA:AutoRepairHelp"),
-                |v| &mut v.auto_repair,
-                Some(E::AutoRepairChanged),
-            ),
-            Self::MouseWheelZoom => (
-                Vera("VERA:MouseWheelZoom"),
-                Vera("VERA:MouseWheelZoomHelp"),
-                |v| &mut v.mouse_wheel_zoom,
-                Some(E::MouseWheelZoomChanged),
-            ),
-            Self::RightClickOrders => (
-                Vera("VERA:RightClickOrders"),
-                Vera("VERA:RightClickOrdersHelp"),
-                |v| &mut v.right_click_orders,
-                Some(E::RightClickOrdersChanged),
-            ),
-            Self::MinimapBeacons => (
-                Vera("VERA:MinimapBeacons"),
-                Vera("VERA:MinimapBeaconsHelp"),
-                |v| &mut v.minimap_beacons,
-                Some(E::MinimapBeaconsChanged),
-            ),
-            Self::LockCursor => (
-                Vera("VERA:LockCursor"),
-                Vera("VERA:LockCursorHelp"),
-                |v| &mut v.lock_cursor,
-                Some(E::LockCursorChanged),
-            ),
-            Self::VeraIcon => (
-                Vera("VERA:VeraIcon"),
-                Vera("VERA:VeraIconHelp"),
-                |v| &mut v.vera_icon,
-                Some(E::VeraIconChanged),
-            ),
-            Self::HdRadar => (
-                Vera("VERA:HdRadar"),
-                Vera("VERA:HdRadarHelp"),
-                |v| &mut v.hd_radar,
-                Some(E::HdRadarChanged),
-            ),
-            Self::SmoothSidebar => (
-                Vera("VERA:SmoothSidebar"),
-                Vera("VERA:SmoothSidebarHelp"),
-                |v| &mut v.smooth_sidebar,
-                Some(E::SmoothSidebarChanged),
-            ),
-            Self::SmoothOnlineMenus => (
-                Vera("VERA:SmoothOnlineMenus"),
-                Vera("VERA:SmoothOnlineMenusHelp"),
-                |v| &mut v.smooth_online_menus,
-                Some(E::SmoothOnlineMenusChanged),
-            ),
-            Self::VSync => (
-                Vera("VERA:VSync"),
-                Vera("VERA:VSyncHelp"),
-                |v| &mut v.vsync,
-                Some(E::VSyncChanged),
-            ),
-            Self::HdMapPreviews => (
-                Vera("VERA:HdMapPreviews"),
-                Vera("VERA:HdMapPreviewsHelp"),
-                |v| &mut v.hd_map_previews,
-                Some(E::HdMapPreviewsChanged),
-            ),
-            Self::PerformanceStats => (
-                Vera(PERFORMANCE_STATS_LABEL),
-                Vera(PERFORMANCE_STATS_HELP),
-                |v| &mut v.performance_stats,
-                Some(E::PerformanceStatsChanged),
-            ),
-            Self::SkipIntro => (
-                Vera("VERA:SkipIntro"),
-                Vera("VERA:SkipIntroHelp"),
-                |v| &mut v.skip_intro,
-                Some(E::SkipIntroChanged),
-            ),
-            Self::ShowStringKeys => (
-                Vera("VERA:ShowStringKeys"),
-                Vera("VERA:ShowStringKeysHelp"),
-                |v| &mut v.show_string_keys,
-                Some(E::ShowStringKeysChanged),
-            ),
-            Self::CustomEndGameBanner => (
-                Vera(CUSTOM_END_GAME_BANNER_LABEL),
-                Vera("VERA:CustomEndGameBannerHelp"),
-                |v| &mut v.custom_end_game_banner,
-                Some(E::CustomEndGameBannerChanged),
-            ),
-            Self::CustomEndGameScore => (
-                Vera(CUSTOM_END_GAME_SCORE_LABEL),
-                Vera("VERA:CustomEndGameScoreHelp"),
-                |v| &mut v.custom_end_game_score,
-                Some(E::CustomEndGameScoreChanged),
-            ),
-            Self::CustomEndGameMovie => (
-                Vera(CUSTOM_END_GAME_MOVIE_LABEL),
-                Vera("VERA:CustomEndGameMovieHelp"),
-                |v| &mut v.custom_end_game_movie,
-                Some(E::CustomEndGameMovieChanged),
-            ),
-            Self::CommanderFeedback => (
-                Vera(COMMANDER_FEEDBACK_LABEL),
-                Vera("VERA:CommanderFeedbackHelp"),
-                |v| &mut v.commander_feedback,
-                Some(E::CommanderFeedbackChanged),
-            ),
-            Self::DetailedEvaText => (
-                Vera("VERA:DetailedEvaText"),
-                Vera("VERA:DetailedEvaTextHelp"),
-                |v| &mut v.detailed_eva_text,
-                Some(E::DetailedEvaTextChanged),
-            ),
-            Self::ConvenienceHelp => (
-                Vera("VERA:ConvenienceHelp"),
-                Vera("VERA:ConvenienceHelpHelp"),
-                |v| &mut v.convenience_help,
-                Some(E::ConvenienceHelpChanged),
-            ),
+            Self::Tooltips => ("GUI:Tooltips", "STT:MainOptCBoxTooltips"),
+            Self::TargetLines => ("GUI:TargetLines", "STT:MainOptCBoxTargetLines"),
+            Self::ShowHidden => ("GUI:ShowHidden", "STT:MainOptCBoxHidden"),
+            Self::FullScreen => (FULL_SCREEN_LABEL, FULL_SCREEN_HELP),
+            Self::OriginalShape => (ORIGINAL_SHAPE_LABEL, ORIGINAL_SHAPE_HELP),
+            Self::YrOriginalStyle => (YR_ORIGINAL_STYLE_LABEL, "VERA:YrOriginalStyleHelp"),
+            Self::ShiftQueue => ("VERA:ShiftQueue", "VERA:ShiftQueueHelp"),
+            Self::AutoRepair => ("VERA:AutoRepair", "VERA:AutoRepairHelp"),
+            Self::MouseWheelZoom => ("VERA:MouseWheelZoom", "VERA:MouseWheelZoomHelp"),
+            Self::RightClickOrders => ("VERA:RightClickOrders", "VERA:RightClickOrdersHelp"),
+            Self::MinimapBeacons => ("VERA:MinimapBeacons", "VERA:MinimapBeaconsHelp"),
+            Self::LockCursor => ("VERA:LockCursor", "VERA:LockCursorHelp"),
+            Self::VeraIcon => ("VERA:VeraIcon", "VERA:VeraIconHelp"),
+            Self::HdRadar => ("VERA:HdRadar", "VERA:HdRadarHelp"),
+            Self::SmoothSidebar => ("VERA:SmoothSidebar", "VERA:SmoothSidebarHelp"),
+            Self::SmoothOnlineMenus => ("VERA:SmoothOnlineMenus", "VERA:SmoothOnlineMenusHelp"),
+            Self::VSync => ("VERA:VSync", "VERA:VSyncHelp"),
+            Self::HdMapPreviews => ("VERA:HdMapPreviews", "VERA:HdMapPreviewsHelp"),
+            Self::PerformanceStats => (PERFORMANCE_STATS_LABEL, PERFORMANCE_STATS_HELP),
+            Self::SkipIntro => ("VERA:SkipIntro", "VERA:SkipIntroHelp"),
+            Self::ShowStringKeys => ("VERA:ShowStringKeys", "VERA:ShowStringKeysHelp"),
+            Self::CustomEndGameBanner => {
+                (CUSTOM_END_GAME_BANNER_LABEL, "VERA:CustomEndGameBannerHelp")
+            }
+            Self::CustomEndGameScore => {
+                (CUSTOM_END_GAME_SCORE_LABEL, "VERA:CustomEndGameScoreHelp")
+            }
+            Self::CustomEndGameMovie => {
+                (CUSTOM_END_GAME_MOVIE_LABEL, "VERA:CustomEndGameMovieHelp")
+            }
+            Self::CommanderFeedback => (COMMANDER_FEEDBACK_LABEL, "VERA:CommanderFeedbackHelp"),
+            Self::DetailedEvaText => ("VERA:DetailedEvaText", "VERA:DetailedEvaTextHelp"),
+            Self::ConvenienceHelp => ("VERA:ConvenienceHelp", "VERA:ConvenienceHelpHelp"),
             Self::BuildingProductionQueue => (
-                Vera("VERA:BuildingProductionQueue"),
-                Vera("VERA:BuildingProductionQueueHelp"),
-                |v| &mut v.building_production_queue,
-                Some(E::BuildingProductionQueueChanged),
+                "VERA:BuildingProductionQueue",
+                "VERA:BuildingProductionQueueHelp",
             ),
-            Self::CompactSuperTimers => (
-                Vera("VERA:CompactSuperTimers"),
-                Vera("VERA:CompactSuperTimersHelp"),
-                |v| &mut v.compact_super_timers,
-                Some(E::CompactSuperTimersChanged),
-            ),
+            Self::CompactSuperTimers => ("VERA:CompactSuperTimers", "VERA:CompactSuperTimersHelp"),
         }
+    }
+
+    /// Where its value lives.
+    fn slot(self, v: &mut LauncherOptionsValues) -> &mut bool {
+        match self {
+            Self::Tooltips => &mut v.tooltips,
+            Self::TargetLines => &mut v.target_lines,
+            Self::ShowHidden => &mut v.show_hidden,
+            Self::FullScreen => &mut v.full_screen,
+            Self::OriginalShape => &mut v.original_shape,
+            Self::YrOriginalStyle => &mut v.yr_original_style,
+            Self::ShiftQueue => &mut v.shift_queue,
+            Self::AutoRepair => &mut v.auto_repair,
+            Self::MouseWheelZoom => &mut v.mouse_wheel_zoom,
+            Self::RightClickOrders => &mut v.right_click_orders,
+            Self::MinimapBeacons => &mut v.minimap_beacons,
+            Self::LockCursor => &mut v.lock_cursor,
+            Self::VeraIcon => &mut v.vera_icon,
+            Self::HdRadar => &mut v.hd_radar,
+            Self::SmoothSidebar => &mut v.smooth_sidebar,
+            Self::SmoothOnlineMenus => &mut v.smooth_online_menus,
+            Self::VSync => &mut v.vsync,
+            Self::HdMapPreviews => &mut v.hd_map_previews,
+            Self::PerformanceStats => &mut v.performance_stats,
+            Self::SkipIntro => &mut v.skip_intro,
+            Self::ShowStringKeys => &mut v.show_string_keys,
+            Self::CustomEndGameBanner => &mut v.custom_end_game_banner,
+            Self::CustomEndGameScore => &mut v.custom_end_game_score,
+            Self::CustomEndGameMovie => &mut v.custom_end_game_movie,
+            Self::CommanderFeedback => &mut v.commander_feedback,
+            Self::DetailedEvaText => &mut v.detailed_eva_text,
+            Self::ConvenienceHelp => &mut v.convenience_help,
+            Self::BuildingProductionQueue => &mut v.building_production_queue,
+            Self::CompactSuperTimers => &mut v.compact_super_timers,
+        }
+    }
+
+    /// Whether a toggle publishes: retail's three apply with the accepted
+    /// pack (`0x0055FAA0`); VERA's publish each change.
+    const fn publishes(self) -> bool {
+        !matches!(self, Self::Tooltips | Self::TargetLines | Self::ShowHidden)
     }
 }
 
@@ -1120,7 +1014,6 @@ impl LauncherCheckboxId {
 /// 0x0055FC80` consumes these before any parent-result teardown. A list's pick
 /// and a VERA box's change publish at once; see their ids for what each does.
 pub(crate) enum LauncherOptionsEvent {
-    Cue(PageCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
     SidebarColumnsSelected(SidebarColumns),
@@ -1131,34 +1024,10 @@ pub(crate) enum LauncherOptionsEvent {
     DisplaySelected(DisplayTarget),
     /// A language tag.
     LanguageSelected(String),
-    FullScreenChanged(bool),
+    /// A VERA box's new state ([`LauncherCheckboxId::publishes`]).
+    Toggled(LauncherCheckboxId, bool),
     /// The Esc menu's Set Window Size button, applied to the window at once.
     SetWindowSizeRequested,
-    OriginalShapeChanged(bool),
-    YrOriginalStyleChanged(bool),
-    ShiftQueueChanged(bool),
-    AutoRepairChanged(bool),
-    MouseWheelZoomChanged(bool),
-    RightClickOrdersChanged(bool),
-    MinimapBeaconsChanged(bool),
-    LockCursorChanged(bool),
-    VeraIconChanged(bool),
-    HdRadarChanged(bool),
-    SmoothSidebarChanged(bool),
-    SmoothOnlineMenusChanged(bool),
-    VSyncChanged(bool),
-    HdMapPreviewsChanged(bool),
-    PerformanceStatsChanged(bool),
-    ShowStringKeysChanged(bool),
-    SkipIntroChanged(bool),
-    CustomEndGameBannerChanged(bool),
-    CustomEndGameScoreChanged(bool),
-    CustomEndGameMovieChanged(bool),
-    CommanderFeedbackChanged(bool),
-    DetailedEvaTextChanged(bool),
-    ConvenienceHelpChanged(bool),
-    BuildingProductionQueueChanged(bool),
-    CompactSuperTimersChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -1189,6 +1058,8 @@ pub(crate) enum LauncherParentResult {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LauncherOptionsFrameOutput {
+    /// The controls' sounds, which play before the events run.
+    pub(crate) cues: Vec<PageCue>,
     pub(crate) events: Vec<LauncherOptionsEvent>,
     pub(crate) result: Option<LauncherParentResult>,
     /// Check for Updates: the dialog slides out, then the updater checks.
@@ -1367,6 +1238,7 @@ pub(crate) struct OptionsDialogState {
     /// running match greys what it keeps as it began.
     in_match: bool,
     launcher_audio_available: bool,
+    pending_cues: Vec<PageCue>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
     /// The category whose page shows.
@@ -1438,6 +1310,7 @@ impl OptionsDialogState {
             in_game_sound_label: String::new(),
             in_match: false,
             launcher_audio_available,
+            pending_cues: Vec::new(),
             pending_events: Vec::new(),
             pending_result: None,
             category: Category::ALL[0],
@@ -1467,12 +1340,13 @@ impl OptionsDialogState {
         self.labels = labels;
     }
 
-    /// A caption: retail's from the labels the dialog holds, VERA's from its
-    /// language files.
-    fn text(&self, key: Key) -> std::borrow::Cow<'_, str> {
-        match key {
-            Csf(key) => self.labels.get(key).into(),
-            Vera(key) => crate::i18n::tr(key).into(),
+    /// A caption: VERA's (`VERA:`) from its language files, retail's from
+    /// the labels the dialog holds.
+    fn text(&self, key: &str) -> std::borrow::Cow<'_, str> {
+        if key.starts_with("VERA:") {
+            crate::i18n::tr(key).into()
+        } else {
+            self.labels.get(key).into()
         }
     }
 
@@ -1556,42 +1430,39 @@ impl OptionsDialogState {
         }
         *slot = position;
         let volume = f32::from(position) * 0.1;
-        let click = LauncherOptionsEvent::Cue(PageCue::ListClick);
-        self.pending_events.extend(match id {
-            LauncherTrackbarId::Score => vec![LauncherOptionsEvent::ScorePreview(volume)],
-            LauncherTrackbarId::Sound => vec![LauncherOptionsEvent::SoundPreview(volume)],
-            LauncherTrackbarId::Voice => vec![LauncherOptionsEvent::VoicePreview(volume)],
-            // A once-per-drag setting rather than a live preview: the battle
-            // this applies to is loaded later, and the accept writes it out.
-            // With no audible preview to audition, the retail notch click is
-            // the drag's only feedback, as on the detail, difficulty and
-            // scroll sliders.
-            LauncherTrackbarId::HouseColorStrength => vec![
-                click,
+        // The audio sliders preview instead of the notch click.
+        let event = match id {
+            LauncherTrackbarId::Score => LauncherOptionsEvent::ScorePreview(volume),
+            LauncherTrackbarId::Sound => LauncherOptionsEvent::SoundPreview(volume),
+            LauncherTrackbarId::Voice => LauncherOptionsEvent::VoicePreview(volume),
+            // 61E609..61E6DD: a changed position plays the cue. Game Speed
+            // applies when the menu closes. The strength is a once-per-drag
+            // setting rather than a live preview: the battle it applies to
+            // loads later, and the accept writes it out.
+            id => {
+                self.pending_cues.push(PageCue::ListClick);
+                if id != LauncherTrackbarId::HouseColorStrength {
+                    return;
+                }
                 LauncherOptionsEvent::HouseColorStrengthChanged(
                     position + crate::rules::house_colors::STRENGTH_MIN,
-                ),
-            ],
-            // 61E609..61E6DD: a changed position plays the cue. Game Speed
-            // applies when the menu closes.
-            _ => vec![click],
-        });
+                )
+            }
+        };
+        self.pending_events.push(event);
     }
 
     pub(crate) fn shell_checkbox_checked(&self, id: LauncherCheckboxId) -> bool {
         let mut values = self.values;
-        *id.spec().2(&mut values)
+        *id.slot(&mut values)
     }
 
-    fn toggle_checkbox(&mut self, id: LauncherCheckboxId) {
-        let (_, _, slot, changed) = id.spec();
-        let slot = slot(&mut self.values);
-        *slot = !*slot;
-        let checked = *slot;
-        self.pending_events
-            .push(LauncherOptionsEvent::Cue(PageCue::Checkbox));
-        self.pending_events
-            .extend(changed.map(|changed| changed(checked)));
+    fn set_checkbox(&mut self, id: LauncherCheckboxId, checked: bool) {
+        *id.slot(&mut self.values) = checked;
+        if id.publishes() {
+            self.pending_events
+                .push(LauncherOptionsEvent::Toggled(id, checked));
+        }
     }
 
     /// Follow a full-screen change the page didn't make (the window's own
@@ -1664,7 +1535,7 @@ impl OptionsDialogState {
             return;
         }
         self.category = category;
-        self.shell_page_switched();
+        self.shell.clear();
     }
 
     /// Ask for Check for Updates; like a parent result, the first request of
@@ -1684,6 +1555,7 @@ impl OptionsDialogState {
     /// parent result through accepted projection `0x0055FAA0`.
     pub(crate) fn drain_output(&mut self) -> LauncherOptionsFrameOutput {
         LauncherOptionsFrameOutput {
+            cues: std::mem::take(&mut self.pending_cues),
             events: std::mem::take(&mut self.pending_events),
             result: self.pending_result.take(),
             check_for_updates: std::mem::take(&mut self.pending_update_check),
@@ -1744,8 +1616,27 @@ impl Category {
         Self::General,
     ];
 
-    /// The page's controls, top to bottom.
-    pub(crate) const fn settings(self) -> &'static [Setting] {
+    /// The page's controls, top to bottom: the build's own, as VSync and HD
+    /// Map Previews are missing from the browser's.
+    pub(crate) fn settings(self) -> Vec<Setting> {
+        use LauncherCheckboxId as Check;
+        let missing = [
+            (HAS_VSYNC, Check::VSync),
+            (HAS_HD_MAP_PREVIEWS, Check::HdMapPreviews),
+        ];
+        let missing = |setting| {
+            missing
+                .iter()
+                .any(|&(has, id)| !has && setting == Setting::Checkbox(id))
+        };
+        self.all_settings()
+            .iter()
+            .copied()
+            .filter(|&setting| !missing(setting))
+            .collect()
+    }
+
+    const fn all_settings(self) -> &'static [Setting] {
         use LauncherCheckboxId as Check;
         use LauncherComboId as List;
         use LauncherTrackbarId as Slider;
@@ -1754,16 +1645,6 @@ impl Category {
             // both builds put them in the same place: at 640x480's 0.8 fit a
             // slider's place decides whether it keeps its frame art (the note
             // on the row pitches in `shell`).
-            Self::Display if !HAS_VSYNC => &[
-                Setting::List(List::Zoom),
-                Setting::List(List::Display),
-                Setting::Slider(Slider::HouseColorStrength),
-                Setting::List(List::ColorVision),
-                Setting::Slider(Slider::Detail),
-                Setting::Checkbox(Check::FullScreen),
-                Setting::Checkbox(Check::OriginalShape),
-                Setting::Checkbox(Check::PerformanceStats),
-            ],
             Self::Display => &[
                 Setting::List(List::Zoom),
                 Setting::List(List::Display),
@@ -1810,14 +1691,6 @@ impl Category {
                 Setting::Checkbox(Check::MinimapBeacons),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
-            ],
-            Self::General if !HAS_HD_MAP_PREVIEWS => &[
-                Setting::List(List::Language),
-                Setting::Checkbox(Check::YrOriginalStyle),
-                Setting::Checkbox(Check::SmoothOnlineMenus),
-                Setting::Checkbox(Check::VeraIcon),
-                Setting::Checkbox(Check::SkipIntro),
-                Setting::Checkbox(Check::ShowStringKeys),
             ],
             Self::General => &[
                 Setting::List(List::Language),
@@ -1873,6 +1746,12 @@ mod tests {
     use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
     use crate::ui::shell::geom::RectPx;
     use crate::ui::shell::trackbar::TrackbarHold;
+
+    /// The frame's cues and events.
+    fn drained(state: &mut OptionsDialogState) -> (Vec<PageCue>, Vec<LauncherOptionsEvent>) {
+        let output = state.drain_output();
+        (output.cues, output.events)
+    }
 
     fn labels() -> LauncherOptionsLabels {
         LauncherOptionsLabels::resolve(&|_| None)
@@ -1974,11 +1853,13 @@ mod tests {
         // A real change publishes one notch click and one level: the click is
         // the drag's only feedback, since a strength has nothing to audition.
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::ListClick),
-                LauncherOptionsEvent::HouseColorStrengthChanged(STRENGTH_RETAIL + 4),
-            ]
+            drained(&mut state),
+            (
+                vec![PageCue::ListClick],
+                vec![LauncherOptionsEvent::HouseColorStrengthChanged(
+                    STRENGTH_RETAIL + 4
+                )]
+            )
         );
     }
 
@@ -2013,11 +1894,8 @@ mod tests {
         );
         assert_eq!(state.slider_step(LauncherTrackbarId::Scroll), "Fastest");
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::ListClick),
-                LauncherOptionsEvent::Cue(PageCue::ListClick),
-            ]
+            drained(&mut state),
+            (vec![PageCue::ListClick, PageCue::ListClick], vec![])
         );
     }
 
@@ -2150,14 +2028,11 @@ mod tests {
         assert!(state.values.tooltips);
         click(&mut state, 17, rect.h - 1);
         assert!(!state.values.tooltips);
-        assert_eq!(
-            state.drain_output().events,
-            [LauncherOptionsEvent::Cue(PageCue::Checkbox)]
-        );
+        assert_eq!(drained(&mut state), (vec![PageCue::Checkbox], vec![]));
         click(&mut state, 18, 5);
         click(&mut state, 80, 5);
         assert!(!state.values.tooltips);
-        assert!(state.drain_output().events.is_empty());
+        assert_eq!(drained(&mut state), (vec![], vec![]));
     }
 
     #[test]
@@ -2176,10 +2051,7 @@ mod tests {
             Some(ZoomList),
             "the face opens the list, not only the arrow"
         );
-        assert_eq!(
-            state.drain_output().events,
-            [LauncherOptionsEvent::Cue(PageCue::ComboOpen)]
-        );
+        assert_eq!(drained(&mut state), (vec![PageCue::ComboOpen], vec![]));
         press(&mut state, &layout, face.x + 161, face.y + 5);
         assert_eq!(state.shell_open_list(), None, "a second press closes it");
         press(&mut state, &layout, face.x + 180, face.y + 5);
@@ -2196,11 +2068,11 @@ mod tests {
         assert_eq!(state.shell_open_list(), None);
         assert_eq!(state.zoom, Zoom::Auto);
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::ComboClose),
-                LauncherOptionsEvent::ZoomSelected(Zoom::Auto)
-            ]
+            drained(&mut state),
+            (
+                vec![PageCue::ComboClose],
+                vec![LauncherOptionsEvent::ZoomSelected(Zoom::Auto)]
+            )
         );
 
         // The Sidebar list works the same way, on its own value.
@@ -2214,12 +2086,11 @@ mod tests {
         assert_eq!(state.values.sidebar, SidebarSize::Large);
         assert_eq!(state.zoom, Zoom::Auto);
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::ComboOpen),
-                LauncherOptionsEvent::Cue(PageCue::ComboClose),
-                LauncherOptionsEvent::SidebarSelected(SidebarSize::Large)
-            ]
+            drained(&mut state),
+            (
+                vec![PageCue::ComboOpen, PageCue::ComboClose],
+                vec![LauncherOptionsEvent::SidebarSelected(SidebarSize::Large)]
+            )
         );
 
         // The Health Bars list works the same way, on its own value.
@@ -2232,12 +2103,13 @@ mod tests {
         assert_eq!(state.shell_open_list(), None);
         assert_eq!(state.values.health_bars, HealthBarMode::Always);
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::ComboOpen),
-                LauncherOptionsEvent::Cue(PageCue::ComboClose),
-                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::Always)
-            ]
+            drained(&mut state),
+            (
+                vec![PageCue::ComboOpen, PageCue::ComboClose],
+                vec![LauncherOptionsEvent::HealthBarModeSelected(
+                    HealthBarMode::Always
+                )]
+            )
         );
     }
 
@@ -2269,24 +2141,16 @@ mod tests {
     fn full_screen_box_reports_each_toggle_after_its_cue() {
         let mut state = state(true);
         click_display_box(&mut state, LauncherCheckboxId::FullScreen);
+        let on = LauncherOptionsEvent::Toggled(LauncherCheckboxId::FullScreen, true);
         assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::Checkbox),
-                LauncherOptionsEvent::FullScreenChanged(true),
-            ]
+            drained(&mut state),
+            (vec![PageCue::Checkbox], vec![on.clone()])
         );
         // The window's own button changes it with no event; the next click
         // turns it off again.
         state.sync_full_screen(false);
         click_display_box(&mut state, LauncherCheckboxId::FullScreen);
-        assert_eq!(
-            state.drain_output().events,
-            [
-                LauncherOptionsEvent::Cue(PageCue::Checkbox),
-                LauncherOptionsEvent::FullScreenChanged(true),
-            ]
-        );
+        assert_eq!(drained(&mut state), (vec![PageCue::Checkbox], vec![on]));
         // The full-screen state is the window's, not part of the accepted pack.
         assert_eq!(state.pack(), self::state(true).pack());
     }
@@ -2297,13 +2161,8 @@ mod tests {
         for checked in [true, false] {
             click_display_box(&mut state, LauncherCheckboxId::OriginalShape);
             assert_eq!(state.values.original_shape, checked);
-            assert_eq!(
-                state.drain_output().events,
-                [
-                    LauncherOptionsEvent::Cue(PageCue::Checkbox),
-                    LauncherOptionsEvent::OriginalShapeChanged(checked),
-                ]
-            );
+            let event = LauncherOptionsEvent::Toggled(LauncherCheckboxId::OriginalShape, checked);
+            assert_eq!(drained(&mut state), (vec![PageCue::Checkbox], vec![event]));
         }
         // Applied at once, so the accepted pack never carries it.
         click_display_box(&mut state, LauncherCheckboxId::OriginalShape);
@@ -2521,7 +2380,6 @@ mod tests {
         let placed: Vec<Setting> = Category::ALL
             .iter()
             .flat_map(|page| page.settings())
-            .copied()
             .collect();
         let every: Vec<Setting> = [
             List::Zoom,
@@ -2589,7 +2447,7 @@ mod tests {
         assert_eq!(placed.len(), every.len());
         for setting in Category::GameControls.settings() {
             assert!(
-                *setting == Setting::Slider(Slider::GameSpeed) || placed.contains(setting),
+                setting == Setting::Slider(Slider::GameSpeed) || placed.contains(&setting),
                 "{setting:?}"
             );
         }

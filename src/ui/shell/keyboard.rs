@@ -133,8 +133,7 @@ pub struct KeyboardCommandRow {
 }
 #[derive(Debug)]
 pub struct KeyboardState {
-    pub(crate) title: super::static_reveal::Kind1StaticReveal,
-    pub(crate) title_receipt: Option<super::static_reveal::Kind1RevealReceipt>,
+    pub(crate) title: super::static_reveal::PresentedKind1Static,
     pub parent: KeyboardParent,
     pub commands: Vec<KeyboardCommandRow>,
     pub categories: Vec<String>,
@@ -170,8 +169,9 @@ impl KeyboardState {
             }
         }
         let mut result = Self {
-            title: Default::default(),
-            title_receipt: None,
+            title: super::static_reveal::PresentedKind1Static::new(
+                super::static_reveal::HEADING_KIND1,
+            ),
             parent,
             commands,
             categories,

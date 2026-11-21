@@ -164,7 +164,8 @@ impl WolLobbyPopup {
 /// its boxes (toggled on the press); VERA's online popup adds its room's
 /// limits, name, Ranked game and Watching, and its settings' titles. The
 /// statics come last: they take no pointer.
-fn popup_spec(create: bool, online: bool) -> NodeSpec {
+fn popup_spec(create: bool, room: Option<RoomLimits>) -> NodeSpec {
+    let online = room.is_some();
     use crate::render::shell_text::ShellAlign;
     // A greyed caption takes 0x612F5F's colour, as the buttons' do.
     let grey = Value::Rgba(vera20k_gui::Rgba(0x48, 0, 0, 0xFF));
@@ -199,24 +200,21 @@ fn popup_spec(create: bool, online: bool) -> NodeSpec {
     if create {
         spec = spec.children([CREATE_CLAN, CREATE_LIMIT, CREATE_OBSERVE].map(checkbox));
     }
-    if create && online {
+    if let Some(limits) = room.filter(|_| create) {
         // VERA's lobby refuses a room name with C1 controls too.
         let c1: String = (0x7F..=0x9F).filter_map(char::from_u32).collect();
-        let players = crate::ui::room_limits::PLAYERS;
         spec = spec
             .child(
                 edit(CREATE_NAME, ROOM_NAME_LIMIT)
                     .with(Prop::ByteOnly, Value::Bool(true))
                     .with(Prop::Rejected, Value::Text(c1)),
             )
-            .children([CREATE_RANKED, CREATE_WATCHING, CREATE_SPECTATORS].map(checkbox))
-            .child(
-                NodeSpec::new(NodeKind::Trackbar)
-                    .id(CREATE_PLAYERS.into())
-                    .with(Prop::Min, Value::Int(players.min))
-                    .with(Prop::Max, Value::Int(players.max))
-                    .with(Prop::Step, Value::Int(1)),
-            )
+            .children([CREATE_RANKED, CREATE_WATCHING].map(checkbox))
+            .children(crate::ui::room_limits::widgets(
+                limits,
+                CREATE_PLAYERS,
+                CREATE_SPECTATORS,
+            ))
             .children(
                 [
                     CREATE_CLAN,
@@ -303,12 +301,12 @@ pub(crate) fn password_rect(layout: &WolChannelPasswordLayout, id: u16) -> Optio
 }
 
 impl WolLobbyState {
-    fn push_popup(&mut self, create: Option<Option<RoomWatching>>, online: bool) {
+    fn push_popup(&mut self, create: Option<Option<RoomWatching>>, room: Option<RoomLimits>) {
         self.close_popup();
         let Ok(root) = self.gui.create(NodeKind::Dialog, None) else {
             return;
         };
-        page::ensure_built(&mut self.gui, root, || popup_spec(create.is_some(), online));
+        page::ensure_built(&mut self.gui, root, || popup_spec(create.is_some(), room));
         let ok = self.gui.find_id(root, POPUP_OK.into());
         let Ok(dialog) = self.gui.push_dialog(root, DialogKind::Modal, ok, None) else {
             return;
@@ -335,7 +333,8 @@ impl WolLobbyState {
         room: Option<(RoomLimits, &str, bool, RoomWatching)>,
     ) {
         let narrow = screen_width < 1024;
-        self.push_popup(Some(room.map(|(.., watching)| watching)), room.is_some());
+        let watching = room.map(|(.., watching)| watching);
+        self.push_popup(Some(watching), room.map(|(limits, ..)| limits));
         for (id, checked, enabled) in [
             (CREATE_CLAN, false, clan_id >= 1),
             (CREATE_LIMIT, limit && narrow, narrow),
@@ -344,13 +343,7 @@ impl WolLobbyState {
             self.set(id, Prop::Checked, Value::Bool(checked));
             self.set(id, Prop::Enabled, Value::Bool(enabled));
         }
-        if let Some((limits, name, ranked, watching)) = room {
-            self.set(CREATE_PLAYERS, Prop::Pos, Value::Int(limits.players.into()));
-            self.set(
-                CREATE_SPECTATORS,
-                Prop::Checked,
-                Value::Bool(limits.spectators),
-            );
+        if let Some((_, name, ranked, watching)) = room {
             self.set(CREATE_RANKED, Prop::Checked, Value::Bool(ranked));
             self.set(
                 CREATE_WATCHING,
@@ -370,7 +363,7 @@ impl WolLobbyState {
     }
 
     pub(crate) fn open_password(&mut self) {
-        self.push_popup(None, false);
+        self.push_popup(None, None);
         self.focus_popup_edit(POPUP_PASSWORD);
         self.gate_popup_ok();
     }

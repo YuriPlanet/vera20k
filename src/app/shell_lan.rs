@@ -504,9 +504,7 @@ fn append_chat_to(
     } else {
         let layout = layout(state);
         (
-            layout
-                .rect(crate::ui::lan_shell::CHAT_LOG)
-                .unwrap_or_default(),
+            layout.rect(CHAT_LOG).unwrap_or_default(),
             layout.page.scale,
             1.0,
         )
@@ -950,11 +948,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
                 && runtime.lobby.enabled
                 && runtime.lobby.focused_control == CHAT
         })
-        .map(|_| {
-            layout(state)
-                .rect(crate::ui::lan_shell::CHAT)
-                .unwrap_or_default()
-        })
+        .map(|_| layout(state).rect(CHAT).unwrap_or_default())
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -978,20 +972,11 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         }
         return;
     }
-    let edit = match code {
-        Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-        Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-        Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-        Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-        Some(KeyCode::Home) => Some(LanEditKey::Home),
-        Some(KeyCode::End) => Some(LanEditKey::End),
-        Some(KeyCode::Tab) => Some(LanEditKey::Tab),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-        //614B30 consumes Escape in either NewEdit; BB command2 is not sent.
-        Some(KeyCode::Escape) => return,
-        _ => None,
-    };
-    let actions = if let Some(edit) = edit {
+    //614B30 consumes Escape in either NewEdit; BB command2 is not sent.
+    if code == Some(KeyCode::Escape) {
+        return;
+    }
+    let actions = if let Some(edit) = LanEditKey::of(code) {
         runtime.lobby.edit_key(edit).into_iter().collect()
     } else {
         runtime.lobby.insert_text(text.unwrap_or_default())
@@ -1033,30 +1018,12 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         Value::Bool(observer),
     );
     let metrics = ListMetrics::scaled(layout.page.scale);
-    for (id, rect, count, selected) in [
-        (
-            GAMES,
-            layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
-            lobby.game_count(),
-            Some(lobby.selected_game),
-        ),
-        (
-            PLAYERS,
-            layout
-                .rect(crate::ui::lan_shell::PLAYERS)
-                .unwrap_or_default(),
-            lobby.players.len(),
-            lobby.selected_player,
-        ),
-        (
-            CHAT_LOG,
-            layout
-                .rect(crate::ui::lan_shell::CHAT_LOG)
-                .unwrap_or_default(),
-            lobby.chat.lines.len(),
-            None,
-        ),
+    for (id, count, selected) in [
+        (GAMES, lobby.game_count(), Some(lobby.selected_game)),
+        (PLAYERS, lobby.players.len(), lobby.selected_player),
+        (CHAT_LOG, lobby.chat.lines.len(), None),
     ] {
+        let rect = layout.rect(id).unwrap_or_default();
         let top = match id {
             CHAT_LOG => lobby.chat.list.top_index,
             _ => page::int(gui, root, id, Prop::Top).unwrap_or(0).max(0) as usize,
@@ -1075,16 +1042,8 @@ pub(crate) fn sync_gui(state: &mut AppState) {
             page::set(gui, root, id, prop, Value::Int(value));
         }
     }
-    for (edit, rect) in [
-        (
-            &mut lobby.name,
-            layout.rect(crate::ui::lan_shell::NAME).unwrap_or_default(),
-        ),
-        (
-            &mut lobby.chat.edit,
-            layout.rect(crate::ui::lan_shell::CHAT).unwrap_or_default(),
-        ),
-    ] {
+    for (edit, id) in [(&mut lobby.name, NAME), (&mut lobby.chat.edit, CHAT)] {
+        let rect = layout.rect(id).unwrap_or_default();
         edit.scroll_to_caret(
             (layout.page.scale.base_rect(rect).w - 3).max(0) as u32,
             |text| font.text_width(text),
@@ -1145,9 +1104,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
     let observer_image = layout(state)
-        .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
-        .unwrap_or_default()
-        .contains(x, y);
+        .rect(OBSERVER_IMAGE)
+        .is_some_and(|rect| rect.contains(x, y));
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);

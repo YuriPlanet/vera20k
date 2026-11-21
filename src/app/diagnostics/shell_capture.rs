@@ -17,12 +17,11 @@ use serde::Serialize;
 
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
-use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
+use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::frame_readback::PendingTextureReadback;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
-use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
 mod movies;
 mod score;
@@ -2061,11 +2060,7 @@ impl MainMenuCaptureSnapshot {
             first_paint_slide_active: state.frontend.shell_first_paint_slide.is_some(),
             active_slide_is_main_menu: state.frontend.shell_slide_active_shell
                 == Some(ShellSlideKind::MainMenu),
-            title_terminal_persistent: state
-                .frontend
-                .main_menu_shell_state
-                .title_reveal
-                .is_terminal_persistent(),
+            title_terminal_persistent: state.frontend.shell_page_title.is_terminal(),
             movie_loaded: state.frontend.main_menu_movie.is_some(),
             movie_owner_is_main_menu: movie_identity
                 .is_some_and(|identity| identity.owner() == Ra2tsDialogOwner::MainMenu0xE2),
@@ -2154,16 +2149,10 @@ fn steady_main_menu_capture_ready_for(
     Ok(true)
 }
 
+/// The entry tick one retained readback shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EntrySequenceFrameIdentity {
-    generation: u64,
     tick: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ShellCompletionHandoff {
-    Continue,
-    FinalizeExitReturnBeforeAcquire,
 }
 
 struct PendingSequenceReadback {
@@ -2175,7 +2164,6 @@ struct PendingSequenceReadback {
 #[derive(Default)]
 struct EntrySequenceState {
     expected_next_tick: u8,
-    generation: Option<u64>,
     pending: Vec<PendingSequenceReadback>,
     completion_observed: bool,
 }
@@ -2197,13 +2185,6 @@ impl EntrySequenceState {
             "entry sequence tick {} exceeds terminal tick",
             identity.tick
         );
-        if let Some(generation) = self.generation {
-            ensure!(
-                identity.generation == generation,
-                "entry sequence generation changed from {generation} to {}",
-                identity.generation
-            );
-        }
         Ok(())
     }
 
@@ -2214,7 +2195,6 @@ impl EntrySequenceState {
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.validate_next(identity)?;
-        self.generation.get_or_insert(identity.generation);
         self.expected_next_tick = self.expected_next_tick.saturating_add(1);
         self.pending.push(PendingSequenceReadback {
             identity,
@@ -2382,14 +2362,6 @@ impl ShellCaptureSession {
     /// animation sequence retains the event loop between its three samples.
     pub(crate) fn is_terminal(&self) -> bool {
         self.outcome.is_some()
-    }
-
-    pub(crate) fn completion_handoff(&self) -> ShellCompletionHandoff {
-        if self.is_entry_sequence() {
-            ShellCompletionHandoff::FinalizeExitReturnBeforeAcquire
-        } else {
-            ShellCompletionHandoff::Continue
-        }
     }
 
     /// First-live observes tick zero; opening captures drive exact steps through
@@ -2605,10 +2577,11 @@ impl ShellCaptureSession {
         Ok(should_capture)
     }
 
+    /// The entry tick this frame shows when it is the next one to retain; a
+    /// frame drawn again within the same 30 ms tick is not retained twice.
     pub(crate) fn observe_entry_sequence_after_render(
         &mut self,
         state: &AppState,
-        token: &MainMenuEntryPresentToken,
     ) -> Result<Option<EntrySequenceFrameIdentity>> {
         let Some(sequence) = self.entry_sequence.as_ref() else {
             return Ok(None);
@@ -2663,27 +2636,18 @@ impl ShellCaptureSession {
                 && snapshot.software_cursor_active,
             "entry sequence production shell identity is incomplete"
         );
-        ensure!(
-            matches!(
-                state
-                    .frontend
-                    .main_menu_shell_state
-                    .title_reveal
-                    .paint_window(),
-                Kind1PaintWindow::Hidden
-            ),
-            "entry sequence title became visible"
-        );
-        let frame = crate::app::frontend::shell_transition::current_main_menu_entry_frame(state)
-            .context("entry sequence rendered without a ready frame")?;
+        let tick = state
+            .frontend
+            .shell_first_paint_slide
+            .as_ref()
+            .context("entry sequence rendered without its wave")?
+            .tick();
         let identity = EntrySequenceFrameIdentity {
-            generation: token.generation(),
-            tick: token.tick(),
+            tick: u8::try_from(tick).context("entry tick fits a u8")?,
         };
-        ensure!(
-            (frame.generation(), frame.tick()) == (identity.generation, identity.tick),
-            "entry sequence token does not match the rendered wave frame"
-        );
+        if identity.tick.checked_add(1) == Some(sequence.expected_next_tick) {
+            return Ok(None);
+        }
         sequence.validate_next(identity)?;
         Ok(Some(identity))
     }
@@ -2925,9 +2889,6 @@ impl ShellCaptureSession {
             "entry sequence completed with {} retained readbacks",
             sequence.pending.len()
         );
-        let generation = sequence
-            .generation
-            .context("entry sequence has no generation")?;
         sequence.completion_observed = true;
         let pending = std::mem::take(&mut sequence.pending);
 
@@ -2939,7 +2900,6 @@ impl ShellCaptureSession {
             ensure!(
                 item.identity
                     == (EntrySequenceFrameIdentity {
-                        generation,
                         tick: expected_tick as u8,
                     }),
                 "entry-sequence retained readback identity changed"
@@ -2982,8 +2942,7 @@ impl ShellCaptureSession {
                 .join(ENTRY_SEQUENCE_FRAMES_FILE_NAME),
             &payload,
         )?;
-        let manifest =
-            entry_sequence_manifest(&self.request, state.renderer.gpu.config.format, generation);
+        let manifest = entry_sequence_manifest(&self.request, state.renderer.gpu.config.format);
         let mut manifest_bytes =
             serde_json::to_vec_pretty(&manifest).context("serialize entry-sequence manifest")?;
         manifest_bytes.push(b'\n');
@@ -3055,7 +3014,6 @@ fn capture_manifest<'a>(
 fn entry_sequence_manifest(
     request: &ShellCaptureRequest,
     surface_format: wgpu::TextureFormat,
-    generation: u64,
 ) -> EntrySequenceManifest {
     let frames = (0..ENTRY_SEQUENCE_FRAMES)
         .map(|tick| EntrySequenceFrameManifest {
@@ -3089,7 +3047,8 @@ fn entry_sequence_manifest(
             title_hidden_during_frames: true,
         },
         presenter_domain: "final-swapchain-after-rgb565",
-        generation,
+        // One 0xE2 instance per capture.
+        generation: 1,
         completion_observed: true,
         payload: EntrySequencePayloadManifest {
             path: ENTRY_SEQUENCE_FRAMES_FILE_NAME,
@@ -4569,7 +4528,6 @@ mod tests {
         let value = serde_json::to_value(entry_sequence_manifest(
             &request,
             wgpu::TextureFormat::Bgra8UnormSrgb,
-            73,
         ))
         .expect("serialize");
         assert_eq!(
@@ -4580,7 +4538,7 @@ mod tests {
             value["presenter_domain"].as_str(),
             Some("final-swapchain-after-rgb565")
         );
-        assert_eq!(value["generation"].as_u64(), Some(73));
+        assert_eq!(value["generation"].as_u64(), Some(1));
         assert_eq!(value["completion_observed"].as_bool(), Some(true));
         // 18 ticks of 800x600 BGRA8 (9 tile rows + 9, `0x006071E0`).
         assert_eq!(value["payload"]["byte_length"].as_u64(), Some(34_560_000));
@@ -4594,57 +4552,16 @@ mod tests {
     }
 
     #[test]
-    fn entry_sequence_ledger_rejects_gap_duplicate_and_generation_change() {
+    fn entry_sequence_ledger_rejects_gap_and_duplicate() {
         let mut sequence = EntrySequenceState::default();
-        let first = EntrySequenceFrameIdentity {
-            generation: 5,
-            tick: 0,
-        };
+        let first = EntrySequenceFrameIdentity { tick: 0 };
         sequence.validate_next(first).expect("first");
-        sequence.generation = Some(5);
         sequence.expected_next_tick = 1;
         assert!(sequence.validate_next(first).is_err());
         assert!(
             sequence
-                .validate_next(EntrySequenceFrameIdentity {
-                    generation: 5,
-                    tick: 2,
-                })
+                .validate_next(EntrySequenceFrameIdentity { tick: 2 })
                 .is_err()
-        );
-        assert!(
-            sequence
-                .validate_next(EntrySequenceFrameIdentity {
-                    generation: 6,
-                    tick: 1,
-                })
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn sequence_completion_handoff_returns_before_another_acquire() {
-        let steady_output = new_output_path("steady-handoff");
-        let AppLaunchMode::ShellCapture(steady) =
-            parse_launch_args(valid_args(&steady_output)).expect("steady")
-        else {
-            panic!("expected steady capture");
-        };
-        assert_eq!(
-            ShellCaptureSession::new(steady).completion_handoff(),
-            ShellCompletionHandoff::Continue
-        );
-
-        let sequence_output = new_output_path("sequence-handoff");
-        let mut values = valid_args(&sequence_output);
-        values[1] = OsString::from(CHECKPOINT_MAIN_MENU_0XE2_ENTRY_SEQUENCE);
-        let AppLaunchMode::ShellCapture(sequence) = parse_launch_args(values).expect("sequence")
-        else {
-            panic!("expected sequence capture");
-        };
-        assert_eq!(
-            ShellCaptureSession::new(sequence).completion_handoff(),
-            ShellCompletionHandoff::FinalizeExitReturnBeforeAcquire
         );
     }
 

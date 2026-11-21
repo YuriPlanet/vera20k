@@ -242,6 +242,24 @@ pub(crate) enum LanEditKey {
     Enter,
 }
 
+impl LanEditKey {
+    /// The edit key a physical key gives, if any.
+    pub(crate) fn of(code: Option<winit::keyboard::KeyCode>) -> Option<Self> {
+        use winit::keyboard::KeyCode;
+        Some(match code? {
+            KeyCode::Backspace => Self::Backspace,
+            KeyCode::Delete => Self::Delete,
+            KeyCode::ArrowLeft => Self::Left,
+            KeyCode::ArrowRight => Self::Right,
+            KeyCode::Home => Self::Home,
+            KeyCode::End => Self::End,
+            KeyCode::Tab => Self::Tab,
+            KeyCode::Enter | KeyCode::NumpadEnter => Self::Enter,
+            _ => return None,
+        })
+    }
+}
+
 /// One chat editor/transcript owner for LAN BB/BC/BD. Parent dialogs own
 /// focus/admission; the shared NewEdit owns editing and this owner implements
 /// original5EDD00 ->5DE360 send and5E2820 ->5E29A0 display behavior.
@@ -267,6 +285,24 @@ impl LanChatState {
     pub(crate) fn insert_unit(&mut self, unit: u16) {
         if self.edit.insert_unit_filtered(unit, 0, false, &[]) {
             apply_chat_length_limit(&mut self.edit);
+        }
+    }
+
+    /// A key or typed text for the chat edit, which takes every key but
+    /// Escape and Tab: the line Enter sends.
+    pub(crate) fn type_key(
+        &mut self,
+        code: Option<winit::keyboard::KeyCode>,
+        text: Option<&str>,
+    ) -> Option<Vec<u16>> {
+        use winit::keyboard::KeyCode;
+        match LanEditKey::of(code) {
+            Some(key) => self.key(key),
+            None if !matches!(code, Some(KeyCode::Escape)) => {
+                self.insert_text(text.unwrap_or_default());
+                None
+            }
+            None => None,
         }
     }
 

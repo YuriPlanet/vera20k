@@ -62,8 +62,6 @@ pub enum MainMenuShellAction {
 
 #[derive(Debug, Clone, Default)]
 pub struct MainMenuShellState {
-    /// Retained, paint-driven kind-1 state for title static 0x694.
-    pub(crate) title_reveal: crate::ui::shell::static_reveal::Kind1StaticReveal,
     /// Process-wide like `0x00A8F7B8`: a new 0xE2 keeps the typed letters.
     pub(crate) typed_codes: super::MainMenuTypedCodes,
 }

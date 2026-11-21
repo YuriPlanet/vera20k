@@ -294,7 +294,11 @@ impl CampaignScoreDialog {
     pub fn nodes(self) -> vera20k_gui::NodeSpec {
         use vera20k_gui::{NodeKind, NodeSpec};
         let node = |c: &CampaignScoreControlSpec| match (c.action, c.tooltip_key) {
-            (Some(_), _) => Some(NodeSpec::new(NodeKind::Button).id(i32::from(c.id))),
+            (Some(_), _) => Some(
+                NodeSpec::new(NodeKind::Button)
+                    .id(i32::from(c.id))
+                    .label(c.caption_key.unwrap_or_default()),
+            ),
             (None, help) => help.map(|key| menu_page::hover_target(c.id, key)),
         };
         NodeSpec::new(NodeKind::Dialog).children(self.controls().iter().filter_map(node))

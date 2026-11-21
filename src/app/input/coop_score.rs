@@ -4,7 +4,6 @@
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
-use crate::ui::lan_shell::LanEditKey;
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -77,26 +76,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         return;
     };
     // The chat edit has the focus and takes every key; Enter submits.
-    let key = match code {
-        Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-        Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-        Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-        Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-        Some(KeyCode::Home) => Some(LanEditKey::Home),
-        Some(KeyCode::End) => Some(LanEditKey::End),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-        _ => None,
-    };
-    let action = if let Some(key) = key {
-        page.ui.chat.key(key).map(CoopScoreAction::Chat)
-    } else {
-        if !matches!(code, Some(KeyCode::Escape | KeyCode::Tab))
-            && let Some(text) = text
-        {
-            page.ui.chat.insert_text(text);
-        }
-        None
-    };
+    let action = page.ui.chat.type_key(code, text).map(CoopScoreAction::Chat);
     if let Some(action) = action {
         crate::app::cooperative_round::apply_action(state, action);
     }

@@ -9,7 +9,7 @@ use vera20k_gui::NodeKind;
 
 use super::controls::push_new_edit_caret;
 use super::gui_paint::{self, GuiPaint, GuiStyle, HostRows};
-use super::text::{button_label_color_for_disabled, combo_face_text_color, rect_to_text_rect};
+use super::text::{combo_face_text_color, rect_to_text_rect};
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH};
 use crate::app::AppState;
@@ -24,11 +24,6 @@ use crate::ui::wol_login::{
     CAPTIONS_TEXT, COUNTS_TEXT, DIALOG, HEADING_TEXT, LABEL_KEYS, LABELS, NICKNAME, NICKNAME_DROP,
     STATUS_TEXT, WolLoginLayout, WolLoginState,
 };
-
-/// The disabled color of a disabled owner-draw label (`0x00612F5F`).
-pub(crate) fn wol_button_label_rgb(enabled: bool) -> [f32; 3] {
-    button_label_color_for_disabled(!enabled)
-}
 
 /// `0x10F`'s widgets and the statics whose text the page keeps; gamemd's
 /// page adds the combo's NewEdit, VERA online's has its form in its place.

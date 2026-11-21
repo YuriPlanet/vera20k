@@ -30,7 +30,9 @@ pub(crate) struct PlayerCardView {
     pub(crate) badge: Option<&'static str>,
     /// Each shown row's caption and value; the first holds the name.
     pub(crate) rows: Vec<(String, String)>,
-    pub(crate) buttons: Vec<CardButton>,
+    /// Each shown button's id and caption; the lobby's tree holds the
+    /// rest ([`sync`]).
+    pub(crate) buttons: Vec<(u16, String)>,
     /// The hovered button's help, in the box's status line.
     pub(crate) status: String,
     pub(crate) countries: Option<CountryListView>,
@@ -42,13 +44,6 @@ pub(crate) struct CountryListView {
     pub(crate) rows: Vec<String>,
     pub(crate) hot_row: Option<usize>,
     pub(crate) pressed: Option<ListScrollPart>,
-}
-
-pub(crate) struct CardButton {
-    pub(crate) rect: RectPx,
-    pub(crate) caption: String,
-    pub(crate) enabled: bool,
-    pub(crate) pressed: bool,
 }
 
 /// The open card; a lobby popup over it takes the input first.
@@ -478,23 +473,16 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
     let buddy = buddy(state, name).is_some();
     let buttons = buttons(&layout, own)
         .into_iter()
-        .map(|(id, rect)| CardButton {
-            rect,
-            caption: label(match id {
+        .map(|(id, _)| {
+            let key = match id {
                 CARD_MESSAGE => "VERA:Message",
                 CARD_COUNTRY => "VERA:ChangeCountry",
                 CARD_BUDDY if buddy => "GUI:RemoveBuddy",
                 CARD_BUDDY => "GUI:AddBuddy",
                 CARD_PROFILE => "VERA:FullProfile",
                 _ => "GUI:Close",
-            }),
-            enabled: enabled(state, name, id),
-            pressed: state
-                .frontend
-                .wol
-                .as_ref()
-                .and_then(|visit| visit.lobby())
-                .is_some_and(|lobby| lobby.ui.pressed(id)),
+            };
+            (id, label(key))
         })
         .collect();
     let countries = country_list(state).map(|popup| CountryListView {

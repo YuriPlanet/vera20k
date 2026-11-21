@@ -817,7 +817,7 @@ impl MoviesCapture {
                     .filter(|_| {
                         state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Campaign)
                     })
-                    .and_then(|wave| wave.compatibility_tick());
+                    .map(|wave| wave.tick());
                 if let Some(tick) = tick {
                     ensure!(tick <= target, "entry slide passed tick {target}");
                     if tick == target {
@@ -843,7 +843,7 @@ impl MoviesCapture {
                             state.frontend.shell_slide_active_shell
                                 == Some(ShellSlideKind::LoadSavedGame)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -889,7 +889,7 @@ impl MoviesCapture {
                         .filter(|_| {
                             state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Options)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -1204,8 +1204,7 @@ impl MoviesCapture {
                 };
                 let tick = crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
                     .context("teardown slide ended before capture")?
-                    .compatibility_tick()
-                    .context("teardown slide without a tick clock")?;
+                    .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
                     crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
@@ -1234,7 +1233,7 @@ impl MoviesCapture {
                             state.frontend.shell_slide_active_shell
                                 == Some(ShellSlideKind::WolWelcome)
                         })
-                        .and_then(|wave| wave.compatibility_tick());
+                        .map(|wave| wave.tick());
                     if let Some(tick) = tick {
                         ensure!(tick <= target, "entry slide passed tick {target}");
                         if tick == target {
@@ -1553,7 +1552,7 @@ impl MoviesCapture {
                 .frontend
                 .shell_first_paint_slide
                 .as_ref()
-                .and_then(|wave| wave.compatibility_tick());
+                .map(|wave| wave.tick());
             ensure!(
                 state.frontend.shell_route == ShellRoute::MoviesAndCredits && entry_tick == Some(0),
                 "the frame after the 0x129 teardown is not the 0x101 entry tick 0 \
@@ -1665,13 +1664,13 @@ impl MoviesCapture {
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
             MoviesTarget::SlideOut { kind, tick } => {
                 crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
-                    .and_then(|wave| wave.compatibility_tick())
+                    .map(|wave| wave.tick())
                     == Some(tick)
             }
             MoviesTarget::Campaign0x94 { entry_tick, .. } => {
@@ -1682,7 +1681,7 @@ impl MoviesCapture {
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
@@ -1694,7 +1693,7 @@ impl MoviesCapture {
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }
@@ -1715,7 +1714,7 @@ impl MoviesCapture {
                             .frontend
                             .shell_first_paint_slide
                             .as_ref()
-                            .and_then(|wave| wave.compatibility_tick())
+                            .map(|wave| wave.tick())
                             == Some(target)
                     })
             }

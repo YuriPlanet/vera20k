@@ -2136,11 +2136,6 @@ impl ApplicationHandler for App {
             if !session.is_finished() {
                 let mut deadline = session.next_wake_deadline();
                 self.capture_render_not_before = Some(deadline);
-                if let Some(wave_deadline) =
-                    crate::app::frontend::shell_transition::main_menu_presented_wake_deadline(state)
-                {
-                    deadline = deadline.max(wave_deadline);
-                }
                 if let Some(animation_deadline) = Self::campaign_score_animation_deadline(state) {
                     deadline = deadline.min(animation_deadline);
                 }
@@ -2190,18 +2185,6 @@ impl ApplicationHandler for App {
             } else if state.platform.frame_pacer.render_deferred() {
                 event_loop.set_control_flow(ControlFlow::Poll);
                 state.platform.window.request_redraw();
-            } else if crate::app::frontend::shell_transition::main_menu_presented_is_poisoned(state)
-            {
-                event_loop.set_control_flow(ControlFlow::Wait);
-            } else if let Some(deadline) =
-                crate::app::frontend::shell_transition::main_menu_presented_wake_deadline(state)
-            {
-                let deadline = shell_scroll_wake.map_or(deadline, |scroll| deadline.min(scroll));
-                if Instant::now() >= deadline {
-                    state.platform.window.request_redraw();
-                } else {
-                    event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
-                }
             } else if state.platform.window_hidden {
                 if Self::match_runs_while_hidden(state) {
                     // Minimised or fully covered, but the match is not frozen:

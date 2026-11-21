@@ -223,7 +223,6 @@ pub(crate) const GAME_TYPE_X: i32 = 2;
 pub(crate) const GAME_PASSWORD_X: i32 = 0x13;
 pub(crate) const GAME_LIMIT_X: i32 = 0x24;
 pub(crate) const GAME_PING_X: i32 = 200;
-pub(crate) const LOBBY_TEXT_X: i32 = 2;
 pub(crate) const PLAYER_NAME_X: i32 = 0x4E;
 pub(crate) const PLAYER_NAME_W: i32 = 0xA2;
 pub(crate) const PLAYER_ICON_X: i32 = 2;
@@ -482,10 +481,6 @@ pub(crate) struct WolLobbyState {
     /// `LBS_MULTIPLESEL`: the selected rows are the private chat targets;
     /// every refill (`LB_RESETCONTENT`) clears them.
     pub(crate) selected_players: Vec<usize>,
-    /// VERA: the game and player rows under the pointer, for their status
-    /// help; a refill clears them.
-    pub(crate) hot_game: Option<usize>,
-    pub(crate) hot_player: Option<usize>,
     /// `[0xB77E78]`: the game name the last selection admitted.
     pub(crate) admitted_name: Option<String>,
     /// `[0x84A23C]`: the row index of the last Join (initially -1).
@@ -515,10 +510,15 @@ impl std::fmt::Debug for WolLobbyState {
 fn page_spec() -> NodeSpec {
     let button = |id: u16| NodeSpec::new(NodeKind::Button).id(id.into());
     let checkbox = |id: u16| NodeSpec::new(NodeKind::Checkbox).id(id.into());
+    // The transcript and the multi-select user list paint no selected row.
     let list = |id: u16| {
         NodeSpec::new(NodeKind::List)
             .id(id.into())
             .with(Prop::RowCount, Value::Int(0))
+            .with(
+                Prop::NoSelectionFill,
+                Value::Bool(matches!(id, PLAYERS | CHAT_LOG)),
+            )
     };
     NodeSpec::new(NodeKind::Dialog)
         .children(
@@ -557,8 +557,6 @@ impl WolLobbyState {
             game_rows: Vec::new(),
             player_rows: Vec::new(),
             selected_players: Vec::new(),
-            hot_game: None,
-            hot_player: None,
             admitted_name: None,
             join_row: None,
             popup: None,
@@ -752,7 +750,7 @@ impl WolLobbyState {
     }
 
     /// The row of list `id` under `(x, y)`.
-    fn row_at(&self, id: u16, x: i32, y: i32) -> Option<usize> {
+    pub(crate) fn row_at(&self, id: u16, x: i32, y: i32) -> Option<usize> {
         let (geometry, rows) = self.placed_list(id)?;
         geometry.row_at(rows, self.list_top(id), x, y)
     }
@@ -942,14 +940,6 @@ impl WolLobbyState {
         if let Some(top) = top {
             self.set(GAMES, Prop::Top, Value::Int(top as i32));
         }
-        self.hot_game = None;
-    }
-
-    /// VERA: the game row under a pointer at (`x`, `y`) in shell pixels. A
-    /// refill clears it, and the list is refilled every few seconds while the
-    /// pointer may rest on a row whose status help is being read.
-    pub(crate) fn hover_games(&mut self, x: i32, y: i32) {
-        self.hot_game = self.row_at(GAMES, x, y);
     }
 
     /// `0x007806C0`: the current channel's row is selected.
@@ -997,7 +987,6 @@ impl WolLobbyState {
                     .then_some(index)
             })
             .collect();
-        self.hot_player = None;
         // A player card closes once its player has left the list.
         if self
             .card
@@ -1082,22 +1071,6 @@ impl WolLobbyState {
         }
     }
 
-    pub(crate) fn select_game(&mut self, row: usize, double: bool) -> Option<WolLobbyAction> {
-        if !self.enabled(GAMES) || row >= self.game_rows.len() {
-            return None;
-        }
-        self.select_row(GAMES, Some(row));
-        Some(WolLobbyAction::SelectGame { row, double })
-    }
-
-    pub(crate) fn select_lobby(&mut self, row: usize) -> Option<WolLobbyAction> {
-        if !self.enabled(LOBBIES) || row >= self.lobby_rows.len() {
-            return None;
-        }
-        self.select_row(LOBBIES, Some(row));
-        Some(WolLobbyAction::SelectLobby(row))
-    }
-
     /// A released button or picture.
     pub(crate) fn activate(&mut self, control: u16) -> Option<WolLobbyAction> {
         if !self.enabled(control) {
@@ -1147,12 +1120,7 @@ impl WolLobbyState {
         let mut out = Vec::new();
         let over = self.hovered();
         match press {
-            None => {
-                if self.popup.is_none() && self.card.is_none() {
-                    self.hot_game = self.row_at(GAMES, x, y);
-                    self.hot_player = self.row_at(PLAYERS, x, y);
-                }
-            }
+            None => {}
             Some(true) => {
                 // A row of a disabled list still clicks (0x0078AC10 plays
                 // GenericClick before the selection refuses it).
@@ -1262,17 +1230,23 @@ impl WolLobbyState {
                     out.push(WolLobbyEffect::Action(WolLobbyAction::ObserverChanged(on)));
                 }
                 PageEvent::Toggled(CREATE_WATCHING, _) => self.step_watching(),
-                PageEvent::Selected(GAMES, row) | PageEvent::DoubleClicked(GAMES, row) => {
-                    let double = matches!(event, PageEvent::DoubleClicked(..));
+                PageEvent::Selected(list @ (GAMES | LOBBIES), row)
+                | PageEvent::DoubleClicked(list @ GAMES, row) => {
+                    let row = row as usize;
                     out.push(WolLobbyEffect::Cue(PageCue::ListClick));
-                    out.extend(
-                        self.select_game(row as usize, double)
-                            .map(WolLobbyEffect::Action),
-                    );
-                }
-                PageEvent::Selected(LOBBIES, row) => {
-                    out.push(WolLobbyEffect::Cue(PageCue::ListClick));
-                    out.extend(self.select_lobby(row as usize).map(WolLobbyEffect::Action));
+                    let rows = match list {
+                        GAMES => self.game_rows.len(),
+                        _ => self.lobby_rows.len(),
+                    };
+                    if self.enabled(list) && row < rows {
+                        out.push(WolLobbyEffect::Action(match list {
+                            GAMES => WolLobbyAction::SelectGame {
+                                row,
+                                double: matches!(event, PageEvent::DoubleClicked(..)),
+                            },
+                            _ => WolLobbyAction::SelectLobby(row),
+                        }));
+                    }
                 }
                 PageEvent::Selected(PLAYERS, row) => {
                     out.push(WolLobbyEffect::Cue(PageCue::ListClick));
@@ -1518,22 +1492,20 @@ mod tests {
         };
         let mut lobby = WolLobbyState::new(false, false);
         lobby.replace_games(vec![row("a"), row("b")]);
-        lobby.select_game(1, false);
+        lobby.select_row(GAMES, Some(1));
         lobby.replace_games(vec![row("c"), row("a"), row("b")]);
         assert_eq!(lobby.selected_row(GAMES), Some(2));
         lobby.replace_games(vec![row("a")]);
         assert_eq!(lobby.selected_row(GAMES), None);
 
-        // A pointer resting on the second row keeps it hot across a refill.
+        // A pointer resting on the second row finds it across a refill.
         let layout = lobby.layout(800, 600, ShellScale::RETAIL);
         let games = layout.control_rect(GAMES).unwrap();
         let list = lobby.shown_geometry(GAMES, games, 2, layout.page.scale);
         let (x, y) = (list.content.x + 1, list.content.y + list.metrics.row_h + 1);
         lobby.replace_games(vec![row("a"), row("b")]);
-        assert_eq!(lobby.hot_game, None);
         lobby.sync(&layout);
-        lobby.hover_games(x, y);
-        assert_eq!(lobby.hot_game, Some(1));
+        assert_eq!(lobby.row_at(GAMES, x, y), Some(1));
 
         let player = |name: &str| WolPlayerRow {
             name: name.into(),

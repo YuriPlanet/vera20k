@@ -1272,7 +1272,6 @@ impl App {
                 status_screen_drawn: false,
                 shell_first_paint_slide: None,
                 shell_slide_active_shell: None,
-                shell_slide_generation: 0,
                 shell_monitor: Default::default(),
                 shell_page_title: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::HEADING_KIND1,

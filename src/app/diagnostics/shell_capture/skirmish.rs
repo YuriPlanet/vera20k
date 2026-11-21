@@ -359,7 +359,7 @@ fn entry_wave_tick(state: &AppState, kind: ShellSlideKind) -> Option<u32> {
         .frontend
         .shell_first_paint_slide
         .as_ref()
-        .and_then(|wave| wave.compatibility_tick())
+        .map(|wave| wave.tick())
 }
 
 impl SkirmishCapture {
@@ -1466,8 +1466,7 @@ impl SkirmishCapture {
                     ShellSlideKind::Skirmish,
                 )
                 .context("Skirmish teardown ended before capture")?
-                .compatibility_tick()
-                .context("teardown slide without a tick clock")?;
+                .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
                     crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
@@ -1658,7 +1657,7 @@ impl SkirmishCapture {
                     state,
                     ShellSlideKind::Skirmish,
                 )
-                .and_then(|wave| wave.compatibility_tick())
+                .map(|wave| wave.tick())
                     == Some(target));
         }
         if self.phase != Phase::Skirmish

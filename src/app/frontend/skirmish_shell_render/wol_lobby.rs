@@ -8,11 +8,8 @@
 //! paint their caption only; their owner-draw face is not traced.
 
 use super::chrome::*;
-use super::controls::{
-    ControlPaint, dropdown_scroll_part, list_view_controls, paint_control, push_new_edit,
-    push_popup_instances,
-};
-use super::gui_paint::GuiStyle;
+use super::controls::{dropdown_scroll_part, push_popup_instances};
+use super::gui_paint::{GuiStyle, HostRows};
 use super::text::rect_to_text_rect;
 use super::{
     OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
@@ -22,11 +19,10 @@ use super::{
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
-use crate::render::shell_paint::{self, ModalButton, ModalDepths, PaintLabel};
+use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
-use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 use crate::ui::wol_lobby::*;
 
 /// The popups paint over the covered dialog, before their own controls.
@@ -191,15 +187,37 @@ pub(crate) fn paint_wol_lobby_children(
         }
     }
 
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: rect_of(OBSERVER_TOGGLE),
-            checked: ui.observer(),
-        },
-        scale,
-    );
+    // The observer box, the chat NewEdit (its caret on the page's blink,
+    // under the popups too) and the owner-draw lists from the page's tree:
+    // the channel and chat rows are the lists' own, the game and user rows
+    // paint their cells below. The transcript and the multi-select user
+    // list fill no selected row.
+    let rows_of = |id: i32| -> Option<HostRows> {
+        Some(match u16::try_from(id).ok()? {
+            LOBBIES => (ui.lobby_rows.iter())
+                .map(|row| (row.text(base_names), u32::MAX))
+                .collect(),
+            CHAT_LOG => (ui.chat.lines.iter())
+                .map(|line| (String::from_utf16_lossy(&line.text), line.color))
+                .collect(),
+            _ => Vec::new(),
+        })
+    };
+    let caret_of = |_| ui.caret_visible();
+    let style = GuiStyle {
+        rows_of: Some(&rows_of),
+        caret_of: Some(&caret_of),
+        control_lists: true,
+        ..GuiStyle::default()
+    };
+    for node in [OBSERVER_TOGGLE, CHAT, LOBBIES, GAMES, PLAYERS, CHAT_LOG]
+        .into_iter()
+        .filter_map(|id| ui.node(id))
+    {
+        let widget = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
+        paint.controls.extend(widget.controls);
+        paint.texts.extend(widget.texts);
+    }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
@@ -209,67 +227,17 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
-    // The chat NewEdit keeps the focus under the popups too.
-    let chat_edit = SavedSeedDescriptionEdit {
-        focused: true,
-        ..ui.edit(CHAT)
+    // The cells sit on the rows the lists show.
+    let list = |id: u16, count: usize| {
+        let top = ui.list_view(id).map_or(0, |view| view.top);
+        let metrics = ListMetrics::scaled(scale);
+        (
+            ShellListGeometry::new(rect_of(id), count, top, metrics),
+            top,
+        )
     };
-    push_new_edit(
-        &mut paint.controls,
-        &mut paint.texts,
-        atlas,
-        font,
-        &chat_edit,
-        state
-            .platform
-            .ime
-            .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
-        rect_of(CHAT),
-        ui.caret_visible(),
-        SHELL_LABEL_TEXT_RGB,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale,
-    );
-
-    // The owner-draw lists on the rows and top the tree keeps (the
-    // transcript's top is its own, which new lines move); the transcript and
-    // the multi-select user list fill no selected row.
-    let mut list = |id: u16, rect: RectPx, count: usize, selectable: bool, paint_it: bool| {
-        let view = ui.list_view(id);
-        let top = match id {
-            CHAT_LOG => ui.chat.list.top_index,
-            _ => view.map_or(0, |view| view.top),
-        };
-        let geometry = ShellListGeometry::new(rect, count, top, ListMetrics::scaled(scale));
-        let selected = view.and_then(|view| view.selected).filter(|_| selectable);
-        if paint_it {
-            let pressed = view.and_then(|view| view.pressed);
-            list_view_controls(
-                &mut paint.controls,
-                atlas,
-                geometry,
-                (selected, top, pressed),
-                scale,
-            );
-        }
-        (geometry, top)
-    };
-    let (lobbies, lobby_top) = list(
-        LOBBIES,
-        rect_of(LOBBIES),
-        ui.lobby_rows.len(),
-        true,
-        !modern,
-    );
-    let (games, game_top) = list(GAMES, rect_of(GAMES), ui.game_rows.len(), true, true);
-    let (players, player_top) = list(PLAYERS, rect_of(PLAYERS), ui.player_rows.len(), false, true);
-    let (chat, chat_top) = list(
-        CHAT_LOG,
-        rect_of(CHAT_LOG),
-        ui.chat.lines.len(),
-        false,
-        true,
-    );
+    let (games, game_top) = list(GAMES, ui.game_rows.len());
+    let (players, player_top) = list(PLAYERS, ui.player_rows.len());
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
         if let Some(visible) = row.checked_sub(player_top)
@@ -285,20 +253,6 @@ pub(crate) fn paint_wol_lobby_children(
         }
     }
 
-    for (visible, row) in ui
-        .lobby_rows
-        .iter()
-        .skip(lobby_top)
-        .take(lobbies.visible_rows)
-        .enumerate()
-    {
-        paint.texts.push(text(
-            &row.text(base_names),
-            cell(lobbies.row(visible), LOBBY_TEXT_X, 0),
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
     let ping_header = layout.control_rect(SORT_PING);
     for (visible, row) in ui
         .game_rows
@@ -461,21 +415,6 @@ pub(crate) fn paint_wol_lobby_children(
             }
         }
     }
-    for (visible, line) in ui
-        .chat
-        .lines
-        .iter()
-        .skip(chat_top)
-        .take(chat.visible_rows)
-        .enumerate()
-    {
-        paint.texts.push(text(
-            &String::from_utf16_lossy(&line.text),
-            cell(chat.row(visible), 2, 0),
-            ShellAlign::V_CENTER,
-            row_rgb(line.color),
-        ));
-    }
     paint
 }
 
@@ -635,37 +574,12 @@ pub(crate) fn paint_wol_player_card(
             SHELL_LABEL_TEXT_RGB,
         ));
     }
-    let button_align = ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
-    for button in &view.buttons {
-        labels.push(plain(
-            &button.caption,
-            crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                button.rect,
-                button.pressed,
-            ),
-            button_align,
-            if button.enabled {
-                SHELL_LABEL_TEXT_RGB
-            } else {
-                shell_paint::SHELL_TEXT_RGB_DISABLED
-            },
-        ));
-    }
     labels.push(plain(
         &view.status,
         layout.status,
         ShellAlign::NONE,
         SHELL_LABEL_TEXT_RGB,
     ));
-    let buttons: Vec<ModalButton> = view
-        .buttons
-        .iter()
-        .map(|button| ModalButton {
-            rect: button.rect,
-            pressed: button.pressed,
-            enabled: button.enabled,
-        })
-        .collect();
     let background = atlas
         .ra2_dialog_background
         .or_else(|| atlas.mode_two_dialog_background(None));
@@ -674,13 +588,34 @@ pub(crate) fn paint_wol_player_card(
         background,
         super::type3_button_frames(atlas),
         layout.dialog,
-        &buttons,
+        &[],
         &labels,
         scale,
         POPUP_DEPTHS,
     );
     paint.controls = draw.sprites;
     paint.texts = draw.text;
+    // The buttons from the lobby's tree, with the card's captions.
+    let Some(lobby) = state.frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
+        return paint;
+    };
+    let text_of = |id: i32| {
+        let button = view
+            .buttons
+            .iter()
+            .find(|(button, _)| i32::from(*button) == id);
+        button.map(|(_, caption)| caption.clone())
+    };
+    let style = GuiStyle {
+        text_of: Some(&text_of),
+        ..GuiStyle::popup()
+    };
+    for node in view.buttons.iter().filter_map(|(id, _)| lobby.ui.node(*id)) {
+        let button =
+            super::gui_paint::paint_gui_styled(state, lobby.ui.gui(), node, scale, &[], style);
+        paint.controls.extend(button.controls);
+        paint.texts.extend(button.texts);
+    }
     paint
 }
 

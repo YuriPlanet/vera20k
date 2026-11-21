@@ -12,8 +12,7 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::{
-    ColumnDraw, ExternalMenuWait, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
-    ShellFrameWave, external_menu_wait,
+    ColumnDraw, ExternalMenuWait, ShellFrameWave, external_menu_wait,
 };
 use crate::app::{AppState, BUILD_STAMP};
 use crate::render::batch::SpriteInstance;
@@ -28,7 +27,7 @@ use crate::render::shell_ui_style_assets::{
 };
 use crate::ui::main_menu_shell::{MAIN_MENU_PAGE, MainMenuMovieBase, MainMenuShellLayout};
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
+use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Archive holding the Red Alert 2 menu loop used by the unchecked default.
 ///
@@ -38,14 +37,7 @@ use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind
 const RA2_MOVIE_ARCHIVE: &str = "language.mix";
 
 pub(crate) enum MainMenuShellRenderResult {
-    Rendered {
-        title_receipt: Option<Kind1RevealReceipt>,
-    },
-    Fallback,
-}
-
-pub(crate) enum MainMenuEntryRenderResult {
-    Rendered { token: MainMenuEntryPresentToken },
+    Rendered,
     Fallback,
 }
 
@@ -135,8 +127,8 @@ pub(crate) fn clear_ra2ts_movie_session(state: &mut AppState) {
 #[derive(Debug, Clone)]
 enum MainMenuSlide {
     Steady,
-    /// The first-paint slide-in, one presented tick.
-    Entry(MainMenuEntryPaintFrame),
+    /// The first-paint slide-in.
+    Entry(ShellFrameWave),
     /// The teardown slide-out (`0x00608070`).
     Exit(ShellFrameWave),
 }
@@ -146,8 +138,7 @@ impl MainMenuSlide {
     fn column_draws(&self) -> Option<Vec<ColumnDraw>> {
         match self {
             MainMenuSlide::Steady => None,
-            MainMenuSlide::Entry(frame) => Some(frame.button_draws()),
-            MainMenuSlide::Exit(wave) => Some(wave.button_draws()),
+            MainMenuSlide::Entry(wave) | MainMenuSlide::Exit(wave) => Some(wave.button_draws()),
         }
     }
 }
@@ -243,15 +234,33 @@ fn version_labels(state: &AppState, layout: &MainMenuShellLayout) -> Vec<PaintLa
 }
 
 /// The MNSCRN parent background of a right-panel shell at `screen_w` x
-/// `screen_h` (`FamilyBackdrop::canvas`): behind the `0xE2` movie and chrome,
-/// and in the RA2TS area of the menu pages while no movie is drawn.
+/// `screen_h` (`0x0060D20B`: MNSCRNL, MNSCRNS at 640 wide): behind the `0xE2`
+/// movie and chrome, and in the RA2TS area of the menu pages while no movie
+/// is drawn. The retail layout draws the canvas at the centred dialog origin;
+/// a scaled page grows it with the page.
 pub(crate) fn shell_parent_background_instances(
     atlas: &MainMenuShellChromeAtlas,
     screen_w: i32,
     screen_h: i32,
     scale: crate::ui::shell::geom::ShellScale,
 ) -> Vec<SpriteInstance> {
-    super::movies_credits_render::family_backdrop(atlas, screen_w, screen_h, scale).canvas()
+    let (entry, (x, y)) = match scale.is_retail() {
+        true if screen_w == 640 => (
+            atlas.parent_background_640_mnscrns,
+            crate::ui::shell::geom::dialog_origin(screen_w, screen_h),
+        ),
+        true => (
+            atlas.parent_background_large_mnscrnl,
+            crate::ui::shell::geom::dialog_origin(screen_w, screen_h),
+        ),
+        false => (atlas.parent_background_large_mnscrnl, (0, 0)),
+    };
+    let mut out = Vec::new();
+    if let Some(entry) = entry {
+        let depth = shell_paint::PARENT_BACKGROUND_DEPTH;
+        shell_paint::push_entry_scaled(&mut out, entry, x, y, scale, depth);
+    }
+    out
 }
 
 /// The RA2TS movie filling `rect`, once its session is loaded.
@@ -392,68 +401,36 @@ fn menu_movie_bytes<'a>(
         .ok()
 }
 
-/// Paint the normal 0xE2 route. First-paint callers use
-/// [`render_main_menu_first_paint_frame`], so entry and steady paint share one
-/// RGB565 presentation.
+/// Paint 0xE2, sliding in, sliding out or steady.
 pub(crate) fn render_main_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<MainMenuShellRenderResult> {
-    let slide = crate::app::frontend::shell_transition::shell_exit_wave(
+    let slide = match crate::app::frontend::shell_transition::shell_exit_wave(
         state,
         crate::app::frontend::shell_transition::ShellSlideKind::MainMenu,
-    )
-    .cloned()
-    .map_or(MainMenuSlide::Steady, MainMenuSlide::Exit);
-    // The teardown slide leaves the heading blank.
-    let (title_window, title_receipt) = if matches!(slide, MainMenuSlide::Exit(_)) {
-        (None, None)
-    } else {
-        match state
+    ) {
+        Some(wave) => MainMenuSlide::Exit(wave.clone()),
+        None => state
             .frontend
-            .main_menu_shell_state
-            .title_reveal
-            .paint_window()
-        {
-            Kind1PaintWindow::Hidden => (None, None),
-            Kind1PaintWindow::Retained(window) => (Some(window), None),
-            Kind1PaintWindow::Due { window, receipt } => (Some(window), Some(receipt)),
-        }
+            .shell_first_paint_slide
+            .clone()
+            .map_or(MainMenuSlide::Steady, MainMenuSlide::Entry),
+    };
+    // Either slide leaves the heading blank.
+    let title_window = if matches!(slide, MainMenuSlide::Steady) {
+        state.frontend.shell_page_title.paint(Instant::now())
+    } else {
+        None
     };
     Ok(
         if render_main_menu(state, encoder, destination, title_window, slide)? {
-            MainMenuShellRenderResult::Rendered { title_receipt }
+            MainMenuShellRenderResult::Rendered
         } else {
             MainMenuShellRenderResult::Fallback
         },
     )
-}
-
-pub(crate) fn render_main_menu_first_paint_frame(
-    state: &mut AppState,
-    encoder: &mut wgpu::CommandEncoder,
-    destination: &wgpu::Texture,
-    frame: MainMenuEntryPaintFrame,
-) -> Result<MainMenuEntryRenderResult> {
-    if !render_main_menu(
-        state,
-        encoder,
-        destination,
-        None,
-        MainMenuSlide::Entry(frame),
-    )? {
-        return Ok(MainMenuEntryRenderResult::Fallback);
-    }
-    let token = state
-        .frontend
-        .shell_first_paint_slide
-        .as_ref()
-        .and_then(|wave| wave.mint_present_token(frame))
-        .ok_or_else(|| {
-            anyhow::anyhow!("main-menu entry frame changed before presenter token mint")
-        })?;
-    Ok(MainMenuEntryRenderResult::Rendered { token })
 }
 
 /// 0xE2 on the family shell over its MNSCRN parent background and RA2TS
@@ -477,7 +454,7 @@ fn render_main_menu(
         ensure_movie_for_current_layout(state, Ra2tsDialogOwner::MainMenu0xE2)?;
     }
     if state.frontend.main_menu_shell_error.is_some()
-        || state.frontend.main_menu_shell_chrome.is_none()
+        || !super::menu_page_render::family_art_ready(state)
     {
         state
             .frontend
@@ -530,25 +507,16 @@ fn render_main_menu(
         title: title_window.filter(|_| !backdrop),
         status,
     };
-    let buttons = FamilyPage::MainMenu.buttons(state, &page);
+    let tree = FamilyPage::MainMenu.tree(state);
     // An open box paints over the page next, with the cursor above it.
-    let boxed = state.frontend.shell_message_box.is_some()
-        && state.frontend.skirmish_shell_chrome.is_some();
-    let chrome = state
-        .frontend
-        .main_menu_shell_chrome
-        .as_ref()
-        .expect("checked before render");
-    let mut frame = FamilyFrame::new("Main Menu Shell", &MAIN_MENU_PAGE, &page, panel, buttons);
-    frame.under.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: shell_parent_background_instances(
-            chrome,
-            page.screen.w,
-            page.screen.h,
-            page.scale,
-        ),
-    });
+    let boxed = state.frontend.shell_message_box.is_some();
+    let title = MAIN_MENU_PAGE.title_key;
+    let mut frame = FamilyFrame::new("Main Menu Shell", &page, panel, title).on(
+        state,
+        MAIN_MENU_PAGE.dialog,
+        &tree,
+    );
+    frame.backdrop = true;
     frame
         .under
         .extend(movie_draw(state, page.movie).filter(|_| movie_shown));

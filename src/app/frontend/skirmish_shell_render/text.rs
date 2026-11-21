@@ -120,10 +120,6 @@ pub(super) fn row_type_label(row_type: SkirmishAiRowType) -> (&'static str, &'st
     row_type.label()
 }
 
-pub(super) fn button_label_color() -> [f32; 3] {
-    SHELL_LABEL_TEXT_RGB
-}
-
 /// Retail provenance: disabled `OwnerDraw_Button_00612B70` replaces the normal
 /// yellow label with its disabled color at `0x00612F5F`
 /// ([`crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED`]).
@@ -131,7 +127,7 @@ pub(super) fn button_label_color_for_disabled(disabled: bool) -> [f32; 3] {
     if disabled {
         crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
     } else {
-        button_label_color()
+        SHELL_LABEL_TEXT_RGB
     }
 }
 
@@ -585,7 +581,7 @@ pub(super) fn random_map_paint(
         },
         art_of: Some(&art_of),
         rows_of: Some(&rows_of),
-        framed: true,
+        combos: super::gui_paint::ComboArt::Framed,
         ..Default::default()
     };
     let gui = state.frontend.shell_controller.gui();

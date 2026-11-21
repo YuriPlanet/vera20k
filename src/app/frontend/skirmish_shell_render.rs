@@ -110,10 +110,6 @@ const SHELL_DROPDOWN_TEXT_DEPTH: f32 = 0.00029;
 /// Software cursor draws on top of everything else on the shell (smallest
 /// depth). The original hides the OS cursor and blits the cursor SHP last.
 const SHELL_CURSOR_DEPTH: f32 = 0.00001;
-// Owner-draw dark text color 0x00000C05 decoded as RGB; kept for regression
-// tests that ensure Skirmish shell labels do not use this source accidentally.
-#[cfg(test)]
-const SHELL_BUTTON_TEXT_RGB_00000C05: [f32; 3] = [5.0 / 255.0, 12.0 / 255.0, 0.0];
 const SHELL_LABEL_TEXT_RGB: [f32; 3] = [1.0, 1.0, 0.0];
 const SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F: [f32; 3] = [0x9F as f32 / 255.0, 0.0, 0.0];
 const COMBODROPWIN_TEXT_INSET_X: i32 = 3;
@@ -135,33 +131,6 @@ const SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE: [f32; 3] = [0.0
 const SHELL_SCROLLBAR_TRACK_RGB_PENDING_SCROLLBAR_SOURCE_CAPTURE: [f32; 3] = [0.035, 0.042, 0.034];
 const SHELL_MODAL_BG_RGB: [f32; 3] = [0.020, 0.032, 0.025];
 const SHELL_MODAL_PANEL_RGB: [f32; 3] = [0.050, 0.060, 0.044];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ShellRenderMode {
-    Visible,
-    TransitionPreview,
-}
-
-#[cfg(test)]
-fn shell_text_origin(
-    rect: RectPx,
-    text_w: u32,
-    text_h: u32,
-    flags: ShellAlign,
-    y_offset: i32,
-) -> (i32, i32) {
-    let mut x = rect.x;
-    if flags.contains(ShellAlign::H_CENTER) && text_w < rect.w as u32 {
-        x += ((rect.w as u32 - text_w) / 2) as i32;
-    } else if flags.contains(ShellAlign::H_RIGHT) && text_w < rect.w as u32 {
-        x += (rect.w as u32 - text_w) as i32;
-    }
-    let mut y = rect.y + y_offset;
-    if flags.contains(ShellAlign::V_CENTER) && text_h < rect.h as u32 {
-        y += ((rect.h as u32 - text_h) / 2) as i32;
-    }
-    (x, y)
-}
 
 pub(crate) fn side_item_data_for_country(country: LaunchCountry) -> i32 {
     i32::from(country.raw_index())
@@ -408,7 +377,6 @@ pub(crate) fn render_skirmish_shell(
             color: &color,
             depth: &depth,
         },
-        ShellRenderMode::Visible,
     )?;
     state
         .renderer
@@ -421,10 +389,9 @@ pub(crate) fn render_skirmish_shell_to_target(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     target: ShellRenderTarget<'_>,
-    mode: ShellRenderMode,
 ) -> anyhow::Result<SkirmishShellAction> {
     let chrome = state.frontend.skirmish_shell_chrome.take();
-    let result = render_skirmish_shell_with_atlas(state, encoder, target, chrome.as_ref(), mode);
+    let result = render_skirmish_shell_with_atlas(state, encoder, target, chrome.as_ref());
     state.frontend.skirmish_shell_chrome = chrome;
     result
 }
@@ -434,7 +401,6 @@ fn render_skirmish_shell_with_atlas(
     encoder: &mut wgpu::CommandEncoder,
     target: ShellRenderTarget<'_>,
     atlas: Option<&SkirmishShellChromeAtlas>,
-    mode: ShellRenderMode,
 ) -> anyhow::Result<SkirmishShellAction> {
     // Collect whatever the generator has produced before laying anything out,
     // so each in-progress preview lands on the next frame drawn and the frame
@@ -505,11 +471,7 @@ fn render_skirmish_shell_with_atlas(
     .and_then(|kind| crate::app::frontend::shell_transition::shell_exit_wave(state, kind))
     .cloned();
     let leaving = exit_wave.is_some();
-    let wave = exit_wave.or_else(|| {
-        (mode == ShellRenderMode::TransitionPreview)
-            .then(|| state.frontend.shell_first_paint_slide.clone())
-            .flatten()
-    });
+    let wave = exit_wave.or_else(|| state.frontend.shell_first_paint_slide.clone());
     // Every slide tick blits the top panel and the tile column from the
     // dialog's own surface (`0x00607EC8`, `0x00607EF1` with record `+0xD5`),
     // so no right-panel child shows while either slide runs.
@@ -1242,11 +1204,6 @@ mod tests {
         assert_eq!(button_label_color_for_disabled(false), SHELL_LABEL_TEXT_RGB);
     }
 
-    #[test]
-    fn validation_modal_body_text_is_left_top_wrapped_not_centered() {
-        assert_eq!(validation_modal_body_text_align(), ShellAlign::NONE);
-    }
-
     fn assert_f32_close(left: f32, right: f32) {
         assert!((left - right).abs() < 0.00001, "{left} != {right}");
     }
@@ -1782,7 +1739,6 @@ mod tests {
             (118, 64)
         );
         assert_eq!(start_marker_label_color(), SHELL_LABEL_TEXT_RGB);
-        assert_ne!(start_marker_label_color(), SHELL_BUTTON_TEXT_RGB_00000C05);
     }
 
     #[test]
@@ -1859,25 +1815,6 @@ mod tests {
     }
 
     #[test]
-    fn text_origin_centers_and_applies_pressed_offset() {
-        let rect = RectPx::new(10, 20, 100, 30);
-        assert_eq!(
-            shell_text_origin(rect, 40, 10, ShellAlign::H_CENTER | ShellAlign::V_CENTER, 0),
-            (40, 30)
-        );
-        assert_eq!(
-            shell_text_origin(
-                rect,
-                40,
-                10,
-                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-                PRESSED_BUTTON_CONTENT_OFFSET_Y
-            ),
-            (40, 32)
-        );
-    }
-
-    #[test]
     fn button_text_rect_follows_owner_draw_caller_contract() {
         let rect = RectPx::new(644, 241, 156, 42);
         let released = button_text_rect(rect, false, crate::ui::shell::geom::ShellScale::RETAIL);
@@ -1892,38 +1829,6 @@ mod tests {
             (646, 246, 152, 37)
         );
     }
-
-    #[test]
-    fn shell_text_colors_follow_verified_owner_draw_sources() {
-        assert_eq!(
-            SHELL_BUTTON_TEXT_RGB_00000C05,
-            [5.0 / 255.0, 12.0 / 255.0, 0.0]
-        );
-        assert_eq!(SHELL_LABEL_TEXT_RGB, [1.0, 1.0, 0.0]);
-        assert_eq!(
-            SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
-            [0x9F as f32 / 255.0, 0.0, 0.0]
-        );
-    }
-
-    #[test]
-    fn button_label_color_uses_owner_draw_button_yellow_source() {
-        assert_eq!(button_label_color(), SHELL_LABEL_TEXT_RGB);
-        assert_ne!(button_label_color(), SHELL_BUTTON_TEXT_RGB_00000C05);
-    }
-
-    #[test]
-    fn text_origin_supports_left_and_right_alignment_flags() {
-        let rect = RectPx::new(10, 20, 100, 30);
-        assert_eq!(
-            shell_text_origin(rect, 40, 10, ShellAlign::NONE, 0),
-            (10, 20)
-        );
-        assert_eq!(
-            shell_text_origin(rect, 40, 10, ShellAlign::H_RIGHT, 0),
-            (70, 20)
-        );
-    }
 }
 mod abort;
 pub(crate) use abort::render_abort_shell;
@@ -1935,7 +1840,7 @@ mod connection;
 pub(crate) use connection::{connection_shell_drawable, render_connection_shell};
 
 mod list;
-pub(crate) use list::paint_list;
+pub(crate) use list::{paint_list, paint_list_frame};
 
 mod sound;
 pub(crate) use sound::render_sound_shell;
@@ -1957,9 +1862,7 @@ pub(crate) use wol_lobby::{
     WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
     paint_wol_player_card,
 };
-pub(crate) use wol_login::{
-    paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
-};
+pub(crate) use wol_login::{paint_wol_account_form, paint_wol_login_children};
 pub(crate) use wol_page::{
     in_match_page_draw, paint_wol_add_buddy, paint_wol_page_dialog, paint_wol_page_received,
     paint_wol_verify,

@@ -7,17 +7,16 @@
 
 use super::chrome::*;
 use super::controls::{
-    ControlPaint, NewEditPaint, house_color_tint, list_controls, paint_control,
-    push_new_edit_instances,
+    ControlPaint, house_color_tint, list_view_controls, paint_control, push_new_edit,
 };
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::preview::{build_preview_surface_instance, ensure_map_preview_texture};
-use super::text::{button_text_rect, rect_to_text_rect};
+use super::text::rect_to_text_rect;
 use super::{
-    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH,
-    SHELL_LABEL_TEXT_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
+    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_PARENT_BACKGROUND_DEPTH,
 };
 use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
@@ -60,7 +59,6 @@ pub(crate) fn render_coop_score(
     let shown = |id: u16| can_continue || !hidden_on_final_mission(id);
     let controller = &state.frontend.shell_controller;
     let hovered = crate::ui::shell::menu_page::hovered_id(controller, COOP_SCORE_PAGE.dialog);
-    let held = crate::ui::shell::menu_page::pressed_id(controller, COOP_SCORE_PAGE.dialog);
     let status = hovered
         .and_then(help_key)
         .map(|key| state.csf_label(key, ""))
@@ -284,37 +282,28 @@ pub(crate) fn render_coop_score(
         RectPx::new(rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2)
     });
     let edit = &ui.chat.edit;
-    let field = scale.derive_rect(chat_rect, |rect| {
-        RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
-    });
-    push_new_edit_instances(
+    let caret = edit.focused && (now.elapsed().as_millis() / 500) % 2 == 0;
+    let (yellow, depth) = (SHELL_LABEL_TEXT_RGB, SHELL_CONTROL_TEXT_DEPTH);
+    push_new_edit(
         &mut controls,
+        &mut texts,
         atlas,
         font,
         edit,
-        NewEditPaint {
-            frame: scale.derive_rect(chat_rect, |rect| {
-                RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
-            }),
-            text: field,
-            background: None,
-            frame_depth: SHELL_EDIT_FRAME_DEPTH,
-            caret_depth: SHELL_EDIT_CARET_DEPTH,
-            caret_visible: edit.focused && (now.elapsed().as_millis() / 500) % 2 == 0,
-        },
+        None,
+        chat_rect,
+        caret,
+        yellow,
+        depth,
         scale,
     );
-    texts.push(text(
-        &String::from_utf16_lossy(&edit.units[edit.first_visible_unit.min(edit.units.len())..]),
-        field,
-        ShellAlign::V_CENTER,
-        SHELL_LABEL_TEXT_RGB,
-    ));
     let chat = ui
         .chat
         .list
         .geometry(chat_log_rect, ui.chat.lines.len(), scale);
-    list_controls(&mut controls, atlas, chat, &ui.chat.list, false, scale);
+    let list = &ui.chat.list;
+    let look = (None, list.top_index, list.scroll.pressed_part());
+    list_view_controls(&mut controls, atlas, chat, look, scale);
     for (visible, line) in ui
         .chat
         .lines
@@ -351,39 +340,27 @@ pub(crate) fn render_coop_score(
     ) {
         overlay.preview = build_preview_surface_instance(rect, preview.width, preview.height);
     }
-    for button in &layout.page.buttons {
-        if !shown(button.id) {
-            continue;
-        }
-        // The pushed look: captured and still under the pointer (612B70).
-        let pressed = held == Some(button.id) && hovered == Some(button.id);
-        let enabled = match button.id {
-            CONTINUE => view.continue_enabled,
-            _ => view.quit_enabled,
+    if let Some(root) = controller.root_in(COOP_SCORE_PAGE.dialog) {
+        let enabled_of = |id: i32| match u16::try_from(id).ok()? {
+            CONTINUE => Some(view.continue_enabled),
+            _ => Some(view.quit_enabled),
         };
-        push_right_panel_button_shp(
-            &mut art,
-            atlas,
-            button.rect,
-            crate::ui::shell::button::ButtonVisual {
-                pressed,
-                highlighted: false,
-            },
-            false,
-            SHELL_CONTROL_DEPTH,
+        let style = super::gui_paint::GuiStyle {
+            buttons: super::gui_paint::ButtonArt::Panel,
+            enabled_of: Some(&enabled_of),
+            ..Default::default()
+        };
+        let ids = layout.page.buttons.iter().map(|button| button.id);
+        let buttons = super::gui_paint::paint_gui_ids(
+            state,
+            controller.gui(),
+            root,
+            ids.filter(|id| shown(*id)),
+            scale,
+            style,
         );
-        if let Some(spec) = COOP_SCORE_PAGE.buttons().find(|spec| spec.id == button.id) {
-            texts.push(shell_text::draw_in_rect_scaled(
-                font,
-                &state.csf_label(spec.csf_key, spec.csf_key),
-                button_text_rect(button.rect, pressed, scale),
-                super::text::button_label_color_for_disabled(!enabled),
-                ShellAlign::BUTTON_CAPTION,
-                [0.0; 2],
-                SHELL_CONTROL_TEXT_DEPTH,
-                scale.factor(),
-            ));
-        }
+        art.extend(buttons.controls);
+        texts.extend(buttons.texts);
     }
     in_game_shell::render_shell_frame(
         state,

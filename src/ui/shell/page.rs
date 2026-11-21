@@ -200,27 +200,6 @@ pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
     }
 }
 
-/// The right-panel buttons under `root` as the column paints them: rect,
-/// pushed (captured and under the pointer in its own dialog, 612B70) and
-/// enabled.
-pub fn menu_button_looks(
-    gui: &Gui,
-    root: Option<NodeId>,
-    buttons: &[super::menu_page::MenuPageButtonRect],
-) -> Vec<(super::menu_page::MenuPageButtonRect, bool, bool)> {
-    let Some(root) = root else { return Vec::new() };
-    let held = held_in(gui, root);
-    buttons
-        .iter()
-        .map(|b| {
-            let node = gui.find_id(root, i32::from(b.id));
-            let enabled = node.and_then(|n| gui.get(n, Prop::Enabled).ok().flatten())
-                != Some(&Value::Bool(false));
-            (*b, node.is_some() && node == held, enabled)
-        })
-        .collect()
-}
-
 /// The GUI's events as cues and control-id events, in order: a control's
 /// cue comes before what it did.
 pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {

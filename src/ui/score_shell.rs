@@ -49,9 +49,12 @@ pub const SCORE_PAGE: MenuPageSpec = MenuPageSpec {
 /// Continue and VERA's paging pair as nodes; only Continue has help.
 pub fn nodes() -> vera20k_gui::NodeSpec {
     use vera20k_gui::{NodeKind, NodeSpec};
-    SCORE_PAGE.nodes().children(
-        [PREVIOUS_PAGE, NEXT_PAGE].map(|id| NodeSpec::new(NodeKind::Button).id(i32::from(id))),
-    )
+    let paging = [(PREVIOUS_PAGE, "VERA:Previous"), (NEXT_PAGE, "VERA:Next")];
+    SCORE_PAGE.nodes().children(paging.map(|(id, label)| {
+        NodeSpec::new(NodeKind::Button)
+            .id(i32::from(id))
+            .label(label)
+    }))
 }
 
 /// Player rows the template declares.

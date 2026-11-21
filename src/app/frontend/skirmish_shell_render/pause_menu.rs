@@ -8,7 +8,6 @@ use super::launcher_options;
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
 use crate::render::shell_text::ShellAlign;
-use crate::ui::main_menu_dialogs::options::shell::LauncherStatusHelp;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::pause_menu::{
     InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate,
@@ -125,8 +124,8 @@ pub(crate) fn render_pause_menu_shell(
         }
         // The common handler shows the hovered control's 6040B0 help in 0x695.
         let footer = match crate::app::input::pause_menu::hovered_help(state) {
-            Some(LauncherStatusHelp::Csf(key)) => caption(csf, key),
-            Some(LauncherStatusHelp::Vera(key)) => crate::i18n::tr(key),
+            Some(key) if key.starts_with("VERA:") => crate::i18n::tr(key),
+            Some(key) => caption(csf, key),
             None => caption(csf, PAUSE_MENU_FOOTER.csf_key),
         };
         if !footer.is_empty() {

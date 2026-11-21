@@ -10,7 +10,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
-use crate::ui::main_menu_dialogs::options::shell::{LauncherOptionsLayout, LauncherStatusHelp};
+use crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
 
@@ -374,10 +374,7 @@ pub(crate) fn render_launcher_options(
             .options_dialog
             .as_ref()
             .and_then(|dialog| dialog.shell_status_help())
-            .map(|help| match help {
-                LauncherStatusHelp::Csf(key) => state.csf_text(key),
-                LauncherStatusHelp::Vera(key) => crate::i18n::tr(key),
-            })
+            .map(|key| state.csf_text(key))
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
@@ -439,116 +436,24 @@ pub(crate) fn render_launcher_options(
     } else {
         build_open_list(&state.renderer.bit_font, atlas, &layout, dialog)
     };
-    state.renderer.batch_renderer.update_camera(
-        &state.renderer.gpu,
-        state.render_width() as f32,
-        state.render_height() as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
-    );
-    let batch = &state.renderer.batch_renderer;
-    let gpu = &state.renderer.gpu;
-    let chrome_buffer = batch.create_instance_buffer(gpu, &instances);
-    let text_buffers: Vec<_> = texts
-        .iter()
-        .map(|d| batch.create_instance_buffer(gpu, &d.instances))
-        .collect();
-    let popup_buffer = batch.create_instance_buffer(gpu, &popup_instances);
-    let popup_text_buffers: Vec<_> = popup_text
-        .iter()
-        .map(|d| batch.create_instance_buffer(gpu, &d.instances))
-        .collect();
-    let cursor: Vec<_> =
-        crate::app::frontend::shell_pass::software_cursor(state, SHELL_CURSOR_DEPTH)
-            .map(|(_, instance)| instance)
-            .into_iter()
-            .collect();
-    let cursor_buffer = batch.create_instance_buffer(gpu, &cursor);
-    let cursor_texture = state
-        .match_state
-        .match_presentation
-        .software_cursor
-        .as_ref()
-        .and_then(|c| c.get(crate::app::types::CursorId::Default))
-        .and_then(|s| s.frames.first())
-        .map(|f| &f.texture);
-    let color = state.renderer.shell_surface_presenter.source_render_view();
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Launcher Options D5"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: &color,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &state.renderer.depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    if let Some((buffer, count)) = &chrome_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
-    }
-    for (draw, buffer) in texts.iter().zip(&text_buffers) {
-        if let Some((buffer, count)) = buffer {
-            if draw.scissor.w == 0 || draw.scissor.h == 0 {
-                continue;
-            }
-            pass.set_scissor_rect(
-                draw.scissor.x,
-                draw.scissor.y,
-                draw.scissor.w,
-                draw.scissor.h,
-            );
-            batch.draw_with_buffer_passthrough(
-                &mut pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
-        }
-    }
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
-    if let Some((buffer, count)) = &popup_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
-    }
-    for (draw, buffer) in popup_text.iter().zip(&popup_text_buffers) {
-        if let Some((buffer, count)) = buffer {
-            pass.set_scissor_rect(
-                draw.scissor.x,
-                draw.scissor.y,
-                draw.scissor.w,
-                draw.scissor.h,
-            );
-            batch.draw_with_buffer_passthrough(
-                &mut pass,
-                state.renderer.bit_font.atlas(),
-                buffer,
-                *count,
-            );
-        }
-    }
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
-    if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
-        batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
-    }
-    drop(pass);
-    state
-        .renderer
-        .shell_surface_presenter
-        .encode_present(encoder, destination);
+    super::in_game_shell::render_shell_frame(
+        state,
+        encoder,
+        destination,
+        super::in_game_shell::InGameShellFrame {
+            art: instances,
+            controls: Vec::new(),
+            texts,
+            label: "Launcher Options D5",
+        },
+        super::in_game_shell::ShellFrameArt::Launcher,
+        super::in_game_shell::ShellFrameOverlay {
+            controls: popup_instances,
+            texts: popup_text,
+            ..Default::default()
+        },
+        super::in_game_shell::ShellFrameCursor::Visible,
+    )?;
     state.platform.window.request_redraw();
     Ok(())
 }

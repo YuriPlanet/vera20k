@@ -13,17 +13,16 @@ use anyhow::Result;
 
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
-    FamilyFrame, PageButton, PanelState, encode_family_page,
+    FamilyFrame, PanelState, encode_family_page, family_art_ready, page_tree,
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::render::shell_paint::{
-    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED,
+    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::campaign_score_shell::{CampaignScoreDialog, SCORE_ART_REGION_STATIC};
-use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, hovered_id, pressed_id};
+use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, hovered_id};
 
 const SHELL_TEXT: [u8; 3] = [255, 255, 0];
 const HIGHLIGHT: [u8; 3] = [255, 255, 255];
@@ -35,9 +34,7 @@ pub(crate) fn render_campaign_score_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.main_menu_shell_chrome.is_none()
-        || state.frontend.campaign_score_page.is_none()
-    {
+    if state.frontend.campaign_score_page.is_none() || !family_art_ready(state) {
         return Ok(false);
     }
 
@@ -98,6 +95,8 @@ pub(crate) fn render_campaign_score_page(
         };
         (page.layout(width, height, fills_window), frame)
     };
+    let rect_of = |id| layout.control_rect(id);
+    let tree = page_tree(state, dialog.id(), || dialog.nodes(), rect_of, &[]);
     // `0xBC7`'s monitor `0x71C` runs the shared kind-4 timer.
     let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
         .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(state))
@@ -113,9 +112,6 @@ pub(crate) fn render_campaign_score_page(
         .and_then(|control| control.tooltip_key)
         .map(|key| state.csf_text(key))
         .unwrap_or_default();
-    let pressed = active
-        .then(|| pressed_id(controller, dialog.id()))
-        .flatten();
 
     let mut labels: Vec<PaintLabel<'static>> = Vec::new();
     let campaign_page = state
@@ -160,11 +156,6 @@ pub(crate) fn render_campaign_score_page(
         }
     }
 
-    let chrome = state
-        .frontend
-        .main_menu_shell_chrome
-        .as_ref()
-        .expect("checked before render");
     // The family compositor paints the right panel, the monitor, the column
     // or Continue with its caption; the heading and status line are this
     // dialog's own statics.
@@ -191,16 +182,9 @@ pub(crate) fn render_campaign_score_page(
         monitor: monitor_frame,
         ..PanelState::default()
     };
-    let buttons = vec![PageButton {
-        id: continue_id,
-        paint: PaintButton {
-            rect: layout.continue_button,
-            pressed: pressed == Some(continue_id),
-            hovered: false,
-            enabled: true,
-        },
-    }];
-    let mut frame = FamilyFrame::new("Campaign Score Shell", dialog.page(), &page, panel, buttons);
+    let title = dialog.page().title_key;
+    let mut frame =
+        FamilyFrame::new("Campaign Score Shell", &page, panel, title).on(state, dialog.id(), &tree);
     frame.labels = labels;
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
@@ -257,16 +241,7 @@ pub(crate) fn render_campaign_score_page(
             });
         }
     } else {
-        frame.under.push(TexturedDraw {
-            texture: &chrome.texture,
-            instances:
-                crate::app::frontend::main_menu_shell_render::shell_parent_background_instances(
-                    chrome,
-                    layout.screen.w,
-                    layout.screen.h,
-                    layout.scale,
-                ),
-        });
+        frame.backdrop = true;
     }
     encode_family_page(state, encoder, destination, frame);
     Ok(true)

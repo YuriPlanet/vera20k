@@ -14,23 +14,24 @@ use anyhow::Result;
 use crate::app::AppState;
 use crate::app::diagnostics::shell_capture::PresentedShell;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
-use crate::app::frontend::movies_credits_render::push_group_box;
 use crate::app::frontend::shell_pass::{
-    ShellComposition, TexturedDraw, encode_shell_pass, owner_draw_button_label_rect,
-    software_cursor,
+    ShellComposition, TexturedDraw, encode_shell_pass, software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
+use crate::app::frontend::skirmish_shell_render::gui_paint::{
+    ButtonArt, GuiPaint, GuiStyle, paint_gui_styled,
+};
 use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
+use crate::app::frontend::skirmish_shell_render::{WolLobbyPaint, paint_list_frame};
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
-    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
-    SHELL_TEXT_RGB_ENABLED, push_entry_scaled,
+    self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
+    push_entry_scaled,
 };
 use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
-use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
 use crate::ui::shell::sound::SHELL_SOUND_PAGE;
 use crate::ui::wol_shell::{WOL_LOBBY_TITLE_KEY, WOL_WELCOME_DIALOG};
@@ -205,6 +206,7 @@ fn painted(state: &mut AppState) -> Option<Painted> {
                 return None;
             }
             let spec = lobby_ui.map_or(&wol_lobby::PAGE, |lobby| lobby.ui.page_spec());
+            lobby::sync(state);
             let layout = lobby::layout(state);
             painted(
                 layout.page.clone(),
@@ -419,11 +421,21 @@ pub(crate) fn render_wol_page(
     let mut icon_sprites = Vec::new();
     let mut labels = Vec::new();
     let mut welcome_texts = None;
+    // `BS_GROUPBOX` frames (`0x0061E700`): the list's two rings, the top
+    // edge eight pixels below the window top, on the window's last column
+    // and row.
+    let mut group_boxes = Vec::new();
+    let mut group_box = |window: RectPx| {
+        if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+            let frame = scale.derive_rect(window, |window| {
+                RectPx::new(window.x + 1, window.y + 9, window.w - 3, window.h - 11)
+            });
+            paint_list_frame(&mut group_boxes, atlas, frame);
+        }
+    };
     match body.filter(|_| children) {
         Some(Body::Welcome(layout)) => {
-            for window in layout.group_boxes() {
-                push_group_box(&mut sprites, chrome, window, scale);
-            }
+            layout.group_boxes().into_iter().for_each(&mut group_box);
             let icons = art.iter().flat_map(|art| &art.icons);
             for (file, window) in layout.icons() {
                 let Some((_, entry)) = icons.clone().find(|(name, _)| name == file) else {
@@ -436,13 +448,12 @@ pub(crate) fn render_wol_page(
             welcome_texts =
                 Some(crate::app::shell_wol::leaf::paint(state, WOL_WELCOME_DIALOG, scale).texts);
         }
-        Some(Body::MyInfo(group_box)) => push_group_box(&mut sprites, chrome, *group_box, scale),
-        Some(Body::Buddy(layout)) => {
-            let group_box = layout
+        Some(Body::MyInfo(window)) => group_box(*window),
+        Some(Body::Buddy(layout)) => group_box(
+            layout
                 .rect_of(crate::ui::wol_buddy::GROUP_BOX)
-                .unwrap_or_default();
-            push_group_box(&mut sprites, chrome, group_box, scale)
-        }
+                .unwrap_or_default(),
+        ),
         _ => {}
     }
     let shown = body.filter(|_| children);
@@ -583,80 +594,58 @@ pub(crate) fn render_wol_page(
     let page_dialogs = page_dialogs_paint(state);
 
     // The column: the slide engine draws it while a slide runs, the empty
-    // backdrop draws it shut, otherwise the page's buttons paint.
-    let controller = &state.frontend.shell_controller;
-    let mut painted_buttons: Vec<(MenuPageButtonRect, bool, bool)> = Vec::new();
-    let mut spec: Option<&MenuPageSpec> = None;
+    // backdrop draws it shut, otherwise the page's buttons paint from their
+    // nodes, the lobby's in its own tree and every other page's in the
+    // shell's (`0x10E` paints the one of each row its press shows).
     let column = match (&painted, &wave) {
         (_, Some(wave)) => Some(wave.button_draws()),
         (None, None) => Some(shell_paint::shuttered_column(page.right_panel)),
-        (Some(painted), None) => {
-            spec = Some(painted.spec);
-            painted_buttons = match (&painted.body, painted.dialog) {
-                (Body::Welcome(layout), dialog) => {
-                    let active = controller.top_id() == Some(dialog);
-                    let pressed = active.then(|| crate::app::App::wol_held(state)).flatten();
-                    let buttons = layout.painted_buttons(pressed).into_iter();
-                    buttons
-                        .map(|button| (button, pressed == Some(button.id), true))
-                        .collect()
-                }
-                (Body::Lobby(_), _) => lobby.map_or_else(Vec::new, |lobby| {
-                    let ui = &lobby.ui;
-                    let buttons = page.buttons.iter();
-                    buttons
-                        .map(|button| (*button, ui.pressed(button.id), ui.enabled(button.id)))
-                        .collect()
-                }),
-                (_, crate::ui::wol_options::DIALOG | SOUND_DIALOG) => page
-                    .buttons
-                    .iter()
-                    .map(|button| {
-                        let pressed =
-                            crate::app::shell_wol::options::button_pressed(state, button.id);
-                        (*button, pressed, true)
-                    })
-                    .collect(),
-                (_, dialog) => crate::app::shell_wol::leaf::buttons(state, dialog, &page.buttons),
-            };
-            None
-        }
+        (Some(_), None) => None,
     };
-    if let Some(draws) = column {
-        sprites.extend(shell_paint::paint_slide_column(
+    let mut buttons = GuiPaint::default();
+    match (&painted, column) {
+        (_, Some(draws)) => sprites.extend(shell_paint::paint_slide_column(
             chrome,
             page.right_panel,
             &draws,
-        ));
-    }
-    let buttons: Vec<PaintButton> = painted_buttons
-        .iter()
-        .map(|(button, pressed, enabled)| PaintButton {
-            rect: button.rect,
-            pressed: *pressed,
-            hovered: false,
-            enabled: *enabled,
-        })
-        .collect();
-    let button_sprites = shell_paint::paint_buttons(
-        chrome,
-        &buttons,
-        crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        crate::util::time::Instant::now(),
-        None,
-    );
-    for (button, pressed, enabled) in &painted_buttons {
-        let Some(spec) = spec.and_then(|spec| spec.button(button.id)) else {
-            continue;
-        };
-        let text = state.csf_text(spec.csf_key);
-        labels.push(PaintLabel {
-            text: text.into(),
-            rect: owner_draw_button_label_rect(button.rect, *pressed),
-            align: ShellAlign::BUTTON_CAPTION,
-            rgb: crate::app::frontend::skirmish_shell_render::wol_button_label_rgb(*enabled),
-            path_a_reveal: None,
-        });
+        )),
+        (Some(painted), None) => {
+            let controller = &state.frontend.shell_controller;
+            let ids: Vec<u16> = match &painted.body {
+                Body::Welcome(layout) => {
+                    let active = controller.top_id() == Some(painted.dialog);
+                    let pressed = active.then(|| crate::app::App::wol_held(state)).flatten();
+                    let shown = layout.painted_buttons(pressed);
+                    shown.iter().map(|button| button.id).collect()
+                }
+                _ => page.buttons.iter().map(|button| button.id).collect(),
+            };
+            let lobby_ui = lobby
+                .filter(|_| matches!(painted.body, Body::Lobby(_)))
+                .map(|lobby| &lobby.ui);
+            let text_of = |id: i32| {
+                let button = painted.spec.button(u16::try_from(id).ok()?)?;
+                Some(state.csf_text(button.csf_key))
+            };
+            let enabled_of = |id: i32| Some(lobby_ui?.enabled(u16::try_from(id).ok()?));
+            let style = GuiStyle {
+                buttons: ButtonArt::Panel,
+                text_of: Some(&text_of),
+                enabled_of: Some(&enabled_of),
+                ..Default::default()
+            };
+            for id in ids {
+                let node = match lobby_ui {
+                    Some(ui) => ui.node(id).map(|node| (ui.gui(), node)),
+                    None => (controller.control(painted.dialog, id))
+                        .map(|node| (controller.gui(), node)),
+                };
+                if let Some((gui, node)) = node {
+                    buttons.extend(paint_gui_styled(state, gui, node, scale, &[], style));
+                }
+            }
+        }
+        (None, None) => {}
     }
     let title_key = painted.as_ref().and_then(Painted::title_key);
     if let (Some(window), Some(key)) = (title_window, title_key) {
@@ -707,148 +696,92 @@ pub(crate) fn render_wol_page(
         texture: &chrome.texture,
         instances: sprites,
     });
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: group_boxes,
+        });
+    }
     if let Some(art) = art {
         draws.push(TexturedDraw {
             texture: &art.texture,
             instances: icon_sprites,
         });
     }
-    draws.push(TexturedDraw {
-        texture: &chrome.texture,
-        instances: button_sprites,
+    if let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: buttons.controls,
+        });
+    }
+    text.extend(buttons.texts);
+    // The widget layers, in paint order, each on the controls' atlas with
+    // its icons on the page art: a dialog over the page hides the glyphs
+    // painted before it under it (`cover`), and the boxes hide a layer's
+    // own (`own`).
+    let gui = |paint: GuiPaint| {
+        let (mut controls, mut texts) = (paint.controls, paint.texts);
+        controls.extend(paint.popup);
+        texts.extend(paint.popup_texts);
+        WolLobbyPaint {
+            controls,
+            icons: Vec::new(),
+            texts,
+        }
+    };
+    let translate = crate::app::shell_wol::options::translate_popup(state).filter(|_| {
+        painted.as_ref().map(|painted| painted.dialog) == Some(crate::ui::wol_options::DIALOG)
     });
-    let controls_atlas = state.frontend.skirmish_shell_chrome.as_ref();
-    if let (Some(atlas), Some(login)) = (controls_atlas, login_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: login.controls,
-        });
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: login.popup,
-        });
-        text.extend(login.texts);
-        text.extend(login.popup_texts);
-    }
-    if let (Some(atlas), Some((dialog, form))) = (controls_atlas, account_form) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: form.controls,
-        });
-        text.extend(form.texts);
-    }
-    if let (Some(atlas), Some(mut widgets)) = (controls_atlas, widget_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: widgets.controls,
-        });
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: widgets.popup,
-        });
-        if painted.as_ref().map(|painted| painted.dialog) == Some(crate::ui::wol_options::DIALOG)
-            && let Some(list) = crate::app::shell_wol::options::translate_popup(state)
-        {
+    let widget_children = widget_children.map(|mut widgets| {
+        if let Some(list) = translate {
             hide_glyphs_under(&mut widgets.texts, list.rect);
         }
-        text.extend(widgets.texts);
-        text.extend(widgets.popup_texts);
-    }
-    if let (Some(atlas), Some(mut lobby)) = (controls_atlas, lobby_children) {
+        gui(widgets)
+    });
+    let (card, countries) = match player_card {
+        Some((dialog, card, countries)) => (Some((dialog, card)), countries),
+        None => (None, None),
+    };
+    let cover = |layer: Option<(RectPx, WolLobbyPaint)>| match layer {
+        Some((dialog, paint)) => (Some(dialog), None, Some(paint)),
+        None => (None, None, None),
+    };
+    let layers = [
+        (None, None, login_children.map(gui)),
+        cover(account_form),
+        (None, None, widget_children),
+        (None, box_dialog, lobby_children),
+        (None, box_dialog, quick_match_children),
+        (None, None, verify),
+        (None, None, buddy_children),
+        (buddy_popup, None, add_buddy),
+        (None, None, lobby_popup),
+        cover(card),
+        cover(countries),
+        cover(page_dialogs),
+    ];
+    let controls_atlas = state.frontend.skirmish_shell_chrome.as_ref();
+    for (cover, own, paint) in layers {
+        let (Some(atlas), Some(mut paint)) = (controls_atlas, paint) else {
+            continue;
+        };
+        if let Some(dialog) = cover {
+            hide_glyphs_under(&mut text, dialog);
+        }
         draws.push(TexturedDraw {
             texture: &atlas.texture,
-            instances: lobby.controls,
+            instances: paint.controls,
         });
         if let Some(art) = art {
             draws.push(TexturedDraw {
                 texture: &art.texture,
-                instances: lobby.icons,
+                instances: paint.icons,
             });
         }
-        if let Some(dialog) = box_dialog {
-            hide_glyphs_under(&mut lobby.texts, dialog);
+        if let Some(dialog) = own {
+            hide_glyphs_under(&mut paint.texts, dialog);
         }
-        text.extend(lobby.texts);
-    }
-    if let (Some(atlas), Some(mut quick_match)) = (controls_atlas, quick_match_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: quick_match.controls,
-        });
-        if let Some(dialog) = box_dialog {
-            hide_glyphs_under(&mut quick_match.texts, dialog);
-        }
-        text.extend(quick_match.texts);
-    }
-    if let (Some(atlas), Some(verify)) = (controls_atlas, verify) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: verify.controls,
-        });
-        text.extend(verify.texts);
-    }
-    if let (Some(atlas), Some(buddy)) = (controls_atlas, buddy_children) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: buddy.controls,
-        });
-        if let Some(art) = art {
-            draws.push(TexturedDraw {
-                texture: &art.texture,
-                instances: buddy.icons,
-            });
-        }
-        text.extend(buddy.texts);
-    }
-    if let Some(dialog) = buddy_popup {
-        hide_glyphs_under(&mut text, dialog);
-    }
-    if let (Some(atlas), Some(add)) = (controls_atlas, add_buddy) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: add.controls,
-        });
-        text.extend(add.texts);
-    }
-    if let (Some(atlas), Some(popup)) = (controls_atlas, lobby_popup) {
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: popup.controls,
-        });
-        text.extend(popup.texts);
-    }
-    if let (Some(atlas), Some((dialog, card, countries))) = (controls_atlas, player_card) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: card.controls,
-        });
-        if let Some(art) = art {
-            draws.push(TexturedDraw {
-                texture: &art.texture,
-                instances: card.icons,
-            });
-        }
-        text.extend(card.texts);
-        if let Some((list, countries)) = countries {
-            hide_glyphs_under(&mut text, list);
-            draws.push(TexturedDraw {
-                texture: &atlas.texture,
-                instances: countries.controls,
-            });
-            text.extend(countries.texts);
-        }
-    }
-    // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
-    // the buddy list or any other page.
-    if let (Some(atlas), Some((dialog, page))) = (controls_atlas, page_dialogs) {
-        hide_glyphs_under(&mut text, dialog);
-        draws.push(TexturedDraw {
-            texture: &atlas.texture,
-            instances: page.controls,
-        });
-        text.extend(page.texts);
+        text.extend(paint.texts);
     }
     if let (Some(atlas), Some(_)) = (state.frontend.skirmish_shell_chrome.as_ref(), box_dialog) {
         draws.push(TexturedDraw {

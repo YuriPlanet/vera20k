@@ -1839,14 +1839,8 @@ fn refill_games(state: &mut AppState) {
     if lobby.ui.is_modern() {
         rows.extend(watch_rows(&lobby.matches, &crate::i18n::tr(WATCH_LIST_TAG)));
     }
-    let (x, y) = state.match_state.input.cursor_px();
     if let Some(lobby) = lobby_mut(state) {
         lobby.ui.replace_games(rows);
-        // VERA: the list is refilled every few seconds, and a pointer resting
-        // on a row keeps that row's status help.
-        if lobby.ui.popup.is_none() {
-            lobby.ui.hover_games(x, y);
-        }
     }
 }
 
@@ -3900,9 +3894,8 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     if visit && !visiting(state) {
         return;
     }
-    let room = !visit
-        && (state.frontend.shell_route == ShellRoute::NetworkSetup
-            || visiting(state));
+    let room =
+        !visit && (state.frontend.shell_route == ShellRoute::NetworkSetup || visiting(state));
     let in_game = state
         .frontend
         .wol
@@ -4141,9 +4134,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
             visit_settles(state, text);
             return;
         }
-        if state.frontend.shell_route != ShellRoute::NetworkSetup
-            && !visiting(state)
-        {
+        if state.frontend.shell_route != ShellRoute::NetworkSetup && !visiting(state) {
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
@@ -4579,12 +4570,16 @@ pub(crate) fn status_help(state: &AppState) -> String {
     if let Some(help) = super::player_card::status_help(state) {
         return help;
     }
+    // VERA: a list's row under the pointer gives its own help, also as the
+    // list refills under a resting pointer.
+    let (x, y) = state.match_state.input.cursor_px();
+    let row = |list| ui.row_at(list, x, y);
     match ui.hovered() {
-        Some(GAMES) => match ui.hot_game.and_then(|row| ui.game_rows.get(row)) {
+        Some(GAMES) => match row(GAMES).and_then(|row| ui.game_rows.get(row)) {
             Some(row) if !row.watch => game_help(state, row, ui.is_modern()),
             _ => state.csf_text("STT:LobbyListGames"),
         },
-        Some(PLAYERS) => match ui.hot_player.and_then(|row| ui.player_rows.get(row)) {
+        Some(PLAYERS) => match row(PLAYERS).and_then(|row| ui.player_rows.get(row)) {
             None => state.csf_text("STT:LobbyListUsers"),
             Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {

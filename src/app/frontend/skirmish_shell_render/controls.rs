@@ -1774,19 +1774,8 @@ fn paint_checkbox_face(
     }
 }
 
-pub(super) fn list_controls(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    geometry: crate::ui::shell::list::ShellListGeometry,
-    list: &crate::ui::lan_shell::LanListState,
-    selectable: bool,
-    scale: ShellScale,
-) {
-    let selected = list.selected.filter(|_| selectable);
-    list_view_controls(out, atlas, geometry, (selected, list.top_index, list.scroll.pressed_part()), scale);
-}
-
-/// [`list_controls`] of a list's `(selected, top, pushed arrow)`.
+/// A shell dialog's list (`0x00618D40`) of its `(selected, top, pushed
+/// arrow)`: the frame, the selected row's fill and the scrollbar.
 pub(super) fn list_view_controls(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -1825,16 +1814,7 @@ pub(super) fn list_view_controls(
             ControlPaint::ScrollBar {
                 scrollbar,
                 thumb,
-                pressed_part: pressed.map(|part| {
-                    use crate::ui::shell::list::ListScrollPart;
-                    use crate::ui::skirmish_shell::DropdownScrollbarPart;
-                    match part {
-                        ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
-                        ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
-                        ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
-                        ListScrollPart::Track => DropdownScrollbarPart::Track,
-                    }
-                }),
+                pressed_part: pressed.map(dropdown_scroll_part),
             },
             scale,
         );

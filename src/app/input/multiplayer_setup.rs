@@ -4,9 +4,8 @@
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::shell_route::ShellRoute;
 use crate::app::{App, AppState};
-use crate::ui::lan_shell::LanEditKey;
 use crate::ui::multiplayer_setup::*;
-use crate::ui::shell::page::PageCue;
+use crate::ui::shell::page::{PageCue, PageEvent};
 use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -215,26 +214,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         )
         .then_some(SetupAction::OpenBox(None))
     } else {
-        let key = match code {
-            Some(KeyCode::Backspace) => Some(LanEditKey::Backspace),
-            Some(KeyCode::Delete) => Some(LanEditKey::Delete),
-            Some(KeyCode::ArrowLeft) => Some(LanEditKey::Left),
-            Some(KeyCode::ArrowRight) => Some(LanEditKey::Right),
-            Some(KeyCode::Home) => Some(LanEditKey::Home),
-            Some(KeyCode::End) => Some(LanEditKey::End),
-            Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(LanEditKey::Enter),
-            _ => None,
-        };
-        if let Some(key) = key {
-            ui.chat.key(key).map(SetupAction::Chat)
-        } else {
-            if !matches!(code, Some(KeyCode::Escape | KeyCode::Tab))
-                && let Some(text) = text
-            {
-                ui.chat.insert_text(text);
-            }
-            None
-        }
+        ui.chat.type_key(code, text).map(SetupAction::Chat)
     };
     if let Some(action) = action {
         crate::app::shell_network_setup::apply_action(state, action);
@@ -271,12 +251,16 @@ pub(crate) fn slider_held(state: &AppState) -> bool {
     crate::ui::skirmish_shell::page::slider_held(state.frontend.shell_controller.gui())
 }
 
-/// What the room paints of its widgets at the pointer.
+/// What the room paints of its widgets at the pointer: VERA's roster
+/// lights the control a press works, the original rooms the one under it.
 pub(crate) fn room_look(state: &AppState, view: &SetupView) -> RoomLook {
-    match state.frontend.multiplayer_setup.as_ref() {
-        Some(ui) => look(&state.frontend.shell_controller, ui, view),
-        None => RoomLook::default(),
-    }
+    let Some(ui) = state.frontend.multiplayer_setup.as_ref() else {
+        return RoomLook::default();
+    };
+    let carrying = ui.row_drag.is_some_and(|drag| drag.carrying);
+    let still = carrying || slider_held(state) || notice_active(state);
+    let target = pointer_target(state, view, !view.dialog.modern).filter(|_| !still);
+    look(&state.frontend.shell_controller, view, target)
 }
 
 /// The control at the pointer that a press works (enabled) on the top
@@ -309,18 +293,46 @@ pub(crate) fn drop_pointer(state: &mut AppState, close_list: bool) {
     }
 }
 
-/// The widgets' cues and the session actions they asked for, in order.
+/// The widgets' cues, then the session actions they asked for, in order;
+/// the scrollbars' new tops go to the roster and the chat log (the chat
+/// log's rows take no selection).
 fn handle_events(state: &mut AppState, view: &SetupView) {
-    let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+    if state.frontend.multiplayer_setup.is_none() {
         return;
+    }
+    let page = view.page().dialog;
+    let top = |state: &AppState, id: u16| {
+        let controller = &state.frontend.shell_controller;
+        let root = controller.root_in(page);
+        let top = root.and_then(|root| {
+            crate::ui::shell::page::int(controller.gui(), root, id, vera20k_gui::Prop::Top)
+        });
+        top.unwrap_or(0).max(0) as usize
     };
-    for event in room_events(&mut state.frontend.shell_controller, ui, view) {
+    for event in App::shell_page_events(state, false) {
         match event {
-            RoomEvent::Cue(cue) => App::play_page_cue(state, cue),
-            RoomEvent::Action(action) => {
-                crate::app::shell_network_setup::apply_action(state, action)
+            PageEvent::Activated(crate::ui::shell::modal::control::OK) => {
+                crate::app::shell_network_setup::acknowledge_notice(state)
             }
-            RoomEvent::Acknowledge => crate::app::shell_network_setup::acknowledge_notice(state),
+            // Its rows' controls move under the pointer: an open list closes.
+            PageEvent::Scrolled(ROSTER_SCROLL) => {
+                let top = top(state, ROSTER_SCROLL);
+                state.frontend.shell_controller.gui_mut().close_popup();
+                if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+                    ui.scroll_roster_to(top);
+                }
+            }
+            PageEvent::Scrolled(CHAT_LOG) => {
+                let top = top(state, CHAT_LOG);
+                if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
+                    ui.chat.list.top_index = top;
+                }
+            }
+            event => {
+                if let Some(action) = action(view, event) {
+                    crate::app::shell_network_setup::apply_action(state, action)
+                }
+            }
         }
     }
     state.platform.window.request_redraw();
@@ -394,11 +406,6 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
             state.frontend.shell_controller.gui_mut().close_popup();
         }
         ui.statics.hover(&help, Instant::now());
-        let carrying = ui.row_drag.is_some_and(|drag| drag.carrying);
-        let hovered = pointer_target(state, &view, !layout.roster).filter(|_| !carrying);
-        if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-            ui.hovered = hovered;
-        }
     }
     handle_events(state, &view);
 }
@@ -419,32 +426,16 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
-    let target = pointer_target(state, &view, false);
     if pressed {
-        if target.is_none()
+        if pointer_target(state, &view, false).is_none()
             && preview_box_shows(state, &view)
             && crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview)
         {
             return;
         }
-        // A press on a button takes it as the control under the pointer.
-        let page = view.page().dialog;
-        let button = open_list(state).is_none()
-            && [page, GAME_OPTIONS_BOX, MAP_OFFER_BOX]
-                .into_iter()
-                .any(|dialog| {
-                    let controller = &state.frontend.shell_controller;
-                    let node = target.and_then(|id| controller.control(dialog, id));
-                    node.is_some_and(|node| {
-                        controller.gui().tree().kind(node) == Ok(vera20k_gui::NodeKind::Button)
-                    })
-                });
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
-        if button {
-            ui.hovered = target;
-        }
         press(
             &mut state.frontend.shell_controller,
             ui,
@@ -457,7 +448,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
             return;
         };
-        ui.hovered = target;
         let dropped = ui
             .drop_row()
             .and_then(|(row, header)| Some((row, view.drop_group(row, header)?)));

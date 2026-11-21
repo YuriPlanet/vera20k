@@ -1079,14 +1079,18 @@ impl App {
             && state.frontend.skirmish_shell_chrome.is_some()
     }
 
-    /// Run an Options dialog's preview events in order; true when one picked a
-    /// language, after which the dialog's captions read again
-    /// ([`Self::launcher_options_labels`]).
+    /// Play an Options dialog's cues, then run its preview events in order;
+    /// true when one picked a language, after which the dialog's captions
+    /// read again ([`Self::launcher_options_labels`]).
     pub(crate) fn run_launcher_options_events(
         state: &mut AppState,
+        cues: Vec<PageCue>,
         events: Vec<crate::ui::main_menu_dialogs::options::LauncherOptionsEvent>,
     ) -> bool {
         use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
+        for cue in cues {
+            Self::play_page_cue(state, cue);
+        }
         let language = events
             .iter()
             .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
@@ -1098,14 +1102,15 @@ impl App {
         language
     }
 
-    /// Both physical shell input and the assetless fallback drain the same
-    /// semantic transaction; profile and audio authority remain in their owners.
+    /// What the dialog's controls did: its cues and preview events, then a
+    /// parent result or Check for Updates; profile and audio authority remain
+    /// in their owners.
     fn dispatch_launcher_options_output(
         state: &mut AppState,
         mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
-        output: crate::ui::main_menu_dialogs::options::LauncherOptionsFrameOutput,
     ) {
-        if Self::run_launcher_options_events(state, output.events) {
+        let output = dialog.drain_output();
+        if Self::run_launcher_options_events(state, output.cues, output.events) {
             dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {
@@ -1222,8 +1227,7 @@ impl App {
             Some(false) => dialog.shell_mouse_up(x, y, &layout),
             None => dialog.shell_mouse_move(x, y, &layout),
         }
-        let output = dialog.drain_output();
-        Self::dispatch_launcher_options_output(state, dialog, output);
+        Self::dispatch_launcher_options_output(state, dialog);
     }
 
     /// Pump-terminal completion enters the same always-apply parent transaction

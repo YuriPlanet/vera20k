@@ -6,7 +6,7 @@ use super::controls::push_new_edit;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::text::{button_text_rect, rect_to_text_rect};
+use super::text::rect_to_text_rect;
 use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -198,21 +198,8 @@ pub(crate) fn render_lan_lobby(
             );
         }
         let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        if let Some(root) = root {
-            controls.extend(super::gui_paint::paint_gui_children(state, gui, root, scale).controls);
-        }
-        if let Some(entry) = atlas.lan_observer_toggle(observer) {
-            push_flag_entry_clipped_centered(
-                &mut controls,
-                entry,
-                layout
-                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
-                    .unwrap_or_default(),
-                scale,
-                SHELL_CONTROL_DEPTH,
-            );
-        }
-        // The lists with their rows, as their widgets hold them.
+        // The column's buttons (left to the slide while it runs), the lists
+        // with their rows as their widgets hold them and the observer box.
         let rows_of = |id: i32| -> Option<super::gui_paint::HostRows> {
             let yellow = |text: String| (text, u32::MAX);
             Some(match u16::try_from(id).ok()? {
@@ -243,17 +230,42 @@ pub(crate) fn render_lan_lobby(
                 _ => return None,
             })
         };
+        // The column's captions; Join reads Observe for an observer.
+        let text_of = |id: i32| {
+            let id = u16::try_from(id).ok()?;
+            let key = match id {
+                JOIN if observer => "GUI:Observe",
+                id => PAGE.button(id)?.csf_key,
+            };
+            Some(state.csf_label(key, key))
+        };
+        let enabled_of = |_| Some(lobby.enabled);
         let style = super::gui_paint::GuiStyle {
+            buttons: match sliding {
+                true => super::gui_paint::ButtonArt::Host,
+                false => super::gui_paint::ButtonArt::Panel,
+            },
+            text_of: Some(&text_of),
+            enabled_of: Some(&enabled_of),
             rows_of: Some(&rows_of),
             control_lists: true,
             ..Default::default()
         };
-        for id in [GAMES, PLAYERS, CHAT_LOG] {
-            if let Some(list) = root.and_then(|root| gui.find_id(root, id.into())) {
-                let paint = super::gui_paint::paint_gui_styled(state, gui, list, scale, &[], style);
-                controls.extend(paint.controls);
-                texts.extend(paint.texts);
-            }
+        if let Some(root) = root {
+            let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
+            controls.extend(paint.controls);
+            texts.extend(paint.texts);
+        }
+        if let Some(entry) = atlas.lan_observer_toggle(observer) {
+            push_flag_entry_clipped_centered(
+                &mut controls,
+                entry,
+                layout
+                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
+                    .unwrap_or_default(),
+                scale,
+                SHELL_CONTROL_DEPTH,
+            );
         }
         if let Some(reveal) = title {
             texts.push(shell_text::draw_in_rect_path_a_scaled(
@@ -271,41 +283,6 @@ pub(crate) fn render_lan_lobby(
                 },
                 scale.factor(),
             ));
-        }
-        if !sliding {
-            let looks = crate::ui::shell::page::menu_button_looks(gui, root, &layout.page.buttons);
-            for (button, pressed, _) in &looks {
-                let pressed = *pressed;
-                push_right_panel_button_shp(
-                    &mut art,
-                    atlas,
-                    button.rect,
-                    pressed,
-                    false,
-                    SHELL_CONTROL_DEPTH,
-                );
-                if let Some(spec) = PAGE.button(button.id) {
-                    let key = if button.id == JOIN && observer {
-                        "GUI:Observe"
-                    } else {
-                        spec.csf_key
-                    };
-                    texts.push(shell_text::draw_in_rect_scaled(
-                        font,
-                        &state.csf_label(key, key),
-                        button_text_rect(button.rect, pressed, scale),
-                        if lobby.enabled {
-                            SHELL_LABEL_TEXT_RGB
-                        } else {
-                            shell_paint::SHELL_TEXT_RGB_DISABLED
-                        },
-                        ShellAlign::BUTTON_CAPTION,
-                        [0.0; 2],
-                        SHELL_CONTROL_TEXT_DEPTH,
-                        scale.factor(),
-                    ));
-                }
-            }
         }
         texts.extend(shell_paint::paint_labels_scaled(
             font,

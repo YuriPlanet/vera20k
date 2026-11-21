@@ -7,7 +7,7 @@ use anyhow::Result;
 
 use crate::app::AppState;
 use crate::app::frontend::menu_page_render::{
-    FamilyFrame, FamilyPage, encode_family_page, page_panel_state,
+    FamilyFrame, FamilyPage, encode_family_page, family_art_ready, page_panel_state,
 };
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::TexturedDraw;
@@ -167,13 +167,12 @@ pub(crate) fn render_campaign_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.main_menu_shell_chrome.is_none()
-        || !crate::app::App::ensure_campaign_art(state)
-    {
+    if !family_art_ready(state) || !crate::app::App::ensure_campaign_art(state) {
         return Ok(false);
     }
     let layout = shell_layout::campaign_layout(state);
     let page = FamilyPage::Campaign;
+    let tree = page.tree(state);
     let panel = page_panel_state(
         state,
         ShellSlideKind::Campaign,
@@ -183,18 +182,16 @@ pub(crate) fn render_campaign_page(
     );
     // The teardown slide's repaint leaves every child blank.
     let children = !panel.leaving;
-    let buttons = page.buttons(state, &layout.page);
     let art = state
         .frontend
         .campaign_art
         .as_ref()
         .expect("ensured before render");
-    let mut frame = FamilyFrame::new(
-        "Campaign Shell",
-        &CAMPAIGN_PAGE,
-        &layout.page,
-        panel,
-        buttons,
+    let title = CAMPAIGN_PAGE.title_key;
+    let mut frame = FamilyFrame::new("Campaign Shell", &layout.page, panel, title).on(
+        state,
+        page.dialog(),
+        &tree,
     );
     frame.under.push(TexturedDraw {
         texture: &art.texture,

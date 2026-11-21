@@ -16,13 +16,7 @@ use crate::ui::skirmish_shell::{
 };
 
 fn label(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(key))
-        .unwrap_or(key)
-        .to_owned()
+    state.csf_label(key, key)
 }
 pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     let value = match item {
@@ -36,14 +30,23 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
         SkirmishComboItem::Team(value) => value,
         SkirmishComboItem::AiType(value) => value.item_data(),
     };
+    let swatch = match item {
+        SkirmishComboItem::Color(index) => Some(index),
+        _ => None,
+    };
     SetupChoice {
         value,
         text: combo_item_label(state, item),
-        swatch: if let SkirmishComboItem::Color(index) = item {
-            Some(index)
-        } else {
-            None
-        },
+        swatch,
+    }
+}
+
+/// A plain list item: its item data and text.
+fn item(value: i32, text: String) -> SetupChoice {
+    SetupChoice {
+        value,
+        text,
+        swatch: None,
     }
 }
 
@@ -409,11 +412,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 // bases.
                 let room = matches!(group, SetupGroup::Team(_) | SetupGroup::Players);
                 if let (true, Some(seat)) = (room, ai_seat) {
-                    let item = |value: i32, text: String| SetupChoice {
-                        value,
-                        text,
-                        swatch: None,
-                    };
                     combos.push(SetupCombo {
                         id: team_add_ai(visible_row),
                         row: seat,
@@ -508,11 +506,6 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             // VERA's host kicks a person to an Open seat, puts an AI in an
             // Open seat or retunes one, removes a seat (3, Closed), and
             // opens a removed one from the Add slot row.
-            let item = |value: i32, text: String| SetupChoice {
-                value,
-                text,
-                swatch: None,
-            };
             let seat = adding || ai.is_some() || vacancy == Some(NetworkVacancy::Open);
             if adding {
                 players.push(item(3, crate::i18n::tr("VERA:AddSlot")));
@@ -558,11 +551,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             }
         } else {
             if human.is_some() || !host {
-                players.push(SetupChoice {
-                    value: slot_value,
-                    text: slot_label.clone(),
-                    swatch: None,
-                });
+                players.push(item(slot_value, slot_label.clone()));
             }
             if host && !is_local {
                 let observer_only = observer_row == Some(usize::from(row))
@@ -570,32 +559,16 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     && ai.is_none()
                     && vacancy != Some(NetworkVacancy::Open);
                 if !observer_only {
-                    players.push(SetupChoice {
-                        value: 2,
-                        text: label(state, "GUI:Open"),
-                        swatch: None,
-                    });
+                    players.push(item(2, label(state, "GUI:Open")));
                 }
                 if observer_row == Some(usize::from(row)) {
-                    players.push(SetupChoice {
-                        value: 7,
-                        text: label(state, "GUI:OpenObserver"),
-                        swatch: None,
-                    });
+                    players.push(item(7, label(state, "GUI:OpenObserver")));
                 }
-                players.push(SetupChoice {
-                    value: 3,
-                    text: label(state, "GUI:Closed"),
-                    swatch: None,
-                });
+                players.push(item(3, label(state, "GUI:Closed")));
                 //5EB060 asks the same vtable+40 used by the Skirmish mode list.
                 if mode.class.policy().lists_in_skirmish && !observer_only {
                     for (value, key) in ai_choices {
-                        players.push(SetupChoice {
-                            value,
-                            text: label(state, key),
-                            swatch: None,
-                        });
+                        players.push(item(value, label(state, key)));
                     }
                 }
             }
@@ -627,11 +600,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             //5C23B0 rebuilds country entries in the campaign's authored order.
             let mut allowed = Vec::new();
             if player_countries.len() > 1 {
-                allowed.push(SetupChoice {
-                    value: -2,
-                    text: label(state, "GUI:Random"),
-                    swatch: None,
-                });
+                allowed.push(item(-2, label(state, "GUI:Random")));
             }
             for country in state
                 .frontend
@@ -656,11 +625,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             countries.clear();
         }
         if observer || switching && session.network_free_row(true).is_some() {
-            countries.push(SetupChoice {
-                value: -3,
-                text: label(state, "GUI:Observer"),
-                swatch: None,
-            });
+            countries.push(item(-3, label(state, "GUI:Observer")));
         }
         let color_claims = launch
             .humans

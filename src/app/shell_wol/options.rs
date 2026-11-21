@@ -331,15 +331,6 @@ pub(crate) fn translate_popup(state: &AppState) -> Option<ComboPopup> {
     })?
 }
 
-/// Whether page button `id` shows pushed: captured and still under the
-/// pointer (612B70).
-pub(crate) fn button_pressed(state: &AppState, id: u16) -> bool {
-    let gui = state.frontend.shell_controller.gui();
-    shown_root(state)
-        .and_then(|(root, _)| gui.find_id(root, id.into()))
-        .is_some_and(|node| gui.shows_pressed(node))
-}
-
 /// The status help under the pointer: the hovered `0x2BC` control's
 /// `0x006040B0` row; `0xD6` has none.
 pub(crate) fn status_key(state: &AppState) -> Option<&str> {

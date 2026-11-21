@@ -22,7 +22,6 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardControl, KeyboardParent};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
-use crate::ui::shell::static_reveal::Kind1PaintWindow;
 use crate::util::time::Instant;
 
 pub(crate) fn render_keyboard_shell(
@@ -64,26 +63,21 @@ pub(crate) fn render_keyboard_shell(
             .flatten()
     });
     let sliding = wave.is_some();
-    let (title, receipt) = if active {
+    let title = if active {
         let dialog = state
             .frontend
             .keyboard_dialog
             .as_mut()
             .expect("active A3 state");
-        dialog.title.start(&title_text, now);
-        dialog.title.poll_timer(now);
-        match dialog.title.paint_window() {
-            Kind1PaintWindow::Hidden => (None, None),
-            Kind1PaintWindow::Retained(window) => (Some(window), None),
-            Kind1PaintWindow::Due { window, receipt } => (Some(window), Some(receipt)),
-        }
+        dialog.title.set_text(&title_text, now);
+        dialog.title.start(now);
+        dialog.title.paint(now)
     } else {
         // Heading and status line are the family statics: their reveals
         // start when the entry slide ends.
-        let title = (!sliding)
+        (!sliding)
             .then(|| state.frontend.shell_page_title.paint(now))
-            .flatten();
-        (title, None)
+            .flatten()
     };
     let status_label = if active || sliding {
         None
@@ -498,9 +492,6 @@ pub(crate) fn render_keyboard_shell(
         overlay,
         in_game_shell::ShellFrameCursor::Visible,
     )?;
-    if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
-        dialog.title_receipt = receipt;
-    }
     state.platform.window.request_redraw();
     Ok(())
 }

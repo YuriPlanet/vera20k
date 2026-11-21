@@ -17,12 +17,12 @@ use anyhow::Result;
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::frontend::menu_page_render::{
-    FamilyFrame, PageButton, encode_family_page, page_panel_state,
+    FamilyFrame, encode_family_page, family_art_ready, page_panel_state, page_tree,
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint::{
-    PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
+    PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
     push_entry_crop, push_entry_native, push_entry_scaled, push_entry_window_crop,
 };
 use crate::render::shell_text::ShellAlign;
@@ -53,14 +53,21 @@ pub(crate) fn render_score_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.main_menu_shell_chrome.is_none()
-        || state.frontend.score_page.is_none()
+    if state.frontend.score_page.is_none()
         || state.frontend.score_art.is_none()
+        || !family_art_ready(state)
     {
         return Ok(false);
     }
     let layout = crate::app::frontend::shell_layout::score_layout(state);
     let (screen, scale, dialog) = (layout.page.screen, layout.page.scale, SCORE_PAGE.dialog);
+    let paged = state
+        .frontend
+        .score_page
+        .as_ref()
+        .is_some_and(|page| page.page_count() > 1);
+    let rect_of = |id| layout.control_rect(id, paged);
+    let tree = page_tree(state, dialog, crate::ui::score_shell::nodes, rect_of, &[]);
     // Only Continue has status help; the paging pair has none.
     let mut panel = page_panel_state(
         state,
@@ -179,43 +186,7 @@ pub(crate) fn render_score_page(
 
     // The slide engine draws the whole column while either slide runs
     // (`0x006071E0`); otherwise Continue and VERA's paging pair paint.
-    let controller = &state.frontend.shell_controller;
-    let pressed = (controller.top_id() == Some(dialog))
-        .then(|| menu_page::pressed_id(controller, dialog))
-        .flatten();
-    let paged = page.page_count() > 1;
-    let ids: &[u16] = if paged {
-        &[CONTINUE_BUTTON, PREVIOUS_PAGE, NEXT_PAGE]
-    } else {
-        &[CONTINUE_BUTTON]
-    };
-    let buttons = ids
-        .iter()
-        .map(|&id| PageButton {
-            id,
-            paint: PaintButton {
-                rect: layout
-                    .control_rect(id, paged)
-                    .expect("a laid-out score button"),
-                pressed: pressed == Some(id),
-                hovered: false,
-                enabled: true,
-            },
-        })
-        .collect();
     if panel.column.is_none() && paged {
-        for (id, caption) in [(PREVIOUS_PAGE, "VERA:Previous"), (NEXT_PAGE, "VERA:Next")] {
-            labels.push(PaintLabel {
-                text: crate::i18n::tr(caption).into(),
-                rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(
-                    layout.paging_button(id).expect("paging button"),
-                    pressed == Some(id),
-                ),
-                align: ShellAlign::BUTTON_CAPTION,
-                rgb: SHELL_TEXT_RGB_ENABLED,
-                path_a_reveal: None,
-            });
-        }
         let (index, count) = (page.page_index() + 1, page.page_count());
         labels.push(PaintLabel {
             text: crate::i18n::tr_fill("VERA:PageOf", &[("page", &index), ("pages", &count)])
@@ -235,7 +206,10 @@ pub(crate) fn render_score_page(
         texture: &art.texture,
         instances: art_sprites,
     };
-    let mut frame = FamilyFrame::new("Score Shell", &SCORE_PAGE, &layout.page, panel, buttons);
+    let title = SCORE_PAGE.title_key;
+    let mut frame =
+        FamilyFrame::new("Score Shell", &layout.page, panel, title).on(state, dialog, &tree);
+    frame.ids = vec![CONTINUE_BUTTON, PREVIOUS_PAGE, NEXT_PAGE];
     frame.labels = labels;
     if page.model.background.is_some() {
         frame.under.push(art_draw);

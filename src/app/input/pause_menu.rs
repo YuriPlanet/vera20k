@@ -6,11 +6,10 @@ use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBu
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::OptionsDialogState;
-use crate::ui::main_menu_dialogs::options::shell::{
-    IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout, LauncherStatusHelp,
-};
+use crate::ui::main_menu_dialogs::options::shell::{IN_GAME_KEYBOARD_HELP, LauncherOptionsLayout};
 use crate::ui::main_menu_dialogs::options::{
-    Category, LauncherOptionsEvent, LauncherOptionsPacked, LauncherParentResult, LauncherTrackbarId,
+    Category, LauncherCheckboxId, LauncherOptionsEvent, LauncherOptionsPacked,
+    LauncherParentResult, LauncherTrackbarId,
 };
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::page::PageEvent;
@@ -186,10 +185,6 @@ fn run_options_page(state: &mut AppState) {
         return;
     };
     let output = page.dialog.drain_output();
-    let language = output
-        .events
-        .iter()
-        .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
     let edit_layout = output
         .events
         .contains(&LauncherOptionsEvent::EditLayoutRequested);
@@ -211,14 +206,15 @@ fn run_options_page(state: &mut AppState) {
             LauncherOptionsEvent::ZoomSelected(_)
                 | LauncherOptionsEvent::SidebarSelected(_)
                 | LauncherOptionsEvent::SidebarColumnsSelected(_)
-                | LauncherOptionsEvent::OriginalShapeChanged(_)
-                | LauncherOptionsEvent::HdRadarChanged(_)
-                | LauncherOptionsEvent::SmoothSidebarChanged(_)
+                | LauncherOptionsEvent::Toggled(
+                    LauncherCheckboxId::OriginalShape
+                        | LauncherCheckboxId::HdRadar
+                        | LauncherCheckboxId::SmoothSidebar,
+                    _
+                )
         )
     });
-    for event in output.events {
-        crate::app::persistence::options::launcher::dispatch_launcher_preview_event(state, event);
-    }
+    let language = App::run_launcher_options_events(state, output.cues, output.events);
     if refit {
         refit_match(state);
     }
@@ -517,7 +513,8 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
 }
 
 /// The status-line help for the control under the pointer.
-pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
+/// A string-table or `VERA:` key.
+pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
     let template = current_template(state);
     let presentation = &state.match_state.match_presentation;
     if let Some(help) = presentation
@@ -533,11 +530,11 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<LauncherStatusHelp> {
     let hovered =
         super::dialog_page::held_trackbar(ui).or_else(|| super::dialog_page::hovered(ui))?;
     if let Some(slider) = InternetSlider::from_id(hovered) {
-        return Some(LauncherStatusHelp::Csf(slider.help()));
+        return Some(slider.help());
     }
     match template.button(hovered)? {
-        PauseMenuButton::Keyboard => Some(LauncherStatusHelp::Csf(IN_GAME_KEYBOARD_HELP)),
-        button => template.control(button)?.help.map(LauncherStatusHelp::Csf),
+        PauseMenuButton::Keyboard => Some(IN_GAME_KEYBOARD_HELP),
+        button => template.control(button)?.help,
     }
 }
 

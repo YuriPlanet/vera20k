@@ -156,8 +156,8 @@ impl App {
         let Some(settings) = Self::shell_menu_settings(state) else {
             return;
         };
-        let events = settings.drain_output().events;
-        if Self::run_launcher_options_events(state, events) {
+        let output = settings.drain_output();
+        if Self::run_launcher_options_events(state, output.cues, output.events) {
             let csf = |key: &str, fallback: &str| state.csf_label(key, fallback);
             let shell_box = shell_menu(&csf);
             let option_labels = Self::launcher_options_labels(state);

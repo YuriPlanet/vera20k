@@ -8,20 +8,12 @@
 //! owns the render pass, the camera, the buffers, and the parent-compose order:
 //! it submits the buffers this pass returns in the verified C8 sequence.
 //!
-//! Per-shell differences are carried as plain data (`ButtonPolicy` + `ArtFit`),
-//! NOT a trait — two shells with no per-ControlKind dispatch yet make a trait an
-//! empty abstraction; the trait arrives at Slice 4 when skirmish needs it. None
-//! of this policy lives in `ui::shell::descriptor` (render-agnostic by contract):
-//! a frame index / pixel sink / fit-scale is meaningless without
-//! the atlas, so it stays render-side.
-//!
 //! Slice 5 adds `paint_modal_shp`: the shared mode-2 SHP modal emitter (PUDLGBGN
 //! frame 0 background + MNBTTN owner-draw type-3 button + body/OK labels). It is
 //! source-atlas-neutral — the caller passes the resolved chrome entries (the modal
 //! art lives in the skirmish chrome atlas today) so the emitter stays a pure
 //! composition the quit-confirm and validation modals both delegate to.
 
-use crate::util::time::Instant;
 use std::borrow::Cow;
 
 use crate::render::batch::SpriteInstance;
@@ -65,41 +57,6 @@ pub const SHELL_TEXT_RGB_ENABLED: [f32; 3] = [1.0, 1.0, 0.0];
 /// buttons (owner-draw type 1, record `+0xB0`) keep their art: the disabled
 /// black blend runs only for type 0 (`0x006135F3..0x0061361B`).
 pub const SHELL_TEXT_RGB_DISABLED: [f32; 3] = [0x48 as f32 / 255.0, 0.0, 0.0];
-/// How a button's SDBTNANM art is fit into its cell rect.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ArtFit {
-    /// Native `pixel_size` at `(rect.x, rect.y + art_sink_y)`. Active 0xE2 and
-    /// 0x100 both use this path.
-    Native,
-    /// Optional fit policy: scale by `(rect.w / panel_w, rect.h / tile_h)`,
-    /// right-anchor x, and vertically center. No press sink.
-    FitRightAnchored { panel_w: f32, tile_h: f32 },
-}
-
-/// Per-shell render policy: how art is fit, whether a hover flash happens and
-/// how far content sinks on press. Constructed as a `const` in each render
-/// caller.
-#[derive(Clone, Copy)]
-pub struct ButtonPolicy {
-    pub art_fit: ArtFit,
-    /// Opt-in frame-3 ~1 Hz flash. Active 0xE2 and 0x100 both leave this false.
-    pub hover_flash: bool,
-    /// Policy-specific vertical art sink while pressed. The verified 0xE2 and
-    /// 0x100 policies both use 0.0. Float because it routes through art emission.
-    pub art_sink_y: f32,
-}
-
-/// One owner-draw button to paint: its cell rect + current per-control state.
-/// The caller threads the resolved pressed/hovered/enabled booleans (descriptor
-/// default + controller runtime); the pass never re-derives hit-testing.
-#[derive(Clone, Copy)]
-pub struct PaintButton {
-    pub rect: RectPx,
-    pub pressed: bool,
-    pub hovered: bool,
-    pub enabled: bool,
-}
-
 /// One static or button label to paint. `rect` is already inset/sunk and `rgb`
 /// already resolved (enabled vs disabled) by the caller-side label builder.
 pub struct PaintLabel<'a> {
@@ -751,102 +708,9 @@ pub fn paint_kind4_static(
     ))
 }
 
-/// Which steady SDBTNANM frame a button shows (when it is not mid-slide).
-/// Separated from atlas lookup so the selection logic is unit-testable without
-/// a GPU-backed atlas.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SteadyFrame {
-    /// SDBTNANM frame 2.
-    Default,
-    /// SDBTNANM frame 3 (opt-in hover flash, high phase only).
-    Hover,
-    /// SDBTNANM frame 4 (pressed).
-    Pressed,
-}
-
-/// Pure frame-choice for a steady (non-wave) button. Pressed beats hover; hover
-/// flash only on the high phase of the ~1 Hz square wave AND only when the
-/// policy enables it (0xE2 never reaches Hover). `hover_started_at` is the
-/// controller's hover-entry instant.
-fn steady_frame_choice(
-    b: &PaintButton,
-    policy: ButtonPolicy,
-    now: Instant,
-    hover_started_at: Option<Instant>,
-) -> SteadyFrame {
-    if b.pressed {
-        return SteadyFrame::Pressed;
-    }
-    if policy.hover_flash && b.hovered {
-        let flash = hover_started_at
-            .map(|start| crate::ui::shell::button::flash_phase(start, now))
-            .unwrap_or(false);
-        if flash {
-            return SteadyFrame::Hover;
-        }
-    }
-    SteadyFrame::Default
-}
-
-/// Pick the SDBTNANM frame for a steady button: pressed (frame 4), else opt-in
-/// hover-flash (frame 3), else default (frame 2). Slides paint the column
-/// instead (`paint_slide_column`).
-fn select_frame(
-    atlas: &MainMenuShellChromeAtlas,
-    b: &PaintButton,
-    policy: ButtonPolicy,
-    now: Instant,
-    hover_started_at: Option<Instant>,
-) -> MainMenuShellChromeEntry {
-    match steady_frame_choice(b, policy, now, hover_started_at) {
-        SteadyFrame::Default => atlas.button_default,
-        SteadyFrame::Hover => atlas.button_hover,
-        SteadyFrame::Pressed => atlas.button_pressed,
-    }
-}
-
-/// Emit the owner-draw buttons at `BUTTON_DEPTH`, applying the per-shell policy
-/// (frame select 2/3/4, art fit, art sink) without a per-dialog branch. A
-/// disabled button keeps its full art (the black blend is only for type 0,
-/// `0x006135F3`).
-pub fn paint_buttons(
-    atlas: &MainMenuShellChromeAtlas,
-    buttons: &[PaintButton],
-    policy: ButtonPolicy,
-    now: Instant,
-    hover_started_at: Option<Instant>,
-) -> Vec<SpriteInstance> {
-    let mut out = Vec::new();
-    for b in buttons {
-        let frame = select_frame(atlas, b, policy, now, hover_started_at);
-        let (pos, size) = match policy.art_fit {
-            ArtFit::Native => {
-                let sink = if b.pressed { policy.art_sink_y } else { 0.0 };
-                ([b.rect.x as f32, b.rect.y as f32 + sink], frame.pixel_size)
-            }
-            ArtFit::FitRightAnchored { panel_w, tile_h } => {
-                let sx = b.rect.w as f32 / panel_w;
-                let sy = b.rect.h as f32 / tile_h;
-                let fw = frame.pixel_size[0] * sx;
-                let fh = frame.pixel_size[1] * sy;
-                let x = b.rect.x as f32 + (b.rect.w as f32 - fw);
-                let y = b.rect.y as f32 + (b.rect.h as f32 - fh) * 0.5; // NO press sink
-                ([x, y], [fw, fh])
-            }
-        };
-        push_entry_sized(&mut out, frame, pos[0], pos[1], size, BUTTON_DEPTH);
-    }
-    out
-}
-
-/// Emit one text draw per label at `TEXT_DEPTH` via `shell_text::draw_in_rect`.
-/// Color / inset / sink are pre-applied by the caller into each `PaintLabel`.
-pub fn paint_labels(font: &BitFont, labels: &[PaintLabel<'_>]) -> Vec<ShellTextDraw> {
-    paint_labels_at_depth(font, labels, TEXT_DEPTH)
-}
-
-/// [`paint_labels`] for a stretched shell: labels are centred in their stretched
-/// rects, so the glyphs grow by the layout's own `scale`.
+/// One text draw per label at `TEXT_DEPTH`, the glyphs grown by the layout's
+/// `scale`. Color / inset / sink are pre-applied by the caller into each
+/// `PaintLabel`.
 pub fn paint_labels_scaled(
     font: &BitFont,
     labels: &[PaintLabel<'_>],
@@ -855,18 +719,7 @@ pub fn paint_labels_scaled(
     paint_labels_at_depth_scaled(font, labels, TEXT_DEPTH, scale)
 }
 
-/// As [`paint_labels`] but at a caller-chosen depth. The right-panel shells use
-/// `TEXT_DEPTH`; the mode-2 modal draws as a blocking overlay and supplies its own
-/// front-most text depth so the body/OK labels sit above the modal art.
-pub fn paint_labels_at_depth(
-    font: &BitFont,
-    labels: &[PaintLabel<'_>],
-    depth: f32,
-) -> Vec<ShellTextDraw> {
-    paint_labels_at_depth_scaled(font, labels, depth, 1.0)
-}
-
-/// [`paint_labels_at_depth`] with a glyph scale.
+/// [`paint_labels_scaled`] at a caller-chosen depth (a modal's front-most).
 pub fn paint_labels_at_depth_scaled(
     font: &BitFont,
     labels: &[PaintLabel<'_>],
@@ -1196,95 +1049,6 @@ mod tests {
         assert_eq!(sprite.size, [424.0, 220.0]);
         assert_eq!(sprite.uv_size, [1.0, 1.0]);
     }
-
-    fn btn(pressed: bool, hovered: bool) -> PaintButton {
-        PaintButton {
-            rect: RectPx::new(0, 0, 168, 42),
-            pressed,
-            hovered,
-            enabled: true,
-        }
-    }
-
-    const NATIVE_POLICY: ButtonPolicy = ButtonPolicy {
-        art_fit: ArtFit::Native,
-        hover_flash: false,
-        art_sink_y: 0.0,
-    };
-
-    const FLASH_POLICY: ButtonPolicy = ButtonPolicy {
-        art_fit: ArtFit::FitRightAnchored {
-            panel_w: FIT_PANEL_W,
-            tile_h: FIT_TILE_H,
-        },
-        hover_flash: true,
-        art_sink_y: 0.0,
-    };
-
-    /// Pressed always wins, regardless of policy or hover. Both shells.
-    #[test]
-    fn steady_choice_pressed_beats_everything() {
-        let now = Instant::now();
-        assert_eq!(
-            steady_frame_choice(&btn(true, true), FLASH_POLICY, now, Some(now)),
-            SteadyFrame::Pressed
-        );
-        assert_eq!(
-            steady_frame_choice(&btn(true, false), NATIVE_POLICY, now, None),
-            SteadyFrame::Pressed
-        );
-    }
-
-    /// A no-flash policy never reaches frame 3 even while hovered.
-    #[test]
-    fn steady_choice_no_flash_never_hovers() {
-        let start = Instant::now();
-        // High phase that WOULD flash if the policy allowed it.
-        let now = start + Duration::from_millis(1500);
-        assert_eq!(
-            steady_frame_choice(&btn(false, true), NATIVE_POLICY, now, Some(start)),
-            SteadyFrame::Default
-        );
-    }
-
-    /// An opt-in flash policy shows frame 3 only on the high phase of the ~1 Hz
-    /// square wave: elapsed_ms / 1000 % 2 == 1.
-    #[test]
-    fn steady_choice_flash_phase() {
-        let start = Instant::now();
-        // Low phase: 0..1000 ms -> 0 % 2 == 0 -> Default.
-        assert_eq!(
-            steady_frame_choice(
-                &btn(false, true),
-                FLASH_POLICY,
-                start + Duration::from_millis(500),
-                Some(start)
-            ),
-            SteadyFrame::Default
-        );
-        // High phase: 1000..2000 ms -> 1 % 2 == 1 -> Hover.
-        assert_eq!(
-            steady_frame_choice(
-                &btn(false, true),
-                FLASH_POLICY,
-                start + Duration::from_millis(1500),
-                Some(start)
-            ),
-            SteadyFrame::Hover
-        );
-        // Next low phase: 2000..3000 ms -> 2 % 2 == 0 -> Default.
-        assert_eq!(
-            steady_frame_choice(
-                &btn(false, true),
-                FLASH_POLICY,
-                start + Duration::from_millis(2500),
-                Some(start)
-            ),
-            SteadyFrame::Default
-        );
-    }
-
-    // --- Slice 5: mode-2 SHP modal emitter ---
 
     fn fake_skirmish_entry(
         uv_origin: [f32; 2],

@@ -12,7 +12,6 @@ use crate::app::frontend::skirmish_shell_render::gui_paint;
 use crate::app::{App, AppState};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::menu_page::MenuPageButtonRect;
 use crate::ui::shell::page::{self, PageEvent};
 
 /// A WOL page's art loader: its background shape and palette (loaded only at
@@ -270,16 +269,6 @@ pub(super) fn poll(state: &mut AppState, open: bool) -> Option<crate::util::time
 pub(crate) fn status_key(state: &AppState, dialog: DialogId) -> Option<&str> {
     let controller = &state.frontend.shell_controller;
     page::hovered_key_in(controller.gui(), controller.root_in(dialog)?)
-}
-
-/// `dialog`'s right-panel buttons as the column paints them.
-pub(crate) fn buttons(
-    state: &AppState,
-    dialog: DialogId,
-    buttons: &[MenuPageButtonRect],
-) -> Vec<(MenuPageButtonRect, bool, bool)> {
-    let controller = &state.frontend.shell_controller;
-    page::menu_button_looks(controller.gui(), controller.root_in(dialog), buttons)
 }
 
 /// The widgets under `dialog`'s root through the generic painter.

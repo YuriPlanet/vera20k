@@ -112,15 +112,15 @@ pub(crate) fn launcher_dialog_from_profile(
 /// renderer or the rules. The audio predicate is queried again in
 /// [`apply_volume`] so a forged or stale audio event stores nothing.
 pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: LauncherOptionsEvent) {
+    use crate::ui::main_menu_dialogs::options::LauncherCheckboxId as C;
     use LauncherOptionsEvent as E;
     let profile = &mut state.persistence.options_profile;
     match event {
-        E::Cue(cue) => App::play_page_cue(state, cue),
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
             App::sync_zoom_pass(state);
         }
-        E::OriginalShapeChanged(original_shape) => {
+        E::Toggled(C::OriginalShape, original_shape) => {
             profile.original_shape = original_shape;
             App::sync_zoom_pass(state);
         }
@@ -147,7 +147,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
                 state.persistence.options_profile.language = Some(tag);
             }
         }
-        E::FullScreenChanged(full_screen) => App::set_full_screen(state, full_screen),
+        E::Toggled(C::FullScreen, full_screen) => App::set_full_screen(state, full_screen),
         E::SetWindowSizeRequested => App::restore_launch_window(state),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
@@ -156,65 +156,69 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
         // built) now, before another shell screen can paint.
-        E::YrOriginalStyleChanged(yr_original_style) => {
+        E::Toggled(C::YrOriginalStyle, yr_original_style) => {
             profile.yr_original_style = yr_original_style;
             let _ = App::ensure_skirmish_shell_chrome(state);
         }
-        E::MouseWheelZoomChanged(enabled) => {
+        E::Toggled(C::MouseWheelZoom, enabled) => {
             profile.mouse_wheel_zoom = enabled;
             if !enabled {
                 crate::app::input::camera::reset_view_distance(state);
             }
         }
-        E::RightClickOrdersChanged(enabled) => profile.right_click_orders = enabled,
-        E::LockCursorChanged(locked) => {
+        E::Toggled(C::RightClickOrders, enabled) => profile.right_click_orders = enabled,
+        E::Toggled(C::LockCursor, locked) => {
             profile.lock_cursor = locked;
             state.platform.cursor_confined = locked;
             crate::app::input::cursor::apply_cursor_confinement(state);
         }
-        E::VeraIconChanged(vera_icon) => store_vera_icon(state, vera_icon),
-        E::HdRadarChanged(enabled) => profile.hd_radar = enabled,
-        E::SmoothSidebarChanged(enabled) => profile.smooth_sidebar = enabled,
-        E::SmoothOnlineMenusChanged(enabled) => profile.smooth_online_menus = enabled,
-        E::VSyncChanged(vsync) => {
+        E::Toggled(C::VeraIcon, vera_icon) => store_vera_icon(state, vera_icon),
+        E::Toggled(C::HdRadar, enabled) => profile.hd_radar = enabled,
+        E::Toggled(C::SmoothSidebar, enabled) => profile.smooth_sidebar = enabled,
+        E::Toggled(C::SmoothOnlineMenus, enabled) => profile.smooth_online_menus = enabled,
+        E::Toggled(C::VSync, vsync) => {
             profile.vsync = vsync;
             App::sync_present_mode(state);
         }
-        E::HdMapPreviewsChanged(enabled) => profile.hd_map_previews = enabled,
-        E::ShiftQueueChanged(shift_queue) => profile.shift_queue = shift_queue,
-        E::AutoRepairChanged(enabled) => profile.auto_repair = enabled,
-        E::MinimapBeaconsChanged(enabled) => profile.minimap_beacons = enabled,
+        E::Toggled(C::HdMapPreviews, enabled) => profile.hd_map_previews = enabled,
+        E::Toggled(C::ShiftQueue, shift_queue) => profile.shift_queue = shift_queue,
+        E::Toggled(C::AutoRepair, enabled) => profile.auto_repair = enabled,
+        E::Toggled(C::MinimapBeacons, enabled) => profile.minimap_beacons = enabled,
         // Live state only; no profile stores it, so each launch starts hidden.
-        E::PerformanceStatsChanged(shown) => state.renderer.performance_overlay.set_visible(shown),
+        E::Toggled(C::PerformanceStats, shown) => {
+            state.renderer.performance_overlay.set_visible(shown)
+        }
         // The box arms the hotkey but leaves the texts showing, so ticking it
         // never swaps the page under the pointer. The loaded table and the
         // language catalog both answer with keys once the hotkey asks; map
         // titles follow, as on a language change.
-        E::ShowStringKeysChanged(shown) => {
+        E::Toggled(C::ShowStringKeys, shown) => {
             profile.show_string_keys = shown;
             crate::i18n::set_show_string_keys(shown);
             state.refresh_string_key_labels();
         }
-        E::SkipIntroChanged(skip) => profile.skip_intro = skip,
+        E::Toggled(C::SkipIntro, skip) => profile.skip_intro = skip,
         // Read when a match result is admitted or a match ends, so a match
         // already on screen keeps what it started with, and a teardown already
         // waiting for a clip keeps waiting.
-        E::CustomEndGameBannerChanged(enabled) => profile.custom_end_game_banner = enabled,
-        E::CustomEndGameScoreChanged(enabled) => profile.custom_end_game_score = enabled,
-        E::CustomEndGameMovieChanged(enabled) => profile.custom_end_game_movie = enabled,
+        E::Toggled(C::CustomEndGameBanner, enabled) => profile.custom_end_game_banner = enabled,
+        E::Toggled(C::CustomEndGameScore, enabled) => profile.custom_end_game_score = enabled,
+        E::Toggled(C::CustomEndGameMovie, enabled) => profile.custom_end_game_movie = enabled,
         // The clip layer's next pass reads it, so a match mutes or unmutes
         // its commanders at once; muted, it still spends what it sees.
-        E::CommanderFeedbackChanged(enabled) => profile.commander_feedback = enabled,
-        E::DetailedEvaTextChanged(enabled) => profile.detailed_eva_text = enabled,
-        E::ConvenienceHelpChanged(enabled) => profile.convenience_help = enabled,
+        E::Toggled(C::CommanderFeedback, enabled) => profile.commander_feedback = enabled,
+        E::Toggled(C::DetailedEvaText, enabled) => profile.detailed_eva_text = enabled,
+        E::Toggled(C::ConvenienceHelp, enabled) => profile.convenience_help = enabled,
         // A rule switch, as Terrain Deformation is: the next offline
         // scenario's rules read it, so a running match keeps what it started
         // with and every peer, save and replay plays the same rules.
-        E::BuildingProductionQueueChanged(enabled) => {
+        E::Toggled(C::BuildingProductionQueue, enabled) => {
             profile.building_production_queue = enabled;
             state.process_assets.set_building_production_queue(enabled);
         }
-        E::CompactSuperTimersChanged(enabled) => profile.compact_super_timers = enabled,
+        E::Toggled(C::CompactSuperTimers, enabled) => profile.compact_super_timers = enabled,
+        // Retail's boxes apply with the accepted pack and publish nothing.
+        E::Toggled(C::Tooltips | C::TargetLines | C::ShowHidden, _) => {}
         // Baked into a battle's colour tables when it loads, like the sprite
         // atlas that reads them.
         E::HouseColorStrengthChanged(strength) => profile.house_color_strength = strength,

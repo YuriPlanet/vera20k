@@ -796,7 +796,7 @@ impl ScoreCapture {
             .shell_first_paint_slide
             .as_ref()
             .filter(|_| state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Score))
-            .and_then(|wave| wave.compatibility_tick());
+            .map(|wave| wave.tick());
         match self.phase {
             Phase::Score => match self.target {
                 ScoreTarget::Entry(target) => {
@@ -862,7 +862,7 @@ impl ScoreCapture {
                     state,
                     ShellSlideKind::Score,
                 )
-                .and_then(|wave| wave.compatibility_tick())
+                .map(|wave| wave.tick())
                 .context("the 0x108 teardown slide ended before its held tick")?;
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
