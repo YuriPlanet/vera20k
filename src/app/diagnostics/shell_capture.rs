@@ -3817,9 +3817,8 @@ mod tests {
         let (layout, x, y) = &tooltips;
         assert!(
             layout
-                .checkboxes
-                .iter()
-                .any(|(id, rect)| { *id == LauncherCheckboxId::Tooltips && rect.contains(*x, *y) })
+                .checkbox_rect(LauncherCheckboxId::Tooltips)
+                .is_some_and(|rect| rect.contains(*x, *y))
         );
         for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");

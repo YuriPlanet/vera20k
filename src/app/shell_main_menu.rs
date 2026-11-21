@@ -1,43 +1,9 @@
 use super::*;
 use crate::app::frontend::menu_page_render::FamilyPage;
 use crate::app::match_runtime::sim_host::SimWrite;
-use crate::app::persistence::options::audio::AudioVolumeOperations;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::page::PageCue;
 use crate::util::time::{Duration, Instant};
-
-/// Private operation seam for the retail shell's confirmed quit transaction.
-/// Keeping the ordering here lets unit tests observe persistence dispatch
-/// without constructing the window, renderer, or audio-backed `AppState`.
-trait ConfirmedQuitOperations {
-    fn persist_settings(&mut self);
-    fn dismiss_confirmation(&mut self);
-    fn start_cascade(&mut self);
-}
-
-struct AppStateConfirmedQuitOperations<'a> {
-    state: &'a mut AppState,
-}
-
-impl ConfirmedQuitOperations for AppStateConfirmedQuitOperations<'_> {
-    fn persist_settings(&mut self) {
-        App::persist_settings_on_quit(self.state);
-    }
-
-    fn dismiss_confirmation(&mut self) {
-        App::close_shell_message_box_from_controller(self.state);
-    }
-
-    fn start_cascade(&mut self) {
-        App::start_quit_cascade(self.state);
-    }
-}
-
-fn dispatch_shell_controller_confirmed_quit(operations: &mut impl ConfirmedQuitOperations) {
-    operations.dismiss_confirmation();
-    operations.persist_settings();
-    operations.start_cascade();
-}
 
 impl AppState {
     /// Puts `tag`'s language in use as a pick in the Language list does:
@@ -86,164 +52,6 @@ impl AppState {
         self.refresh_string_key_labels();
         log::info!("String keys: {}", if keys { "keys" } else { "values" });
         self.platform.window.request_redraw();
-    }
-}
-
-struct AppStateLauncherParentOperations<'a> {
-    state: &'a mut AppState,
-}
-
-impl crate::app::persistence::options::launcher::LauncherParentOperations
-    for AppStateLauncherParentOperations<'_>
-{
-    fn observe_pack(
-        &mut self,
-        _packed: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
-    ) {
-        debug_assert!(self.state.frontend.options_dialog.is_none());
-    }
-
-    fn store_detail_level(&mut self, value: i32) -> bool {
-        let changed = self.state.persistence.options_profile.detail_level != value;
-        self.state.persistence.options_profile.detail_level = value;
-        self.state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .detail_level = value.max(0) as u32;
-        changed
-    }
-
-    fn refresh_detail(&mut self) {
-        // Display4AE450 resamples synchronously, before the next Logic visit
-        // can copy a Cell's light into a grapple anim. This local operation
-        // never enters Simulation's replay/sync hash.
-        if let Some(runtime) = self.state.match_state.sim_runtime.runtime()
-            && let Some(terrain) = runtime.simulation.resolved_terrain()
-        {
-            let presentation = &mut self.state.match_state.match_presentation;
-            presentation.lighting.set_detail_level(
-                terrain,
-                &runtime.simulation,
-                presentation.in_game_options.detail_level,
-            );
-        }
-        self.state.platform.window.request_redraw();
-    }
-
-    fn store_difficulty(&mut self, value: i32) {
-        self.state.persistence.options_profile.difficulty = value;
-    }
-
-    fn store_unit_action_lines(&mut self, value: bool) {
-        self.state.persistence.options_profile.unit_action_lines = value;
-        self.state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .unit_action_lines = value;
-    }
-
-    fn refresh_unit_action_lines(&mut self) {
-        let enabled = self
-            .state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .unit_action_lines;
-        self.state
-            .match_state
-            .match_presentation
-            .target_lines
-            .set_unit_action_lines_enabled(enabled);
-    }
-
-    fn store_show_hidden(&mut self, value: bool) {
-        self.state.persistence.options_profile.show_hidden = value;
-        self.state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .show_hidden = value;
-    }
-
-    fn store_tooltips(&mut self, value: bool) {
-        self.state.persistence.options_profile.tooltips = value;
-        self.state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .tooltips = value;
-        self.state
-            .match_state
-            .match_presentation
-            .tooltips
-            .set_enabled(value);
-    }
-
-    fn store_scroll_rate(&mut self, value: i32) {
-        self.state.persistence.options_profile.scroll_rate = value;
-        self.state
-            .match_state
-            .match_presentation
-            .in_game_options
-            .scroll_rate = value.max(0) as u32;
-    }
-
-    fn store_score_volume(&mut self, value: f32) {
-        AudioVolumeOperations::store_score_volume(self.state, value);
-    }
-
-    fn apply_score_output(&mut self, value: f32) {
-        AudioVolumeOperations::apply_score_output(self.state, value);
-    }
-
-    fn queue_then_stop_score_zero(&mut self) {
-        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        self.state.audio.queue_then_stop_score_zero(now_ms);
-    }
-
-    fn store_sound_volume(&mut self, value: f32) {
-        AudioVolumeOperations::store_sound_volume(self.state, value);
-    }
-
-    fn apply_sound_output(&mut self, value: f32) {
-        AudioVolumeOperations::apply_sound_output(self.state, value);
-    }
-
-    fn store_voice_volume(&mut self, value: f32) {
-        AudioVolumeOperations::store_voice_volume(self.state, value);
-    }
-
-    fn apply_voice_output(&mut self, value: f32) {
-        AudioVolumeOperations::apply_voice_output(self.state, value);
-    }
-
-    fn primary_dropped(&mut self) {
-        debug_assert!(self.state.frontend.options_dialog.is_none());
-    }
-
-    fn persist_profile(&mut self) {
-        crate::app::persistence::options::persist_options_profile(self.state);
-    }
-
-    fn route_keyboard(&mut self) {
-        crate::app::input::keyboard::open(
-            self.state,
-            crate::ui::shell::keyboard::KeyboardParent::Launcher,
-        );
-    }
-
-    fn reopen_parent(&mut self) {
-        // Native caller blocks in A3. Our asynchronous child resumes this
-        // continuation when it closes (after its teardown slide).
-        if self.state.frontend.keyboard_dialog.is_none() {
-            App::open_launcher_options_dialog(self.state);
-        }
-    }
-
-    fn route_mods(&mut self) {
-        App::open_mods_page(self.state);
     }
 }
 
@@ -572,7 +380,7 @@ impl App {
         title: String,
         detail: String,
     ) {
-        use crate::ui::campaign_score_shell::{CampaignScorePage, CampaignScoreTexts};
+        use crate::ui::campaign_score_shell::CampaignScorePage;
 
         state.frontend.score_page = None;
         state.frontend.score_art = None;
@@ -582,14 +390,6 @@ impl App {
                 "Could not prepare Campaign StandaloneScore background; Continue remains available"
             );
         }
-        let texts = CampaignScoreTexts {
-            title: state.csf_text("GUI:StandaloneScore"),
-            continue_label: state.csf_text("GUI:Continue"),
-            continue_status: state.csf_text("STT:StandScoreButtonReturn"),
-            par_time_label: state.csf_text("GUI:ParTime"),
-            your_time_label: state.csf_text("GUI:YourTime"),
-            enemies_destroyed_label: state.csf_text("GUI:HeadsTaken"),
-        };
         let now = Instant::now();
         // ScoreDialog_Handle_ScoreThemeA/B (0x1002F920/0x1002F9A0) replace the
         // literal the dialog pushes with the side's par-branch theme.
@@ -597,7 +397,7 @@ impl App {
             .theme
             .clone()
             .unwrap_or_else(|| crate::app::match_runtime::scenario_exit::SCORE_THEME.to_owned());
-        let page = CampaignScorePage::open(model, texts, now);
+        let page = CampaignScorePage::open(&model, |key| state.csf_text(key), now);
         state.frontend.campaign_score_page = Some(page);
         state.frontend.shell_first_paint_slide = None;
         state.frontend.screen = GameScreen::MissionResult { title, detail };
@@ -700,7 +500,12 @@ impl App {
         let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
         let fills_window = crate::app::frontend::shell_layout::fills_window(state);
         state.frontend.campaign_score_page.as_ref().map_or_else(
-            || crate::ui::campaign_score_shell::CampaignScoreLayout::compute_layout(width, height),
+            || {
+                let dialog = Default::default();
+                crate::ui::campaign_score_shell::CampaignScoreLayout::compute(
+                    dialog, width, height, 0,
+                )
+            },
             |page| page.layout(width, height, fills_window),
         )
     }
@@ -1130,9 +935,8 @@ impl App {
                 );
             }
             Some(result) => {
-                let mut operations = AppStateLauncherParentOperations { state };
                 crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-                    &mut operations,
+                    state,
                     dialog,
                     result,
                     None,
@@ -1183,9 +987,8 @@ impl App {
         let Some(dialog) = state.frontend.options_dialog.take() else {
             return;
         };
-        let mut operations = AppStateLauncherParentOperations { state };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            &mut operations,
+            state,
             dialog,
             result,
             None,
@@ -1199,9 +1002,8 @@ impl App {
         dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
     ) {
-        let mut operations = AppStateLauncherParentOperations { state };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            &mut operations,
+            state,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Back,
             Some(opened),
@@ -1236,9 +1038,8 @@ impl App {
         let Some(dialog) = state.frontend.options_dialog.take() else {
             return;
         };
-        let mut operations = AppStateLauncherParentOperations { state };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            &mut operations,
+            state,
             dialog,
             crate::ui::main_menu_dialogs::options::LauncherParentResult::Terminal,
             None,
@@ -1434,10 +1235,10 @@ impl App {
             return;
         }
         let parts = crate::app::frontend::shell_layout::shell_box_parts(state, &shell_box);
-        if let Some(result) = Self::shell_box_pointer(state, &shell_box, &parts, Some(down))
-            .and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
+        if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, Some(down))
+            .and_then(|id| shell_box.answer(id))
         {
-            Self::resolve_shell_message_box(state, result);
+            Self::resolve_shell_message_box(state, answer);
         }
     }
 
@@ -1462,88 +1263,32 @@ impl App {
         )
     }
 
-    /// The box's result returns to its caller. Callback `0x005D36A0` writes 0
-    /// for `0x5AE` and 1 for control 2 or IDOK.
-    pub(super) fn resolve_shell_message_box(
-        state: &mut AppState,
-        result: crate::ui::shell::modal::ModalResult,
-    ) {
-        use crate::app::frontend::state::ShellMessageBoxPurpose;
+    /// The box's answer (the button's index: callback `0x005D36A0` writes 0
+    /// for `0x5AE` and 1 for control 2 or IDOK) returns to its caller once
+    /// the box has closed through the controller pop (D-B3), so mouse and Esc
+    /// converge on the same teardown.
+    pub(super) fn resolve_shell_message_box(state: &mut AppState, answer: usize) {
+        use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
         let Some(message_box) = state.frontend.shell_message_box.take() else {
             return;
         };
+        Self::close_shell_message_box_from_controller(state);
+        let yes = answer == 0;
         match message_box.purpose {
-            ShellMessageBoxPurpose::ShellMenu(_) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::answer_shell_menu(state, result);
-            }
-            // OK -> quit (result 0). The screen fade-to-black is sub-step 4b-ii-b.
-            ShellMessageBoxPurpose::ExitGame
-                if result == crate::ui::shell::modal::ModalResult::MessageBox(0) =>
-            {
-                Self::confirm_quit(state);
-            }
-            // Cancel -> stay; close the modal via the controller pop (D-B3)
-            // so mouse and Esc converge on the same teardown.
-            ShellMessageBoxPurpose::ExitGame => {
-                Self::close_shell_message_box_from_controller(state);
-                state.platform.window.request_redraw();
-            }
-            ShellMessageBoxPurpose::CampaignReplay(retry) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::answer_campaign_replay(
-                    state,
-                    retry,
-                    crate::app::campaign_defeat::replay_route(result),
-                );
-            }
-            ShellMessageBoxPurpose::CampaignVictory(victory) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::advance_campaign_victory(state, *victory);
-            }
+            Purpose::ShellMenu(_) => Self::answer_shell_menu(state, answer),
+            Purpose::ExitGame if yes => Self::confirm_quit(state),
+            Purpose::ExitGame | Purpose::Notice => state.platform.window.request_redraw(),
+            Purpose::CampaignReplay(retry) => Self::answer_campaign_replay(state, retry, answer),
+            Purpose::CampaignVictory(victory) => Self::advance_campaign_victory(state, *victory),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateOffer(_) => {
-                Self::close_shell_message_box_from_controller(state);
-                crate::app::updater::answer_offer(state, result);
-            }
+            Purpose::UpdateOffer(_) => crate::app::updater::answer_offer(state, answer),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateProgress => {
-                Self::close_shell_message_box_from_controller(state);
-                crate::app::updater::cancel_download(state);
-            }
+            Purpose::UpdateProgress => crate::app::updater::cancel_download(state),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-            ShellMessageBoxPurpose::UpdateCheck => {
-                Self::close_shell_message_box_from_controller(state);
-                crate::app::updater::cancel_check(state);
-            }
-            ShellMessageBoxPurpose::Notice => {
-                Self::close_shell_message_box_from_controller(state);
-                state.platform.window.request_redraw();
-            }
-            ShellMessageBoxPurpose::ModRestart(folder) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::answer_mod_restart(
-                    state,
-                    folder,
-                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
-                );
-            }
-            ShellMessageBoxPurpose::ModFiles(which) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::answer_mod_files(
-                    state,
-                    which,
-                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
-                );
-            }
-            ShellMessageBoxPurpose::ModMade(dir) => {
-                Self::close_shell_message_box_from_controller(state);
-                Self::answer_mod_made(
-                    state,
-                    &dir,
-                    result == crate::ui::shell::modal::ModalResult::MessageBox(0),
-                );
-            }
+            Purpose::UpdateCheck => crate::app::updater::cancel_check(state),
+            Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),
+            Purpose::ModFiles(which) => Self::answer_mod_files(state, which, yes),
+            Purpose::ModMade(dir) => Self::answer_mod_made(state, &dir, yes),
         }
     }
 
@@ -1552,8 +1297,9 @@ impl App {
     /// wait → hard stop → exit) via render_frame instead of exiting
     /// immediately. The updater quits the same way once its update is ready.
     pub(super) fn confirm_quit(state: &mut AppState) {
-        let mut operations = AppStateConfirmedQuitOperations { state };
-        dispatch_shell_controller_confirmed_quit(&mut operations);
+        Self::close_shell_message_box_from_controller(state);
+        Self::persist_settings_on_quit(state);
+        Self::start_quit_cascade(state);
     }
 
     /// What ending the program from any shell page saves first.
@@ -1894,17 +1640,16 @@ impl App {
         let shell_box = crate::ui::main_menu_dialogs::exit_confirm(&csf);
         Self::open_shell_message_box(
             state,
-            crate::app::frontend::state::ShellMessageBox {
-                shell_box,
-                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::ExitGame,
-            },
+            shell_box,
+            crate::app::frontend::state::ShellMessageBoxPurpose::ExitGame,
         );
     }
 
     /// ShellMessageBox__Run `0x005D3490` over the empty shell backdrop.
     pub(super) fn open_shell_message_box(
         state: &mut AppState,
-        message_box: crate::app::frontend::state::ShellMessageBox,
+        shell_box: crate::ui::shell::modal::ShellBox,
+        purpose: crate::app::frontend::state::ShellMessageBoxPurpose,
     ) {
         // The SHP modal sources PUDLGBGN/MNBTTN from the skirmish chrome atlas; load
         // it on demand so the box renders straight from the main menu.
@@ -1913,6 +1658,7 @@ impl App {
         // teardown pops back to it with focus restored. (ensure_active would
         // reset_to-clobber the stack — the prior "0x120 over 0xE2" comment
         // described behavior that never happened.)
+        let message_box = crate::app::frontend::state::ShellMessageBox { shell_box, purpose };
         state.frontend.shell_message_box = Some(message_box);
         Self::raise_shell_message_box(state);
         state.platform.window.request_redraw();
@@ -1926,10 +1672,8 @@ impl App {
         let ok = state.csf_label("TXT_OK", "OK");
         Self::open_shell_message_box(
             state,
-            crate::app::frontend::state::ShellMessageBox {
-                shell_box: crate::ui::shell::modal::ShellBox::notice(text, ok),
-                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
-            },
+            crate::ui::shell::modal::ShellBox::notice(text, ok),
+            crate::app::frontend::state::ShellMessageBoxPurpose::Notice,
         );
     }
 
@@ -1943,12 +1687,6 @@ impl App {
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push_modal(dialog, true);
         }
-    }
-
-    /// Whether any main-menu modal dialog is currently open. Used to route
-    /// keyboard/mouse to the modal first.
-    pub(crate) fn main_menu_dialog_open(state: &AppState) -> bool {
-        state.main_menu_dialog_open()
     }
 
     /// Close retained main-menu child dialogs (options — never on the
@@ -1984,7 +1722,7 @@ impl App {
         }
         // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
         // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.
-        Self::resolve_shell_message_box(state, crate::ui::shell::modal::ModalResult::MessageBox(1));
+        Self::resolve_shell_message_box(state, 1);
         true
     }
 

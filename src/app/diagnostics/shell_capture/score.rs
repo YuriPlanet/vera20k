@@ -200,7 +200,7 @@ impl CampaignScoreCapture {
                 .frontend
                 .campaign_score_page
                 .as_ref()
-                .is_some_and(|page| page.reveals_terminal())
+                .is_some_and(|page| page.statics.is_terminal())
         {
             self.phase = CampaignScorePhase::Settling(SETTLE_FRAMES);
         } else if let CampaignScorePhase::Settling(remaining) = self.phase {
@@ -263,7 +263,7 @@ impl CampaignScoreCapture {
                         .frontend
                         .campaign_score_page
                         .as_ref()
-                        .is_some_and(|page| page.reveals_terminal())
+                        .is_some_and(|page| page.statics.is_terminal())
                 {
                     self.route.push(json!({
                         "dialog": 0x103,
@@ -357,7 +357,7 @@ impl CampaignScoreCapture {
                     .frontend
                     .campaign_score_page
                     .as_ref()
-                    .is_some_and(|page| page.reveals_terminal())
+                    .is_some_and(|page| page.statics.is_terminal())
                 {
                     return Ok(false);
                 }
@@ -590,7 +590,7 @@ impl CampaignScoreCapture {
             .frontend
             .campaign_score_page
             .as_ref()
-            .is_some_and(|page| page.reveals_terminal()))
+            .is_some_and(|page| page.statics.is_terminal()))
     }
 
     pub(super) fn manifest(
@@ -632,14 +632,14 @@ fn campaign_score_layout(state: &AppState) -> CampaignScoreLayout {
     let (width, height) = crate::app::frontend::shell_layout::shell_screen_size(state);
     let fills_window = crate::app::frontend::shell_layout::fills_window(state);
     state.frontend.campaign_score_page.as_ref().map_or_else(
-        || CampaignScoreLayout::compute_layout(width, height),
+        || CampaignScoreLayout::compute(Default::default(), width, height, 0),
         |page| page.layout(width, height, fills_window),
     )
 }
 
 pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     let layout = campaign_score_layout(state);
-    let button = layout.continue_button;
+    let button = layout.page.buttons.first().map(|button| button.rect).unwrap_or_default();
     state.match_state.input.cursor_x = (button.x + button.w / 2) as f32;
     state.match_state.input.cursor_y = (button.y + button.h / 2) as f32;
     App::handle_campaign_score_mouse(state, None);
@@ -752,7 +752,7 @@ pub(super) fn reveals_settled(state: &AppState) -> bool {
             .frontend
             .score_page
             .as_ref()
-            .is_some_and(|page| page.reveals_terminal())
+            .is_some_and(|page| page.statics.is_terminal())
 }
 
 impl ScoreCapture {

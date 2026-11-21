@@ -70,7 +70,7 @@ fn room_team_label(team: i32) -> Option<String> {
 pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
     match item {
         SkirmishComboItem::AiType(row_type) => {
-            let (key, fallback) = row_type_label(row_type);
+            let (key, fallback) = row_type.label();
             state.csf_label(key, fallback)
         }
         SkirmishComboItem::Country(SkirmishCountryChoice::Random) => {
@@ -116,10 +116,6 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
     String::new()
 }
 
-pub(super) fn row_type_label(row_type: SkirmishAiRowType) -> (&'static str, &'static str) {
-    row_type.label()
-}
-
 /// Retail provenance: disabled `OwnerDraw_Button_00612B70` replaces the normal
 /// yellow label with its disabled color at `0x00612F5F`
 /// ([`crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED`]).
@@ -142,10 +138,6 @@ pub(super) fn combo_face_text_color(disabled: bool) -> [f32; 3] {
 /// The owner-draw button's caption rect: the `0x612B70` type-1 offsets stay
 /// authored, so `scale` maps the button's device rect back for them and stretches
 /// the result. `ShellScale::RETAIL` reproduces the plain offsets.
-pub(super) fn button_text_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> TextRect {
-    rect_to_text_rect(button_label_rect_px(rect, pressed, scale))
-}
-
 pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
     scale.derive_rect(rect, |rect| {
         let mut x = rect.x;
@@ -162,10 +154,6 @@ pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScal
             (rect.y + rect.h - y).max(0),
         )
     })
-}
-
-pub(super) const fn validation_modal_body_text_align() -> ShellAlign {
-    ShellAlign::NONE
 }
 
 /// Emit one caption. `scale` is the page's uniform stretch (
@@ -240,14 +228,6 @@ pub(super) fn combo_face_text_draw_rect(rect: RectPx, scale: ShellScale) -> Rect
     })
 }
 
-pub(super) fn truncate_owner_draw_label<'a>(
-    font: &BitFont,
-    label: &'a str,
-    fit_width: u32,
-) -> std::borrow::Cow<'a, str> {
-    font.truncate_to_width(label, fit_width)
-}
-
 /// An owner-drawn label in `fit_width`: squeezed until it fits
 /// ([`BitFont::fit_line`]) and cut only as far as the tightest squeeze still
 /// leaves over. `draw` gets the text while the font draws at that squeeze.
@@ -258,7 +238,7 @@ pub(super) fn fit_owner_draw_label<R>(
     draw: impl FnOnce(&str) -> R,
 ) -> R {
     font.fitted(font.fit_line(label, fit_width), |font| {
-        draw(&truncate_owner_draw_label(font, label, fit_width))
+        draw(&font.truncate_to_width(label, fit_width))
     })
 }
 
@@ -877,7 +857,7 @@ pub(super) fn push_start_marker_labels(
             label_y as f32,
             scale.factor(),
             depth,
-            start_marker_label_color(),
+            SHELL_LABEL_TEXT_RGB,
             [0.0, 0.0],
         ));
     }
@@ -898,20 +878,6 @@ pub(super) fn start_marker_label_origin(
         anchor_x + (START_MARKER_LABEL_OFFSET_X as f32 * scale.factor()).round() as i32,
         anchor_y + (START_MARKER_LABEL_OFFSET_Y as f32 * scale.factor()).round() as i32,
     )
-}
-
-pub(super) fn start_marker_label_color() -> [f32; 3] {
-    SHELL_LABEL_TEXT_RGB
-}
-
-pub(super) fn build_start_marker_label_instances(
-    state: &AppState,
-    projected_positions: &[(i32, i32)],
-    scale: ShellScale,
-) -> Vec<SpriteInstance> {
-    let mut instances = Vec::new();
-    push_start_marker_labels(&mut instances, state, projected_positions, scale, 0.00040);
-    instances
 }
 
 /// A pre-match browser's text: the saved-seed browser over `0x105` or VERA's
@@ -1282,7 +1248,7 @@ mod tests {
             4,
         );
 
-        let label = truncate_owner_draw_label(&font, "abcd", 14);
+        let label = font.truncate_to_width("abcd", 14);
 
         assert_eq!(label.as_ref(), "ab");
         assert!(font.text_width(label.as_ref()) <= 14);
@@ -1316,7 +1282,7 @@ mod tests {
             4,
         );
 
-        let label = truncate_owner_draw_label(&font, "aéb", 16);
+        let label = font.truncate_to_width("aéb", 16);
 
         assert_eq!(label.as_ref(), "aé");
         assert!(font.text_width(label.as_ref()) <= 16);
@@ -1350,8 +1316,7 @@ mod tests {
         let draw_rect = combo_face_text_draw_rect(combo, ShellScale::RETAIL);
         assert_eq!(draw_rect, RectPx::new(425, 59, 42, 24));
         assert_eq!(combo_face_text_fit_width(combo, ShellScale::RETAIL), 24);
-        let label = truncate_owner_draw_label(
-            &font,
+        let label = font.truncate_to_width(
             "ab cd",
             combo_face_text_fit_width(combo, ShellScale::RETAIL),
         );

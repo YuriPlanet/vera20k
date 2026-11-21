@@ -30,7 +30,7 @@ fn art_files(dialog: DialogId) -> Option<((&'static str, &'static str), Vec<&'st
         // 0x0072CD60: with the list and button images.
         crate::ui::wol_lobby::DIALOG => (
             ("MnScrnLCustomMatchLobby.shp", "MnScrnLCustomMatchLobby.pal"),
-            crate::ui::wol_lobby::PCX_FILES.to_vec(),
+            crate::ui::wol_lobby::pcx_files(),
         ),
         // 0x0072BAC0
         crate::ui::wol_options::DIALOG => (("WOLOptions.shp", "WOLOptions.PAL"), Vec::new()),

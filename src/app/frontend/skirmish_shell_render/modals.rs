@@ -42,9 +42,7 @@ pub(crate) fn render_saved_game_loading(
     use super::in_game_shell::{
         InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
     };
-    use crate::ui::shell::modal::{
-        body_ok_layout, body_ok_layout_in, build_saved_game_loading_descriptor, control,
-    };
+    use crate::ui::shell::modal::{menu_area, message_box_parts};
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
@@ -78,27 +76,19 @@ pub(crate) fn render_saved_game_loading(
     let side =
         in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
     let (width, height) = (frame.0 as i32, frame.1 as i32);
-    let layout = if in_match {
-        body_ok_layout_in(RectPx::new(0, 0, width, height))
-    } else {
-        body_ok_layout(width, height)
+    // F0 is CE's box: its body over a Cancel it keeps hidden.
+    let area = match in_match {
+        true => RectPx::new(0, 0, width, height),
+        false => menu_area(width, height),
     };
-    let descriptor = build_saved_game_loading_descriptor();
-    let body = descriptor
-        .controls
-        .iter()
-        .find(|child| child.id == control::BODY_STATIC && child.visible)
-        .expect("F0 visible body Static");
+    let layout = message_box_parts(1, area);
     let labels = [shell_paint::PaintLabel {
         text: state
-            .csf_label(
-                body.csf_key.expect("F0 loading caption"),
-                "Mission is loading. Please wait...",
-            )
+            .csf_label("TXT_LOADING", "Mission is loading. Please wait...")
             .into(),
         rect: layout.body,
         rgb: SHELL_LABEL_TEXT_RGB,
-        align: super::text::validation_modal_body_text_align(),
+        align: crate::render::shell_text::ShellAlign::NONE,
         path_a_reveal: None,
     }];
     // A zoomed match's text is drawn in the window (`window_ui`).
@@ -410,7 +400,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
             &chrome,
             ControlPaint::Checkbox {
                 checked: modal.options.urban_areas,
-                rect: layout.urban_areas,
+                rect: layout.rect(5000),
             },
             layout.scale,
         );
@@ -423,14 +413,14 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         push_solid_rect(
             out,
             atlas,
-            layout.progress_bar,
+            layout.rect(RandomMapSetupLayout::PROGRESS_BAR),
             SHELL_MODAL_PANEL_RGB,
             SHELL_DROPDOWN_DEPTH - 0.00013,
         );
         push_rect_outline(
             out,
             atlas,
-            layout.progress_bar,
+            layout.rect(RandomMapSetupLayout::PROGRESS_BAR),
             OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
             SHELL_DROPDOWN_DEPTH - 0.00014,
         );

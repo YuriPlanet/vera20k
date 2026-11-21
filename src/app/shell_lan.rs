@@ -1053,7 +1053,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         let create = crate::ui::shell::modal::lan_create_game_layout(width, height);
         let ok = match runtime.creating {
             true => create.ok,
-            false => crate::ui::shell::modal::body_ok_layout(width, height).ok,
+            false => crate::ui::shell::modal::menu_message_box(1, width, height).button(0),
         };
         page::sync_rects(gui, boxed, |id| match id {
             OK => Some(ok),

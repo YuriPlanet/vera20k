@@ -77,7 +77,7 @@ impl App {
         pressed: bool,
         repeat: bool,
     ) -> bool {
-        if !Self::main_menu_dialog_open(state) {
+        if !state.main_menu_dialog_open() {
             return false;
         }
         let is_escape = code == KeyCode::Escape && pressed && !repeat;
@@ -112,10 +112,7 @@ impl App {
                 && !Self::route_shell_message_box_key(state, key)
             {
                 // Preserve the existing empty-controller-route fallback.
-                Self::resolve_shell_message_box(
-                    state,
-                    crate::ui::shell::modal::ModalResult::MessageBox(1),
-                );
+                Self::resolve_shell_message_box(state, 1);
             }
         } else if is_escape
             // `0xD5` ignores IDCANCEL=2. Preserve the same dialog instance
@@ -440,7 +437,7 @@ impl App {
             ScreenPage::LauncherOptions if left => Self::handle_launcher_options_mouse(state, down),
             // A retained main-menu dialog takes the click: the SHP
             // quit-confirm modal hit-tests its OK/Cancel here.
-            _ if down.is_some() && Self::main_menu_dialog_open(state) => {
+            _ if down.is_some() && state.main_menu_dialog_open() => {
                 if screen == ScreenPage::MainMenu
                     && state.frontend.shell_message_box.is_some()
                     && left

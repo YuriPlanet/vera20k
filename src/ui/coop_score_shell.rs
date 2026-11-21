@@ -12,6 +12,7 @@
 //! The app supplies resolved texts and a per-frame view of the round, which
 //! `MatchSession` owns; this leaf keeps only the dialog's interaction.
 
+use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
@@ -62,30 +63,22 @@ pub const COOP_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
     back: MenuPageButtonSpec::new(QUIT, 346, "GUI:Quit", "STT:MPCampScoreQuit"),
 };
 
-/// Win32 STATIC alignment (`SS_RIGHT` is style 2, `SS_CENTER` 1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CoopScoreAlign {
-    Left,
-    Center,
-    Right,
-}
-
 /// One visible body control of `RT_DIALOG 0xBC6`: id, caption key (statics
-/// with fixed text), help key and text alignment. The windows are
-/// `shell_layout.ini`'s.
+/// with fixed text), help key and Win32 STATIC alignment (`SS_CENTER` 1,
+/// `SS_RIGHT` 2). The windows are `shell_layout.ini`'s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CoopScoreControlSpec {
     pub id: u16,
     pub caption_key: Option<&'static str>,
     pub help_key: Option<&'static str>,
-    pub align: CoopScoreAlign,
+    pub align: ShellAlign,
 }
 
 const fn control(
     id: u16,
     caption_key: Option<&'static str>,
     help_key: Option<&'static str>,
-    align: CoopScoreAlign,
+    align: ShellAlign,
 ) -> CoopScoreControlSpec {
     CoopScoreControlSpec {
         id,
@@ -98,48 +91,50 @@ const fn control(
 /// The template's unnamed `GUI:PreviousMission` static (id -1).
 pub const PREVIOUS_MISSION: u16 = 0xFFFF;
 
-use CoopScoreAlign::{Center, Left, Right};
+const L: ShellAlign = ShellAlign::NONE;
+const C: ShellAlign = ShellAlign::H_CENTER;
+const R: ShellAlign = ShellAlign::H_RIGHT;
 
 /// The visible body controls in template order.
 pub const COOP_SCORE_CONTROLS: [CoopScoreControlSpec; 38] = [
-    control(0x069D, Some("GUI:Player"), None, Left),
-    control(0x069E, Some("GUI:Losses"), None, Center),
-    control(0x069F, Some("GUI:Kills"), None, Center),
-    control(0x06A0, Some("GUI:Built"), None, Center),
-    control(0x078B, Some("GUI:Score"), None, Center),
-    control(0x0781, None, Some("STT:MPScoreLabelPlayer"), Left),
-    control(0x0785, None, Some("STT:MPScoreLabelLosses"), Right),
-    control(0x0783, None, Some("STT:MPScoreLabelKills"), Right),
-    control(0x0787, None, Some("STT:MPScoreLabelBuilt"), Right),
-    control(0x0789, None, Some("STT:MPScoreLabelScore"), Right),
-    control(0x0782, None, Some("STT:MPScoreLabelPlayer"), Left),
-    control(0x0786, None, Some("STT:MPScoreLabelLosses"), Right),
-    control(0x0784, None, Some("STT:MPScoreLabelKills"), Right),
-    control(0x0788, None, Some("STT:MPScoreLabelBuilt"), Right),
-    control(0x078A, None, Some("STT:MPScoreLabelScore"), Right),
-    control(TIME, None, Some("STT:MPScoreLabelTime"), Right),
-    control(PREVIOUS_MISSION, Some("GUI:PreviousMission"), None, Left),
-    control(0x079B, Some("GUI:NextMission"), None, Left),
-    control(NEXT_MISSION, None, None, Left),
-    control(0x0411, None, Some("STT:MPScoreLabelPlayer"), Left),
-    control(0x06D2, None, None, Left),
-    control(0x06A1, None, Some("STT:HostComboCountry"), Left),
-    control(0x06DA, None, Some("STT:HostPictureFlag"), Left),
-    control(0x06A2, None, Some("STT:HostComboColor"), Left),
-    control(0x0412, None, Some("STT:MPScoreLabelPlayer"), Left),
-    control(0x06D3, None, None, Left),
-    control(0x0510, None, Some("STT:HostComboCountry"), Left),
-    control(0x06DB, None, Some("STT:HostPictureFlag"), Left),
-    control(0x0522, None, Some("STT:HostComboColor"), Left),
-    control(CHAT_LOG, None, Some("STT:HostEditOutput"), Left),
-    control(CHAT, None, Some("STT:HostEditInput"), Left),
-    control(DIFFICULTY, None, Some("STT:MPScoreLabelDifficulty"), Left),
-    control(0x0798, Some("TXT_EASY"), None, Left),
-    control(0x0799, Some("TXT_NORMAL"), None, Left),
-    control(0x079A, Some("TXT_HARD"), None, Left),
-    control(0x06A3, None, None, Left),
-    control(0x06A4, None, None, Left),
-    control(DESCRIPTION, None, None, Left),
+    control(0x069D, Some("GUI:Player"), None, L),
+    control(0x069E, Some("GUI:Losses"), None, C),
+    control(0x069F, Some("GUI:Kills"), None, C),
+    control(0x06A0, Some("GUI:Built"), None, C),
+    control(0x078B, Some("GUI:Score"), None, C),
+    control(0x0781, None, Some("STT:MPScoreLabelPlayer"), L),
+    control(0x0785, None, Some("STT:MPScoreLabelLosses"), R),
+    control(0x0783, None, Some("STT:MPScoreLabelKills"), R),
+    control(0x0787, None, Some("STT:MPScoreLabelBuilt"), R),
+    control(0x0789, None, Some("STT:MPScoreLabelScore"), R),
+    control(0x0782, None, Some("STT:MPScoreLabelPlayer"), L),
+    control(0x0786, None, Some("STT:MPScoreLabelLosses"), R),
+    control(0x0784, None, Some("STT:MPScoreLabelKills"), R),
+    control(0x0788, None, Some("STT:MPScoreLabelBuilt"), R),
+    control(0x078A, None, Some("STT:MPScoreLabelScore"), R),
+    control(TIME, None, Some("STT:MPScoreLabelTime"), R),
+    control(PREVIOUS_MISSION, Some("GUI:PreviousMission"), None, L),
+    control(0x079B, Some("GUI:NextMission"), None, L),
+    control(NEXT_MISSION, None, None, L),
+    control(0x0411, None, Some("STT:MPScoreLabelPlayer"), L),
+    control(0x06D2, None, None, L),
+    control(0x06A1, None, Some("STT:HostComboCountry"), L),
+    control(0x06DA, None, Some("STT:HostPictureFlag"), L),
+    control(0x06A2, None, Some("STT:HostComboColor"), L),
+    control(0x0412, None, Some("STT:MPScoreLabelPlayer"), L),
+    control(0x06D3, None, None, L),
+    control(0x0510, None, Some("STT:HostComboCountry"), L),
+    control(0x06DB, None, Some("STT:HostPictureFlag"), L),
+    control(0x0522, None, Some("STT:HostComboColor"), L),
+    control(CHAT_LOG, None, Some("STT:HostEditOutput"), L),
+    control(CHAT, None, Some("STT:HostEditInput"), L),
+    control(DIFFICULTY, None, Some("STT:MPScoreLabelDifficulty"), L),
+    control(0x0798, Some("TXT_EASY"), None, L),
+    control(0x0799, Some("TXT_NORMAL"), None, L),
+    control(0x079A, Some("TXT_HARD"), None, L),
+    control(0x06A3, None, None, L),
+    control(0x06A4, None, None, L),
+    control(DESCRIPTION, None, None, L),
 ];
 
 /// The controls `0x0046DE20` hides on the final mission (`can_continue`

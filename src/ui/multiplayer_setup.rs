@@ -1130,7 +1130,7 @@ pub(crate) struct MultiplayerSetupLayout {
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
     /// VERA's missing-map offer, a screen-centred two-button box.
-    pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
+    pub(crate) map_offer: crate::ui::shell::modal::BoxParts,
     /// The OK of the notice 0xCE ([`MultiplayerSetupState::notice`]).
     pub(crate) notice_ok: RectPx,
     pub(crate) map_preview: RectPx,
@@ -1245,8 +1245,8 @@ impl MultiplayerSetupLayout {
                 .collect(),
             option_labels: OPTION_LABELS.map(|(id, key)| (key, at(id))),
             game_options: None,
-            map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
-            notice_ok: crate::ui::shell::modal::body_ok_layout(width, height).ok,
+            map_offer: crate::ui::shell::modal::menu_message_box(2, width, height),
+            notice_ok: crate::ui::shell::modal::menu_message_box(1, width, height).button(0),
             cooperative_description: at(0xFF06),
             map_preview: at(MAP_PREVIEW),
             mode_label: at(0x6EC),
@@ -1535,10 +1535,10 @@ impl MultiplayerSetupLayout {
             TEAM_STARTS => self.team_starts,
             TEAM_COLORS => self.team_colors,
             BALANCE => self.balance,
-            MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
+            MAP_OFFER_DOWNLOAD => Some(self.map_offer.button(0)),
             MAP_OFFER_BODY => Some(self.map_offer.body),
             crate::ui::shell::modal::control::OK => Some(self.notice_ok),
-            MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
+            MAP_OFFER_LEAVE => Some(self.map_offer.button(1)),
             _ => self.page.button_rect(id),
         }
     }
@@ -2695,7 +2695,7 @@ mod tests {
         sync(&mut controller, &ui, &view, &popup_layout, true);
         assert_eq!(hit(&controller, center(popup_layout.chat), false), None);
         assert_eq!(
-            hit(&controller, center(popup_layout.map_offer.ok), false),
+            hit(&controller, center(popup_layout.map_offer.button(0)), false),
             Some(MAP_OFFER_DOWNLOAD)
         );
         view.map_offer_open = false;

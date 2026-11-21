@@ -9,30 +9,12 @@ use super::in_game_shell::{self, InGameShellLayout};
 use super::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{SavedSeedLayout, SavedSeedMode};
 
-#[derive(Clone, Copy)]
-struct Resource {
-    list: RectPx,
-    prompt: RectPx,
+/// Template `id` of `mode`'s dialog (`shell_layout.ini`).
+fn template(mode: SavedSeedMode, id: u16) -> RectPx {
+    let (dialog, ..) = mode.template();
+    super::layout_data::entry_of(dialog, id).map_or_else(RectPx::default, |entry| entry.rect)
 }
 
-fn resource(mode: SavedSeedMode) -> Resource {
-    match mode {
-        SavedSeedMode::Load => Resource {
-            list: RectPx::new(79, 78, 266, 187),
-            prompt: RectPx::new(79, 44, 266, 24),
-        },
-        SavedSeedMode::Save => Resource {
-            list: RectPx::new(79, 80, 266, 157),
-            prompt: RectPx::new(79, 46, 266, 24),
-        },
-        SavedSeedMode::Delete => Resource {
-            list: RectPx::new(78, 76, 266, 187),
-            prompt: RectPx::new(78, 42, 266, 24),
-        },
-    }
-}
-
-const EDIT_DLU: RectPx = RectPx::new(80, 253, 266, 14);
 const ACTION_DLU: RectPx = RectPx::new(425, 122, 108, 22);
 
 /// Original saved-game vtable getters 55A050/55A070/55A090. The common
@@ -58,7 +40,7 @@ pub fn saved_game_layout(
     shell: InGameShellLayout,
     button_size: [i32; 2],
 ) -> SavedSeedLayout {
-    let controls = resource(mode);
+    let (_, list, _) = mode.template();
     let screen = RectPx::new(0, 0, width, height);
     let action = ACTION_DLU;
     SavedSeedLayout {
@@ -66,9 +48,10 @@ pub fn saved_game_layout(
         dialog: screen,
         // 608CD0 routes694 through active60B1D0; no launcher +7 adjustment.
         title: in_game_shell::right_panel_title_rect(width),
-        prompt: ordinary_rect(controls.prompt, width, height),
-        list: ordinary_rect(controls.list, width, height),
-        name_edit: (mode == SavedSeedMode::Save).then(|| ordinary_rect(EDIT_DLU, width, height)),
+        prompt: ordinary_rect(template(mode, 0x40C), width, height),
+        list: ordinary_rect(template(mode, list), width, height),
+        name_edit: (mode == SavedSeedMode::Save)
+            .then(|| ordinary_rect(template(mode, 0x526), width, height)),
         action: shell.button_rect(
             geom::dlu_rect(action.x, action.y, action.w, action.h),
             button_size,
@@ -124,24 +107,17 @@ pub struct MainMenuSavedGameLayout {
 /// The prompt `0x40C` is hidden here (`0x00558F7C..0x00558F99`).
 pub fn main_menu_saved_game_layout(width: u32, height: u32) -> MainMenuSavedGameLayout {
     let page = menu_page::compute_layout(&LOAD_SAVED_GAME_PAGE, width, height);
-    let controls = resource(SavedSeedMode::Load);
-    let list_window = geom::dlu_rect(
-        controls.list.x,
-        controls.list.y,
-        controls.list.w,
-        controls.list.h,
+    let (list, prompt) = (
+        template(SavedSeedMode::Load, 0x525),
+        template(SavedSeedMode::Load, 0x40C),
     );
+    let list_window = geom::dlu_rect(list.x, list.y, list.w, list.h);
     let button = |id| page.button_rect(id).expect("0xB7 page button");
     let browser = SavedSeedLayout {
         screen: page.screen,
         dialog: page.screen,
         title: page.title,
-        prompt: geom::dlu_rect(
-            controls.prompt.x,
-            controls.prompt.y,
-            controls.prompt.w,
-            controls.prompt.h,
-        ),
+        prompt: geom::dlu_rect(prompt.x, prompt.y, prompt.w, prompt.h),
         list: RectPx::new(
             list_window.x,
             list_window.y,
@@ -210,12 +186,7 @@ mod tests {
         for case in fixture["cases"].as_array().unwrap() {
             let mode = mode(case["dialog_id"].as_u64().unwrap());
             let control = case["control_id"].as_u64().unwrap();
-            let source = match control {
-                0x40c => resource(mode).prompt,
-                0x525 | 0x527 | 0x528 => resource(mode).list,
-                0x526 => EDIT_DLU,
-                _ => panic!("unexpected ordinary control"),
-            };
+            let source = template(mode, control as u16);
             assert_eq!(source, rect(&case["dlu_rect"]));
             assert_eq!(
                 ordinary_rect(

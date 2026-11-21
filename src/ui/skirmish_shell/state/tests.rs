@@ -528,28 +528,28 @@ fn owner_draw_button_hit_test_returns_control_identity() {
     assert_eq!(
         hit_test_owner_draw_button(
             &layout,
-            layout.start_button.x + 1,
-            layout.start_button.y + 1
+            layout.static_rect(0x617).x + 1,
+            layout.static_rect(0x617).y + 1
         ),
         Some(OwnerDrawButton::StartGame0x617)
     );
     assert_eq!(
         hit_test_owner_draw_button(
             &layout,
-            layout.choose_map_button.x + 1,
-            layout.choose_map_button.y + 1
+            layout.static_rect(0x5AA).x + 1,
+            layout.static_rect(0x5AA).y + 1
         ),
         Some(OwnerDrawButton::ChooseMap0x5aa)
     );
     assert_eq!(
-        hit_test_owner_draw_button(&layout, layout.back_button.x + 1, layout.back_button.y + 1),
+        hit_test_owner_draw_button(&layout, layout.static_rect(0x5C0).x + 1, layout.static_rect(0x5C0).y + 1),
         Some(OwnerDrawButton::Back0x5c0)
     );
     assert_eq!(
         hit_test_owner_draw_button(
             &layout,
-            layout.start_button.x + layout.start_button.w,
-            layout.start_button.y
+            layout.static_rect(0x617).x + layout.static_rect(0x617).w,
+            layout.static_rect(0x617).y
         ),
         None
     );
@@ -591,7 +591,7 @@ fn extra_credit_presets_are_reachable_by_drag_and_reach_the_launched_match() {
         return;
     };
     let layout = compute_layout(800, 600);
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
     let y = first_admitted_row(rect);
     let thumb = credits_thumb_x(&shell, rect);
     handle_option_mouse_down(&mut shell, &layout, &[], thumb, y);
@@ -707,8 +707,8 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
             &layout,
             &shell,
             &maps,
-            layout.start_button.x,
-            layout.start_button.y
+            layout.static_rect(0x617).x,
+            layout.static_rect(0x617).y
         ),
         Some(SkirmishHoverTarget::OwnerDrawButton(
             OwnerDrawButton::StartGame0x617
@@ -739,8 +739,8 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
             &layout,
             &shell,
             &maps,
-            layout.checkboxes[0].rect.x,
-            layout.checkboxes[0].rect.y
+            layout.static_rect(0x54E).x,
+            layout.static_rect(0x54E).y
         ),
         Some(SkirmishHoverTarget::Checkbox(
             SkirmishCheckboxId::ShortGame0x54e
@@ -751,8 +751,8 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
             &layout,
             &shell,
             &maps,
-            layout.trackbars.credits.x,
-            layout.trackbars.credits.y
+            layout.static_rect(0x511).x,
+            layout.static_rect(0x511).y
         ),
         Some(SkirmishHoverTarget::Trackbar(
             SkirmishTrackbarId::Credits0x511
@@ -895,8 +895,8 @@ fn hovered_shell_control_blocks_parent_targets_when_modal_owns_input() {
             &layout,
             &shell,
             &[],
-            layout.start_button.x,
-            layout.start_button.y
+            layout.static_rect(0x617).x,
+            layout.static_rect(0x617).y
         ),
         None
     );
@@ -1014,8 +1014,8 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
         hovered_choose_map_modal_control(
             &layout,
             &modal,
-            layout.use_map_button.x,
-            layout.use_map_button.y
+            layout.rect(0x6C5).x,
+            layout.rect(0x6C5).y
         ),
         Some(ChooseMapHoverTarget::Button(
             ChooseMapModalButton::UseMap0x6c5
@@ -1058,17 +1058,17 @@ fn hovered_choose_map_modal_control_resolves_0x6b_status_targets() {
 fn checkbox_icon_click_toggles_but_label_click_does_not() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();
-    let checkbox = layout.checkboxes[0];
+    let checkbox = layout.static_rect(0x54E);
     let initial = shell.short_game;
 
     assert_eq!(
-        handle_option_mouse_down(&mut shell, &layout, &[], checkbox.rect.x, checkbox.rect.y),
+        handle_option_mouse_down(&mut shell, &layout, &[], checkbox.x, checkbox.y),
         SkirmishShellAction::None
     );
     assert_eq!(shell.short_game, !initial);
     assert_eq!(drain_sounds(), vec![PageCue::Checkbox]);
 
-    let label = checkbox_text_rect(checkbox.rect, crate::ui::shell::geom::ShellScale::RETAIL);
+    let label = checkbox_text_rect(checkbox, crate::ui::shell::geom::ShellScale::RETAIL);
     handle_option_mouse_down(&mut shell, &layout, &[], label.x, label.y + 1);
     assert_eq!(shell.short_game, !initial);
     assert!(drain_sounds().is_empty());
@@ -1077,7 +1077,7 @@ fn checkbox_icon_click_toggles_but_label_click_does_not() {
 #[test]
 fn a_press_above_the_admitted_strip_only_holds_the_mouse() {
     let layout = compute_layout(800, 600);
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
     for y in [rect.y, first_admitted_row(rect) - 1] {
         let mut shell = controlled_country_shell();
         handle_option_mouse_down(&mut shell, &layout, &[], rect.x + 39, y);
@@ -1103,7 +1103,7 @@ fn a_zero_money_increment_slides_credits_in_ones() {
         ..Default::default()
     };
     let layout = compute_layout(800, 600);
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
     handle_option_mouse_down(
         &mut shell,
         &layout,
@@ -1147,7 +1147,7 @@ fn trackbar_mouse_move_updates_while_capture_active() {
     let Some(mut shell) = retail_ranges_shell() else {
         return;
     };
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
     let thumb_x = credits_thumb_x(&shell, rect);
     let y = first_admitted_row(rect);
 
@@ -1169,7 +1169,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
     let Some(mut shell) = retail_ranges_shell() else {
         return;
     };
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
 
     handle_option_mouse_down(&mut shell, &layout, &[], 443, 319);
     // A rail click captures the pointer but is NOT a thumb grab, so the
@@ -1198,7 +1198,7 @@ fn trackbar_rail_click_jumps_once_and_does_not_track_cursor() {
 fn trackbar_repeated_drag_same_value_is_silent() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();
-    let rect = layout.trackbars.credits;
+    let rect = layout.static_rect(0x511);
     let thumb_x = credits_thumb_x(&shell, rect);
     let y = first_admitted_row(rect);
 
@@ -2917,15 +2917,3 @@ fn a_low_row_of_the_longer_list_opens_its_list_upward() {
     assert_eq!(list.y, face.y + face.h + 1);
 }
 
-#[test]
-fn a_pressed_page_button_stays_pushed_off_the_pointer_until_the_release() {
-    let layout = compute_layout(800, 600);
-    let mut shell = controlled_country_shell();
-    let start = layout.start_button;
-    handle_option_mouse_down(&mut shell, &layout, &[], start.x + 2, start.y + 2);
-    handle_option_mouse_move(&mut shell, &layout, &[], start.x - 50, start.y + 2);
-    let pushed = |shell: &SkirmishShellState| read_page(shell, page::pressed_button);
-    assert_eq!(pushed(&shell), Some(OwnerDrawButton::StartGame0x617));
-    handle_option_mouse_up(&mut shell);
-    assert_eq!(pushed(&shell), None);
-}

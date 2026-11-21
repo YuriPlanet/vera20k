@@ -478,7 +478,7 @@ impl SkirmishCapture {
         Self::click_chooser(state, (bar.x + 10, bar.y + 24));
         let row = map_list(state)?.row(0);
         Self::click_chooser(state, (row.x + 4, row.y + 4));
-        let button = layout.use_map_button;
+        let button = layout.rect(0x6C5);
         Self::click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
         state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
         state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
@@ -592,7 +592,7 @@ impl SkirmishCapture {
                 .frontend
                 .score_page
                 .as_ref()
-                .is_some_and(|page| page.reveals_terminal())
+                .is_some_and(|page| page.statics.is_terminal())
     }
 
     /// The route's time budget: the quit and defeat routes load and play a
@@ -692,7 +692,7 @@ impl SkirmishCapture {
                 state.render_width(),
                 state.render_height(),
             )
-            .save;
+            .rect(0x6C3);
             Some((centre(save), "SaveMap"))
         } else {
             None
@@ -825,7 +825,10 @@ impl SkirmishCapture {
     /// VERA's Game Options through the production press and release; the
     /// pointer then rests again.
     fn open_game_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let button = crate::app::frontend::shell_layout::skirmish_layout(state).game_options_button;
+        let button = crate::app::frontend::shell_layout::skirmish_layout(state)
+            .statics
+            .get(0x7101)
+            .context("0x102 has no Game Options")?;
         Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
         App::handle_skirmish_shell_mouse_down(state);
         App::handle_skirmish_shell_mouse_up(state);
@@ -841,14 +844,8 @@ impl SkirmishCapture {
     }
 
     fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::skirmish_shell::SkirmishCheckboxId;
         let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
-        let rect = layout
-            .checkboxes
-            .iter()
-            .find(|checkbox| checkbox.id == SkirmishCheckboxId::ShortGame0x54e)
-            .context("0x102 has no Short Game box")?
-            .rect;
+        let rect = (layout.statics.get(0x54E)).context("0x102 has no Short Game box")?;
         let icon = crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.scale);
         Self::set_pointer(state, (icon.x + icon.w / 2, icon.y + icon.h / 2));
         App::handle_skirmish_shell_mouse_down(state);
@@ -911,13 +908,14 @@ impl SkirmishCapture {
         let Some(answer) = answer else {
             return Ok(());
         };
-        let layout = crate::ui::shell::modal::quit_confirm_layout(
+        let layout = crate::ui::shell::modal::menu_message_box(
+            2,
             state.render_width() as i32,
             state.render_height() as i32,
         );
         let button = match answer {
-            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.ok,
-            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => layout.cancel,
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.button(0),
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => layout.button(1),
         };
         Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
         App::handle_choose_map_prompt_mouse_down(state);

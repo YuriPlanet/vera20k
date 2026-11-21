@@ -657,8 +657,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     // too: what it covers gives way.
     let list: Vec<RectPx> = menu
         .as_ref()
-        .and_then(|(settings, controls)| settings.shell_popup(controls))
-        .map(|list| list.rect)
+        .and_then(|(settings, _)| settings.shell_popup_rect())
         .into_iter()
         .collect();
     let look = crate::app::frontend::skirmish_shell_render::BoxLook {
@@ -698,7 +697,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     }
     if let Some((settings, controls)) = menu {
         crate::app::frontend::skirmish_shell_render::paint_options_settings(
-            &mut draw, state, atlas, &controls, settings,
+            &mut draw, state, &controls, settings,
         );
     }
     // The list lies on the dialog's picture, which has no list backing.

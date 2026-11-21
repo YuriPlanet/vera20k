@@ -455,7 +455,7 @@ fn show_completion(state: &mut AppState, kind: ShellSlideKind, now: Instant) {
         // heading, the status line and the 47 table texts.
         ShellSlideKind::Score => {
             if let Some(page) = state.frontend.score_page.as_mut() {
-                page.start_reveals(now);
+                page.statics.start(now);
             }
             crate::app::frontend::score_shell_render::score_title_text(state)
         }

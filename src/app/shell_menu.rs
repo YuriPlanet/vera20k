@@ -19,7 +19,6 @@ use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::input::precedence::ScreenPage;
 use crate::ui::main_menu_dialogs::{OptionsDialogState, shell_menu};
 use crate::ui::shell::keyboard::KeyboardParent;
-use crate::ui::shell::modal::ModalResult;
 
 impl App {
     /// An Esc press on `screen`. True when the key was used: it closed a
@@ -100,10 +99,8 @@ impl App {
         let settings = Box::new(Self::launcher_options_from_state(state));
         Self::open_shell_message_box(
             state,
-            ShellMessageBox {
-                shell_box,
-                purpose: ShellMessageBoxPurpose::ShellMenu(settings),
-            },
+            shell_box,
+            ShellMessageBoxPurpose::ShellMenu(settings),
         );
     }
 
@@ -194,20 +191,18 @@ impl App {
         }
     }
 
-    /// The menu has closed with `result`: 0 is Options, 2 Exit Game, 1 Cancel
+    /// The menu has closed with `answer`: 0 is Options, 2 Exit Game, 1 Cancel
     /// or Esc. The page slides out for Options as it does for any button of
     /// its own, and slides back in when Options closes.
-    pub(super) fn answer_shell_menu(state: &mut AppState, result: ModalResult) {
-        match result {
-            ModalResult::MessageBox(0) => {
-                match shell_transition::current_shell_slide_target(state) {
-                    Some(kind) => {
-                        Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
-                    }
-                    None => Self::open_launcher_options_dialog(state),
+    pub(super) fn answer_shell_menu(state: &mut AppState, answer: usize) {
+        match answer {
+            0 => match shell_transition::current_shell_slide_target(state) {
+                Some(kind) => {
+                    Self::leave_shell_dialog(state, kind, App::open_launcher_options_dialog);
                 }
-            }
-            ModalResult::MessageBox(2) => {
+                None => Self::open_launcher_options_dialog(state),
+            },
+            2 => {
                 Self::prepare_shell_terminal_exit(state);
                 Self::confirm_quit(state);
             }

@@ -98,14 +98,6 @@ pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {
     pick(state, compute_layout)
 }
 
-/// A front-end message box (VERA's Esc menu too) on the window's mapping.
-pub(crate) fn shell_message_box_layout(
-    state: &AppState,
-    shell_box: &crate::ui::shell::modal::ShellBox,
-) -> crate::ui::shell::modal::MessageBoxLayout {
-    on(state, |w, h, scale| shell_box.layout(w, h, scale))
-}
-
 /// A front-end box's rects on the window's mapping.
 pub(crate) fn shell_box_parts(
     state: &AppState,
@@ -276,29 +268,27 @@ pub(crate) fn keyboard_layout(
 mod tests {
     use super::window_takes_fitted_shell;
 
-    fn message_box_layout_for_screen(
-        kind: crate::ui::shell::modal::ModalKind,
-        (w, h): (u32, u32),
-    ) -> crate::ui::shell::modal::MessageBoxLayout {
-        let scale = super::shell_scale_for_screen((w, h));
-        crate::ui::shell::modal::message_box_layout_on(kind, w as i32, h as i32, scale)
-    }
-
     #[test]
     fn exit_message_box_follows_fitted_menu_and_keeps_button_hits() {
         use crate::ui::shell::geom::RectPx;
-        use crate::ui::shell::modal::ModalKind;
-        let layout = message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
+        let quit = crate::ui::shell::modal::ShellBox::message(
+            "Q".into(),
+            "OK".into(),
+            "Cancel".into(),
+            String::new(),
+        );
+        let parts = |(w, h): (u32, u32)| {
+            quit.parts(w as i32, h as i32, super::shell_scale_for_screen((w, h)))
+        };
+        let layout = parts((2560, 1600));
         assert_eq!(layout.dialog, RectPx::new(456, 323, 1202, 869));
-        assert_eq!(layout.ok, RectPx::new(1285, 995, 336, 66));
-        let cancel = layout.cancel.unwrap();
+        let (ok, cancel) = (layout.button(0), layout.button(1));
+        assert_eq!(ok, RectPx::new(1285, 995, 336, 66));
         assert_eq!(cancel, RectPx::new(1285, 1080, 336, 67));
-        assert!(layout.ok.contains(1453, 1028));
-        assert!(cancel.contains(1453, 1113));
-        assert!(!layout.ok.contains(1453, 1113));
-        assert!(!cancel.contains(1453, 1028));
+        assert!(ok.contains(1453, 1028) && cancel.contains(1453, 1113));
+        assert!(!ok.contains(1453, 1113) && !cancel.contains(1453, 1028));
         for size in [(800, 600), (640, 480)] {
-            let layout = message_box_layout_for_screen(ModalKind::Confirm, size);
+            let layout = parts(size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
             assert!(layout.scale.is_retail());
         }

@@ -1057,7 +1057,7 @@ impl LiveRoundFlow {
                         .frontend
                         .score_page
                         .as_ref()
-                        .is_some_and(|page| page.reveals_terminal()) =>
+                        .is_some_and(|page| page.statics.is_terminal()) =>
             {
                 let page = state.frontend.score_page.as_ref().context("score page")?;
                 let visible = page.visible_row_texts();

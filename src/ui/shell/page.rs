@@ -200,6 +200,51 @@ pub fn hovered_key_in(gui: &Gui, root: NodeId) -> Option<&str> {
     }
 }
 
+/// An `Edit` node as the NewEdit its paint reads: text, caret, the first
+/// shown unit the host keeps in `Top`, the password mask and whether it
+/// holds the focus.
+pub fn new_edit(gui: &Gui, node: NodeId) -> crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
+    let int = |prop| match gui.get(node, prop).ok().flatten() {
+        Some(Value::Int(value)) => Some(*value),
+        _ => None,
+    };
+    let text = match gui.get(node, Prop::Text).ok().flatten() {
+        Some(Value::Text(text)) => text.as_str(),
+        _ => "",
+    };
+    let chars = text.chars().count();
+    let caret_chars = usize::try_from(int(Prop::Caret).unwrap_or(chars as i32))
+        .unwrap_or(0)
+        .min(chars);
+    let units: Vec<u16> = text.encode_utf16().collect();
+    crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
+        first_visible_unit: usize::try_from(int(Prop::Top).unwrap_or(0))
+            .unwrap_or(0)
+            .min(units.len()),
+        units,
+        caret: text.chars().take(caret_chars).map(char::len_utf16).sum(),
+        focused: gui.focus() == Some(node),
+        password: matches!(
+            gui.get(node, Prop::Password).ok().flatten(),
+            Some(Value::Bool(true))
+        ),
+    }
+}
+
+/// Writes a NewEdit's text, caret and first shown unit back to its node.
+pub fn store_edit(
+    gui: &mut Gui,
+    node: NodeId,
+    edit: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+) {
+    let caret = String::from_utf16_lossy(&edit.units[..edit.caret.min(edit.units.len())])
+        .chars()
+        .count();
+    let _ = gui.set(node, Prop::Text, Value::Text(edit.display_text()));
+    let _ = gui.set(node, Prop::Caret, Value::Int(caret as i32));
+    let _ = gui.set(node, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+}
+
 /// The GUI's events as cues and control-id events, in order: a control's
 /// cue comes before what it did.
 pub fn page_events(gui: &Gui, events: Vec<UiEvent>) -> Vec<PageEvent> {

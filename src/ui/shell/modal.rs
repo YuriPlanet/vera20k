@@ -1,270 +1,117 @@
-//! Front-end modal substrate: `ModalKind` table + the message-box result codes.
-//!
-//! Render-agnostic data describing the YR front-end pop-up message boxes as plain
-//! Rust: which RT_DIALOG template each `ModalKind` loads, the native "count-rule"
-//! the generic CSF message-box helper uses to pick a template from its populated
-//! string slots, and the result codes those boxes resolve to. Depends only on
-//! the shared shell descriptor/geometry types (no sim/render/assets), so it honors
-//! the ui/ layering rule. The shared modal renderer consumes these descriptors.
+//! The front-end's centred 451x326 boxes: the message and wait boxes
+//! ([`ShellBox`], their templates in `shell_layout.ini`) and the WOL and LAN
+//! popups that share the box.
 
-use super::descriptor::{
-    AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId,
-    RepositionPolicy,
-};
+use super::descriptor::DialogId;
 use super::geom::{self, RectPx, ScaledRects};
+use super::layout::RectTable;
 
-/// Resource control ids shared by the count-rule message-box family (the generic
-/// CSF helper resolves the dialog by which of these the click matched).
+/// The count-rule message box's resource control ids (ShellMessageBox__Run
+/// `0x005D3490`), in the order the box answers with them: OK 0, Cancel 1,
+/// the third button 2.
 pub mod control {
-    /// Body-text static. Produces no click result.
-    pub const BODY_STATIC: u16 = 0x05B0;
-    /// OK / affirmative button -> message-box result 0.
     pub const OK: u16 = 0x05AE;
-    /// Cancel button — Win32 IDCANCEL (control id 2) -> message-box result 1.
+    /// Win32 IDCANCEL.
     pub const CANCEL: u16 = 0x0002;
-    /// Third owner-draw button -> message-box result 2 (0x121 template only).
     pub const THIRD: u16 = 0x05AF;
-    /// F0 progress-dialog Cancel. The saved-load caller leaves it hidden.
-    pub const PROGRESS_CANCEL: u16 = 0x05C0;
 }
 
-/// One front-end pop-up modal, identified by the RT_DIALOG template it loads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModalKind {
-    /// 0xCE — body static + a single OK button. (Skirmish start-validation.)
-    BodyOk,
-    /// 0x120 — body static + OK + Cancel (control 2). (Quit-confirm.)
-    Confirm,
-    /// 0x121 — adds a fourth owner-draw button. Reachable but unused by the three
-    /// target modals; render-UNTESTED, excluded from the in-game OK acceptance.
-    ThreeButton,
-}
-
-impl ModalKind {
-    /// The RT_DIALOG resource id this message box loads.
-    pub fn template_id(self) -> u16 {
-        match self {
-            ModalKind::BodyOk => 0x00CE,
-            ModalKind::Confirm => 0x0120,
-            ModalKind::ThreeButton => 0x0121,
-        }
-    }
-}
-
-/// Native count-rule template selection for the generic CSF message-box helper.
-///
-/// The helper takes four pre-resolved CSF string pointers (body, ok, third,
-/// fourth) and picks the template purely by which OPTIONAL slots are populated.
-/// "Populated" means a non-null pointer whose first character is non-null, so an
-/// empty caption counts as absent (see [`slot_populated`]). body+ok are mandatory;
-/// only `third`/`fourth` escalate the template:
-///   - neither optional populated -> [`ModalKind::BodyOk`]      (0xCE)
-///   - third populated, fourth not -> [`ModalKind::Confirm`]     (0x120)
-///   - fourth populated            -> [`ModalKind::ThreeButton`] (0x121)
-///
-/// (The three target modals only ever populate up to `third`, so the
-/// fourth-without-third ordering is not produced in practice; the cascade follows
-/// the "fourth slot present -> 0x121" rule regardless.)
-pub fn message_box_kind(third_slot: Option<&str>, fourth_slot: Option<&str>) -> ModalKind {
-    if slot_populated(fourth_slot) {
-        ModalKind::ThreeButton
-    } else if slot_populated(third_slot) {
-        ModalKind::Confirm
-    } else {
-        ModalKind::BodyOk
-    }
-}
-
-/// A CSF slot is populated iff present with a non-null first char (the native test
-/// is a non-null pointer AND `*ptr != 0`).
-fn slot_populated(slot: Option<&str>) -> bool {
-    matches!(slot, Some(s) if !s.is_empty() && !s.starts_with('\0'))
-}
-
-/// Result value the message-box helper leaves when no button resolved the dialog
-/// (the caller inits the result slot to -1 before pumping it).
-pub const MESSAGE_BOX_DISMISSED: i32 = -1;
-
-/// A resolved message-box outcome.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModalResult {
-    /// Count-rule message-box family (0xCE/0x120/0x121): 0=OK, 1=Cancel/ESC,
-    /// 2=third button, -1=dismissed (slot left at its init value).
-    MessageBox(i32),
-}
-
-impl ModalResult {
-    /// Map a resolved message-box control id to its native result, or `None` for a
-    /// control that produces no result (the body static). OK(`0x5AE`)->0,
-    /// Cancel(control 2)->1, third(`0x5AF`)->2.
-    pub fn from_message_box_control(control: u16) -> Option<ModalResult> {
-        let code = match control {
-            control::OK => 0,
-            control::CANCEL => 1,
-            control::THIRD => 2,
-            _ => return None,
-        };
-        Some(ModalResult::MessageBox(code))
-    }
-}
-
-/// Saved-game loading's F0 progress dialog: original 559D60 -> 623230 supplies
-/// TXT_LOADING and a null Cancel caption. F0's resource keeps 5C0 hidden; this
-/// ordinary saved-load presentation has no interactive controls.
-/// Source: tools/storage_oracle/saved_game_layout.py and its native corpus.
-pub fn build_saved_game_loading_descriptor() -> DialogDescriptor {
-    let mut body = modal_control(
-        control::BODY_STATIC,
-        ControlKind::Static,
-        RectPx::new(40, 40, 220, 50),
-    );
-    body.csf_key = Some("TXT_LOADING");
-    let mut cancel = modal_control(
-        control::PROGRESS_CANCEL,
-        ControlKind::Button,
-        RectPx::new(207, 175, 83, 15),
-    );
-    cancel.visible = false;
-    DialogDescriptor {
-        id: DialogId(0xF0),
-        controls: vec![cancel, body],
-        bg_kind: BgKind::ModalShp,
-        slide_eligible: false,
-        reposition_policy: RepositionPolicy::ModalCentered,
-    }
-}
-
-/// Whether the kind's template includes the Cancel (control 2) button.
-fn includes_cancel(kind: ModalKind) -> bool {
-    matches!(kind, ModalKind::Confirm | ModalKind::ThreeButton)
-}
-
-/// Whether the kind's template includes the third owner-draw button (`0x5AF`).
-fn includes_third(kind: ModalKind) -> bool {
-    matches!(kind, ModalKind::ThreeButton)
-}
-
-/// One message-box control descriptor. The `anchor` rule is unused — message-box
-/// modals carry [`RepositionPolicy::ModalCentered`], which the layout pass resolves
-/// by a plain DLU->pixel conversion with no re-anchor — but the field is required,
-/// so a benign value is stored.
-fn modal_control(id: u16, kind: ControlKind, dlu_rect: RectPx) -> ControlDescriptor {
-    ControlDescriptor::new(id, kind, dlu_rect, AnchorRule::RightAnchor)
-}
-
-// --- Centered message-box modal layout (screen-relative pixel rects) ---
-
-/// Pixel client size of the 300x200 DLU modal templates (F0/CE/120). The common
-/// 775BC0 resize adds one to the converted extents. Executed F0 controls and
-/// 777060/777080 centering: tools/storage_oracle/saved_game_layout.json.
+/// Pixel client size of the 300x200 DLU box templates (F0/CE/120/C4). The
+/// common 775BC0 resize adds one to the converted extents. Executed F0
+/// controls and 777060/777080 centering: tools/storage_oracle/saved_game_layout.json.
 pub const MESSAGE_BOX_W: i32 = 451;
 pub const MESSAGE_BOX_H: i32 = 326;
 
-/// Screen-relative pixel rects for the quit-confirm (0x120) modal: the centered
-/// PUDLGBGN panel plus its body static and its two buttons. Rects mirror the
-/// RT_DIALOG `0x120` template (`0x00C00A68`): body static `0x5B0`
-/// (40,40,220,50), OK `0x5AE` (207,155,83,15) directly above Cancel control 2
-/// (207,175,83,15). (OK at y 135 belongs to the three-button `0x121`, whose
-/// third button `0x5AF` takes y 155.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct QuitConfirmLayout {
-    pub dialog: RectPx,
-    pub body: RectPx,
-    pub ok: RectPx,
-    pub cancel: RectPx,
-}
-
-/// Screen-relative pixel rects for a one-button message box: `0xCE` (the
-/// skirmish validation and saved-map notices) and `0xD0` (the Westwood Online
-/// `TXT_APIMISSING` box) share this geometry: body static `0x5B0`
-/// (40,40,220,50) and OK (207,175,83,15). F0's hidden Cancel shares that lower
-/// control rect and its visible body uses the same projection. A menu's box
-/// centres on [`menu_popup_area`], one over a match on the match's frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BodyOkLayout {
-    pub dialog: RectPx,
-    pub body: RectPx,
-    pub ok: RectPx,
-}
-
-/// One pixel projection of the existing count-rule RT_DIALOG layouts.
-/// ShellMessageBox__Run5D3490 selects CE/120/121; the button rows are
-/// respectively175,155,135 DLU (the parsed template rectangles above).
-#[derive(Debug, Clone, Copy)]
-pub struct MessageBoxLayout {
-    pub dialog: RectPx,
-    pub body: RectPx,
-    pub ok: RectPx,
-    pub cancel: Option<RectPx>,
-    pub third: Option<RectPx>,
-    pub scale: geom::ShellScale,
-}
-
-vera20k_gui::scaled_rects!(MessageBoxLayout { [scale] dialog, body, ok, cancel, third });
-
-/// Where a box's button sits on its template: a count-rule slot (OK `0x5AE`,
-/// Cancel control 2, the third `0x5AF`) or one of the wait box `0xC4`'s.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoxSlot {
-    Ok,
-    Cancel,
-    Third,
-    Disconnect,
-    CheckStatus,
-}
-
-/// The template a box lays out on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoxForm {
-    /// ShellMessageBox__Run (0x005D3490)'s count-rule CE/120/121, and the
-    /// WOL D0/126 (0x005E2CD0) that share their rects.
-    Message,
-    /// VERA's Esc menu: the three-button template, its buttons in a footer.
-    Footer,
-    /// The WOL wait box `0xC4` (0x00792BE0): centred text over two buttons.
-    Wait,
-}
+/// The wait box's template, whose body is centred (`0x5B2` is SS_CENTER).
+pub const WAIT_TEMPLATE: &str = "0xC4";
+/// VERA's Esc menu: the three-button template, its buttons in a footer.
+pub const FOOTER_TEMPLATE: &str = "0x121.Footer";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxButton {
     pub id: u16,
-    pub slot: BoxSlot,
     pub caption: String,
     pub enabled: bool,
 }
 
 /// One front-end message or wait box as it paints and takes the pointer: its
-/// dialog resource, body, buttons (in paint order) and template. Its owner
-/// keeps what the answer leads to; the painter and the pointer are shared.
+/// dialog resource, body and buttons. A box answers with the index of the
+/// button pressed; its owner keeps what the answer leads to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellBox {
     pub dialog: DialogId,
     pub body: String,
     pub buttons: Vec<BoxButton>,
-    pub form: BoxForm,
+    /// Its `shell_layout.ini` section; without one, the count-rule template
+    /// for its number of buttons (`0xCE`, `0x120`, `0x121`).
+    pub template: Option<&'static str>,
     /// Centred on the whole window as gamemd centres it (a box over a
-    /// match), not on [`menu_popup_area`].
+    /// match), not on [`menu_area`].
     pub on_screen: bool,
 }
 
-/// A box's rects: its window, the body (centred for the wait box) and each
-/// button by id.
+/// A box's rects: its window, the body and each button by id, in the box's
+/// order.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxParts {
     pub dialog: RectPx,
     pub body: RectPx,
     pub centred: bool,
-    pub buttons: Vec<(u16, RectPx)>,
+    pub buttons: RectTable,
     pub scale: geom::ShellScale,
 }
 
+vera20k_gui::scaled_rects!(BoxParts { [scale] dialog, body, buttons; keep: centred });
+
 impl BoxParts {
     pub fn rect_of(&self, id: u16) -> Option<RectPx> {
+        self.buttons.get(id)
+    }
+
+    /// The `index`th button's rect (the first is OK).
+    pub fn button(&self, index: usize) -> RectPx {
         self.buttons
             .iter()
-            .find(|(b, _)| *b == id)
-            .map(|(_, rect)| *rect)
+            .nth(index)
+            .map_or_else(RectPx::default, |(_, rect)| rect)
     }
+}
+
+/// Section `template` in the box centred on `area`, in authored pixels.
+fn parts_in(template: &str, area: RectPx) -> BoxParts {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let rects = super::layout_data::in_box(template, dialog);
+    let mut rects = rects.iter();
+    BoxParts {
+        dialog,
+        body: rects.next().map_or(dialog, |(_, rect)| rect),
+        centred: template == WAIT_TEMPLATE,
+        buttons: rects.collect(),
+        scale: geom::ShellScale::RETAIL,
+    }
+}
+
+/// Section `template`'s box on a menu at the shell's mapping.
+pub fn template_on(template: &str, width: i32, height: i32, scale: geom::ShellScale) -> BoxParts {
+    geom::layout_on(scale, width, height, |w, h| {
+        parts_in(template, menu_area(w, h))
+    })
+}
+
+fn count_rule(buttons: usize) -> &'static str {
+    ["0xCE", "0x120", "0x121"][buttons.clamp(1, 3) - 1]
+}
+
+/// ShellMessageBox__Run's box with `buttons` buttons (OK, Cancel, third)
+/// centred on `area` at retail size: [`menu_area`] for a menu's, the
+/// match's frame for one over a match.
+pub fn message_box_parts(buttons: usize, area: RectPx) -> BoxParts {
+    parts_in(count_rule(buttons), area)
+}
+
+/// A menu's count-rule box (see [`message_box_parts`]).
+pub fn menu_message_box(buttons: usize, width: i32, height: i32) -> BoxParts {
+    message_box_parts(buttons, menu_area(width, height))
 }
 
 impl ShellBox {
@@ -273,24 +120,28 @@ impl ShellBox {
             dialog,
             body: body.into(),
             buttons: Vec::new(),
-            form: BoxForm::Message,
+            template: None,
             on_screen: false,
         }
     }
 
     /// ShellMessageBox__Run's box: `body` over OK, and Cancel and the third
-    /// button where the count rule ([`message_box_kind`]) gives them.
+    /// button where its count rule gives them: a third caption makes
+    /// `0x121`, a Cancel one `0x120`, else `0xCE` (an empty caption is absent).
     pub fn message(body: String, ok: String, cancel: String, third: String) -> Self {
-        let kind = message_box_kind(Some(&cancel), Some(&third));
-        let mut shell_box =
-            Self::new(DialogId(kind.template_id()), body).button(control::OK, BoxSlot::Ok, ok);
-        if includes_third(kind) {
-            shell_box = shell_box.button(control::THIRD, BoxSlot::Third, third);
-        }
-        if includes_cancel(kind) {
-            shell_box = shell_box.button(control::CANCEL, BoxSlot::Cancel, cancel);
-        }
-        shell_box
+        let count = if !third.is_empty() {
+            3
+        } else {
+            1 + usize::from(!cancel.is_empty())
+        };
+        let ids = [control::OK, control::CANCEL, control::THIRD];
+        let dialog = DialogId([0xCE, 0x120, 0x121][count - 1]);
+        let captions = [ok, cancel, third].into_iter().take(count);
+        ids.into_iter()
+            .zip(captions)
+            .fold(Self::new(dialog, body), |b, (id, caption)| {
+                b.button(id, caption)
+            })
     }
 
     /// [`Self::message`] with OK only (`0xCE`).
@@ -298,10 +149,9 @@ impl ShellBox {
         Self::message(body, ok, String::new(), String::new())
     }
 
-    pub fn button(mut self, id: u16, slot: BoxSlot, caption: impl Into<String>) -> Self {
+    pub fn button(mut self, id: u16, caption: impl Into<String>) -> Self {
         self.buttons.push(BoxButton {
             id,
-            slot,
             caption: caption.into(),
             enabled: true,
         });
@@ -316,8 +166,8 @@ impl ShellBox {
         self
     }
 
-    pub fn form(mut self, form: BoxForm) -> Self {
-        self.form = form;
+    pub fn template(mut self, template: &'static str) -> Self {
+        self.template = Some(template);
         self
     }
 
@@ -326,22 +176,9 @@ impl ShellBox {
         self
     }
 
-    /// The count-rule template its slots fill.
-    pub fn kind(&self) -> ModalKind {
-        let has = |slot| self.buttons.iter().any(|b| b.slot == slot);
-        if has(BoxSlot::Third) {
-            ModalKind::ThreeButton
-        } else if has(BoxSlot::Cancel) {
-            ModalKind::Confirm
-        } else {
-            ModalKind::BodyOk
-        }
-    }
-
-    /// Button `id`'s caption.
-    pub fn caption(&self, id: u16) -> Option<&str> {
-        let button = self.buttons.iter().find(|b| b.id == id)?;
-        Some(&button.caption)
+    /// The answer button `id` gives: its index.
+    pub fn answer(&self, id: u16) -> Option<usize> {
+        self.buttons.iter().position(|b| b.id == id)
     }
 
     /// Renames button `id`.
@@ -351,43 +188,18 @@ impl ShellBox {
         }
     }
 
-    /// The message template's rects on the shell's mapping.
-    pub fn layout(&self, width: i32, height: i32, scale: geom::ShellScale) -> MessageBoxLayout {
-        match (self.form, self.on_screen) {
-            (BoxForm::Footer, _) => esc_menu_box_layout_on(width, height, scale),
-            (_, true) => message_box_layout_in(self.kind(), RectPx::new(0, 0, width, height)),
-            _ => message_box_layout_on(self.kind(), width, height, scale),
-        }
-    }
-
+    /// Its rects on the shell's mapping: retail 640/800 layouts keep their
+    /// native size, a larger window the 800x600 box scaled with the page.
     pub fn parts(&self, width: i32, height: i32, scale: geom::ShellScale) -> BoxParts {
-        // By `BoxSlot`, in its order.
-        let (dialog, body, scale, slots) = match self.form {
-            BoxForm::Wait => {
-                let l = wait_box_layout_on(width, height, scale);
-                let slots = [None, None, None, Some(l.disconnect), Some(l.check_status)];
-                (l.dialog, l.text, scale, slots)
-            }
-            _ => {
-                let l = self.layout(width, height, scale);
-                (
-                    l.dialog,
-                    l.body,
-                    l.scale,
-                    [Some(l.ok), l.cancel, l.third, None, None],
-                )
-            }
+        let template = self.template.unwrap_or(count_rule(self.buttons.len()));
+        let mut parts = match self.on_screen {
+            true => parts_in(template, RectPx::new(0, 0, width, height)),
+            false => template_on(template, width, height, scale),
         };
-        let buttons = self.buttons.iter();
-        BoxParts {
-            dialog,
-            body,
-            centred: self.form == BoxForm::Wait,
-            buttons: buttons
-                .filter_map(|b| Some((b.id, slots[b.slot as usize]?)))
-                .collect(),
-            scale,
-        }
+        // The template's buttons by position, under this box's ids.
+        let rects: Vec<RectPx> = parts.buttons.iter().map(|(_, rect)| rect).collect();
+        parts.buttons = self.buttons.iter().map(|b| b.id).zip(rects).collect();
+        parts
     }
 
     /// Its buttons as nodes under its dialog root.
@@ -402,133 +214,6 @@ impl ShellBox {
         self.buttons.iter().map(|b| (b.id, b.enabled)).collect()
     }
 }
-
-pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
-    message_box_layout_in(kind, menu_popup_area(screen_w, screen_h))
-}
-
-fn message_box_layout_in(kind: ModalKind, area: RectPx) -> MessageBoxLayout {
-    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
-    let ok_y = match kind {
-        ModalKind::BodyOk => 175,
-        ModalKind::Confirm => 155,
-        ModalKind::ThreeButton => 135,
-    };
-    MessageBoxLayout {
-        dialog,
-        body: modal_child(dialog, geom::child_window(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::child_window(207, ok_y, 83, 15)),
-        cancel: includes_cancel(kind)
-            .then(|| modal_child(dialog, geom::child_window(207, 175, 83, 15))),
-        third: includes_third(kind)
-            .then(|| modal_child(dialog, geom::child_window(207, 155, 83, 15))),
-        scale: geom::ShellScale::RETAIL,
-    }
-}
-
-/// Keep ShellMessageBox__Run (0x005D3490)'s template in authored pixels,
-/// centred like every menu box ([`menu_popup_area`]), then apply the front-end
-/// shell's uniform mapping. Retail 640/800 layouts keep their native size.
-/// Source: gamemd.exe RT_DIALOG CE/120/121 and tools/storage_oracle/saved_game_layout.json.
-pub fn message_box_layout_on(
-    kind: ModalKind,
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> MessageBoxLayout {
-    geom::layout_on(scale, screen_w, screen_h, |w, h| {
-        message_box_layout(kind, w, h)
-    })
-}
-
-/// VERA's front-end Esc menu places Options, Exit Game and Cancel in a
-/// footer, keeping the three-button template's button size and results.
-pub(crate) fn esc_menu_box_layout_on(
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> MessageBoxLayout {
-    geom::layout_on(scale, screen_w, screen_h, |w, h| {
-        let mut layout = message_box_layout(ModalKind::ThreeButton, w, h);
-        let dialog = layout.dialog;
-        let button = layout.ok;
-        let inset = 24;
-        let y = dialog.y + dialog.h - inset - button.h;
-        let at = |x| RectPx::new(dialog.x + x, y, button.w, button.h);
-        layout.ok = at(inset);
-        layout.third = Some(at((dialog.w - button.w) / 2));
-        layout.cancel = Some(at(dialog.w - inset - button.w));
-        layout
-    })
-}
-
-pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
-    body_ok_layout_in(menu_popup_area(screen_w, screen_h))
-}
-
-/// The box centred on `area`: the match's frame for a box over a match.
-pub fn body_ok_layout_in(area: RectPx) -> BodyOkLayout {
-    let layout = message_box_layout_in(ModalKind::BodyOk, area);
-    BodyOkLayout {
-        dialog: layout.dialog,
-        body: layout.body,
-        ok: layout.ok,
-    }
-}
-
-/// Centre the panel on [`menu_popup_area`], then place each control at its
-/// dialog-relative DLU rect (no fullscreen re-anchor).
-pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
-    quit_confirm_layout_in(menu_popup_area(screen_w, screen_h))
-}
-
-/// The box centred on `area`: the match's frame for a box over a match.
-pub fn quit_confirm_layout_in(area: RectPx) -> QuitConfirmLayout {
-    let layout = message_box_layout_in(ModalKind::Confirm, area);
-    QuitConfirmLayout {
-        dialog: layout.dialog,
-        body: layout.body,
-        ok: layout.ok,
-        cancel: layout.cancel.expect("Confirm has Cancel"),
-    }
-}
-
-/// The Westwood Online wait box `0xC4` (300x200 DLU, compact popup centred
-/// like the message boxes): Disconnect `0x58D` (109,105,83,15), the
-/// centred text `0x5B2` (51,14,197,54), WOL Check Status `0x58E`
-/// (109,130,83,15) and the animation static `0x7A9` (68,163,165,20).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WaitBoxLayout {
-    pub dialog: RectPx,
-    pub text: RectPx,
-    pub disconnect: RectPx,
-    pub check_status: RectPx,
-    pub animation: RectPx,
-}
-
-pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
-    let dialog = menu_box(screen_w, screen_h);
-    WaitBoxLayout {
-        dialog,
-        text: modal_child(dialog, geom::child_window(51, 14, 197, 54)),
-        disconnect: modal_child(dialog, geom::child_window(109, 105, 83, 15)),
-        check_status: modal_child(dialog, geom::child_window(109, 130, 83, 15)),
-        animation: modal_child(dialog, geom::child_window(68, 163, 165, 20)),
-    }
-}
-
-/// WOL wait proc 0x00792CF0 uses the same shell mapping for art and hit rectangles.
-pub fn wait_box_layout_on(screen_w: i32, screen_h: i32, scale: geom::ShellScale) -> WaitBoxLayout {
-    geom::layout_on(scale, screen_w, screen_h, wait_box_layout)
-}
-
-vera20k_gui::scaled_rects!(WaitBoxLayout {
-    dialog,
-    text,
-    disconnect,
-    check_status,
-    animation
-});
 
 /// The Westwood Online Create Game popup `0xC3` (`0x0078DB70`), the same
 /// 451x326 centred box: executed screen rects (tools/storage_oracle/
@@ -660,7 +345,7 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
 
 /// The Create Game box on the lobby page's shell mapping: the retail
 /// placement at `scale`'s retail size, otherwise the 800x600 box scaled with
-/// the page, as [`message_box_layout_on`] does for message boxes.
+/// the page, as [`ShellBox::parts`] does.
 pub fn wol_create_game_layout_on(
     screen_w: i32,
     screen_h: i32,
@@ -848,46 +533,15 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     }
 }
 
-/// The channel password popup `0xE1` (`0x0078E030`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WolChannelPasswordLayout {
-    pub dialog: RectPx,
-    /// Static `GUI:ChannelPassword`, centred.
-    pub label: RectPx,
-    pub password: RectPx,
-    pub ok: RectPx,
-    pub cancel: RectPx,
+/// The channel password popup `0xE1` (`0x0078E030`) on the lobby page's
+/// shell mapping, as [`wol_create_game_layout_on`].
+pub fn wol_channel_password_layout_on(w: i32, h: i32, scale: geom::ShellScale) -> WolPageLayout {
+    geom::layout_on(scale, w, h, |w, h| {
+        let dialog = menu_box(w, h);
+        let rects = super::layout_data::in_box("0xE1", dialog);
+        WolPageLayout { dialog, rects }
+    })
 }
-
-pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPasswordLayout {
-    let dialog = menu_box(screen_w, screen_h);
-    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
-    WolChannelPasswordLayout {
-        dialog,
-        label: child(49, 76, 200, 12),
-        password: new_edit_window(child(48, 94, 202, 12)),
-        ok: child(49, 163, 83, 15),
-        cancel: child(157, 163, 83, 15),
-    }
-}
-
-/// The channel password popup on the lobby page's shell mapping, as
-/// [`wol_create_game_layout_on`].
-pub fn wol_channel_password_layout_on(
-    screen_w: i32,
-    screen_h: i32,
-    scale: geom::ShellScale,
-) -> WolChannelPasswordLayout {
-    geom::layout_on(scale, screen_w, screen_h, wol_channel_password_layout)
-}
-
-vera20k_gui::scaled_rects!(WolChannelPasswordLayout {
-    dialog,
-    label,
-    password,
-    ok,
-    cancel
-});
 
 /// The WOL page dialog `0xCF` (proc `0x0078D120`), the same 451x326
 /// centred box: executed screen rects (tools/storage_oracle/wol_shell.json).
@@ -897,6 +551,8 @@ pub struct WolPageLayout {
     pub rects: super::layout::RectTable,
 }
 
+vera20k_gui::scaled_rects!(WolPageLayout { dialog, rects });
+
 impl WolPageLayout {
     /// Where `0xCF`'s control `id` sits.
     pub fn rect_of(&self, id: u16) -> Option<RectPx> {
@@ -905,7 +561,7 @@ impl WolPageLayout {
 }
 
 pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
-    wol_page_layout_in(menu_popup_area(screen_w, screen_h))
+    wol_page_layout_in(menu_area(screen_w, screen_h))
 }
 
 /// The box centred on `area`: the match's frame for the in-match page.
@@ -919,7 +575,7 @@ pub fn wol_page_layout_in(area: RectPx) -> WolPageLayout {
 pub type WolPageReceivedLayout = WolPageLayout;
 
 pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceivedLayout {
-    wol_page_received_layout_in(menu_popup_area(screen_w, screen_h))
+    wol_page_received_layout_in(menu_area(screen_w, screen_h))
 }
 
 /// The box centred on `area`: the match's frame for the in-match page.
@@ -966,7 +622,7 @@ pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
 /// the whole screen, at 800x600 84 px right of the page's content and against
 /// its button column. Boxes over a match keep that centring on the match's
 /// frame (the `_in` layouts).
-fn menu_popup_area(screen_w: i32, screen_h: i32) -> RectPx {
+pub fn menu_area(screen_w: i32, screen_h: i32) -> RectPx {
     let content = |w, h| RectPx::new(0, 0, w - geom::RIGHT_PANEL_WIDTH, h - geom::LOWER_STRIP_H);
     let scale = geom::ShellScale::for_window(screen_w, screen_h);
     if scale.is_retail() {
@@ -976,13 +632,9 @@ fn menu_popup_area(screen_w: i32, screen_h: i32) -> RectPx {
     }
 }
 
-/// Where a menu's 451x326 box sits: centred on [`menu_popup_area`].
+/// Where a menu's 451x326 box sits: centred on [`menu_area`].
 pub fn menu_box(screen_w: i32, screen_h: i32) -> RectPx {
-    centered_modal_dialog_in(
-        menu_popup_area(screen_w, screen_h),
-        MESSAGE_BOX_W,
-        MESSAGE_BOX_H,
-    )
+    centered_modal_dialog_in(menu_area(screen_w, screen_h), MESSAGE_BOX_W, MESSAGE_BOX_H)
 }
 
 /// Centre a panel of `(w, h)` on `area` (`((area - size) + 1) / 2`, clamped >= 0).
@@ -1005,91 +657,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn template_id_table() {
-        assert_eq!(ModalKind::BodyOk.template_id(), 0x00CE);
-        assert_eq!(ModalKind::Confirm.template_id(), 0x0120);
-        assert_eq!(ModalKind::ThreeButton.template_id(), 0x0121);
-    }
-
-    #[test]
-    fn count_rule_selects_template_by_populated_optional_slots() {
-        // The three reachable rows of the native count-rule table.
-        assert_eq!(message_box_kind(None, None), ModalKind::BodyOk);
-        assert_eq!(message_box_kind(Some("\0Cancel"), None), ModalKind::BodyOk);
-        assert_eq!(message_box_kind(Some("Cancel"), None), ModalKind::Confirm);
+    fn count_rule_picks_the_template_and_answers_by_button() {
+        let s = |t: &str| t.to_owned();
+        let notice = ShellBox::message(s("b"), s("OK"), s(""), s(""));
+        assert_eq!((notice.dialog, notice.buttons.len()), (DialogId(0xCE), 1));
+        let quit = ShellBox::message(s("b"), s("OK"), s("Cancel"), s(""));
         assert_eq!(
-            message_box_kind(Some("Cancel"), Some("Maybe")),
-            ModalKind::ThreeButton
+            (quit.dialog, quit.answer(control::CANCEL)),
+            (DialogId(0x120), Some(1))
         );
-    }
-
-    #[test]
-    fn count_rule_treats_empty_string_as_absent() {
-        // Native populated-test is a non-null pointer AND a non-null first char, so
-        // an empty caption counts as an unpopulated slot.
-        assert_eq!(message_box_kind(Some(""), None), ModalKind::BodyOk);
+        let three = ShellBox::message(s("b"), s("OK"), s(""), s("Maybe"));
         assert_eq!(
-            message_box_kind(Some("Cancel"), Some("")),
-            ModalKind::Confirm
+            (three.dialog, three.answer(control::THIRD)),
+            (DialogId(0x121), Some(2))
         );
-        assert_eq!(message_box_kind(Some(""), Some("")), ModalKind::BodyOk);
-    }
-
-    #[test]
-    fn message_box_control_result_mapping() {
-        // OK 0x5AE -> 0, Cancel control 2 -> 1, third 0x5AF -> 2, body -> none.
+        // At 800x600 the 0x120 box centres on the page left of the button
+        // column, OK directly above Cancel.
+        let parts = quit.parts(800, 600, geom::ShellScale::RETAIL);
         assert_eq!(
-            ModalResult::from_message_box_control(control::OK),
-            Some(ModalResult::MessageBox(0))
+            parts.dialog,
+            RectPx::new(91, 121, MESSAGE_BOX_W, MESSAGE_BOX_H)
         );
+        let child = |x, y, w, h| geom::child_window(x, y, w, h).translate(91, 121);
+        assert_eq!(parts.body, child(40, 40, 220, 50));
+        assert_eq!(parts.button(0), child(207, 155, 83, 15));
         assert_eq!(
-            ModalResult::from_message_box_control(control::CANCEL),
-            Some(ModalResult::MessageBox(1))
+            parts.rect_of(control::CANCEL),
+            Some(child(207, 175, 83, 15))
         );
-        assert_eq!(
-            ModalResult::from_message_box_control(control::THIRD),
-            Some(ModalResult::MessageBox(2))
-        );
-        assert_eq!(
-            ModalResult::from_message_box_control(control::BODY_STATIC),
-            None
-        );
-    }
-
-    #[test]
-    fn quit_confirm_layout_centers_panel_and_places_controls() {
-        let l = quit_confirm_layout(800, 600);
-        // Panel centred on the page left of the button column (round-half-up).
-        assert_eq!(l.dialog, RectPx::new(91, 121, MESSAGE_BOX_W, MESSAGE_BOX_H));
-        // Controls at the dialog origin + their template DLU rects.
-        let child = |dx, dy, dw, dh| {
-            let local = geom::child_window(dx, dy, dw, dh);
-            RectPx::new(l.dialog.x + local.x, l.dialog.y + local.y, local.w, local.h)
-        };
-        assert_eq!(l.body, child(40, 40, 220, 50));
-        assert_eq!(l.ok, child(207, 155, 83, 15));
-        assert_eq!(l.cancel, child(207, 175, 83, 15));
-        // OK sits directly above Cancel (DLU y=155 vs 175), both right-aligned at
-        // DLU x=207, as in the 0x120 template and the retail capture.
-        assert!(l.ok.y < l.cancel.y);
-        assert_eq!(l.ok.x, l.cancel.x);
     }
 
     #[test]
     fn esc_menu_actions_share_a_balanced_footer() {
+        let menu = ShellBox::message("".into(), "O".into(), "C".into(), "E".into())
+            .template(FOOTER_TEMPLATE);
         for (w, h) in [(640, 480), (1024, 800)] {
             let scale = geom::ShellScale::for_window(w, h);
-            let layout = esc_menu_box_layout_on(w, h, scale);
-            let panel = scale.base_rect(layout.dialog);
-            let [options, exit, cancel] =
-                [layout.ok, layout.third.unwrap(), layout.cancel.unwrap()]
-                    .map(|r| scale.base_rect(r));
-            let (base_w, base_h) = if scale.is_retail() {
-                (w, h)
-            } else {
-                (800, 600)
-            };
-            let native = message_box_layout(ModalKind::ThreeButton, base_w, base_h).ok;
+            let parts = menu.parts(w, h, scale);
+            let panel = scale.base_rect(parts.dialog);
+            let [options, cancel, exit] = [0, 1, 2].map(|i| scale.base_rect(parts.button(i)));
+            let native = message_box_parts(3, panel).button(0);
             for button in [options, exit, cancel] {
                 assert_eq!(
                     (button.y, button.w, button.h),
@@ -1116,15 +723,16 @@ mod tests {
         // scaled content, and a scaled box where the 800x600 one sits.
         assert_eq!(menu_box(1600, 1200), RectPx::new(407, 405, 451, 326));
         let scale = geom::ShellScale::from_screen(1600, 1200);
+        let notice = ShellBox::notice("b".into(), "OK".into());
         assert_eq!(
-            message_box_layout_on(ModalKind::BodyOk, 1600, 1200, scale).dialog,
+            notice.parts(1600, 1200, scale).dialog,
             scale.scale_rect(menu_box(800, 600))
         );
-        // A box over a match keeps gamemd's centring on the frame.
-        assert_eq!(
-            quit_confirm_layout_in(RectPx::new(0, 0, 800, 600)).dialog,
-            RectPx::new(175, 137, 451, 326)
-        );
+        // A box over a match keeps gamemd's centring on the frame; a screen
+        // smaller than the box clamps its corner to the origin.
+        let frame = |w, h| message_box_parts(2, RectPx::new(0, 0, w, h)).dialog;
+        assert_eq!(frame(800, 600), RectPx::new(175, 137, 451, 326));
+        assert_eq!(frame(320, 240), RectPx::new(0, 0, 451, 326));
     }
 
     /// `rect` from `dialog`'s corner. The executed tables centre each box on
@@ -1133,8 +741,10 @@ mod tests {
         rect.translate(-dialog.x, -dialog.y)
     }
 
+    /// Saved-game loading's F0 shares the CE box: its body and hidden Cancel
+    /// sit at CE's body and OK.
     #[test]
-    fn modal_resource_and_shared_projection_match_original_saved_progress() {
+    fn boxes_match_the_executed_saved_progress_box() {
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/storage_oracle/saved_game_layout.json",
         ))
@@ -1143,51 +753,16 @@ mod tests {
             let values: [i32; 4] = serde_json::from_value(value.clone()).unwrap();
             RectPx::new(values[0], values[1], values[2], values[3])
         };
-        let descriptor = build_saved_game_loading_descriptor();
-        let resource = &corpus["progress_resource"];
-        assert_eq!(
-            descriptor.id.0 as u64,
-            resource["dialog_id"].as_u64().unwrap()
-        );
-        for (control, native) in descriptor
-            .controls
-            .iter()
-            .zip(resource["controls"].as_array().unwrap())
-        {
-            assert_eq!(control.id as u64, native["control_id"].as_u64().unwrap());
-            assert_eq!(control.dlu_rect, rect(&native["dlu_rect"]));
-            assert_eq!(
-                control.visible,
-                native["style"].as_u64().unwrap() & 0x1000_0000 != 0
-            );
-        }
         for row in corpus["progress_geometry"].as_array().unwrap() {
             let width = row["input"]["width"].as_i64().unwrap() as i32;
             let height = row["input"]["height"].as_i64().unwrap() as i32;
-            // gamemd's centring on the screen, which boxes over a match keep.
-            let screen = RectPx::new(0, 0, width, height);
-            let projected = body_ok_layout_in(screen);
-            let quit = quit_confirm_layout_in(screen);
-            assert_eq!(projected.dialog, rect(&row["dialog_rect"]));
-            assert_eq!(quit.dialog, projected.dialog);
-            let children = crate::ui::shell::layout::layout_pass(&descriptor, width, height);
+            let notice = message_box_parts(1, RectPx::new(0, 0, width, height));
+            assert_eq!(notice.dialog, rect(&row["dialog_rect"]));
             for native in row["children"].as_array().unwrap() {
-                let id = native["id"].as_u64().unwrap() as u16;
                 let expected = rect(&native["rect"]);
-                let child = children.iter().find(|child| child.id == id).unwrap();
-                assert_eq!(
-                    child.rect.translate(projected.dialog.x, projected.dialog.y),
-                    expected
-                );
-                match id {
-                    control::BODY_STATIC => {
-                        assert_eq!(projected.body, expected);
-                        assert_eq!(quit.body, expected);
-                    }
-                    control::PROGRESS_CANCEL => {
-                        assert_eq!(projected.ok, expected);
-                        assert_eq!(quit.cancel, expected);
-                    }
+                match native["id"].as_u64().unwrap() {
+                    0x5B0 => assert_eq!(notice.body, expected),
+                    0x5C0 => assert_eq!(notice.button(0), expected),
                     _ => panic!("unexpected F0 child"),
                 }
             }
@@ -1195,28 +770,19 @@ mod tests {
     }
 
     #[test]
-    fn quit_confirm_layout_clamps_on_tiny_screen() {
-        // A screen smaller than the panel clamps the origin to >= 0 (no negative rect).
-        let l = quit_confirm_layout(320, 240);
-        assert_eq!(l.dialog, RectPx::new(0, 0, MESSAGE_BOX_W, MESSAGE_BOX_H));
-    }
-
-    #[test]
     fn wol_wait_box_matches_the_template_arithmetic_at_800x600() {
         // RT_DIALOG 0xC4 through the shared 300x200 DLU modal policy (the
         // relayout tool's MulDiv; the popup was not executed).
-        let wait = wait_box_layout(800, 600);
+        let wait = ShellBox::new(DialogId(0xC4), "")
+            .button(0x58D, "D")
+            .button(0x58E, "C")
+            .template(WAIT_TEMPLATE)
+            .parts(800, 600, geom::ShellScale::RETAIL);
         assert_eq!(wait.dialog, RectPx::new(91, 121, 451, 326));
-        assert_eq!(wait.disconnect, RectPx::new(255, 292, 126, 25));
-        assert_eq!(wait.text, RectPx::new(168, 144, 297, 89));
-        assert_eq!(wait.check_status, RectPx::new(255, 332, 126, 25));
-        assert_eq!(wait.animation, RectPx::new(193, 386, 249, 34));
-        // The Yes/No box 0x126 (0x005E2CD0 style 4): its template places
-        // body 0x5B0 (40,40,220,50), Yes 6 (207,155,83,15) and No 7
-        // (207,175,83,15), the rects of 0x120's body, OK and Cancel.
-        let yes_no = message_box_layout_on(ModalKind::Confirm, 800, 600, geom::ShellScale::RETAIL);
-        let quit = quit_confirm_layout(800, 600);
-        assert_eq!((yes_no.ok, yes_no.cancel), (quit.ok, Some(quit.cancel)));
+        assert_eq!(wait.button(0), RectPx::new(255, 292, 126, 25));
+        assert_eq!(wait.body, RectPx::new(168, 144, 297, 89));
+        assert_eq!(wait.button(1), RectPx::new(255, 332, 126, 25));
+        assert!(wait.centred);
     }
 
     #[test]
@@ -1235,7 +801,8 @@ mod tests {
                 let (w, h) = size.split_once('x').unwrap();
                 let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
                 let create = wol_create_game_layout(w, h, false);
-                let password = wol_channel_password_layout(w, h);
+                let password = wol_channel_password_layout_on(w, h, geom::ShellScale::RETAIL);
+                let at = |id| password.rect_of(id).unwrap();
                 let native_dialog = rect(&case["dialog"]);
                 assert_eq!(create.dialog.w, native_dialog.w, "{key} {size}");
                 assert_eq!(create.dialog.h, native_dialog.h, "{key} {size}");
@@ -1251,10 +818,10 @@ mod tests {
                         ("0xC3", "0x1") => create.ok,
                         ("0xC3", "0x2") => create.cancel,
                         ("0xC3", "0x695") => create.status,
-                        (_, "0xFFFF") => password.label,
-                        (_, "0x72C") => password.password,
-                        (_, "0x1") => password.ok,
-                        (_, "0x2") => password.cancel,
+                        (_, "0xFFFF") => at(0x7FD0),
+                        (_, "0x72C") => at(0x72C),
+                        (_, "0x1") => at(1),
+                        (_, "0x2") => at(2),
                         other => panic!("{other:?}"),
                     };
                     if id == "0x72C" {
@@ -1283,11 +850,9 @@ mod tests {
             scaled.name.unwrap().1,
             scale.scale_rect(retail.name.unwrap().1)
         );
-        let password = wol_channel_password_layout_on(1600, 1200, scale);
-        assert_eq!(
-            password.ok,
-            scale.scale_rect(wol_channel_password_layout(800, 600).ok)
-        );
+        let password = |w, h, scale| wol_channel_password_layout_on(w, h, scale).rect_of(1);
+        let retail = password(800, 600, geom::ShellScale::RETAIL).unwrap();
+        assert_eq!(password(1600, 1200, scale), Some(scale.scale_rect(retail)));
         // A window the page keeps at retail size keeps the retail placement.
         assert_eq!(
             wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
@@ -1297,7 +862,7 @@ mod tests {
 
     #[test]
     fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
-        let screen = menu_popup_area(800, 600);
+        let screen = menu_area(800, 600);
         let create = wol_account_form_layout(screen, 4);
         let frame = create.dialog;
         let (_, first) = create.fields[0];

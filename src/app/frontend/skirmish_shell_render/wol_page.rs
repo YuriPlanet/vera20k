@@ -109,8 +109,8 @@ fn paint_surrender_box(state: &AppState) -> WolLobbyPaint {
     )];
     let mut buttons = Vec::new();
     for (rect, button, key) in [
-        (layout.ok, Ok, "TXT_OK"),
-        (layout.cancel, Cancel, "TXT_CANCEL"),
+        (layout.button(0), Ok, "TXT_OK"),
+        (layout.button(1), Cancel, "TXT_CANCEL"),
     ] {
         let pressed = crate::app::input::surrender::pressed(state, button);
         let at = crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);

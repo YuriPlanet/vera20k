@@ -137,7 +137,7 @@ pub(crate) fn render_pause_menu_shell(
             // The page's sidebar buttons, Options or the Options column, are the
             // menu's own buttons, on this side's art; the page that shows is
             // lit. A page's own buttons are drawn with its controls below.
-            for &(id, rect) in page_layout.buttons.iter().filter(|(id, _)| !id.on_page()) {
+            for (id, rect) in page_layout.buttons().filter(|(id, _)| !id.on_page()) {
                 let look = PauseMenuButtonState {
                     pressed: dialog.shell_button_pressed(id),
                     highlighted: dialog.shell_button_selected(id),
@@ -145,29 +145,14 @@ pub(crate) fn render_pause_menu_shell(
                 };
                 paint.owner_button(rect, &dialog.shell_button_label(id), look);
             }
-            // None only if switching YR Original Style failed to rebuild the
-            // control art; the menu's own buttons still work without it.
-            if let Some(chrome_atlas) = state.frontend.skirmish_shell_chrome.as_ref() {
-                let widgets = launcher_options::paint_widgets(state, page_layout, dialog, &[]);
-                paint.controls.extend(widgets.controls);
-                paint.texts.extend(widgets.texts);
-                paint.controls.extend(launcher_options::build_controls(
-                    chrome_atlas,
-                    page_layout,
-                    dialog,
-                    false,
-                ));
-                paint.texts.extend(launcher_options::build_text(
-                    font,
-                    page_layout,
-                    dialog,
-                    None,
-                    false,
-                ));
-                // The open list paints after every control and text.
-                (overlay.controls, overlay.texts) =
-                    launcher_options::build_open_list(font, chrome_atlas, page_layout, dialog);
-            }
+            // Nothing without the control art (switching YR Original Style
+            // failed to rebuild it); the menu's own buttons still work. The
+            // open list paints after every control and text.
+            let widgets =
+                launcher_options::paint_page(state, dialog, page_layout.scale, false, &[]);
+            paint.controls.extend(widgets.controls);
+            paint.texts.extend(widgets.texts);
+            (overlay.controls, overlay.texts) = (widgets.popup, widgets.popup_texts);
         }
         if let (Some(internet), Some(chrome_atlas)) = (
             layout.internet,

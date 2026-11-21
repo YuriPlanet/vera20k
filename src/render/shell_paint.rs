@@ -1035,7 +1035,12 @@ mod tests {
 
     #[test]
     fn campaign_score_emblem_uses_kind4_centering_and_clips_to_static_client() {
-        let layout = crate::ui::campaign_score_shell::CampaignScoreLayout::compute_layout(800, 600);
+        let layout = crate::ui::campaign_score_shell::CampaignScoreLayout::compute(
+            Default::default(),
+            800,
+            600,
+            0,
+        );
         let window = layout
             .control_rect(crate::ui::campaign_score_shell::SCORE_ART_REGION_STATIC)
             .expect("campaign score art static");

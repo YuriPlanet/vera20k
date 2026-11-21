@@ -424,7 +424,7 @@ impl CooperativeRun {
                     "BC6 Quit opened another campaign score dialog"
                 );
                 if !MoviesCapture::slide_settled(state, ShellSlideKind::CampaignEnd)
-                    || !page.reveals_terminal()
+                    || !page.statics.is_terminal()
                 {
                     return Ok(());
                 }
@@ -434,8 +434,8 @@ impl CooperativeRun {
                     "0xBC7 opened while BC6 or the match was still open"
                 );
                 self.campaign_end = Some(json!({"render_frame":frame,
-                    "campaign":page.static_text(CAMPAIGN_END_NAME),
-                    "statics":page.statics().iter().map(|text| json!({"id":format!("{:#x}",text.id),"text":text.text(),"rgb":text.rgb})).collect::<Vec<_>>(),
+                    "campaign":page.statics.text(CAMPAIGN_END_NAME),
+                    "statics":page.statics.0.iter().map(|text| json!({"id":format!("{:#x}",text.id),"text":text.text(),"rgb":text.rgb})).collect::<Vec<_>>(),
                     "cells":page.cells().iter().map(|cell| json!({"id":format!("{:#x}",cell.id),"text":cell.text,"rgb":cell.rgb})).collect::<Vec<_>>()}));
                 if self.ending
                     != (CoopEnding::CampaignEnd {
@@ -452,7 +452,8 @@ impl CooperativeRun {
                     let fills = crate::app::frontend::shell_layout::fills_window(state);
                     page.layout(width, height, fills)
                 };
-                set_window_pointer_to_rect_center(state, page_layout.continue_button);
+                let continue_button = page_layout.control_rect(page.dialog.continue_button());
+                set_window_pointer_to_rect_center(state, continue_button.unwrap_or_default());
                 App::handle_campaign_score_mouse(state, None);
                 App::handle_campaign_score_mouse(state, Some(true));
                 App::handle_campaign_score_mouse(state, Some(false));

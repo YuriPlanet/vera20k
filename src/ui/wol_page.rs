@@ -21,6 +21,7 @@ use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::page;
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
+use crate::ui::wol_chat::trim_line_end;
 
 pub(crate) const PAGE_DIALOG: DialogId = DialogId(0x00CF);
 pub(crate) const RECEIVED_DIALOG: DialogId = DialogId(0x011E);
@@ -515,7 +516,7 @@ impl WolPageReceived {
                     Prop::Text,
                     Value::Text(reply.display_text()),
                 );
-                (!trim_line_ends(&reply.units).is_empty())
+                (!trim_line_end(&reply.units).is_empty())
                     .then(|| self.activate(c, SEND))
                     .flatten()
             }
@@ -546,21 +547,12 @@ impl WolPageReceived {
                 set_enabled(c, RECEIVED_DIALOG, SEND, false);
                 (!name.is_empty() && !text.is_empty()).then(|| WolPageReceivedAction::Send {
                     name,
-                    text: trim_line_ends(&text).to_vec(),
+                    text: trim_line_end(&text).to_vec(),
                 })
             }
             _ => None,
         }
     }
-}
-
-/// TrimRight with `"\n\r"` (`0x00831D9C`).
-fn trim_line_ends(units: &[u16]) -> &[u16] {
-    let end = units
-        .iter()
-        .rposition(|unit| !matches!(unit, 10 | 13))
-        .map_or(0, |index| index + 1);
-    &units[..end]
 }
 
 #[cfg(all(test, tests_ui))]

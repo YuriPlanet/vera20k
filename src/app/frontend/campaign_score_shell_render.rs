@@ -17,15 +17,12 @@ use crate::app::frontend::menu_page_render::{
 };
 use crate::app::frontend::shell_pass::TexturedDraw;
 use crate::render::shell_paint::{
-    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
+    self, DIALOG_BACKGROUND_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel,
 };
-use crate::render::shell_text::ShellAlign;
-use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::campaign_score_shell::{CampaignScoreDialog, SCORE_ART_REGION_STATIC};
-use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, hovered_id};
-
-const SHELL_TEXT: [u8; 3] = [255, 255, 0];
-const HIGHLIGHT: [u8; 3] = [255, 255, 255];
+use crate::ui::campaign_score_shell::{
+    CampaignScoreDialog, SCORE_ART_REGION_STATIC, STATUS_HELP_STATIC,
+};
+use crate::ui::shell::menu_page::hovered_id;
 
 /// Paint campaign dialog `0x103` or `0xBC7`. It needs the shared shell chrome,
 /// but no Skirmish score art: each template has its own static controls.
@@ -101,7 +98,6 @@ pub(crate) fn render_campaign_score_page(
     let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
         .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(state))
         .flatten();
-    let continue_id = dialog.continue_button();
     let controller = &state.frontend.shell_controller;
     let active = controller.top_id() == Some(dialog.id());
     let hovered = (children && active)
@@ -120,27 +116,15 @@ pub(crate) fn render_campaign_score_page(
         .as_mut()
         .expect("checked before render");
     if children {
-        campaign_page.set_status_help(&status, now);
-        for static_text in campaign_page.statics_mut() {
-            let Some(window) = static_text.paint(now) else {
-                continue;
-            };
-            let Some(rect) = layout.control_rect(static_text.id) else {
-                continue;
-            };
-            labels.push(PaintLabel {
-                text: static_text.text().to_owned().into(),
-                rect,
-                align: static_align(dialog, static_text.id),
-                rgb: static_text.rgb.map_or(SHELL_TEXT_RGB_ENABLED, rgb_f32),
-                path_a_reveal: Some(PathAReveal {
-                    count: window.count,
-                    range: window.range,
-                    base_rgb: static_text.rgb.unwrap_or(SHELL_TEXT),
-                    highlight_rgb: HIGHLIGHT,
-                }),
-            });
-        }
+        let statics = &mut campaign_page.statics;
+        statics.set_text(STATUS_HELP_STATIC, &status, now);
+        let rect_of = |id| layout.control_rect(id);
+        crate::app::frontend::score_shell_render::score_static_labels(
+            statics,
+            now,
+            rect_of,
+            &mut labels,
+        );
         // `0xBC7`'s score cells paint whole in their row colour.
         for cell in campaign_page.cells() {
             let Some(rect) = layout.control_rect(cell.id) else {
@@ -149,8 +133,8 @@ pub(crate) fn render_campaign_score_page(
             labels.push(PaintLabel {
                 text: cell.text.clone().into(),
                 rect,
-                align: static_align(dialog, cell.id),
-                rgb: rgb_f32(cell.rgb),
+                align: cell.align,
+                rgb: cell.rgb.map(|channel| f32::from(channel) / 255.0),
                 path_a_reveal: None,
             });
         }
@@ -159,21 +143,6 @@ pub(crate) fn render_campaign_score_page(
     // The family compositor paints the right panel, the monitor, the column
     // or Continue with its caption; the heading and status line are this
     // dialog's own statics.
-    let page = MenuPageLayout {
-        scale: layout.scale,
-        screen: layout.screen,
-        movie_base: crate::ui::main_menu_shell::MainMenuMovieBase::Ra2tsL,
-        movie: Default::default(),
-        title: layout.title,
-        warning_monitor: layout.warning_monitor,
-        status_help: layout.status_help,
-        buttons: vec![MenuPageButtonRect {
-            id: continue_id,
-            rect: layout.continue_button,
-        }],
-        right_panel: layout.right_panel,
-        lower_strip: layout.lower_strip,
-    };
     let panel = PanelState {
         leaving,
         // The slide engine paints the whole right-panel column; the steady
@@ -183,8 +152,11 @@ pub(crate) fn render_campaign_score_page(
         ..PanelState::default()
     };
     let title = dialog.page().title_key;
-    let mut frame =
-        FamilyFrame::new("Campaign Score Shell", &page, panel, title).on(state, dialog.id(), &tree);
+    let mut frame = FamilyFrame::new("Campaign Score Shell", &layout.page, panel, title).on(
+        state,
+        dialog.id(),
+        &tree,
+    );
     frame.labels = labels;
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
@@ -233,7 +205,7 @@ pub(crate) fn render_campaign_score_page(
                 strip.frames.get(frame_index).copied(),
                 layout.control_rect(SCORE_ART_REGION_STATIC),
             )
-            && let Some(sprite) = shell_paint::paint_kind4_static(entry, window, layout.scale)
+            && let Some(sprite) = shell_paint::paint_kind4_static(entry, window, layout.page.scale)
         {
             frame.over_panel_art.push(TexturedDraw {
                 texture: &strip.texture,
@@ -245,17 +217,4 @@ pub(crate) fn render_campaign_score_page(
     }
     encode_family_page(state, encoder, destination, frame);
     Ok(true)
-}
-
-/// The low two bits of Win32 STATIC style select left, centre or right.
-fn static_align(dialog: CampaignScoreDialog, id: u16) -> ShellAlign {
-    match dialog.control(id).map(|control| control.native_style & 0x3) {
-        Some(1) => ShellAlign::H_CENTER,
-        Some(2) => ShellAlign::H_RIGHT,
-        _ => ShellAlign::NONE,
-    }
-}
-
-fn rgb_f32(rgb: [u8; 3]) -> [f32; 3] {
-    rgb.map(|channel| f32::from(channel) / 255.0)
 }

@@ -355,11 +355,12 @@ impl WolCapture {
             self.hover_settle(state);
             return Ok(());
         }
-        let ok = crate::ui::shell::modal::body_ok_layout(
+        let ok = crate::ui::shell::modal::menu_message_box(
+            1,
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         )
-        .ok;
+        .button(0);
         welcome_click(state, ok);
         let requests = self.requests(state, frame)?;
         ensure!(

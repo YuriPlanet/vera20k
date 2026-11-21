@@ -27,15 +27,45 @@ use crate::render::shell_paint::{
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::score_shell::{CONTINUE_BUTTON, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreAlign};
-use crate::ui::shell::geom::{centred_in_window, dialog_origin};
+use crate::ui::score_shell::{
+    BAND_IDS, CONTINUE_BUTTON, NEXT_PAGE, PREVIOUS_PAGE, SCORE_PAGE, ScoreStatics,
+};
+use crate::ui::shell::geom::{RectPx, centred_in_window, dialog_origin};
 use crate::ui::shell::menu_page;
+use crate::util::time::Instant;
 
 /// The shaded part of the art sits over the art.
 const SHADE_DEPTH: f32 = PARENT_BACKGROUND_DEPTH - 0.00001;
 
-/// The Path-A highlight every kind-1 static trails.
-const HIGHLIGHT: [u8; 3] = [255, 255, 255];
+/// A score dialog's kind-1 statics (`0x108`, `0x103`, `0xBC7`) as Path-A
+/// labels at `rect_of`'s windows: each in its `0x498` colour, else the
+/// shell's yellow, trailing the white highlight; hidden until its reveal
+/// starts.
+pub(crate) fn score_static_labels(
+    statics: &mut ScoreStatics,
+    now: Instant,
+    rect_of: impl Fn(u16) -> Option<RectPx>,
+    labels: &mut Vec<PaintLabel<'static>>,
+) {
+    for text in &mut statics.0 {
+        let (Some(window), Some(rect)) = (text.paint(now), rect_of(text.id)) else {
+            continue;
+        };
+        let base = text.rgb.unwrap_or([255, 255, 0]);
+        labels.push(PaintLabel {
+            text: text.text().to_owned().into(),
+            rect,
+            align: text.align,
+            rgb: base.map(|channel| f32::from(channel) / 255.0),
+            path_a_reveal: Some(PathAReveal {
+                count: window.count,
+                range: window.range,
+                base_rgb: base,
+                highlight_rgb: [255, 255, 255],
+            }),
+        });
+    }
+}
 
 /// The heading `0x694` the proc sets (`0x005C9BEC..0x005C9C34`).
 pub(crate) fn score_title_text(state: &AppState) -> String {
@@ -94,36 +124,12 @@ pub(crate) fn render_score_page(
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
     }
-    let now = crate::util::time::Instant::now();
-    let page = state
-        .frontend
-        .score_page
-        .as_mut()
-        .expect("checked before render");
-    for text in page.table_mut().iter_mut().filter(|_| !leaving) {
-        let Some(window) = text.paint(now) else {
-            continue;
-        };
-        let base = text.rgb.unwrap_or([255, 255, 0]);
-        labels.push(PaintLabel {
-            text: text.text().to_owned().into(),
-            // The statics carry the template windows `0x0060B950` keeps;
-            // on a stretched page they map onto the window with the table.
-            rect: scale.scale_rect(text.window),
-            align: match text.align {
-                ScoreAlign::Left => ShellAlign::NONE,
-                ScoreAlign::Right => ShellAlign::H_RIGHT,
-            },
-            rgb: base.map(|channel| f32::from(channel) / 255.0),
-            path_a_reveal: Some(PathAReveal {
-                count: window.count,
-                range: window.range,
-                base_rgb: base,
-                highlight_rgb: HIGHLIGHT,
-            }),
-        });
+    // The statics carry the template windows `0x0060B950` keeps; on a
+    // stretched page they map onto the window with the table.
+    if let Some(page) = state.frontend.score_page.as_mut().filter(|_| !leaving) {
+        let rect_of = |id| layout.table.get(id);
+        score_static_labels(&mut page.statics, Instant::now(), rect_of, &mut labels);
     }
-
     let page = state
         .frontend
         .score_page
@@ -159,8 +165,8 @@ pub(crate) fn render_score_page(
         }
     }
     if !leaving {
-        let rows = page.visible_row_count();
-        match (art.background_shaded, layout.table.shaded_rect(rows, scale)) {
+        let rows = page.visible_range().len();
+        match (art.background_shaded, layout.shaded_rect(rows)) {
             (Some(shaded), Some(rect)) if scale.is_retail() => {
                 push_entry_crop(&mut art_sprites, shaded, origin, rect, SHADE_DEPTH)
             }
@@ -174,12 +180,12 @@ pub(crate) fn render_score_page(
         // count (`0x005C9D82..0x005C9DD1`, `0x005C9E4C..0x005C9E7A`). The bar
         // image is centred by its authored window and stretched with it.
         let bands = 2 + rows;
-        for (window, bar) in layout.table.bands.iter().zip(&art.bars).take(bands) {
-            let Some(bar) = *bar else {
+        for (id, bar) in BAND_IDS.into_iter().zip(&art.bars).take(bands) {
+            let (Some(bar), Some(window)) = (*bar, layout.table.get(id)) else {
                 continue;
             };
             let (w, h) = bar.native_size();
-            let (x, y) = centred_in_window(scale.base_rect(*window), w, h);
+            let (x, y) = centred_in_window(scale.base_rect(window), w, h);
             push_entry_scaled(&mut art_sprites, bar, x, y, scale, STATIC_IMAGE_DEPTH);
         }
     }

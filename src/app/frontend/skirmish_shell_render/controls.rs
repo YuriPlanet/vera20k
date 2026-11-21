@@ -1175,23 +1175,23 @@ mod tests {
             (1600, 900),
             (3440, 1440),
         ] {
-            let skirmish = compute_layout(width, height).trackbars;
+            let skirmish = compute_layout(width, height);
             let players = compute_random_map_setup_layout(width, height).control_rects[5];
             let mut windows = vec![
-                (true, skirmish.game_speed),
-                (true, skirmish.credits),
-                (true, skirmish.unit_count),
+                (true, skirmish.static_rect(0x529)),
+                (true, skirmish.static_rect(0x511)),
+                (true, skirmish.static_rect(0x50C)),
                 (true, players),
             ];
             // 640x480 fits Options to the window, so its rects map back first.
             for category in crate::ui::main_menu_dialogs::options::Category::ALL {
                 let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
-                windows.extend(
-                    layout
-                        .trackbars
-                        .iter()
-                        .map(|&(id, rect)| (id.plaque_reserve() > 0, layout.scale.base_rect(rect))),
-                );
+                windows.extend(layout.settings().filter_map(|(setting, rect)| match setting {
+                    crate::ui::main_menu_dialogs::options::Setting::Slider(id) => {
+                        Some((id.plaque_reserve() > 0, layout.scale.base_rect(rect)))
+                    }
+                    _ => None,
+                }));
             }
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(

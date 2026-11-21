@@ -9,7 +9,7 @@
 use crate::util::time::Instant;
 
 use super::{App, AppState};
-use crate::app::frontend::state::{ModFilesBox, ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::frontend::state::{ModFilesBox, ShellMessageBoxPurpose};
 use crate::app::mod_files::{Against, Checked, PageCheck, Step};
 use crate::app::shell_route::ShellRoute;
 use crate::ui::mods_shell::{self, ModsLayout};
@@ -199,10 +199,8 @@ impl App {
         }
         Self::open_shell_message_box(
             state,
-            ShellMessageBox {
-                shell_box: ShellBox::message(text, confirm, cancel, String::new()),
-                purpose: ShellMessageBoxPurpose::ModFiles(which),
-            },
+            ShellBox::message(text, confirm, cancel, String::new()),
+            ShellMessageBoxPurpose::ModFiles(which),
         );
     }
 
@@ -427,18 +425,16 @@ impl App {
         Self::update_mods_list(state, selected, |_, (showing, _)| showing);
         Self::open_shell_message_box(
             state,
-            ShellMessageBox {
-                shell_box: ShellBox::message(
-                    crate::i18n::tr_fill(
-                        "VERA:ModMade",
-                        &[("mod", &made.folder), ("files", &made.copied.join(", "))],
-                    ),
-                    crate::i18n::tr("VERA:ModOpenItsFolder"),
-                    crate::i18n::tr("VERA:Close"),
-                    String::new(),
+            ShellBox::message(
+                crate::i18n::tr_fill(
+                    "VERA:ModMade",
+                    &[("mod", &made.folder), ("files", &made.copied.join(", "))],
                 ),
-                purpose: ShellMessageBoxPurpose::ModMade(made.dir),
-            },
+                crate::i18n::tr("VERA:ModOpenItsFolder"),
+                crate::i18n::tr("VERA:Close"),
+                String::new(),
+            ),
+            ShellMessageBoxPurpose::ModMade(made.dir),
         );
     }
 
@@ -482,15 +478,13 @@ impl App {
         };
         Self::open_shell_message_box(
             state,
-            ShellMessageBox {
-                shell_box: ShellBox::message(
-                    title,
-                    crate::i18n::tr("VERA:ModRestart"),
-                    crate::i18n::tr("VERA:Cancel"),
-                    String::new(),
-                ),
-                purpose: ShellMessageBoxPurpose::ModRestart(folder),
-            },
+            ShellBox::message(
+                title,
+                crate::i18n::tr("VERA:ModRestart"),
+                crate::i18n::tr("VERA:Cancel"),
+                String::new(),
+            ),
+            ShellMessageBoxPurpose::ModRestart(folder),
         );
     }
 

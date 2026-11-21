@@ -13,18 +13,18 @@ mod statics;
 pub(crate) use statics::SkirmishStatics;
 
 pub use layout::{
-    AdvancedField, CHOOSE_MAP_MODAL_H, CHOOSE_MAP_MODAL_W, CHOOSE_MAP_TITLE_KEY,
+    AdvancedField, CHOOSE_MAP_AUTHOR, CHOOSE_MAP_TITLE_KEY,
     COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H,
     COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H,
     COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics,
     RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH, RandomMapSetupControl,
     RandomMapSetupLayout, RectPx, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT, SavedSeedLayout,
-    SavedSeedMode, ShellControlId, SkirmishCheckboxId, SkirmishCheckboxRect,
+    SavedSeedMode, SkirmishCheckboxId,
     SkirmishRowRects, SkirmishShellLayout, GAME_TYPE_STATIC, MAP_LABEL_STATIC, TITLE_STATIC,
-    SkirmishTrackbarId, SkirmishTrackbarRects, checkbox_icon_rect,
+    SkirmishTrackbarId, checkbox_icon_rect,
     checkbox_text_rect, combo_arrow_hit_rect, combo_arrow_rect, combo_dropdown_row_rect,
     combo_face_rect, combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
-    compute_fixed_800_layout, compute_layout, compute_layout_for_rows, compute_layout_on,
+    compute_layout, compute_layout_for_rows, compute_layout_on,
     compute_random_map_setup_layout, compute_saved_seed_layout, compute_setups_layout,
     player_name_edit_client_rect, player_name_edit_text_rect, random_map_setup_dropdown_rect,
 };

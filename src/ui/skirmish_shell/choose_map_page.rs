@@ -36,7 +36,7 @@ const HEADINGS: [(u16, &str, &str); 3] = [
     (0x7132, "GUI:GameMap", "Game Map"),
 ];
 /// VERA: the selected map's author under the preview.
-const AUTHOR: u16 = 0x7133;
+const AUTHOR: u16 = super::CHOOSE_MAP_AUTHOR;
 const BUTTONS: [(u16, ChooseMapModalButton); 4] = [
     (0x6C5, ChooseMapModalButton::UseMap0x6c5),
     (0x5C0, ChooseMapModalButton::Cancel0x5c0),
@@ -44,15 +44,6 @@ const BUTTONS: [(u16, ChooseMapModalButton); 4] = [
     // VERA's own button takes an id gamemd's dialog has none of.
     (0x7120, ChooseMapModalButton::Favorite),
 ];
-
-fn button_rect(layout: &ChooseMapModalLayout, button: ChooseMapModalButton) -> RectPx {
-    match button {
-        ChooseMapModalButton::UseMap0x6c5 => layout.use_map_button,
-        ChooseMapModalButton::Cancel0x5c0 => layout.cancel_button,
-        ChooseMapModalButton::CreateRandomMap0x583 => layout.create_random_map_button,
-        ChooseMapModalButton::Favorite => layout.favorite_button,
-    }
-}
 
 fn button_of(id: u16) -> Option<ChooseMapModalButton> {
     BUTTONS
@@ -127,18 +118,10 @@ pub fn sync_page(
     let root = controller.root_in(DIALOG)?;
     let gui = controller.gui_mut();
     page::ensure_built(gui, root, spec);
-    page::sync_rects(gui, root, |id| {
-        Some(match id {
-            MODE_LIST => surface(layout.mode_list),
-            MAP_LIST => surface(layout.map_list),
-            PREVIEW => layout.preview,
-            STATUS_HELP => layout.status_help,
-            0x7130 => layout.select_engagement,
-            0x7131 => layout.game_type_heading,
-            0x7132 => layout.game_map_heading,
-            AUTHOR => layout.author,
-            _ => button_rect(layout, button_of(id)?),
-        })
+    page::sync_rects(gui, root, |id| match id {
+        MODE_LIST => Some(surface(layout.mode_list)),
+        MAP_LIST => Some(surface(layout.map_list)),
+        _ => layout.rects.get(id),
     });
     let selected = |row: Option<usize>| Value::Int(row.map_or(-1, |row| row as i32));
     for (id, window, rows, top, chosen) in [

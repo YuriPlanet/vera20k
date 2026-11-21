@@ -254,10 +254,16 @@ pub(crate) fn paint_wol_lobby_children(
     }
 
     let ping_header = layout.control_rect(SORT_PING);
-    for (visible, row) in ui
-        .game_rows
-        .iter()
-        .skip(game_top)
+    let (texts, icons) = (&mut paint.texts, &mut paint.icons);
+    let mut put = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
+        texts.push(text(value, rect, align, rgb))
+    };
+    let mut icon = |file: &str, rect: RectPx, x: i32| {
+        if let Some(art) = art {
+            push_icon(icons, art, file, rect, x, scale);
+        }
+    };
+    for (visible, row) in (ui.game_rows.iter().skip(game_top))
         .take(games.visible_rows)
         .enumerate()
     {
@@ -285,32 +291,22 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
-        paint.texts.push(text(
-            &row.text,
-            if modern {
-                cell(rect, name_x, name_w.max(1))
-            } else {
-                cell(rect, GAME_NAME_X, GAME_NAME_W)
-            },
-            ShellAlign::V_CENTER,
-            rgb,
-        ));
+        let name = match modern {
+            true => cell(rect, name_x, name_w.max(1)),
+            false => cell(rect, GAME_NAME_X, GAME_NAME_W),
+        };
+        put(&row.text, name, ShellAlign::V_CENTER, rgb);
         if let Some(tag) = tag {
-            paint.texts.push(text(
-                tag,
-                cell(rect, name_end - tag_w, tag_w.max(1)),
-                ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
-                rgb,
-            ));
+            let at = cell(rect, name_end - tag_w, tag_w.max(1));
+            put(tag, at, ShellAlign::H_RIGHT | ShellAlign::V_CENTER, rgb);
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
         // modern list centres it under its Ping header instead of starting
         // it at the retail column, left of the header's caption. A match to
         // watch has no ping.
-        let ping = if row.ping == -1 {
-            "???".to_owned()
-        } else {
-            row.ping.to_string()
+        let ping = match row.ping {
+            -1 => "???".to_owned(),
+            ping => ping.to_string(),
         };
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
@@ -320,49 +316,24 @@ pub(crate) fn paint_wol_lobby_children(
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
         if !row.watch {
-            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
+            put(&ping, ping_rect, ping_align, rgb);
         }
         if modern {
-            if row.keyed
-                && let Some(art) = art
-            {
-                push_icon(
-                    &mut paint.icons,
-                    art,
-                    "wolpriv.pcx",
-                    rect,
-                    GAME_TYPE_X,
-                    scale,
-                );
-            }
-        } else if let Some(art) = art {
-            push_icon(
-                &mut paint.icons,
-                art,
-                row.kind.file(),
-                rect,
-                GAME_TYPE_X,
-                scale,
-            );
             if row.keyed {
-                push_icon(
-                    &mut paint.icons,
-                    art,
-                    "wolpriv.pcx",
-                    rect,
-                    GAME_PASSWORD_X,
-                    scale,
-                );
+                icon("wolpriv.pcx", rect, GAME_TYPE_X);
             }
-            if let Some(file) = row.limit_icon {
-                push_icon(&mut paint.icons, art, file, rect, GAME_LIMIT_X, scale);
-            }
+            continue;
+        }
+        icon(row.kind.file(), rect, GAME_TYPE_X);
+        if row.keyed {
+            icon("wolpriv.pcx", rect, GAME_PASSWORD_X);
+        }
+        if let Some(file) = row.limit_icon {
+            icon(file, rect, GAME_LIMIT_X);
         }
     }
-    for (visible, row) in ui
-        .player_rows
-        .iter()
-        .skip(player_top)
+    let label = SHELL_LABEL_TEXT_RGB;
+    for (visible, row) in (ui.player_rows.iter().skip(player_top))
         .take(players.visible_rows)
         .enumerate()
     {
@@ -371,48 +342,36 @@ pub(crate) fn paint_wol_lobby_children(
         // cells, at its left, and every name as far right of it as the retail
         // list's, so names line up whether or not a row has a badge.
         if modern {
-            paint.texts.push(text(
-                &row.name,
-                cell(rect, 2 + PLAYER_NAME_X - PLAYER_BADGE_X, 0),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-            if let Some(art) = art
-                && let Some((file, _)) = row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X)
-            {
-                push_icon(&mut paint.icons, art, file, rect, 2, scale);
+            let at = cell(rect, 2 + PLAYER_NAME_X - PLAYER_BADGE_X, 0);
+            put(&row.name, at, ShellAlign::V_CENTER, label);
+            if let Some((file, _)) = row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X) {
+                icon(file, rect, 2);
             }
             continue;
         }
-        paint.texts.push(text(
-            &row.name,
-            cell(rect, PLAYER_NAME_X, PLAYER_NAME_W),
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
+        let name = cell(rect, PLAYER_NAME_X, PLAYER_NAME_W);
+        put(&row.name, name, ShellAlign::V_CENTER, label);
         if let Some((tag, _)) = &row.clan {
-            paint.texts.push(text(
+            put(
                 tag,
                 cell(rect, PLAYER_CLAN_X, 0),
                 ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
+                label,
+            );
         }
         if let Some(rank) = &row.rank {
-            paint.texts.push(text(
+            put(
                 rank,
                 cell(rect, PLAYER_RANK_X, 0),
                 ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
+                label,
+            );
         }
-        if let Some(art) = art {
-            if let Some((file, _)) = row.icon {
-                push_icon(&mut paint.icons, art, file, rect, PLAYER_ICON_X, scale);
-            }
-            for (file, x) in &row.score_icons {
-                push_icon(&mut paint.icons, art, file, rect, *x, scale);
-            }
+        if let Some((file, _)) = row.icon {
+            icon(file, rect, PLAYER_ICON_X);
+        }
+        for (file, x) in &row.score_icons {
+            icon(file, rect, *x);
         }
     }
     paint

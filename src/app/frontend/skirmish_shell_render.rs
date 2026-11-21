@@ -547,11 +547,13 @@ fn render_skirmish_shell_with_atlas(
             .batch_renderer
             .create_instance_buffer(&state.renderer.gpu, &[*instance])
     });
-    let marker_instances = if draw_start_marker_overlays {
-        build_start_marker_instances(atlas, &projected_start_positions, layout.scale)
-    } else {
-        Vec::new()
-    };
+    let mut marker_instances = Vec::new();
+    let mut marker_label_instances = Vec::new();
+    if draw_start_marker_overlays {
+        let (positions, scale) = (&projected_start_positions, layout.scale);
+        push_start_marker_sprites(&mut marker_instances, atlas, positions, scale, 0.00056);
+        push_start_marker_labels(&mut marker_label_instances, state, positions, scale, 0.00040);
+    }
     let marker_buffer = state
         .renderer
         .batch_renderer
@@ -692,11 +694,6 @@ fn render_skirmish_shell_with_atlas(
         let out = Some((&mut shell_draws, false));
         shell_box::push_skirmish_box(state, size, validation, validation_pressed, validation_look, None, out);
     }
-    let marker_label_instances = if draw_start_marker_overlays {
-        build_start_marker_label_instances(state, &projected_start_positions, layout.scale)
-    } else {
-        Vec::new()
-    };
     let marker_label_buffer = state
         .renderer
         .batch_renderer
@@ -764,29 +761,7 @@ fn render_skirmish_shell_with_atlas(
     // A game room's Choose Map is one of the online client's screens.
     let smooth_art = state.smooth_online_menus()
         && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Skirmish Shell"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view: target.color,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: target.depth,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
+    let mut pass = begin_shell_pass(encoder, target, "Skirmish Shell");
     state.renderer.batch_renderer.draw_chrome(
         &mut pass,
         &atlas.texture,
@@ -887,8 +862,17 @@ fn clear_shell_target(
     encoder: &mut wgpu::CommandEncoder,
     target: ShellRenderTarget<'_>,
 ) {
-    let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Skirmish Shell Clear"),
+    begin_shell_pass(encoder, target, "Skirmish Shell Clear");
+}
+
+/// A pass over the shell target, its colour and depth cleared.
+fn begin_shell_pass<'a>(
+    encoder: &'a mut wgpu::CommandEncoder,
+    target: ShellRenderTarget<'_>,
+    label: &str,
+) -> wgpu::RenderPass<'a> {
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
             view: target.color,
             depth_slice: None,
@@ -909,7 +893,7 @@ fn clear_shell_target(
         timestamp_writes: None,
         occlusion_query_set: None,
         multiview_mask: None,
-    });
+    })
 }
 
 fn paint_map_dialog_statics(
@@ -929,7 +913,7 @@ fn paint_map_dialog_statics(
 mod tests {
     use super::*;
     use crate::ui::shell::geom::ShellScale;
-    use crate::ui::skirmish_shell::{compute_fixed_800_layout, compute_layout};
+    use crate::ui::skirmish_shell::compute_layout;
 
     #[test]
     fn map_dialog_statics_keep_page_scale_and_clipping() {
@@ -1395,16 +1379,6 @@ mod tests {
     }
 
     #[test]
-    fn fixed_800_shell_uses_800_parent_background_when_centered() {
-        let layout = compute_fixed_800_layout(1024, 768);
-
-        assert_eq!(
-            generic_background_role(&layout),
-            GenericBackgroundRole::MnscrnlLarge
-        );
-    }
-
-    #[test]
     fn lower_strip_role_uses_only_verified_widths() {
         assert_eq!(
             lower_strip_role(&compute_layout(640, 480)),
@@ -1444,10 +1418,6 @@ mod tests {
         assert_eq!(
             lower_strip_rect(&compute_layout(1024, 768), large),
             RectPx::new(112, 652, 632, 32)
-        );
-        assert_eq!(
-            lower_strip_rect(&compute_fixed_800_layout(1280, 960), large),
-            RectPx::new(240, 748, 632, 32)
         );
     }
 
@@ -1738,7 +1708,6 @@ mod tests {
             start_marker_label_origin(120, 70, ShellScale::RETAIL),
             (118, 64)
         );
-        assert_eq!(start_marker_label_color(), SHELL_LABEL_TEXT_RGB);
     }
 
     #[test]
@@ -1817,8 +1786,9 @@ mod tests {
     #[test]
     fn button_text_rect_follows_owner_draw_caller_contract() {
         let rect = RectPx::new(644, 241, 156, 42);
-        let released = button_text_rect(rect, false, crate::ui::shell::geom::ShellScale::RETAIL);
-        let pressed = button_text_rect(rect, true, crate::ui::shell::geom::ShellScale::RETAIL);
+        let retail = crate::ui::shell::geom::ShellScale::RETAIL;
+        let released = super::text::button_label_rect_px(rect, false, retail);
+        let pressed = super::text::button_label_rect_px(rect, true, retail);
 
         assert_eq!(
             (released.x, released.y, released.w, released.h),

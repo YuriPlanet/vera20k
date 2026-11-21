@@ -1,15 +1,10 @@
 //! Dialog 0x102 shell layout recovered from gamemd.exe.
 
 use super::state::DropdownScrollbarPart;
-use crate::ui::shell::descriptor::{
-    AnchorRule, BACK_BUTTON, BUTTON, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR,
-};
 pub use crate::ui::shell::geom::{RectPx, RightPanelRects};
 use crate::ui::shell::geom::{
-    ScaledRects, ShellScale, center_offset, child_window, dialog_origin, dlu_rect,
-    right_panel_rects,
+    ScaledRects, ShellScale, child_window, dialog_origin, dlu_rect, right_panel_rects,
 };
-use crate::ui::shell::layout::Placer;
 use crate::ui::shell::layout_data;
 use vera20k_gui::scaled_rects;
 
@@ -17,7 +12,6 @@ pub const SHELL_BASE_W: i32 = 800;
 pub const SHELL_BASE_H: i32 = 600;
 pub const RIGHT_PANEL_WIDTH: i32 = crate::ui::shell::geom::RIGHT_PANEL_WIDTH;
 pub const SDBTNBKGD_H: i32 = crate::ui::shell::geom::RIGHT_PANEL_TILE_H;
-pub const SKIRMISH_CHECKBOX_COUNT: usize = 5;
 pub const CHECKBOX_ICON_W: i32 = 18;
 pub const CHECKBOX_ICON_H: i32 = 18;
 pub const CHECKBOX_TEXT_LEFT_OFFSET: i32 = 26;
@@ -75,8 +69,6 @@ pub fn combo_dropdown_row_rect(content: RectPx, scale: ShellScale, visible_row: 
 }
 pub const PLAYER_NAME_EDIT_CLIENT_INSET: i32 = 1;
 pub const PLAYER_NAME_EDIT_TEXT_LEFT_INSET: i32 = 2;
-pub const CHOOSE_MAP_MODAL_W: i32 = 533;
-pub const CHOOSE_MAP_MODAL_H: i32 = 369;
 // Random-map setup dialog 0x105. Same 533x369-DLU frame, font and background as
 // choose-map. Its right-column controls sit 2-3 DLU left of choose-map's in the
 // resource (and the preview 2 DLU right), but every right-column rule here is
@@ -99,38 +91,9 @@ const SETUP_ROWS: [(i32, i32, i32, i32); 6] = [
     (138, 138, 12, 103),
     (163, 162, 14, SETUP_TRACKBAR_H),
 ];
-/// Right-column button tops: Use Map, Load, Save, Delete, then VERA's
-/// Advanced/Basic toggle, Export Map, Fair Starts and Presets, each the
-/// column's next slot at the same 27-unit pitch.
-const SETUP_RIGHT_Y: [i32; 8] = [122, 149, 176, 203, 230, 257, 284, 311];
 /// VERA: the Advanced view's seven sliders, at the option rows' 24-unit pitch
 /// from the first row; the last ends above the progress widgets (217).
 const SETUP_ADVANCED_ROW_Y: [i32; 7] = [41, 65, 90, 114, 138, 163, 187];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellControlId {
-    StartGame0x617,
-    ChooseMap0x5aa,
-    Back0x5c0,
-    MapPreview0x468,
-    PlayerName0x6a0,
-    PlayerColor0x6a2,
-    AiColor0x522,
-    AiColor0x523,
-    AiColor0x524,
-    AiColor0x525,
-    AiColor0x526,
-    AiColor0x527,
-    AiColor0x528,
-    Flag0x6da,
-    Flag0x6db,
-    Flag0x6dc,
-    Flag0x6dd,
-    Flag0x6de,
-    Flag0x6df,
-    Flag0x6e0,
-    Flag0x6e1,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkirmishCheckboxId {
@@ -142,23 +105,10 @@ pub enum SkirmishCheckboxId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SkirmishCheckboxRect {
-    pub id: SkirmishCheckboxId,
-    pub rect: RectPx,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkirmishTrackbarId {
     GameSpeed0x529,
     Credits0x511,
     UnitCount0x50c,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SkirmishTrackbarRects {
-    pub game_speed: RectPx,
-    pub credits: RectPx,
-    pub unit_count: RectPx,
 }
 
 /// `0x102`'s statics in [`SkirmishShellLayout::statics`]: the heading, the
@@ -169,8 +119,11 @@ pub const TITLE_STATIC: u16 = 0x694;
 pub const GAME_TYPE_STATIC: u16 = 0x6EC;
 pub const MAP_LABEL_STATIC: u16 = 0x5A8;
 pub const HEADINGS: u16 = 0x7500;
-/// The first of the sliders' headings.
-const SLIDER_HEADINGS: u16 = HEADINGS + 5;
+/// The options under the player rows, which a longer list moves down: the
+/// option boxes, the sliders and the sliders' headings.
+const OPTIONS: [u16; 11] = [
+    0x54E, 0x693, 0x696, 0x69A, 0x69D, 0x529, 0x511, 0x50C, 0x7505, 0x7506, 0x7507,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishRowRects {
@@ -188,20 +141,10 @@ pub struct SkirmishShellLayout {
     pub scale: ShellScale,
     pub screen: RectPx,
     pub right_panel: RightPanelRects,
-    /// The statics without a field of their own ([`TITLE_STATIC`] and the
-    /// others), from `shell_layout.ini`'s `[0x102]`.
+    /// Every fixed control and static by resource id ([`TITLE_STATIC`],
+    /// the buttons, option boxes and sliders), from `shell_layout.ini`'s
+    /// `[0x102]`.
     pub statics: crate::ui::shell::layout::RectTable,
-    pub start_button: RectPx,
-    /// gamemd's Choose Map (`0x5AA`), one tile down where VERA's Game Options
-    /// takes its tile.
-    pub choose_map_button: RectPx,
-    /// VERA's Game Options ([`super::game_options`]), on gamemd's Choose Map
-    /// tile under Start Game.
-    pub game_options_button: RectPx,
-    /// VERA's Setups, the tile under Choose Map, which opens the page that
-    /// saves and loads named setups; gamemd's `0x102` has no such button.
-    pub setups_button: RectPx,
-    pub back_button: RectPx,
     pub map_preview: RectPx,
     pub player_name: RectPx,
     /// Every row slot the page can show; the first [`Self::shown_rows`] show.
@@ -214,8 +157,6 @@ pub struct SkirmishShellLayout {
     /// VERA's scrollbar for a map with more than eight starts: the list frame
     /// round it, beside the player rows ([`opponent_scrollbar_rect`]).
     pub opponent_scrollbar: RectPx,
-    pub trackbars: SkirmishTrackbarRects,
-    pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
     pub status_help: RectPx,
 }
 
@@ -472,25 +413,19 @@ pub struct ChooseMapModalLayout {
     /// framed like the list. `0x6B` has none; its list starts where the box
     /// does and is one row longer.
     pub map_search: RectPx,
-    pub use_map_button: RectPx,
-    pub cancel_button: RectPx,
-    pub create_random_map_button: RectPx,
-    /// VERA: the favorite button, in the right column's slot under Create
-    /// Random Map.
-    pub favorite_button: RectPx,
     pub title: RectPx,
-    pub select_engagement: RectPx,
-    pub game_type_heading: RectPx,
-    pub game_map_heading: RectPx,
     pub status_help: RectPx,
     pub preview: RectPx,
-    /// VERA: the selected map's author under the preview, two pixels above
-    /// where `0x102` shows its game type ([`game_type_rect`]), to sit closer
-    /// to the preview. `0x6B` has no such line.
-    pub author: RectPx,
+    /// The buttons and headings by id, from `shell_layout.ini`'s `[0x6B]`.
+    pub rects: crate::ui::shell::layout::RectTable,
 }
 
 impl ChooseMapModalLayout {
+    /// Control `id`'s rect ([`Self::rects`]).
+    pub fn rect(&self, id: u16) -> RectPx {
+        self.rects.get(id).unwrap_or_default()
+    }
+
     /// The width the chooser's background assets are selected by: they exist at
     /// 640 and 800, so a stretched chooser takes the 800 shape.
     pub fn authored_width(&self) -> i32 {
@@ -513,90 +448,29 @@ pub struct RandomMapSetupLayout {
     pub dialog: RectPx,
     pub label_rects: [RectPx; 6],
     pub control_rects: [RectPx; 6],
-    pub randomize: RectPx,
-    pub generate: RectPx,
-    pub seed_field: RectPx,
     pub title: RectPx,
     pub preview: RectPx,
-    pub use_map: RectPx,
-    pub load: RectPx,
-    pub save: RectPx,
-    pub delete: RectPx,
-    pub cancel: RectPx,
-    /// VERA: the Advanced/Basic toggle in the right column.
-    pub advanced: RectPx,
-    /// VERA: the Export Map button below the toggle.
-    pub export: RectPx,
-    /// VERA: the Fair Starts toggle in the right column.
-    pub fair_starts: RectPx,
-    /// VERA: the Presets button below it.
-    pub preset: RectPx,
     /// VERA: the Advanced view's labels and slider windows, by
     /// [`AdvancedField::row`].
     pub advanced_label_rects: [RectPx; 7],
     pub advanced_control_rects: [RectPx; 7],
     /// Status line `0x695` (the family static, template 303x12 DLU).
     pub status_help: RectPx,
-    pub progress_text: RectPx,
-    pub progress_bar: RectPx,
-    /// Ares' Urban Areas checkbox: `177, 192, 150, 14` in Ares' dialog 261
-    /// (RMGDialog.rc), which keeps every stock control's position. Drawn and
-    /// hit-tested only when Ares.dll is loaded (the game is read the Ares way).
-    pub urban_areas: RectPx,
+    /// The buttons, the progress text `0x6C6` and bar
+    /// ([`Self::PROGRESS_BAR`]) and Ares' Urban Areas box (`5000`, drawn and
+    /// hit-tested only when Ares.dll is loaded), from `shell_layout.ini`'s
+    /// `[0x105]`.
+    pub rects: crate::ui::shell::layout::RectTable,
 }
 
-const fn translate_checkbox(rect: SkirmishCheckboxRect, dx: i32, dy: i32) -> SkirmishCheckboxRect {
-    SkirmishCheckboxRect {
-        id: rect.id,
-        rect: rect.rect.translate(dx, dy),
-    }
-}
+impl RandomMapSetupLayout {
+    /// VERA's id for the progress bar, which the template leaves unnamed.
+    pub const PROGRESS_BAR: u16 = 0x7452;
 
-pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> SkirmishShellLayout {
-    layout.right_panel = layout.right_panel.translate(dx, dy);
-    layout.statics = layout
-        .statics
-        .iter()
-        .map(|(id, rect)| (id, rect.translate(dx, dy)))
-        .collect();
-    let rows = &mut layout.rows;
-    let rects = [
-        &mut layout.screen,
-        &mut layout.start_button,
-        &mut layout.choose_map_button,
-        &mut layout.game_options_button,
-        &mut layout.setups_button,
-        &mut layout.back_button,
-        &mut layout.map_preview,
-        &mut layout.player_name,
-        &mut layout.opponent_scrollbar,
-        &mut layout.trackbars.game_speed,
-        &mut layout.trackbars.credits,
-        &mut layout.trackbars.unit_count,
-        &mut layout.status_help,
-    ];
-    let columns = rows.ai_type_combos.iter_mut().chain(&mut rows.side_combos);
-    let columns = columns
-        .chain(&mut rows.start_combos)
-        .chain(&mut rows.team_combos);
-    let columns = columns
-        .chain(&mut layout.color_combos)
-        .chain(&mut layout.flags);
-    for rect in rects.into_iter().chain(columns) {
-        *rect = rect.translate(dx, dy);
+    /// Control `id`'s rect ([`Self::rects`]).
+    pub fn rect(&self, id: u16) -> RectPx {
+        self.rects.get(id).unwrap_or_default()
     }
-    for rect in &mut layout.checkboxes {
-        *rect = translate_checkbox(*rect, dx, dy);
-    }
-    layout
-}
-
-pub fn compute_fixed_800_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
-    translate_layout(
-        compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32),
-        center_offset(screen_w as i32, SHELL_BASE_W),
-        center_offset(screen_h as i32, SHELL_BASE_H),
-    )
 }
 
 /// The icon plate inside a checkbox. `scale` maps the control's own device rect
@@ -693,58 +567,27 @@ pub fn compute_layout_for_rows(
     player_rows: usize,
 ) -> SkirmishShellLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
-    let place = Placer::new(screen_w, screen_h);
-    let mut player_name = dlu_rect(38, 36, 100, 14);
-    player_name.x += 1;
-    player_name.w += 1;
     let rows = SkirmishRowRects {
         ai_type_combos: row_column(1, 39, 100, 74),
         side_combos: row_column(0, 191, 78, 74),
         start_combos: row_column(0, 324, 25, 73),
         team_combos: row_column(0, 364, 25, 73),
     };
-    // Not retail. VERA's Game Options takes gamemd's Choose Map tile, under
-    // Start Game, Choose Map moves one tile down and VERA's Setups takes the
-    // tile under it. Every panel has those two tiles free above Back, the
-    // six-tile one of the smallest window (640x480) too.
-    let game_options_button = place.at(BUTTON, 425, 176, 108, 23);
-    let choose_map_button = game_options_button.translate(0, SDBTNBKGD_H);
-    let checkbox = |id, x, y, w, h, dx| SkirmishCheckboxRect {
-        id,
-        rect: dlu_rect(x, y, w, h).translate(dx, 0),
-    };
-
+    let statics = layout_data::place("0x102", ShellScale::RETAIL, screen_w, screen_h);
+    let at = |id| statics.get(id).unwrap_or_default();
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         right_panel: right_panel_rects(screen_w, screen_h),
-        statics: layout_data::place("0x102", ShellScale::RETAIL, screen_w, screen_h),
-        start_button: place.at(BUTTON, 425, 149, 108, 23),
-        choose_map_button,
-        game_options_button,
-        setups_button: choose_map_button.translate(0, SDBTNBKGD_H),
-        back_button: place.rule(BACK_BUTTON),
-        map_preview: place.at(AnchorRule::RightAnchor, 429, 23, 96, 69),
-        player_name,
+        map_preview: at(0x468),
+        player_name: at(0x6A0),
+        status_help: at(0x695),
         opponent_scrollbar: opponent_scrollbar_rect(&rows, SKIRMISH_ROW_COUNT),
         rows,
         color_combos: row_column(0, 282, 29, 73),
         flags: row_column(0, 150, 32, 12),
         shown_rows: SKIRMISH_ROW_COUNT,
-        trackbars: SkirmishTrackbarRects {
-            game_speed: child_window(269, 176, 85, 13),
-            credits: child_window(269, 193, 85, 13),
-            // The fix-up pass `0x0060B950` lifts Unit Count one pixel.
-            unit_count: child_window(269, 210, 85, 13).translate(0, -1),
-        },
-        checkboxes: [
-            checkbox(SkirmishCheckboxId::ShortGame0x54e, 48, 176, 100, 10, -1),
-            checkbox(SkirmishCheckboxId::McvRepacks0x693, 48, 193, 100, 10, -1),
-            checkbox(SkirmishCheckboxId::CratesAppear0x696, 48, 210, 100, 10, -1),
-            checkbox(SkirmishCheckboxId::SuperWeapons0x69a, 48, 228, 103, 10, -1),
-            checkbox(SkirmishCheckboxId::BuildOffAlly0x69d, 201, 227, 166, 11, 0),
-        ],
-        status_help: place.at(AnchorRule::StatusLine, 2, 355, 410, 12),
+        statics,
     }
     .with_rows(player_rows)
 }
@@ -760,17 +603,7 @@ impl SkirmishShellLayout {
         let shown = shown_player_rows(rows);
         let pitch = self.rows.side_combos[1].y - self.rows.side_combos[0].y;
         let dy = (shown - SKIRMISH_ROW_COUNT) as i32 * pitch;
-        for checkbox in &mut self.checkboxes {
-            *checkbox = translate_checkbox(*checkbox, 0, dy);
-        }
-        for rect in [
-            &mut self.trackbars.game_speed,
-            &mut self.trackbars.credits,
-            &mut self.trackbars.unit_count,
-        ] {
-            *rect = rect.translate(0, dy);
-        }
-        for id in SLIDER_HEADINGS..SLIDER_HEADINGS + 3 {
+        for id in OPTIONS {
             if let Some(rect) = self.statics.get(id) {
                 self.statics.insert(id, rect.translate(0, dy));
             }
@@ -817,16 +650,21 @@ fn widen_left(rect: RectPx) -> RectPx {
     RectPx::new(rect.x - LIST_WIDEN, rect.y, rect.w + LIST_WIDEN, rect.h)
 }
 
-fn widen_right(rect: RectPx) -> RectPx {
-    RectPx::new(rect.x, rect.y, rect.w + LIST_WIDEN, rect.h)
-}
+/// VERA: the selected map's author under the chooser's preview.
+pub const CHOOSE_MAP_AUTHOR: u16 = 0x7133;
 
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
-    let place = Placer::new(screen_w, screen_h);
     // `0x6B`'s map list window; VERA's search box takes its top.
-    let map_list = widen_right(child_window(225, 78, 130, 211));
+    let map_list = child_window(225, 78, 130, 211);
+    let map_list = RectPx::new(map_list.x, map_list.y, map_list.w + LIST_WIDEN, map_list.h);
 
+    let mut rects = layout_data::place("0x6B", ShellScale::RETAIL, screen_w, screen_h);
+    // VERA's author line sits two pixels above `0x102`'s game type.
+    if let Some(author) = rects.get(CHOOSE_MAP_AUTHOR) {
+        rects.insert(CHOOSE_MAP_AUTHOR, author.translate(0, -2));
+    }
+    let at = |id| rects.get(id).unwrap_or_default();
     ChooseMapModalLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
@@ -839,20 +677,10 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             map_list.h - MAP_SEARCH_LIST_SHIFT,
         ),
         map_search: RectPx::new(map_list.x, map_list.y, map_list.w, MAP_SEARCH_H),
-        use_map_button: place.at(BUTTON, 425, 122, 108, 23),
-        cancel_button: place.rule(BACK_BUTTON),
-        create_random_map_button: place.at(BUTTON, 425, 149, 108, 23),
-        // VERA: one slot (27 dialog units) under Create Random Map.
-        favorite_button: place.at(BUTTON, 425, 176, 108, 23),
-        title: place.at(LOW_HEADING_ANCHOR, 425, 1, 108, 10),
-        select_engagement: dlu_rect(80, 20, 257, 12),
-        game_type_heading: widen_left(dlu_rect(77, 60, 130, 10)),
-        game_map_heading: widen_right(dlu_rect(225, 60, 130, 10)),
-        // The family static (template 303x12 DLU).
-        status_help: place.at(AnchorRule::StatusLine, 2, 355, 303, 12),
-        preview: place.at(AnchorRule::RightAnchor, 428, 23, 96, 69),
-        // `0x102`'s game type static, two pixels higher.
-        author: place.at(MAP_TEXT_ANCHOR, 432, 103, 90, 10).translate(0, -2),
+        title: at(0x694),
+        status_help: at(0x695),
+        preview: at(0x468),
+        rects,
     }
 }
 
@@ -863,18 +691,8 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
 /// players row is a trackbar, so it is shorter than the five combos.
 pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMapSetupLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
-    let place = Placer::new(screen_w, screen_h);
-    let [
-        use_map,
-        load,
-        save,
-        delete,
-        advanced,
-        export,
-        fair_starts,
-        preset,
-    ] = SETUP_RIGHT_Y.map(|y| place.at(BUTTON, 422, y, 108, 23));
-
+    let rects = layout_data::place("0x105", ShellScale::RETAIL, screen_w, screen_h);
+    let at = |id| rects.get(id).unwrap_or_default();
     RandomMapSetupLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
@@ -890,30 +708,14 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
             };
             window(SETUP_CONTROL_X, y, SETUP_CONTROL_W, h)
         }),
-        randomize: dlu_rect(74, 257, 83, 15),
-        generate: dlu_rect(246, 257, 83, 15),
-        // Display-only seed field.
-        seed_field: dlu_rect(279, 287, 50, 12),
-        title: place.at(LOW_HEADING_ANCHOR, 422, 1, 108, 10),
-        preview: place.at(AnchorRule::RightAnchor, 430, 23, 96, 69),
-        use_map,
-        load,
-        save,
-        delete,
-        cancel: place.rule(BACK_BUTTON),
-        advanced,
-        export,
-        fair_starts,
-        preset,
+        title: at(0x694),
+        preview: at(0x468),
         advanced_label_rects: SETUP_ADVANCED_ROW_Y
             .map(|y| dlu_rect(SETUP_LABEL_X, y - 1, SETUP_LABEL_W, SETUP_TRACKBAR_H + 2)),
         advanced_control_rects: SETUP_ADVANCED_ROW_Y
             .map(|y| child_window(SETUP_CONTROL_X, y, SETUP_CONTROL_W, SETUP_TRACKBAR_H)),
-        status_help: place.at(AnchorRule::StatusLine, 2, 355, 303, 12),
-        // Hidden until the generate block runs.
-        progress_text: dlu_rect(74, 219, 150, 11),
-        progress_bar: dlu_rect(229, 217, 100, 21),
-        urban_areas: dlu_rect(177, 192, 150, 14),
+        status_help: at(0x695),
+        rects,
     }
 }
 
@@ -948,20 +750,8 @@ pub fn random_map_setup_dropdown_rect(
 
 // Saved-seed browser (Load 0xB7 / Save 0x2B4 / Delete 0x2B5). All three share
 // the 533x369 frame, the right column and the bottom status line with the
-// chooser; only the list extent, the prompt and the action button differ.
-/// List rects per mode: Load, Save, Delete. Save's is shorter to leave room for
-/// the file-name edit beneath it.
-const SEED_LIST_RECTS: [(i32, i32, i32, i32); 3] =
-    [(79, 78, 266, 187), (79, 80, 266, 157), (78, 76, 266, 187)];
-/// Prompt static above each list.
-const SEED_PROMPT_RECTS: [(i32, i32, i32, i32); 3] =
-    [(79, 44, 266, 24), (79, 46, 266, 24), (78, 42, 266, 24)];
-/// The file-name edit, Save only.
-const SEED_NAME_EDIT_RECT: (i32, i32, i32, i32) = (80, 253, 266, 14);
-/// Load and Delete put the status line one pixel lower than Save does.
-const SEED_BLANK_RECTS: [(i32, i32, i32, i32); 3] =
-    [(2, 355, 303, 12), (2, 356, 303, 12), (2, 355, 303, 12)];
-
+// chooser; only the list extent, the prompt and the action button differ
+// (`shell_layout.ini`'s sections).
 /// Which of the three saved-seed dialogs is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SavedSeedMode {
@@ -971,11 +761,13 @@ pub enum SavedSeedMode {
 }
 
 impl SavedSeedMode {
-    const fn index(self) -> usize {
+    /// The dialog's `shell_layout.ini` section and its list's and action
+    /// button's ids; the prompt is `0x40C`, Save's name edit `0x526`.
+    pub const fn template(self) -> (&'static str, u16, u16) {
         match self {
-            Self::Load => 0,
-            Self::Save => 1,
-            Self::Delete => 2,
+            Self::Load => ("0xB7", 0x525, 0x40F),
+            Self::Save => ("0x2B4", 0x527, 0x6C7),
+            Self::Delete => ("0x2B5", 0x528, 0x6C8),
         }
     }
 
@@ -1032,25 +824,22 @@ pub fn compute_saved_seed_layout(
     screen_h: u32,
 ) -> SavedSeedLayout {
     let (screen_w, screen_h) = (screen_w as i32, screen_h as i32);
-    let place = Placer::new(screen_w, screen_h);
-    let index = mode.index();
-    let rect_of = |(x, y, w, h): (i32, i32, i32, i32)| dlu_rect(x, y, w, h);
-
+    let (dialog, list, action) = mode.template();
+    let rects = layout_data::place(dialog, ShellScale::RETAIL, screen_w, screen_h);
+    let at = |id| rects.get(id).unwrap_or_default();
     SavedSeedLayout {
         scale: ShellScale::RETAIL,
         screen: RectPx::new(0, 0, screen_w, screen_h),
         dialog: RectPx::new(0, 0, screen_w, screen_h),
-        title: dlu_rect(425, 1, 108, 10),
-        prompt: rect_of(SEED_PROMPT_RECTS[index]),
-        list: rect_of(SEED_LIST_RECTS[index]),
-        name_edit: (mode == SavedSeedMode::Save).then(|| rect_of(SEED_NAME_EDIT_RECT)),
-        // The action button sits where the chooser puts Use Map, but is one
-        // DLU shorter than Back -- 22 against 23.
-        action: place.at(BUTTON, 425, 122, 108, 22),
+        title: at(0x694),
+        prompt: at(0x40C),
+        list: at(list),
+        name_edit: rects.get(0x526),
+        action: at(action),
         load: None,
         delete: None,
-        back: place.rule(BACK_BUTTON),
-        blank: rect_of(SEED_BLANK_RECTS[index]),
+        back: at(0x686),
+        blank: at(0x695),
     }
 }
 
@@ -1061,37 +850,26 @@ pub fn compute_saved_seed_layout(
 // added to a layout must be scaled too or the crate stops building. `screen`
 // is the exception: it stays the whole window, as on the retail layout.
 
-scaled_rects!(SkirmishTrackbarRects {
-    game_speed,
-    credits,
-    unit_count
-});
 scaled_rects!(SkirmishRowRects {
     ai_type_combos,
     side_combos,
     start_combos,
     team_combos
 });
-scaled_rects!(SkirmishCheckboxRect { rect; keep: id });
 scaled_rects!(SkirmishShellLayout {
     [scale, screen]
-    right_panel, statics, start_button, choose_map_button, game_options_button,
-    setups_button, back_button, map_preview, player_name, rows, color_combos,
-    flags, opponent_scrollbar, trackbars, checkboxes, status_help;
+    right_panel, statics, map_preview, player_name, rows, color_combos, flags,
+    opponent_scrollbar, status_help;
     keep: shown_rows
 });
 scaled_rects!(ChooseMapModalLayout {
     [scale, screen]
-    dialog, mode_list, map_list, map_search, use_map_button, cancel_button,
-    create_random_map_button, favorite_button, title, select_engagement, game_type_heading,
-    game_map_heading, status_help, preview, author
+    dialog, mode_list, map_list, map_search, title, status_help, preview, rects
 });
 scaled_rects!(RandomMapSetupLayout {
     [scale, screen]
-    dialog, label_rects, control_rects, randomize, generate, seed_field, title, preview,
-    use_map, load, save, delete, cancel, advanced, export, fair_starts, preset,
-    advanced_label_rects, advanced_control_rects, status_help, progress_text, progress_bar,
-    urban_areas
+    dialog, label_rects, control_rects, title, preview, advanced_label_rects,
+    advanced_control_rects, status_help, rects
 });
 scaled_rects!(SavedSeedLayout {
     [scale, screen]
@@ -1135,10 +913,9 @@ mod tests {
         random_map_setup_control_at_view(layout, x, y, false, false, ares, 0)
     }
     use super::{
-        ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, SkirmishCheckboxId,
-        checkbox_icon_rect, checkbox_text_rect, combo_arrow_rect, combo_face_rect,
-        combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
-        compute_fixed_800_layout, compute_layout, compute_random_map_setup_layout,
+        ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, checkbox_icon_rect,
+        checkbox_text_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect, combo_text_rect,
+        compute_choose_map_modal_layout, compute_layout, compute_random_map_setup_layout,
         compute_saved_seed_layout, dlu_rect, player_name_edit_client_rect,
         player_name_edit_text_rect,
     };
@@ -1212,47 +989,27 @@ mod tests {
     #[test]
     fn key_rects_match_800x600() {
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.start_button, RectPx::new(644, 241, 156, 42));
+        assert_eq!(layout.static_rect(0x617), RectPx::new(644, 241, 156, 42));
         // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
         // moves one down.
-        assert_eq!(layout.game_options_button, RectPx::new(644, 283, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(644, 325, 156, 42));
+        assert_eq!(layout.static_rect(0x7101), RectPx::new(644, 283, 156, 42));
+        assert_eq!(layout.static_rect(0x5AA), RectPx::new(644, 325, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(644, 37, 144, 112));
-        assert_eq!(layout.back_button, RectPx::new(644, 535, 156, 42));
-    }
-
-    #[test]
-    fn fixed_800_layout_centers_native_shell_without_rescaling() {
-        let layout = compute_fixed_800_layout(1024, 768);
-
-        assert_eq!(layout.screen, RectPx::new(112, 84, 800, 600));
-        assert_eq!(layout.start_button, RectPx::new(756, 325, 156, 42));
-        assert_eq!(layout.game_options_button, RectPx::new(756, 367, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(756, 409, 156, 42));
-        assert_eq!(layout.map_preview, RectPx::new(756, 121, 144, 112));
-        assert_eq!(layout.back_button, RectPx::new(756, 619, 156, 42));
-        assert_eq!(
-            layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS),
-            RectPx::new(171, 118, 146, 16)
-        );
-        assert_eq!(
-            layout.rows.ai_type_combos[0],
-            RectPx::new(171, 169, 150, 120)
-        );
+        assert_eq!(layout.static_rect(0x5C0), RectPx::new(644, 535, 156, 42));
     }
 
     #[test]
     fn key_rects_match_640x480_formula() {
         let layout = compute_layout(640, 480);
-        assert_eq!(layout.start_button, RectPx::new(484, 241, 156, 42));
+        assert_eq!(layout.static_rect(0x617), RectPx::new(484, 241, 156, 42));
         // VERA's Game Options takes gamemd's Choose Map tile; Choose Map
         // moves one down.
-        assert_eq!(layout.game_options_button, RectPx::new(484, 283, 156, 42));
-        assert_eq!(layout.choose_map_button, RectPx::new(484, 325, 156, 42));
+        assert_eq!(layout.static_rect(0x7101), RectPx::new(484, 283, 156, 42));
+        assert_eq!(layout.static_rect(0x5AA), RectPx::new(484, 325, 156, 42));
         // VERA's Setups takes the last tile above Back.
-        assert_eq!(layout.setups_button, RectPx::new(484, 367, 156, 42));
+        assert_eq!(layout.static_rect(0x7102), RectPx::new(484, 367, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
-        assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
+        assert_eq!(layout.static_rect(0x5C0), RectPx::new(484, 409, 156, 42));
     }
 
     #[test]
@@ -1303,23 +1060,20 @@ mod tests {
             retail.rows.side_combos[7].y + 5 * pitch
         );
         let moved = |rect: RectPx| rect.translate(0, 5 * pitch);
-        for (long, short) in thirty.checkboxes.iter().zip(retail.checkboxes) {
-            assert_eq!(long.rect, moved(short.rect));
+        for id in [0x54E, 0x693, 0x696, 0x69A, 0x69D] {
+            assert_eq!(thirty.static_rect(id), moved(retail.static_rect(id)));
         }
-        assert_eq!(
-            thirty.trackbars.unit_count,
-            moved(retail.trackbars.unit_count)
-        );
+        assert_eq!(thirty.static_rect(0x50C), moved(retail.static_rect(0x50C)));
         assert_eq!(
             thirty.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 6),
             moved(retail.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 6))
         );
         let last_row_bottom = thirty.rows.side_combos[12].y + COMBO_FACE_H;
-        assert!(last_row_bottom < thirty.trackbars.game_speed.y);
-        let options_bottom = thirty
-            .checkboxes
+        assert!(last_row_bottom < thirty.static_rect(0x529).y);
+        let options_bottom = [0x54E, 0x693, 0x696, 0x69A, 0x69D]
+            .map(|id| thirty.static_rect(id))
             .iter()
-            .map(|c| c.rect.y + c.rect.h)
+            .map(|r| r.y + r.h)
             .max()
             .unwrap();
         assert!(options_bottom < thirty.status_help.y);
@@ -1336,16 +1090,16 @@ mod tests {
             compute_layout_for_rows(800, 600, 30),
         ] {
             let column = [
-                layout.start_button,
-                layout.game_options_button,
-                layout.choose_map_button,
-                layout.setups_button,
+                layout.static_rect(0x617),
+                layout.static_rect(0x7101),
+                layout.static_rect(0x5AA),
+                layout.static_rect(0x7102),
             ];
             for pair in column.windows(2) {
                 assert_eq!(pair[1], pair[0].translate(0, SDBTNBKGD_H));
             }
-            let setups = layout.setups_button;
-            assert!(setups.y + setups.h <= layout.back_button.y);
+            let setups = layout.static_rect(0x7102);
+            assert!(setups.y + setups.h <= layout.static_rect(0x5C0).y);
         }
     }
 
@@ -1379,11 +1133,13 @@ mod tests {
             RectPx::new(269, 265, 226, 22),
             "players is a trackbar, in its runtime window"
         );
-        assert_eq!(setup.randomize, dlu_rect(74, 257, 83, 15));
-        assert_eq!(setup.generate, dlu_rect(246, 257, 83, 15));
-        assert_eq!(setup.seed_field, dlu_rect(279, 287, 50, 12));
-        assert_eq!(setup.progress_text, dlu_rect(74, 219, 150, 11));
-        assert_eq!(setup.progress_bar, dlu_rect(229, 217, 100, 21));
+        assert_eq!(setup.rect(0x621), dlu_rect(74, 257, 83, 15));
+        assert_eq!(setup.rect(0x620), dlu_rect(246, 257, 83, 15));
+        assert_eq!(setup.rect(0x6C6), dlu_rect(74, 219, 150, 11));
+        assert_eq!(
+            setup.rect(super::RandomMapSetupLayout::PROGRESS_BAR),
+            dlu_rect(229, 217, 100, 21)
+        );
     }
 
     /// VERA: the seven Advanced sliders sit at the option rows' pitch above
@@ -1396,14 +1152,14 @@ mod tests {
         for pair in sliders.windows(2) {
             assert!(pair[0].y + pair[0].h <= pair[1].y, "{pair:?} overlap");
         }
-        assert!(sliders[6].y + sliders[6].h <= setup.progress_text.y);
-        assert!(setup.advanced.y >= setup.delete.y + setup.delete.h);
-        assert!(setup.advanced.y + setup.advanced.h <= setup.export.y);
-        assert!(setup.export.y + setup.export.h <= setup.cancel.y);
-        assert!(setup.advanced.y + setup.advanced.h <= setup.cancel.y);
-        assert!(setup.fair_starts.y >= setup.advanced.y + 2 * setup.advanced.h);
-        assert!(setup.fair_starts.y + setup.fair_starts.h <= setup.preset.y);
-        assert!(setup.preset.y + setup.preset.h <= setup.cancel.y);
+        assert!(sliders[6].y + sliders[6].h <= setup.rect(0x6C6).y);
+        assert!(setup.rect(0x7401).y >= setup.rect(0x6C4).y + setup.rect(0x6C4).h);
+        assert!(setup.rect(0x7401).y + setup.rect(0x7401).h <= setup.rect(0x7402).y);
+        assert!(setup.rect(0x7402).y + setup.rect(0x7402).h <= setup.rect(0x5C0).y);
+        assert!(setup.rect(0x7401).y + setup.rect(0x7401).h <= setup.rect(0x5C0).y);
+        assert!(setup.rect(0x7403).y >= setup.rect(0x7401).y + 2 * setup.rect(0x7401).h);
+        assert!(setup.rect(0x7403).y + setup.rect(0x7403).h <= setup.rect(0x7404).y);
+        assert!(setup.rect(0x7404).y + setup.rect(0x7404).h <= setup.rect(0x5C0).y);
 
         let water = sliders[AdvancedField::Water.row()];
         let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
@@ -1421,7 +1177,7 @@ mod tests {
             Some(RandomMapSetupControl::MapType0x405),
             "the basic view keeps the original rows"
         );
-        let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
+        let toggle = (setup.rect(0x7401).x + 4, setup.rect(0x7401).y + 4);
         assert_eq!(
             random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false, false, 0),
             Some(RandomMapSetupControl::AdvancedToggle)
@@ -1484,12 +1240,12 @@ mod tests {
         // 2 DLU right), but right_anchor / snap_button_biased_truncate / back_rect
         // are all panel-anchored and discard the source x, so the pixel output is
         // identical. Sharing the chrome is therefore safe.
-        assert_eq!(setup.use_map, choose.use_map_button);
-        assert_eq!(setup.cancel, choose.cancel_button);
+        assert_eq!(setup.rect(0x6C5), choose.rect(0x6C5));
+        assert_eq!(setup.rect(0x5C0), choose.rect(0x5C0));
         assert_eq!(setup.title, choose.title);
         assert_eq!(setup.preview, choose.preview);
         // Load reuses the slot 0x6B gives Create Random Map (both at y=149).
-        assert_eq!(setup.load, choose.create_random_map_button);
+        assert_eq!(setup.rect(0x6C2), choose.rect(0x583));
     }
 
     #[test]
@@ -1507,12 +1263,12 @@ mod tests {
             random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Players0x3eb)
         );
-        let (x, y) = centre(setup.randomize);
+        let (x, y) = centre(setup.rect(0x621));
         assert_eq!(
             random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Randomize0x621)
         );
-        let (x, y) = centre(setup.generate);
+        let (x, y) = centre(setup.rect(0x620));
         assert_eq!(
             random_map_setup_control_at(&setup, x, y, false),
             Some(RandomMapSetupControl::Generate0x620)
@@ -1550,9 +1306,9 @@ mod tests {
         use vera20k_gui::fixtures::executed_child_window as executed;
         for (w, h) in [(640, 480), (800, 600), (1024, 768)] {
             let layout = compute_layout(w as u32, h as u32);
-            assert_eq!(layout.trackbars.game_speed, executed(0x102, 0x529, w, h));
-            assert_eq!(layout.trackbars.credits, executed(0x102, 0x511, w, h));
-            assert_eq!(layout.trackbars.unit_count, executed(0x102, 0x50C, w, h));
+            assert_eq!(layout.static_rect(0x529), executed(0x102, 0x529, w, h));
+            assert_eq!(layout.static_rect(0x511), executed(0x102, 0x511, w, h));
+            assert_eq!(layout.static_rect(0x50C), executed(0x102, 0x50C, w, h));
             let setup = compute_random_map_setup_layout(w as u32, h as u32);
             assert_eq!(setup.control_rects[5], executed(0x105, 0x3EB, w, h));
         }
@@ -1612,26 +1368,11 @@ mod tests {
     #[test]
     fn checkbox_rects_match_800x600_final_geometry() {
         let layout = compute_layout(800, 600);
-        assert_eq!(layout.checkboxes.len(), 5);
-        assert_eq!(layout.checkboxes[0].id, SkirmishCheckboxId::ShortGame0x54e);
-        assert_eq!(layout.checkboxes[0].rect, RectPx::new(71, 286, 150, 16));
-        assert_eq!(layout.checkboxes[1].id, SkirmishCheckboxId::McvRepacks0x693);
-        assert_eq!(layout.checkboxes[1].rect, RectPx::new(71, 314, 150, 16));
-        assert_eq!(
-            layout.checkboxes[2].id,
-            SkirmishCheckboxId::CratesAppear0x696
-        );
-        assert_eq!(layout.checkboxes[2].rect, RectPx::new(71, 341, 150, 16));
-        assert_eq!(
-            layout.checkboxes[3].id,
-            SkirmishCheckboxId::SuperWeapons0x69a
-        );
-        assert_eq!(layout.checkboxes[3].rect, RectPx::new(71, 371, 155, 16));
-        assert_eq!(
-            layout.checkboxes[4].id,
-            SkirmishCheckboxId::BuildOffAlly0x69d
-        );
-        assert_eq!(layout.checkboxes[4].rect, RectPx::new(302, 369, 249, 18));
+        assert_eq!(layout.static_rect(0x54E), RectPx::new(71, 286, 150, 16));
+        assert_eq!(layout.static_rect(0x693), RectPx::new(71, 314, 150, 16));
+        assert_eq!(layout.static_rect(0x696), RectPx::new(71, 341, 150, 16));
+        assert_eq!(layout.static_rect(0x69A), RectPx::new(71, 371, 155, 16));
+        assert_eq!(layout.static_rect(0x69D), RectPx::new(302, 369, 249, 18));
     }
 
     #[test]
@@ -1676,19 +1417,16 @@ mod tests {
         assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
         // VERA: the search box takes the top 20 px of `0x6B`'s 344 px list.
         assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
-        assert_eq!(layout.use_map_button, RectPx::new(644, 199, 156, 42));
-        assert_eq!(
-            layout.create_random_map_button,
-            RectPx::new(644, 241, 156, 42)
-        );
-        assert_eq!(layout.cancel_button, RectPx::new(644, 535, 156, 42));
+        assert_eq!(layout.rect(0x6C5), RectPx::new(644, 199, 156, 42));
+        assert_eq!(layout.rect(0x583), RectPx::new(644, 241, 156, 42));
+        assert_eq!(layout.rect(0x5C0), RectPx::new(644, 535, 156, 42));
         assert_eq!(layout.title, RectPx::new(635, 3, 163, 17));
-        assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
+        assert_eq!(layout.rect(0x7130), RectPx::new(120, 33, 386, 20));
+        assert_eq!(layout.rect(0x7131), RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.rect(0x7132), RectPx::new(338, 98, 215, 16));
         // The box's top is the game-type list's; its frame meets the map list's.
         assert_eq!(layout.map_search, RectPx::new(338, 127, 216, 17));
-        assert_eq!(layout.favorite_button, RectPx::new(644, 283, 156, 42));
+        assert_eq!(layout.rect(0x7120), RectPx::new(644, 283, 156, 42));
         assert_eq!(layout.status_help, RectPx::new(10, 578, 456, 21));
         assert_eq!(layout.preview, RectPx::new(644, 37, 144, 112));
     }
@@ -1702,16 +1440,13 @@ mod tests {
         // VERA: 20 px wider than `0x6B`'s 196, to the left.
         assert_eq!(layout.mode_list, RectPx::new(96, 127, 216, 344));
         assert_eq!(layout.map_list, RectPx::new(338, 147, 216, 324));
-        assert_eq!(layout.use_map_button, RectPx::new(756, 283, 156, 42));
-        assert_eq!(
-            layout.create_random_map_button,
-            RectPx::new(756, 325, 156, 42)
-        );
-        assert_eq!(layout.cancel_button, RectPx::new(756, 619, 156, 42));
+        assert_eq!(layout.rect(0x6C5), RectPx::new(756, 283, 156, 42));
+        assert_eq!(layout.rect(0x583), RectPx::new(756, 325, 156, 42));
+        assert_eq!(layout.rect(0x5C0), RectPx::new(756, 619, 156, 42));
         assert_eq!(layout.title, RectPx::new(747, 87, 163, 17));
-        assert_eq!(layout.select_engagement, RectPx::new(120, 33, 386, 20));
-        assert_eq!(layout.game_type_heading, RectPx::new(96, 98, 215, 16));
-        assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 215, 16));
+        assert_eq!(layout.rect(0x7130), RectPx::new(120, 33, 386, 20));
+        assert_eq!(layout.rect(0x7131), RectPx::new(96, 98, 215, 16));
+        assert_eq!(layout.rect(0x7132), RectPx::new(338, 98, 215, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
     }
@@ -1723,9 +1458,9 @@ mod tests {
         for (w, h) in [(800, 600), (1024, 768)] {
             let chooser = compute_choose_map_modal_layout(w, h);
             let top = compute_layout(w, h).right_panel.top;
-            let author = chooser.author;
+            let author = chooser.rect(super::CHOOSE_MAP_AUTHOR);
             assert!(author.y >= chooser.preview.y + chooser.preview.h);
-            assert!(author.y + author.h <= chooser.use_map_button.y);
+            assert!(author.y + author.h <= chooser.rect(0x6C5).y);
             assert!(author.x >= top.x && author.x + author.w <= top.x + top.w);
         }
     }
@@ -1735,19 +1470,15 @@ mod tests {
         let layout = compute_choose_map_modal_layout(800, 600);
 
         assert_eq!(
-            choose_map_modal_button_at(&layout, layout.use_map_button.x, layout.use_map_button.y),
+            choose_map_modal_button_at(&layout, layout.rect(0x6C5).x, layout.rect(0x6C5).y),
             Some(ChooseMapModalButton::UseMap0x6c5)
         );
         assert_eq!(
-            choose_map_modal_button_at(&layout, layout.cancel_button.x, layout.cancel_button.y),
+            choose_map_modal_button_at(&layout, layout.rect(0x5C0).x, layout.rect(0x5C0).y),
             Some(ChooseMapModalButton::Cancel0x5c0)
         );
         assert_eq!(
-            choose_map_modal_button_at(
-                &layout,
-                layout.create_random_map_button.x,
-                layout.create_random_map_button.y
-            ),
+            choose_map_modal_button_at(&layout, layout.rect(0x583).x, layout.rect(0x583).y),
             Some(ChooseMapModalButton::CreateRandomMap0x583)
         );
         assert_eq!(
@@ -1807,9 +1538,9 @@ mod tests {
         assert_eq!(layout.scale, ShellScale::from_screen(1600, 1200));
         assert_eq!(layout.screen, RectPx::new(0, 0, 1600, 1200));
         for (rect, base_rect) in [
-            (layout.start_button, base.start_button),
-            (layout.choose_map_button, base.choose_map_button),
-            (layout.back_button, base.back_button),
+            (layout.static_rect(0x617), base.static_rect(0x617)),
+            (layout.static_rect(0x5AA), base.static_rect(0x5AA)),
+            (layout.static_rect(0x5C0), base.static_rect(0x5C0)),
             (layout.map_preview, base.map_preview),
             (layout.player_name, base.player_name),
             (layout.status_help, base.status_help),
@@ -1825,12 +1556,12 @@ mod tests {
             (layout.rows.team_combos[7], base.rows.team_combos[7]),
             (layout.color_combos[0], base.color_combos[0]),
             (layout.flags[0], base.flags[0]),
-            (layout.trackbars.game_speed, base.trackbars.game_speed),
+            (layout.static_rect(0x529), base.static_rect(0x529)),
             (
                 layout.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 7),
                 base.static_rect(crate::ui::skirmish_shell::layout::HEADINGS + 7),
             ),
-            (layout.checkboxes[0].rect, base.checkboxes[0].rect),
+            (layout.static_rect(0x54E), base.static_rect(0x54E)),
         ] {
             assert_eq!(rect, double(base_rect));
         }

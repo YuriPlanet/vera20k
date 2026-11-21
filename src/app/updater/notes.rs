@@ -12,7 +12,7 @@ use crate::render::bit_font::BitFont;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 use crate::ui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
-use crate::ui::shell::modal::{MessageBoxLayout, ModalKind};
+use crate::ui::shell::modal::{BoxParts, control, menu_area, message_box_parts};
 use crate::util::time::Instant;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
@@ -77,11 +77,7 @@ impl ReleaseNotes {
 
     /// The list in the offer box's `layout` from row `top`; `None` without
     /// notes.
-    pub(crate) fn geometry(
-        &self,
-        layout: &MessageBoxLayout,
-        top: usize,
-    ) -> Option<ShellListGeometry> {
+    pub(crate) fn geometry(&self, layout: &BoxParts, top: usize) -> Option<ShellListGeometry> {
         if self.rows.is_empty() {
             return None;
         }
@@ -120,34 +116,30 @@ impl ReleaseNotes {
 
 /// Under the question, from its left edge to just short of the buttons, its
 /// bottom level with the lowest button's.
-fn list_rect(layout: &MessageBoxLayout, metrics: ListMetrics) -> RectPx {
-    let lowest = layout.cancel.unwrap_or(layout.ok);
+fn list_rect(layout: &BoxParts, metrics: ListMetrics) -> RectPx {
+    let lowest = layout.rect_of(control::CANCEL).unwrap_or(layout.button(0));
     let gap = (BUTTON_GAP as f32 * layout.scale.factor()).round() as i32;
     let h = VISIBLE_ROWS * metrics.row_h + 2;
     RectPx::new(
         layout.body.x,
         lowest.y + lowest.h - h,
-        layout.ok.x - gap - layout.body.x,
+        layout.button(0).x - gap - layout.body.x,
         h,
     )
 }
 
 /// The rows' text width in 800x600 pixels, beside a scrollbar.
 fn wrap_width() -> u32 {
-    let layout = crate::ui::shell::modal::message_box_layout(
-        ModalKind::ThreeButton,
-        SHELL_BASE_W,
-        SHELL_BASE_H,
-    );
+    let layout = message_box_parts(3, menu_area(SHELL_BASE_W, SHELL_BASE_H));
     let metrics = ListMetrics::RETAIL;
     (list_rect(&layout, metrics).w - 2 - metrics.scrollbar_w - TEXT_INSET).max(0) as u32
 }
 
 /// The open offer's change list, the box's layout and its dialog.
-fn open_list(state: &AppState) -> Option<(&ReleaseNotes, MessageBoxLayout, DialogId)> {
+fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogId)> {
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let shell_box = &message_box.shell_box;
-    let layout = crate::app::frontend::shell_layout::shell_message_box_layout(state, shell_box);
+    let layout = crate::app::frontend::shell_layout::shell_box_parts(state, shell_box);
     match &message_box.purpose {
         ShellMessageBoxPurpose::UpdateOffer(notes) if !notes.rows.is_empty() => {
             Some((notes, layout, shell_box.dialog))
@@ -283,14 +275,14 @@ mod tests {
         assert_eq!(words.join(" "), note.replace('\u{2192}', "->"));
         // In the 451x326 box at 800x600: eight 19-pixel rows and the frame,
         // left of the buttons and level with the lowest.
-        let layout = crate::ui::shell::modal::message_box_layout(ModalKind::ThreeButton, 800, 600);
+        let layout = message_box_parts(3, menu_area(800, 600));
         let list = notes.geometry(&layout, 0).unwrap().outer;
-        let (dialog, cancel) = (layout.dialog, layout.cancel.unwrap());
+        let (dialog, cancel) = (layout.dialog, layout.rect_of(control::CANCEL).unwrap());
         assert_eq!(
             (list.x - dialog.x, list.y - dialog.y, list.w, list.h),
             (60, 155, 241, 154)
         );
         assert_eq!(list.y + list.h, cancel.y + cancel.h);
-        assert!(list.x + list.w < layout.ok.x);
+        assert!(list.x + list.w < layout.button(0).x);
     }
 }

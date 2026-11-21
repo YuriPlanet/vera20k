@@ -17,9 +17,10 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 
+use crate::app::frontend::shell_pass::{TexturedDraw, encode_sprite_pass};
 use crate::app::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use crate::app::{App, AppState, BUILD_STAMP};
-use crate::render::batch::{BatchRenderer, BatchTexture, DepthAxis, SpriteInstance};
+use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::text_engine::fonts::{BASELINE, CAP_HEIGHT};
@@ -521,32 +522,22 @@ pub(crate) fn render(
             ..Default::default()
         });
         // Black edging outside a #FF0000 line, and the same inside it.
-        push_frame(&mut shapes, *rect, thickness, FRAME_BLACK);
-        push_frame(
-            &mut shapes,
-            RectPx::new(
-                rect.x + thickness,
-                rect.y + thickness,
-                rect.w - thickness * 2,
-                rect.h - thickness * 2,
-            ),
-            thickness,
-            FRAME_RED,
-        );
-        push_frame(
-            &mut shapes,
-            RectPx::new(
-                rect.x + thickness * 2,
-                rect.y + thickness * 2,
-                rect.w - thickness * 4,
-                rect.h - thickness * 4,
-            ),
-            thickness,
-            FRAME_BLACK,
-        );
+        for (ring, color) in [FRAME_BLACK, FRAME_RED, FRAME_BLACK]
+            .into_iter()
+            .enumerate()
+        {
+            let inset = thickness * ring as i32;
+            let ring = RectPx::new(
+                rect.x + inset,
+                rect.y + inset,
+                rect.w - inset * 2,
+                rect.h - inset * 2,
+            );
+            push_frame(&mut shapes, ring, thickness, color);
+        }
     }
 
-    let renderer = &mut state.renderer;
+    let renderer = &state.renderer;
     let gpu = &renderer.gpu;
     let batch = &renderer.batch_renderer;
     let inner_w = (layout.width - layout.pad * 2) as f32;
@@ -704,53 +695,22 @@ pub(crate) fn render(
         text
     };
 
-    let fill: &BatchTexture = &renderer.status_screen_fill;
-    let glow: &BatchTexture = &renderer.status_card_glow;
-    batch.update_camera(
-        gpu,
-        layout.width as f32,
-        layout.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        DepthAxis::NONE,
-    );
-    let glow_buffer = batch.create_instance_buffer(gpu, &glows);
-    let shape_buffer = batch.create_instance_buffer(gpu, &shapes);
-    let text_buffer = batch.create_instance_buffer(gpu, &text);
-
-    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-        label: Some("Utility status card"),
-        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-            view,
-            depth_slice: None,
-            resolve_target: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                store: wgpu::StoreOp::Store,
-            },
-        })],
-        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-            view: &renderer.depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: wgpu::StoreOp::Store,
-            }),
-            stencil_ops: None,
-        }),
-        timestamp_writes: None,
-        occlusion_query_set: None,
-        multiview_mask: None,
-    });
-    if let Some((buffer, count)) = &glow_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, glow, buffer, *count);
-    }
-    if let Some((buffer, count)) = &shape_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, fill, buffer, *count);
-    }
-    if let Some((buffer, count)) = &text_buffer {
-        batch.draw_with_buffer_passthrough(&mut pass, renderer.bit_font.atlas(), buffer, *count);
-    }
+    let draws = [
+        TexturedDraw {
+            texture: &renderer.status_card_glow,
+            instances: glows,
+        },
+        TexturedDraw {
+            texture: &renderer.status_screen_fill,
+            instances: shapes,
+        },
+        TexturedDraw {
+            texture: renderer.bit_font.atlas(),
+            instances: text,
+        },
+    ];
+    let targets = (view, &renderer.depth_view);
+    encode_sprite_pass(gpu, batch, encoder, targets, "Utility status card", &draws);
 }
 
 #[cfg(all(test, tests_app_frontend))]

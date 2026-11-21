@@ -476,7 +476,7 @@ pub(crate) fn lobby_visits(state: &AppState) -> bool {
 
 /// A WOL box (`0x005E2CD0` style 0) with a CSF body.
 pub(crate) fn message_box(state: &AppState, key: &str) -> crate::ui::shell::modal::ShellBox {
-    service::message_box(state, key, false)
+    service::message_box(state, state.csf_text(key), false)
 }
 
 /// Start Game Now's abort (`0x00794D13..0x00794E64`): `0x130` closes,
@@ -712,8 +712,10 @@ impl App {
                     leaf::Pointer::Down => Some(true),
                     leaf::Pointer::Up => Some(false),
                 };
-                if let Some(control) = Self::shell_box_pointer(state, &shell_box, &parts, down) {
-                    service::box_command(state, control);
+                if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, down)
+                    .and_then(|id| shell_box.answer(id))
+                {
+                    service::box_command(state, answer);
                 }
             }
             return;

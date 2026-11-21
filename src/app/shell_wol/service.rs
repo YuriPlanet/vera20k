@@ -17,9 +17,7 @@ use crate::app::{App, AppState};
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember};
 use crate::ui::wol_login::WolCredential;
-use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolMode, WolWaitBox,
-};
+use crate::ui::wol_shell::{WolMode, WolWaitBox};
 use crate::ui::shell::modal::ShellBox;
 
 /// Which WOLAPI stands behind the visit.
@@ -1126,12 +1124,7 @@ pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
-pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> ShellBox {
-    message_box_text(state, state.csf_text(key), yes_no)
-}
-
-/// The same box with an already formatted body.
-pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> ShellBox {
+pub(super) fn message_box(state: &AppState, body: String, yes_no: bool) -> ShellBox {
     let text = |key| state.csf_text(key);
     match yes_no {
         true => crate::ui::wol_shell::yes_no_box(body, text("GUI:Yes"), text("GUI:No")),
@@ -1145,7 +1138,7 @@ pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
     if state.frontend.shell_route != crate::app::shell_route::ShellRoute::Wol {
         return false;
     }
-    let message = message_box_text(state, body.to_owned(), false);
+    let message = message_box(state, body.to_owned(), false);
     let dialog = message.dialog;
     let Some(visit) = state.frontend.wol.as_mut() else {
         return false;
@@ -1189,7 +1182,7 @@ fn apply(state: &mut AppState, step: WolStep) {
                 .reset_to(crate::ui::wol_shell::WAIT_DIALOG, false);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(state, key, yes_no);
+            let message = message_box(state, state.csf_text(key), yes_no);
             let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             visit.page = WolPage::Message { message, then };
@@ -1453,36 +1446,32 @@ pub(super) fn finish_login(state: &mut AppState) {
     }
 }
 
-/// A box or wait-box button released.
-pub(super) fn box_command(state: &mut AppState, control: u16) {
+/// A box or wait-box button released: its answer (OK or Yes 0, No 1; the
+/// wait box's Disconnect 0, WOL Check Status 1).
+pub(super) fn box_command(state: &mut AppState, answer: usize) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
-        super::lobby::box_command(state, control);
-        state.platform.window.request_redraw();
-        return;
-    }
-    let then = match &visit.page {
-        WolPage::Message { then, .. } => Some(*then),
-        _ => None,
-    };
-    let backdrop = matches!(visit.page, WolPage::Backdrop { .. });
-    let step = match (then, control) {
-        (Some(then), BOX_OK | BOX_YES | BOX_NO) => {
-            if control == BOX_YES {
+    let step = match &visit.page {
+        WolPage::Lobby | WolPage::QuickMatch(_) => {
+            super::lobby::box_command(state, answer);
+            state.platform.window.request_redraw();
+            return;
+        }
+        WolPage::Message { message, then } => {
+            if message.buttons.len() == 2 && answer == 0 {
                 // Yes opens an apiregister.westwood.com page through
                 // WOL__LaunchBrowser; VERA has no browser.
                 log::warn!("WOL account page needs a browser; not opened");
             }
-            match then {
+            match *then {
                 WolBoxThen::Leave(result) => WolStep::Leave(result),
                 WolBoxThen::Welcome => WolStep::Welcome,
                 WolBoxThen::Login => WolStep::OpenLogin,
             }
         }
-        (None, WAIT_DISCONNECT) if backdrop => visit.disconnect(),
-        (None, WAIT_CHECK_STATUS) if backdrop => {
+        WolPage::Backdrop { .. } if answer == 0 => visit.disconnect(),
+        WolPage::Backdrop { .. } => {
             // 0x00773E90 opens the embedded status browser.
             log::warn!("WOL Check Status needs the embedded browser; not opened");
             WolStep::Stay

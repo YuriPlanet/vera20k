@@ -911,10 +911,7 @@ impl MoviesCapture {
                     let layout =
                         crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
-                        .buttons
-                        .iter()
-                        .find(|(button, _)| *button == LauncherButton::Category(category))
-                        .map(|(_, rect)| *rect)
+                        .button_rect(LauncherButton::Category(category))
                         .context("D5 page button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
@@ -1103,12 +1100,7 @@ impl MoviesCapture {
                     let layout =
                         crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
-                        .buttons
-                        .iter()
-                        .find(|(button, _)| {
-                            *button == LauncherButton::Exit(LauncherParentResult::Mods)
-                        })
-                        .map(|(_, rect)| *rect)
+                        .button_rect(LauncherButton::Exit(LauncherParentResult::Mods))
                         .context("D5 Mods button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;

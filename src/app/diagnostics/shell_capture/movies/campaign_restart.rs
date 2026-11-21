@@ -801,11 +801,7 @@ impl RestartCapture {
                         "MapSelect notice has wrong text"
                     );
                     ensure!(
-                        message.shell_box.kind() == crate::ui::shell::modal::ModalKind::BodyOk
-                            && message
-                                .shell_box
-                                .caption(crate::ui::shell::modal::control::CANCEL)
-                                .is_none(),
+                        message.shell_box.buttons.len() == 1,
                         "MapSelect notice is not one button"
                     );
                     ensure!(
@@ -827,11 +823,7 @@ impl RestartCapture {
                         "MapSelect notice queued the shell INTRO"
                     );
                     receipt["body"] = json!(message.shell_box.body);
-                    receipt["confirm"] = json!(
-                        message
-                            .shell_box
-                            .caption(crate::ui::shell::modal::control::OK)
-                    );
+                    receipt["confirm"] = json!(message.shell_box.buttons[0].caption);
                     receipt["dialog"] = json!(0xCE);
                     receipt["initial_save_pending_before"] = json!(false);
                     route.push(json!({"frame":frame,"action":"MapSelect failure notice shown","dialog":0xCE}));
@@ -854,11 +846,12 @@ impl RestartCapture {
                             "Escape did not acknowledge the notice"
                         );
                     } else {
-                        let layout = crate::ui::shell::modal::body_ok_layout(
+                        let layout = crate::ui::shell::modal::menu_message_box(
+                            1,
                             state.render_width() as i32,
                             state.render_height() as i32,
                         );
-                        set_window_pointer_to_rect_center(state, layout.ok);
+                        set_window_pointer_to_rect_center(state, layout.button(0));
                         App::handle_shell_message_box_mouse(state, true);
                         ensure!(
                             box_pressed(state) == Some(crate::ui::shell::modal::control::OK),
@@ -963,13 +956,14 @@ impl RestartCapture {
                         self.step = Step::AwaitShellReturn;
                     } else {
                         let answer_no = self.target == RestartTarget::DefeatReturned;
-                        let layout = crate::ui::shell::modal::quit_confirm_layout(
+                        let layout = crate::ui::shell::modal::menu_message_box(
+                            2,
                             state.renderer.gpu.config.width as i32,
                             state.renderer.gpu.config.height as i32,
                         );
                         let point = set_window_pointer_to_rect_center(
                             state,
-                            if answer_no { layout.cancel } else { layout.ok },
+                            layout.button(usize::from(answer_no)),
                         );
                         App::handle_shell_message_box_mouse(state, true);
                         ensure!(

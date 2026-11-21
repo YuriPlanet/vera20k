@@ -1745,10 +1745,10 @@ impl App {
         state.frontend.shell_page_title.commit_presented();
         let mut status_step = state.frontend.shell_status_line.commit_presented();
         if let Some(page) = state.frontend.score_page.as_mut() {
-            page.commit_presented();
+            page.statics.commit_presented();
         }
         if let Some(page) = state.frontend.campaign_score_page.as_mut() {
-            page.commit_presented();
+            page.statics.commit_presented();
         }
         if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
             status_step |= ui.statics.commit_presented();

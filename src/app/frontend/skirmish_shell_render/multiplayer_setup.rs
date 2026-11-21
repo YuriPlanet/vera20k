@@ -730,7 +730,7 @@ pub(crate) fn render_multiplayer_setup(
             && let Some(offer) = ui.map_offer.as_ref()
         {
             use crate::ui::shell::geom::ShellScale;
-            let boxed = layout.map_offer;
+            let boxed = &layout.map_offer;
             let progress = offer
                 .downloading
                 .then(|| {

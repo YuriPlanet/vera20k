@@ -396,7 +396,7 @@ impl AbortReturnInput {
                     self.phase = AbortInputPhase::Queued;
                     return Ok(true);
                 }
-                let point = set_window_pointer_to_rect_center(state, layout.ok);
+                let point = set_window_pointer_to_rect_center(state, layout.button(0));
                 crate::app::input::dispatch::handle_cursor_moved_in_game(state);
                 crate::app::input::dispatch::handle_mouse_input(
                     state,

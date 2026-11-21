@@ -181,7 +181,7 @@ pub fn map(dialog: &str, place: impl Fn(RectPx) -> RectPx) -> RectTable {
 
 /// Section `dialog` in a centred modal box `frame`: each template's common
 /// resized window ([`child_window`]) from the box's corner, a `NewEdit`
-/// after its init inset.
+/// after its init inset, `Px` pixels from the corner.
 pub fn in_box(dialog: &str, frame: RectPx) -> RectTable {
     entries(dialog)
         .iter()
@@ -190,6 +190,7 @@ pub fn in_box(dialog: &str, frame: RectPx) -> RectTable {
             let r = child_window(x, y, w, h).translate(frame.x, frame.y);
             let rect = match e.rule {
                 "ChildWindow" => r,
+                "Px" => e.rect.translate(frame.x, frame.y),
                 "NewEdit" => RectPx::new(r.x + 1, r.y + 1, r.w - 2, r.h - 2),
                 _ => return None,
             };

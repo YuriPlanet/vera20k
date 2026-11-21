@@ -296,11 +296,7 @@ pub(crate) fn render_lan_lobby(
                 .clone()
                 .unwrap_or_else(|| state.csf_label(key, key));
             let ok = state.csf_label("TXT_OK", "OK");
-            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(
-                OK,
-                crate::ui::shell::modal::BoxSlot::Ok,
-                ok,
-            );
+            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok);
             let pressed = box_pressed(state, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
             let (sprites, texts) = (

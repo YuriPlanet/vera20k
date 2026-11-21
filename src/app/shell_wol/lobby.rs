@@ -37,7 +37,6 @@ use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::{self, WolChatFilter, WolChatLine, WolLobbyChatLine};
 use crate::ui::wol_lobby::*;
 use crate::ui::wol_shell::WolWaitBox;
-use crate::ui::wol_shell::{BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT};
 use winit::keyboard::KeyCode;
 
 /// The list wait `0x0077F120` gives up after 30 s.
@@ -962,7 +961,7 @@ fn close_wait(state: &mut AppState) {
 }
 
 fn show_box(state: &mut AppState, key: &str, yes_no: bool, then: BoxThen) {
-    let message = service::message_box(state, key, yes_no);
+    let message = service::message_box(state, state.csf_text(key), yes_no);
     put_box(state, message, then);
 }
 
@@ -3148,15 +3147,13 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
     }
 }
 
-/// A lobby box or wait-box button released.
-pub(super) fn box_command(state: &mut AppState, control: u16) {
+/// A lobby box or wait-box button released: its answer (OK or Yes 0, No
+/// 1; the wait box's Disconnect 0, WOL Check Status 1).
+pub(super) fn box_command(state: &mut AppState, answer: usize) {
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
-    if let Some((_, then)) = lobby
-        .message
-        .take_if(|_| matches!(control, BOX_OK | BOX_YES | BOX_NO))
-    {
+    if let Some((_, then)) = lobby.message.take() {
         let dialog = runner_dialog(state);
         state.frontend.shell_controller.reset_to(dialog, false);
         match then {
@@ -3171,7 +3168,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
                 }
             }
             BoxThen::Resolution { channel } => {
-                answer_resolution(state, channel, control == BOX_YES)
+                answer_resolution(state, channel, answer == 0)
             }
             BoxThen::Close => close_runner(state),
             BoxThen::Kicked => {
@@ -3188,39 +3185,31 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
         }
         return;
     }
-    match control {
-        // Event 0 ends the runner's wait: LAB_00787F98.
+    if answer == 1 {
+        log::warn!("WOL Check Status needs the embedded browser; not opened");
+        return;
+    }
+    if !lobby.wait.as_ref().is_some_and(|wait| wait.shown) {
+        return;
+    }
+    // Disconnect, event 0, ends the runner's wait: LAB_00787F98.
+    match lobby.step {
         // 0x0077F120 failed during Join's second list: the Buddy List
         // runner searches again, finds nothing and loops.
-        WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && matches!(lobby.step, Step::FindingGame { .. }) =>
-        {
+        Step::FindingGame { .. } => {
             request(state, WolServiceRequest::CancelWait);
             super::buddy::stopped(state);
         }
-        WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && matches!(lobby.step, Step::ReturningToRoom) =>
-        {
-            room_not_returned(state, false);
-        }
-        WAIT_DISCONNECT
-            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
-                && lobby.runner == Runner::QuickMatch =>
-        {
-            // Event 0: the runner's exit.
+        Step::ReturningToRoom => room_not_returned(state, false),
+        // Event 0: the Quick Match runner's exit.
+        _ if lobby.runner == Runner::QuickMatch => {
             request(state, WolServiceRequest::CancelWait);
             super::quick_match::exit(state);
         }
-        WAIT_DISCONNECT if lobby.wait.as_ref().is_some_and(|wait| wait.shown) => {
+        _ => {
             request(state, WolServiceRequest::CancelWait);
             close_runner(state);
         }
-        WAIT_CHECK_STATUS => {
-            log::warn!("WOL Check Status needs the embedded browser; not opened");
-        }
-        _ => {}
     }
 }
 
@@ -4175,7 +4164,7 @@ pub(super) fn kicked(state: &mut AppState, channel: WolChannel, user: WolMember,
             &state.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
-        let message = service::message_box_text(state, text, false);
+        let message = service::message_box(state, text, false);
         put_box(state, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
@@ -4314,7 +4303,7 @@ pub(crate) fn sync(state: &mut AppState) {
         .is_some_and(|popup| popup.create.is_some());
     ui.sync_popup(|id| match create_popup {
         true => create_rect(&create, id),
-        false => password_rect(&password, id),
+        false => password.rect_of(id),
     });
     ui.scroll_edits(&|text| font.text_width(text));
     super::player_card::sync(state);
@@ -4356,30 +4345,27 @@ fn apply(state: &mut AppState, effects: Vec<WolLobbyEffect>) {
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    use vera20k_gui::Key;
+    use vera20k_gui::{InputEvent, Key};
     if shell_transition::blocks_shell_input(state)
         || !lobby(state).is_some_and(WolLobby::interactive)
         || super::player_card::key_press(state, code)
     {
         return;
     }
-    let key = match code {
-        Some(KeyCode::Backspace) => Some(Key::Backspace),
-        Some(KeyCode::Delete) => Some(Key::Delete),
-        Some(KeyCode::ArrowLeft) => Some(Key::Left),
-        Some(KeyCode::ArrowRight) => Some(Key::Right),
-        Some(KeyCode::Home) => Some(Key::Home),
-        Some(KeyCode::End) => Some(Key::End),
-        Some(KeyCode::Tab) => Some(Key::Tab),
-        Some(KeyCode::Enter | KeyCode::NumpadEnter) => Some(Key::Enter),
-        Some(KeyCode::Escape) => Some(Key::Escape),
-        _ => None,
+    // The edits take no vertical keys.
+    let (key, text) = match super::leaf::input_of(code, text) {
+        Some(InputEvent::Key(Key::Up | Key::Down | Key::PageUp | Key::PageDown)) | None => {
+            (None, None)
+        }
+        Some(InputEvent::Key(key)) => (Some(key), None),
+        Some(InputEvent::Text(text)) => (None, Some(text)),
+        Some(_) => (None, None),
     };
     sync(state);
     let effects = lobby_mut(state)
         .expect("checked")
         .ui
-        .key(key, text.filter(|_| key.is_none()));
+        .key(key, text.as_deref());
     sync(state);
     apply(state, effects);
 }
@@ -4408,7 +4394,7 @@ pub(crate) fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCre
 
 pub(crate) fn password_layout(
     state: &AppState,
-) -> crate::ui::shell::modal::WolChannelPasswordLayout {
+) -> crate::ui::shell::modal::WolPageLayout {
     let (width, height) = popup_screen(state);
     crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
 }

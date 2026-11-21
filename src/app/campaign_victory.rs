@@ -389,19 +389,16 @@ impl App {
                 state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
                 Self::open_shell_message_box(
                     state,
-                    crate::app::frontend::state::ShellMessageBox {
-                        shell_box,
-                        purpose:
-                            crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(
-                                Box::new(CampaignVictory {
-                                    movies: VecDeque::new(),
-                                    then: VictoryEnd::NextMission {
-                                        startup,
-                                        rearm_initial_save: false,
-                                    },
-                                }),
-                            ),
-                    },
+                    shell_box,
+                    crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(Box::new(
+                        CampaignVictory {
+                            movies: VecDeque::new(),
+                            then: VictoryEnd::NextMission {
+                                startup,
+                                rearm_initial_save: false,
+                            },
+                        },
+                    )),
                 );
             }
             VictoryEnd::NextMission {

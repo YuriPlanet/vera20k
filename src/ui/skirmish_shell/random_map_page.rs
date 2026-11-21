@@ -164,9 +164,9 @@ fn rect(
     match id {
         URBAN_CAPTION => {
             return (basic && modal.ares)
-                .then(|| checkbox_text_rect(layout.urban_areas, layout.scale));
+                .then(|| checkbox_text_rect(layout.rect(5000), layout.scale));
         }
-        PROGRESS => return Some(layout.progress_text),
+        PROGRESS => return Some(layout.rect(0x6C6)),
         _ => {}
     }
     let control = control_of(modal, id)?;
@@ -175,24 +175,20 @@ fn rect(
         C::ExtrasRow(row) if extras => layout.advanced_control_rects[row],
         C::AdvancedScrollbar if !basic && !extras => AdvancedField::advanced_scrollbar_rect(layout),
         C::Players0x3eb if basic => layout.control_rects[5],
-        C::UrbanAreas5000 if basic && modal.ares => layout.urban_areas,
+        C::UrbanAreas5000 if basic && modal.ares => layout.rect(5000),
         // A closed combo is its face; its list hangs from it.
         _ if basic && SetupCombo::from_control(control).is_some() => combo_face_rect(
             layout.control_rects[SetupCombo::from_control(control)?.row()],
             layout.scale,
         ),
-        C::Randomize0x621 => layout.randomize,
-        C::Generate0x620 => layout.generate,
-        C::Ok0x6c5 => layout.use_map,
-        C::Load0x6c2 => layout.load,
-        C::Save0x6c3 => layout.save,
-        C::Delete0x6c4 => layout.delete,
-        C::Cancel0x5c0 => layout.cancel,
-        C::AdvancedToggle => layout.advanced,
-        C::ExportMap => layout.export,
-        C::FairStartsToggle => layout.fair_starts,
-        C::PresetCycle => layout.preset,
-        _ => return None,
+        C::Players0x3eb
+        | C::UrbanAreas5000
+        | C::Advanced(_)
+        | C::ExtrasRow(_)
+        | C::AdvancedScrollbar => return None,
+        // The buttons stand in the layout's table by id.
+        _ if SetupCombo::from_control(control).is_some() => return None,
+        _ => return layout.rects.get(id),
     })
 }
 

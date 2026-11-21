@@ -12,6 +12,7 @@ use crate::util::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use crate::app::frontend::shell_pass::{TexturedDraw, encode_sprite_pass};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::csf_file::CsfFile;
 use crate::assets::pal_file::Palette;
@@ -132,7 +133,6 @@ impl VisibleHold {
 
 pub(crate) struct StartupSplashPresentation {
     texture: BatchTexture,
-    instance_buffer: wgpu::Buffer,
     /// The text, drawn over the art at the window's resolution.
     lines: Vec<SplashLine>,
     /// Where the composition sits in the window, and its width there.
@@ -170,24 +170,8 @@ impl StartupSplashPresentation {
             compose_startup_splash(assets, width as usize, height as usize, yr_original_style)?;
         let lines = splash_lines(csf, font, width as i32, height as i32);
         let texture = batch.create_texture(gpu, &rgba, width, height);
-        let instance = SpriteInstance {
-            position: [placement.x as f32, placement.y as f32],
-            size: [placement.w as f32, placement.h as f32],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: 0.0,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        };
-        let (instance_buffer, count) = batch
-            .create_instance_buffer(gpu, &[instance])
-            .context("create startup splash instance buffer")?;
-        debug_assert_eq!(count, 1);
-
         Ok(Self {
             texture,
-            instance_buffer,
             lines,
             placement,
             composition_width: width,
@@ -235,68 +219,48 @@ pub(crate) fn render_and_present(
     font: &BitFont,
     splash: Option<&StartupSplashPresentation>,
 ) -> Result<bool> {
-    batch.update_camera(
-        gpu,
-        gpu.config.width as f32,
-        gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
-    );
-
     let Some(output) = gpu
         .acquire_frame()
         .context("acquire startup splash surface")?
     else {
         return Ok(false);
     };
-    let text =
-        splash.and_then(|splash| batch.create_instance_buffer(gpu, &splash.text_instances(font)));
-    let source_view = presenter.source_render_view();
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Retail Startup Splash"),
         });
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Retail Startup Splash Composition"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &source_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                // The shared passthrough batch pipeline declares Depth32Float
-                // even though it compares Always and does not write depth.
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        if let Some(splash) = splash {
-            batch.draw_with_buffer_ui_passthrough(
-                &mut pass,
-                &splash.texture,
-                &splash.instance_buffer,
-                1,
-            );
-        }
-        if let Some((buffer, count)) = &text {
-            batch.draw_with_buffer_ui_passthrough(&mut pass, font.atlas(), buffer, *count);
-        }
-    }
+    let draws = splash.map(|splash| {
+        let placement = splash.placement;
+        let art = SpriteInstance {
+            position: [placement.x as f32, placement.y as f32],
+            size: [placement.w as f32, placement.h as f32],
+            uv_size: [1.0, 1.0],
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..SpriteInstance::default()
+        };
+        [
+            TexturedDraw {
+                texture: &splash.texture,
+                instances: vec![art],
+            },
+            TexturedDraw {
+                texture: font.atlas(),
+                instances: splash.text_instances(font),
+            },
+        ]
+    });
+    let targets = (&presenter.source_render_view(), depth);
+    let label = "Retail Startup Splash Composition";
+    encode_sprite_pass(
+        gpu,
+        batch,
+        &mut encoder,
+        targets,
+        label,
+        draws.as_ref().map_or(&[], |d| d),
+    );
     presenter.encode_present(&mut encoder, &output.texture);
     performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     // The splash presents outside the frame loop, so it uses the shared

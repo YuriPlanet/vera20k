@@ -8,7 +8,7 @@ use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::{DialogController, ShellKey};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::modal::{body_ok_layout_in, control};
+use crate::ui::shell::modal::{control, message_box_parts};
 use crate::ui::shell::page::PageEvent;
 use vera20k_gui::{InputEvent, NodeKind, NodeSpec};
 use winit::event::{KeyEvent, MouseButton};
@@ -225,7 +225,7 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
 
 /// The box keeps gamemd's centring on the match's frame.
 fn ok_rect(width: i32, height: i32) -> RectPx {
-    body_ok_layout_in(RectPx::new(0, 0, width, height)).ok
+    message_box_parts(1, RectPx::new(0, 0, width, height)).button(0)
 }
 
 /// Whether OK shows pushed.

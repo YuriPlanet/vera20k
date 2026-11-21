@@ -786,7 +786,7 @@ pub(crate) fn verify_pointer(state: &mut AppState, down: Option<bool>) {
     use crate::ui::shell::page::PageEvent;
     let at = state.match_state.input.cursor_px();
     let (width, height) = screen(state);
-    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+    let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
     let layout = verify_layout(state);
     let Ok(verify) = verify_mut(state) else {
         return;

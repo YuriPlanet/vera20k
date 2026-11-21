@@ -1358,11 +1358,13 @@ impl WolCapture {
                     self.settle();
                     return Ok(());
                 }
-                let layout = crate::ui::shell::modal::wait_box_layout(
+                let layout = crate::ui::shell::modal::template_on(
+                    crate::ui::shell::modal::WAIT_TEMPLATE,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
+                    crate::ui::shell::geom::ShellScale::RETAIL,
                 );
-                welcome_click(state, layout.disconnect);
+                welcome_click(state, layout.button(0));
                 ensure!(state.frontend.wol.is_none(), "Disconnect did not leave WOL");
                 self.event(frame, "0xC4 Disconnect");
                 self.phase = WolPhase::MainReturn;
@@ -1546,11 +1548,12 @@ impl WolCapture {
                     self.settle();
                     return Ok(());
                 }
-                let ok = crate::ui::shell::modal::body_ok_layout(
+                let ok = crate::ui::shell::modal::menu_message_box(
+                    1,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
                 )
-                .ok;
+                .button(0);
                 welcome_click(state, ok);
                 self.event(frame, "0xD0 OK");
                 self.phase = WolPhase::WelcomeAgain;
@@ -1594,11 +1597,12 @@ impl WolCapture {
                         .is_some_and(|message| message.body == expected),
                     "the silent connect's failure box did not show TXT_BADPASS"
                 );
-                let ok = crate::ui::shell::modal::body_ok_layout(
+                let ok = crate::ui::shell::modal::menu_message_box(
+                    1,
                     state.renderer.gpu.config.width as i32,
                     state.renderer.gpu.config.height as i32,
                 )
-                .ok;
+                .button(0);
                 welcome_click(state, ok);
                 self.event(frame, "0xD0 OK");
                 self.phase = WolPhase::Login;
@@ -3156,7 +3160,7 @@ impl WolCapture {
                         state.renderer.gpu.config.width as i32,
                         state.renderer.gpu.config.height as i32,
                     );
-                    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+                    let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
                     if self.target.quick_match() {
                         // No setup dialog: 0x130 takes the WOL input routes.
                         welcome_click(state, ok);
@@ -4614,7 +4618,7 @@ impl WolCapture {
                 );
                 self.event(frame, "NetStatus 0x4012F in 0x113");
                 if self.target == WolTarget::LobbyDisconnectReturn {
-                    let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+                    let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
                     welcome_click(state, ok);
                     ensure!(
                         state
@@ -4691,7 +4695,7 @@ impl WolCapture {
                         .is_some_and(|message| message.body == kicked),
                     "TXT_YOURE_KICKED did not show"
                 );
-                let ok = crate::ui::shell::modal::body_ok_layout(width, height).ok;
+                let ok = crate::ui::shell::modal::menu_message_box(1, width, height).button(0);
                 welcome_click(state, ok);
                 let left = format_csf(
                     &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),

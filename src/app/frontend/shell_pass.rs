@@ -279,6 +279,58 @@ fn encode_composition(
     }
 }
 
+/// Sprite batches drawn in order over a black clear onto `view` through the
+/// passthrough pipeline at the window's pixel camera, with no shell surface:
+/// the status card and the startup splash, which must draw without the
+/// shell's chrome or the app state.
+pub(crate) fn encode_sprite_pass(
+    gpu: &crate::render::gpu::GpuContext,
+    batch: &crate::render::batch::BatchRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    targets: (&wgpu::TextureView, &wgpu::TextureView),
+    label: &str,
+    draws: &[TexturedDraw<'_>],
+) {
+    let (width, height) = (gpu.config.width as f32, gpu.config.height as f32);
+    let flat = crate::render::batch::DepthAxis::NONE;
+    batch.update_camera(gpu, width, height, 0.0, 0.0, 1.0, flat);
+    let buffers: Vec<_> = draws
+        .iter()
+        .map(|draw| batch.create_instance_buffer(gpu, &draw.instances))
+        .collect();
+    let (view, depth) = targets;
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        // The passthrough pipeline declares Depth32Float even though it
+        // compares Always and does not write depth.
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    for (draw, buffer) in draws.iter().zip(&buffers) {
+        if let Some((buffer, count)) = buffer {
+            batch.draw_with_buffer_passthrough(&mut pass, draw.texture, buffer, *count);
+        }
+    }
+}
+
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::*;

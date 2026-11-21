@@ -1568,7 +1568,7 @@ mod tests {
             (None, Some(2))
         );
         assert_eq!(click(&mut ui, &mut state, &layout, arrow), Some(ComboOpen));
-        let outside = (layout.randomize.x + 1, layout.randomize.y + 1);
+        let outside = (layout.rect(0x621).x + 1, layout.rect(0x621).y + 1);
         assert_eq!(
             click(&mut ui, &mut state, &layout, outside),
             Some(ComboClose)

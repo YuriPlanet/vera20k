@@ -131,34 +131,32 @@ fn campaign_labels<'a>(
     layout: &CampaignLayout,
     children: bool,
 ) -> Vec<PaintLabel<'a>> {
-    let mut out = Vec::new();
     let Some(campaign) = state.frontend.campaign.as_ref().filter(|_| children) else {
-        return out;
+        return Vec::new();
     };
-    for side in CampaignSide::ALL {
-        out.push(PaintLabel {
-            text: state.csf_text(side.caption_key()).into(),
-            rect: layout.caption(side),
-            align: ShellAlign::H_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        });
-    }
-    out.push(PaintLabel {
-        text: state.csf_text("GUI:Difficulty").into(),
-        rect: layout.difficulty_label,
-        align: ShellAlign::NONE,
+    let label = |key, rect, align| PaintLabel {
+        text: state.csf_text(key).into(),
+        rect,
+        align,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: None,
+    };
+    let captions = CampaignSide::ALL.map(|side| {
+        label(
+            side.caption_key(),
+            layout.caption(side),
+            ShellAlign::H_CENTER,
+        )
     });
-    out.push(PaintLabel {
-        text: state.csf_text(campaign.difficulty_label_key()).into(),
-        rect: layout.difficulty_value,
-        align: ShellAlign::H_RIGHT,
-        rgb: SHELL_TEXT_RGB_ENABLED,
-        path_a_reveal: None,
-    });
-    out
+    let difficulty = [
+        label("GUI:Difficulty", layout.difficulty_label, ShellAlign::NONE),
+        label(
+            campaign.difficulty_label_key(),
+            layout.difficulty_value,
+            ShellAlign::H_RIGHT,
+        ),
+    ];
+    captions.into_iter().chain(difficulty).collect()
 }
 
 /// Paint dialog `0x94`. Returns `false` when its art is missing.

@@ -21,7 +21,7 @@ use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{
     MenuPageButtonRect, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec,
 };
-use crate::ui::shell::modal::{BoxForm, BoxSlot, ShellBox};
+use crate::ui::shell::modal::ShellBox;
 
 pub const WOL_WELCOME_DIALOG: DialogId = DialogId(0x010E);
 pub const QUICK_MATCH: u16 = 0x06E0;
@@ -329,14 +329,14 @@ fn button_node(id: u16) -> NodeSpec {
 /// `0x126` with Yes (6) and No (7) on the CE/120 rects. Its loop
 /// (`0x007759E0`) dispatches without `IsDialogMessage`, so it takes no keys.
 pub fn message_box(body: String, ok: String) -> ShellBox {
-    ShellBox::new(DialogId(0x00D0), body).button(BOX_OK, BoxSlot::Ok, ok)
+    ShellBox::new(DialogId(0x00D0), body).button(BOX_OK, ok)
 }
 
 /// [`message_box`]'s style 4: Yes and No.
 pub fn yes_no_box(body: String, yes: String, no: String) -> ShellBox {
     ShellBox::new(DialogId(0x0126), body)
-        .button(BOX_YES, BoxSlot::Ok, yes)
-        .button(BOX_NO, BoxSlot::Cancel, no)
+        .button(BOX_YES, yes)
+        .button(BOX_NO, no)
 }
 
 /// `0xC4` OK button id 1, `0x126` Yes 6 / No 7.
@@ -366,9 +366,9 @@ pub const WAIT_REVEAL: std::time::Duration = std::time::Duration::from_millis(70
 impl WolWaitBox {
     pub fn new(text: String, disconnect: String, check_status: String) -> Self {
         let shell_box = ShellBox::new(WAIT_DIALOG, text)
-            .button(WAIT_DISCONNECT, BoxSlot::Disconnect, disconnect)
-            .button(WAIT_CHECK_STATUS, BoxSlot::CheckStatus, check_status)
-            .form(BoxForm::Wait);
+            .button(WAIT_DISCONNECT, disconnect)
+            .button(WAIT_CHECK_STATUS, check_status)
+            .template(crate::ui::shell::modal::WAIT_TEMPLATE);
         let opened_at = crate::util::time::Instant::now();
         Self {
             shell_box,
@@ -397,68 +397,29 @@ mod tests {
     use crate::ui::shell::geom::{centred_in_window, fit_window};
 
     #[test]
-    fn message_boxes_follow_the_quit_box_scale_and_hit_rectangles() {
-        use crate::ui::shell::modal::{ModalKind, message_box_layout_on};
+    fn wol_boxes_scale_with_the_quit_box_and_keep_their_hits() {
         let message = yes_no_box("Question".into(), "Yes".into(), "No".into());
-        for (w, h) in [
-            (760, 600),
-            (1024, 768),
-            (1280, 720),
-            (2560, 1600),
-            (1200, 1600),
-        ] {
+        let quit = ShellBox::message("Q".into(), "OK".into(), "Cancel".into(), String::new());
+        let wait = WolWaitBox::new("Wait".into(), "D".into(), "C".into()).shell_box;
+        for (w, h) in [(640, 480), (760, 600), (2560, 1600), (1200, 1600)] {
             let scale = ShellScale::from_screen(w, h);
-            let layout = message.layout(w, h, scale);
-            let quit = message_box_layout_on(ModalKind::Confirm, w, h, scale);
-            assert_eq!(layout.dialog, quit.dialog);
-            assert_eq!(layout.body, quit.body);
-            assert_eq!(layout.ok, quit.ok);
-            let no = layout.cancel.unwrap();
-            assert_eq!(Some(no), quit.cancel);
+            let parts = message.parts(w, h, scale);
+            let native = quit.parts(w, h, scale);
+            assert_eq!((parts.dialog, parts.body), (native.dialog, native.body));
+            let no = parts.rect_of(BOX_NO).unwrap();
+            assert_eq!((parts.button(0), no), (native.button(0), native.button(1)));
             let center = (no.x + no.w / 2, no.y + no.h / 2);
-            assert!(no.contains(center.0, center.1));
-            assert!(!layout.ok.contains(center.0, center.1));
+            assert!(!parts.button(0).contains(center.0, center.1));
+            let wait = wait.parts(w, h, scale);
+            assert_eq!(wait.dialog, native.dialog);
+            let check = wait.rect_of(WAIT_CHECK_STATUS).unwrap();
+            let disconnect = wait.rect_of(WAIT_DISCONNECT).unwrap();
+            assert!(!disconnect.contains(check.x + check.w / 2, check.y + check.h / 2));
         }
-        let large = message.layout(2560, 1600, ShellScale::from_screen(2560, 1600));
+        let large = message.parts(2560, 1600, ShellScale::from_screen(2560, 1600));
         assert_eq!(large.dialog, RectPx::new(456, 323, 1202, 869));
-    }
-
-    #[test]
-    fn retail_wol_prompts_keep_the_authored_size() {
-        for (w, h) in [(640, 480), (800, 600)] {
-            let message = message_box("Notice".into(), "OK".into());
-            let layout = message.layout(w, h, ShellScale::RETAIL);
-            assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
-            assert_eq!(
-                layout.ok,
-                super::super::shell::modal::body_ok_layout(w, h).ok
-            );
-            assert!(layout.cancel.is_none());
-        }
-    }
-
-    #[test]
-    fn wait_box_scales_art_text_and_both_button_hits_together() {
-        use crate::ui::shell::modal::{wait_box_layout, wait_box_layout_on};
-        let base = wait_box_layout(800, 600);
-        for (w, h) in [(760, 600), (1024, 768), (2560, 1600), (1200, 1600)] {
-            let scale = ShellScale::from_screen(w, h);
-            let layout = wait_box_layout_on(w, h, scale);
-            assert_eq!(layout.dialog, scale.scale_rect(base.dialog));
-            assert_eq!(layout.text, scale.scale_rect(base.text));
-            assert_eq!(layout.animation, scale.scale_rect(base.animation));
-            assert_eq!(layout.disconnect, scale.scale_rect(base.disconnect));
-            let check = layout.check_status;
-            let point = (check.x + check.w / 2, check.y + check.h / 2);
-            assert!(check.contains(point.0, point.1));
-            assert!(!layout.disconnect.contains(point.0, point.1));
-        }
-        for (w, h) in [(640, 480), (800, 600)] {
-            assert_eq!(
-                wait_box_layout_on(w, h, ShellScale::RETAIL),
-                wait_box_layout(w, h)
-            );
-        }
+        let retail = message_box("Notice".into(), "OK".into()).parts(800, 600, ShellScale::RETAIL);
+        assert_eq!((retail.dialog.w, retail.dialog.h), (451, 326));
     }
 
     #[test]

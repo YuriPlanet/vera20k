@@ -894,7 +894,7 @@ mod tests {
             &[],
             &layout,
         );
-        let random = layout.create_random_map_button;
+        let random = layout.rect(0x583);
         let random = (random.x + 2, random.y + 2);
         let at = |modal: &mut ChooseMapModalState, pointer| {
             drive(modal, &layout, (&modes, &[]), &mut None, pointer, random)
@@ -1342,8 +1342,8 @@ mod tests {
         assert!(!is_double_click(mode_point));
         // A press off the lists breaks the sequence.
         assert!(!is_double_click((
-            layout.use_map_button.x + 2,
-            layout.use_map_button.y + 2
+            layout.rect(0x6C5).x + 2,
+            layout.rect(0x6C5).y + 2
         )));
         assert!(!is_double_click(mode_point));
     }

@@ -111,10 +111,6 @@ fn flag_slot(id: u16) -> Option<usize> {
 /// their own (VERA's ids).
 use super::layout::HEADINGS;
 
-fn heading_rect(layout: &SkirmishShellLayout, index: usize) -> Option<RectPx> {
-    layout.statics.get(HEADINGS + u16::try_from(index).ok()?)
-}
-
 /// The words the page's captions take: each combo row's label, the Random
 /// a country face shows (`GUI:RandomEx`), the option boxes' and the right
 /// panel's buttons' captions in [`CONTROLS`] order, and the headings.
@@ -178,26 +174,8 @@ fn rect(
     if let Some(slot) = flag_slot(id) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
     }
-    if let Some(index) = id.checked_sub(HEADINGS) {
-        return heading_rect(layout, usize::from(index));
-    }
-    Some(match control(id)? {
-        Target::Checkbox(checkbox) => layout.checkboxes.iter().find(|c| c.id == checkbox)?.rect,
-        Target::Trackbar(SkirmishTrackbarId::GameSpeed0x529) => layout.trackbars.game_speed,
-        Target::Trackbar(SkirmishTrackbarId::Credits0x511) => layout.trackbars.credits,
-        Target::Trackbar(SkirmishTrackbarId::UnitCount0x50c) => layout.trackbars.unit_count,
-        Target::OwnerDrawButton(OwnerDrawButton::StartGame0x617) => layout.start_button,
-        Target::OwnerDrawButton(OwnerDrawButton::GameOptions) => layout.game_options_button,
-        Target::OwnerDrawButton(OwnerDrawButton::ChooseMap0x5aa) => layout.choose_map_button,
-        Target::OwnerDrawButton(OwnerDrawButton::Setups) => layout.setups_button,
-        Target::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => layout.back_button,
-        Target::PlayerName0x6a0 => layout.player_name,
-        Target::MapPreview0x468 => layout.map_preview,
-        Target::GameTypeLabel0x6ec => layout.static_rect(super::GAME_TYPE_STATIC),
-        Target::ScenarioLabel0x5a8 => layout.static_rect(super::MAP_LABEL_STATIC),
-        Target::StatusHelp0x695 => layout.status_help,
-        _ => return None,
-    })
+    // The fixed controls and the headings stand in the layout's table.
+    layout.statics.get(id)
 }
 
 /// Builds the page under the controller's `0x102` (pushing it when another
@@ -547,21 +525,5 @@ pub fn open_combo(
         id,
         top_index,
         hot_row,
-    })
-}
-
-/// The right-panel button that shows pushed: the one a press captured, under
-/// the pointer or not (the page's buttons keep their pushed look until the
-/// release).
-pub fn pressed_button(gui: &Gui, root: NodeId) -> Option<OwnerDrawButton> {
-    CONTROLS.iter().find_map(|(id, target)| match target {
-        Target::OwnerDrawButton(button)
-            if gui
-                .find_id(root, (*id).into())
-                .is_some_and(|node| gui.pressed() == Some(node)) =>
-        {
-            Some(*button)
-        }
-        _ => None,
     })
 }

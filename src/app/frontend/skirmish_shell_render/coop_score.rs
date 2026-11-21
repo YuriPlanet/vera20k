@@ -47,13 +47,10 @@ pub(crate) fn render_coop_score(
         (model.can_continue, model.map_index)
     };
     match map_index.filter(|_| can_continue) {
-        Some(index) => ensure_map_preview_texture(
-            state,
-            index,
-            layout
-                .control_rect(PREVIEW)
-                .unwrap_or(crate::ui::skirmish_shell::RectPx::new(0, 0, 0, 0)),
-        ),
+        Some(index) => {
+            let preview = layout.control_rect(PREVIEW).unwrap_or_default();
+            ensure_map_preview_texture(state, index, preview)
+        }
         None => state.frontend.skirmish_preview_texture = None,
     }
     let shown = |id: u16| can_continue || !hidden_on_final_mission(id);
@@ -86,11 +83,6 @@ pub(crate) fn render_coop_score(
         )
     };
     let rgb = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
-    let align = |align: CoopScoreAlign| match align {
-        CoopScoreAlign::Left => ShellAlign::NONE,
-        CoopScoreAlign::Center => ShellAlign::H_CENTER,
-        CoopScoreAlign::Right => ShellAlign::H_RIGHT,
-    };
 
     // Paint mode 1: RightPanel__Draw, the dialog background, then D5/D6.
     let chrome_layout = crate::ui::skirmish_shell::compute_layout_on(scale, width, height);
@@ -140,19 +132,14 @@ pub(crate) fn render_coop_score(
         let Some(rect) = layout.control_rect(spec.id) else {
             continue;
         };
-        let value = match spec.id {
-            TIME => model.time.clone(),
-            NEXT_MISSION => model.next_mission.clone(),
-            DESCRIPTION => model.description.clone(),
-            id => match spec.caption_key {
-                Some(key) => state.csf_label(key, key),
-                None => {
-                    let _ = id;
-                    continue;
-                }
-            },
+        let value = match (spec.id, spec.caption_key) {
+            (TIME, _) => model.time.clone(),
+            (NEXT_MISSION, _) => model.next_mission.clone(),
+            (DESCRIPTION, _) => model.description.clone(),
+            (_, Some(key)) => state.csf_label(key, key),
+            (_, None) => continue,
         };
-        texts.push(text(&value, rect, align(spec.align), SHELL_LABEL_TEXT_RGB));
+        texts.push(text(&value, rect, spec.align, SHELL_LABEL_TEXT_RGB));
     }
     for (label, id) in [
         (&model.mode_label, MODE_LABEL),
@@ -171,20 +158,14 @@ pub(crate) fn render_coop_score(
     }
     // The tail's cells: name, then "%d" for each count, in the row colour.
     for (row, cells) in model.rows.iter().zip(ROW_CELLS) {
-        let values = [
-            row.name.clone(),
-            row.kills.to_string(),
-            row.losses.to_string(),
-            row.built.to_string(),
-            row.score.to_string(),
-        ];
-        for (value, id) in values.iter().zip(cells) {
-            let spec = COOP_SCORE_CONTROLS
-                .iter()
-                .find(|spec| spec.id == id)
-                .expect("row cell spec");
+        for (column, (value, id)) in row.cells().iter().zip(cells).enumerate() {
+            let align = if column == 0 {
+                ShellAlign::NONE
+            } else {
+                ShellAlign::H_RIGHT
+            };
             if let Some(rect) = layout.control_rect(id) {
-                texts.push(text(value, rect, align(spec.align), rgb(row.rgb)));
+                texts.push(text(value, rect, align, rgb(row.rgb)));
             }
         }
     }

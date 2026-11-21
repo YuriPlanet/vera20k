@@ -170,27 +170,8 @@ pub(crate) const IMAGE_BUTTONS: [(u16, &str, &str); 5] = [
     (SORT_RESLOCK, "wolurslkob.pcx", "woldrslkob.pcx"),
 ];
 
-/// Every PCX the lobby's children and list columns draw.
-pub(crate) const PCX_FILES: [&str; 40] = [
-    "wodact.pcx",
-    "wouact.pcx",
-    "wouref.pcx",
-    "wodref.pcx",
-    "woluclan.pcx",
-    "woldclan.pcx",
-    "wolupriv.pcx",
-    "woldpriv.pcx",
-    "wolurslkob.pcx",
-    "woldrslkob.pcx",
-    "gt18.pcx",
-    "wolclan.pcx",
-    "woltrny.pcx",
-    "wolpriv.pcx",
-    "wolreslk.pcx",
-    "wolrslkob.pcx",
-    "wolob.pcx",
-    "woloper.pcx",
-    "wolvoice.pcx",
+/// The rank digits `number<d>.pcx` (`0x00783A90`).
+const DIGITS: [&str; 10] = [
     "number0.pcx",
     "number1.pcx",
     "number2.pcx",
@@ -201,18 +182,30 @@ pub(crate) const PCX_FILES: [&str; 40] = [
     "number7.pcx",
     "number8.pcx",
     "number9.pcx",
-    "cooperat.pcx",
-    "comchief.pcx",
-    "stargen.pcx",
-    "general.pcx",
-    "briggenr.pcx",
-    "colonel.pcx",
-    "major.pcx",
-    "lieutena.pcx",
-    "sergeant.pcx",
-    "corporal.pcx",
-    "private.pcx",
 ];
+
+/// Every PCX the lobby's children and list columns draw: the image buttons'
+/// faces, the list icons, the rank digits, co-op and the badges.
+pub(crate) fn pcx_files() -> Vec<&'static str> {
+    let faces = IMAGE_BUTTONS.iter().flat_map(|(_, up, down)| [*up, *down]);
+    let icons = [
+        "gt18.pcx",
+        "wolclan.pcx",
+        "woltrny.pcx",
+        "wolpriv.pcx",
+        "wolreslk.pcx",
+        "wolrslkob.pcx",
+        "wolob.pcx",
+        "woloper.pcx",
+        "wolvoice.pcx",
+    ];
+    faces
+        .chain(icons)
+        .chain(DIGITS)
+        .chain(["cooperat.pcx"])
+        .chain(badge_files())
+        .collect()
+}
 
 /// List column stops (`0x4A6` at `0x497`): the game list's name column
 /// x=0x35 (0x93 wide), type 2, password 0x13, ping 200 and limit 0x24; the
@@ -359,18 +352,6 @@ pub(crate) fn badge_name_key(file: &str) -> Option<&'static str> {
 /// from 100 and tens from 10; `cooperat.pcx` once the co-op bits hold every
 /// one of the `campaigns` CoopCampMD campaigns (`0x0049E4F0`); the badge.
 pub(crate) fn score_icons(score: PlayerScore, campaigns: u32) -> Vec<(&'static str, i32)> {
-    const DIGITS: [&str; 10] = [
-        "number0.pcx",
-        "number1.pcx",
-        "number2.pcx",
-        "number3.pcx",
-        "number4.pcx",
-        "number5.pcx",
-        "number6.pcx",
-        "number7.pcx",
-        "number8.pcx",
-        "number9.pcx",
-    ];
     let rank = score.rank;
     let mut icons = Vec::with_capacity(5);
     if rank < 1000 {
@@ -632,37 +613,15 @@ impl WolLobbyState {
 
     /// Edit `id` as its NewEdit (caret in UTF-16 units).
     pub(crate) fn edit(&self, id: u16) -> SavedSeedDescriptionEdit {
-        let text = match self
-            .node(id)
-            .and_then(|node| self.gui.get(node, Prop::Text).ok().flatten())
-        {
-            Some(Value::Text(text)) => text.as_str(),
-            _ => "",
-        };
-        let chars = text.chars().count();
-        let caret = usize::try_from(self.int(id, Prop::Caret).unwrap_or(chars as i32)).unwrap_or(0);
-        SavedSeedDescriptionEdit {
-            units: text.encode_utf16().collect(),
-            caret: text
-                .chars()
-                .take(caret.min(chars))
-                .map(char::len_utf16)
-                .sum(),
-            first_visible_unit: (self.int(id, Prop::Top).unwrap_or(0).max(0) as usize)
-                .min(text.encode_utf16().count()),
-            focused: self.node(id).is_some() && self.gui.focus() == self.node(id),
-            password: self.flag(id, Prop::Password).unwrap_or(false),
-        }
+        self.node(id)
+            .map_or_else(Default::default, |node| page::new_edit(&self.gui, node))
     }
 
     /// Writes `edit`'s text and caret back to edit `id`.
     fn store_edit(&mut self, id: u16, edit: &SavedSeedDescriptionEdit) {
-        let caret = String::from_utf16_lossy(&edit.units[..edit.caret.min(edit.units.len())])
-            .chars()
-            .count();
-        self.set(id, Prop::Text, Value::Text(edit.display_text()));
-        self.set(id, Prop::Caret, Value::Int(caret as i32));
-        self.set(id, Prop::Top, Value::Int(edit.first_visible_unit as i32));
+        if let Some(node) = self.node(id) {
+            page::store_edit(&mut self.gui, node, edit);
+        }
     }
 
     pub(crate) fn enabled(&self, control: u16) -> bool {
@@ -741,18 +700,21 @@ impl WolLobbyState {
         }
     }
 
-    /// List `id` as it shows on the rect it was put on, and its rows.
-    fn placed_list(&self, id: u16) -> Option<(crate::ui::shell::list::ShellListGeometry, usize)> {
+    /// List `id` as it shows on the rect it was put on, and its view.
+    fn placed_list(
+        &self,
+        id: u16,
+    ) -> Option<(crate::ui::shell::list::ShellListGeometry, ListView)> {
         let node = self.gui.find_id(self.page_root(), id.into())?;
         let rect = self.gui.tree().screen_rect(node).ok()?;
-        let rows = self.gui.list_view(node)?.rows;
-        Some((self.shown_geometry(id, rect, rows, self.scale), rows))
+        let view = self.gui.list_view(node)?;
+        Some((view.geometry(rect, ListMetrics::scaled(self.scale)), view))
     }
 
     /// The row of list `id` under `(x, y)`.
     pub(crate) fn row_at(&self, id: u16, x: i32, y: i32) -> Option<usize> {
-        let (geometry, rows) = self.placed_list(id)?;
-        geometry.row_at(rows, self.list_top(id), x, y)
+        let (geometry, view) = self.placed_list(id)?;
+        geometry.row_at(view.rows, view.top, x, y)
     }
 
     /// NewEdit keeps each edit's caret in view (`scroll_to_caret`, text

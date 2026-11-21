@@ -1057,13 +1057,14 @@ impl App {
         x: i32,
         y: i32,
     ) -> Option<crate::ui::skirmish_shell::ChooseMapPromptButton> {
-        let layout = crate::ui::shell::modal::quit_confirm_layout(
+        let layout = crate::ui::shell::modal::menu_message_box(
+            2,
             state.render_width() as i32,
             state.render_height() as i32,
         );
-        if layout.ok.contains(x, y) {
+        if layout.button(0).contains(x, y) {
             Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok)
-        } else if layout.cancel.contains(x, y) {
+        } else if layout.button(1).contains(x, y) {
             Some(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel)
         } else {
             None

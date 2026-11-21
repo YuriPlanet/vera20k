@@ -11,7 +11,7 @@ use super::{WolLobbyState, password_accepted};
 use crate::ui::room_limits::RoomLimits;
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::modal::{WolChannelPasswordLayout, WolCreateGameLayout};
+use crate::ui::shell::modal::WolCreateGameLayout;
 use crate::ui::shell::page;
 
 pub(crate) const CREATE_DIALOG: DialogId = DialogId(0x00C3);
@@ -288,16 +288,6 @@ pub(crate) fn create_rect(layout: &WolCreateGameLayout, id: u16) -> Option<RectP
         control.x + control.w - label.x,
         control.h,
     ))
-}
-
-pub(crate) fn password_rect(layout: &WolChannelPasswordLayout, id: u16) -> Option<RectPx> {
-    match id {
-        POPUP_OK => Some(layout.ok),
-        POPUP_CANCEL => Some(layout.cancel),
-        POPUP_PASSWORD => Some(layout.password),
-        PASSWORD_CAPTION => Some(layout.label),
-        _ => None,
-    }
 }
 
 impl WolLobbyState {

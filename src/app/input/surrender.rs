@@ -14,7 +14,7 @@ use crate::app::{App, AppState};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::modal::{QuitConfirmLayout, quit_confirm_layout_in};
+use crate::ui::shell::modal::{BoxParts, message_box_parts};
 use crate::ui::shell::page::PageEvent;
 
 const DIALOG: DialogId = DialogId(0x120);
@@ -57,13 +57,9 @@ pub(crate) fn open(state: &mut AppState) {
 }
 
 /// `0x120` centred over the frame the battlefield draws into.
-pub(crate) fn layout(state: &AppState) -> QuitConfirmLayout {
-    quit_confirm_layout_in(RectPx::new(
-        0,
-        0,
-        state.render_width() as i32,
-        state.render_height() as i32,
-    ))
+pub(crate) fn layout(state: &AppState) -> BoxParts {
+    let (w, h) = (state.render_width() as i32, state.render_height() as i32);
+    message_box_parts(2, RectPx::new(0, 0, w, h))
 }
 
 /// One pointer message on the box (`down`: `None` moves).
@@ -81,8 +77,8 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
             .child(button(SurrenderButton::Cancel))
     };
     let rect = |id| match id {
-        0x5AE => Some(layout.ok),
-        2 => Some(layout.cancel),
+        0x5AE => Some(layout.button(0)),
+        2 => Some(layout.button(1)),
         _ => None,
     };
     let events =

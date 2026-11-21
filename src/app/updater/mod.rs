@@ -28,10 +28,10 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use crate::app::App;
-use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
+use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::state::AppState;
 use crate::app::web_link::{DOWNLOAD_PAGE, open_in_browser};
-use crate::ui::shell::modal::{ModalResult, ShellBox};
+use crate::ui::shell::modal::ShellBox;
 use crate::util::time::{Duration, Instant};
 
 use fetch::Progress;
@@ -330,10 +330,8 @@ fn open_checking(state: &mut AppState) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
         state,
-        ShellMessageBox {
-            shell_box: ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
-            purpose: ShellMessageBoxPurpose::UpdateCheck,
-        },
+        ShellBox::notice(crate::i18n::tr("VERA:UpdateChecking"), cancel),
+        ShellMessageBoxPurpose::UpdateCheck,
     );
 }
 
@@ -397,28 +395,22 @@ pub(crate) fn open_offer(state: &mut AppState) {
     );
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
     App::destroy_current_shell_dialog(state);
-    App::open_shell_message_box(
-        state,
-        ShellMessageBox {
-            shell_box,
-            purpose: ShellMessageBoxPurpose::UpdateOffer(notes),
-        },
-    );
+    App::open_shell_message_box(state, shell_box, ShellMessageBoxPurpose::UpdateOffer(notes));
 }
 
 /// The offer's answer: 0 Update (or Download), 2 Skip This Version, 1 (or
 /// Esc/Enter) Later.
-pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
+pub(crate) fn answer_offer(state: &mut AppState, answer: usize) {
     let Phase::Offered { package, offer } = std::mem::take(&mut state.frontend.updater.phase)
     else {
         return;
     };
     state.frontend.updater.phase = Phase::Finished;
-    match (result, offer) {
-        (ModalResult::MessageBox(0), Offer::Update(release)) => download(state, package, release),
-        (ModalResult::MessageBox(0), Offer::Manual { .. }) => open_in_browser(DOWNLOAD_PAGE),
-        (ModalResult::MessageBox(0), Offer::NewKey { .. }) => open_in_browser(GITHUB_RELEASES),
-        (ModalResult::MessageBox(2), offer @ (Offer::Update(_) | Offer::Manual { .. })) => {
+    match (answer, offer) {
+        (0, Offer::Update(release)) => download(state, package, release),
+        (0, Offer::Manual { .. }) => open_in_browser(DOWNLOAD_PAGE),
+        (0, Offer::NewKey { .. }) => open_in_browser(GITHUB_RELEASES),
+        (2, offer @ (Offer::Update(_) | Offer::Manual { .. })) => {
             let profile = &mut state.persistence.options_profile;
             profile.skipped_update = offer.version().to_string();
             if let Some(config) = state.platform.game_config.as_ref()
@@ -471,13 +463,11 @@ fn open_progress(state: &mut AppState, release: &Release, received: u64) {
     let cancel = state.csf_label("TXT_CANCEL", "Cancel");
     App::open_shell_message_box(
         state,
-        ShellMessageBox {
-            shell_box: ShellBox::notice(
-                progress_text(release.version, received, release.size),
-                cancel,
-            ),
-            purpose: ShellMessageBoxPurpose::UpdateProgress,
-        },
+        ShellBox::notice(
+            progress_text(release.version, received, release.size),
+            cancel,
+        ),
+        ShellMessageBoxPurpose::UpdateProgress,
     );
 }
 

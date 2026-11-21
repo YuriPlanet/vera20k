@@ -226,33 +226,7 @@ fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
     }
 }
 
-/// An `Edit` node as the NewEdit its paint reads: text, caret, the first
-/// shown unit the host keeps in `Top` ([`crate::app::shell_wol::leaf`]
-/// scrolls it), the password mask and whether it holds the focus.
-pub(crate) fn new_edit(
-    gui: &Gui,
-    node: NodeId,
-) -> crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
-    let text = match gui.get(node, Prop::Text).ok().flatten() {
-        Some(Value::Text(text)) => text.as_str(),
-        _ => "",
-    };
-    let chars = text.chars().count();
-    let caret_chars = usize::try_from(int(gui, node, Prop::Caret, chars as i32))
-        .unwrap_or(0)
-        .min(chars);
-    let caret = text.chars().take(caret_chars).map(char::len_utf16).sum();
-    let units: Vec<u16> = text.encode_utf16().collect();
-    crate::ui::skirmish_shell::SavedSeedDescriptionEdit {
-        first_visible_unit: usize::try_from(int(gui, node, Prop::Top, 0))
-            .unwrap_or(0)
-            .min(units.len()),
-        units,
-        caret,
-        focused: gui.focus() == Some(node),
-        password: flag(gui, node, Prop::Password, false),
-    }
-}
+pub(crate) use crate::ui::shell::page::new_edit;
 
 /// The widgets under `root`, in tree order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(
@@ -556,8 +530,9 @@ pub(crate) fn paint_gui_with(
                         SHELL_CONTROL_DEPTH,
                     );
                 }
+                let face = (rect, !covered);
                 paint_combo(
-                    &mut paint, state, atlas, gui, node, rect, enabled, scale, style, host_rows,
+                    &mut paint, state, atlas, gui, node, face, enabled, scale, style, host_rows,
                 );
             }
             NodeKind::List => {
@@ -673,8 +648,9 @@ pub(crate) fn paint_gui_with(
     paint
 }
 
-/// An owner-draw combo's face, and its drop-down while it is open, its
-/// rows in the style's colour and glyph scale.
+/// An owner-draw combo's face, its caption unless an overlay covers it, and
+/// its drop-down while it is open, its rows in the style's colour and glyph
+/// scale.
 #[allow(clippy::too_many_arguments)]
 fn paint_combo(
     paint: &mut GuiPaint,
@@ -682,7 +658,7 @@ fn paint_combo(
     atlas: &SkirmishShellChromeAtlas,
     gui: &Gui,
     node: NodeId,
-    rect: RectPx,
+    (rect, caption): (RectPx, bool),
     enabled: bool,
     scale: ShellScale,
     style: GuiStyle<'_>,
@@ -730,7 +706,7 @@ fn paint_combo(
             SHELL_LABEL_TEXT_RGB,
             Some(combo_face_text_color(true)),
         );
-        if let Some(face) = face {
+        if let Some(face) = face.filter(|_| caption) {
             // Cut to gamemd's arrow reserve (`0x00617250`), squeezed first.
             let at = combo_face_text_draw_rect(rect, scale);
             fit_owner_draw_label(font, face, combo_face_text_fit_width(rect, scale), |face| {

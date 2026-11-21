@@ -3642,7 +3642,7 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
             .is_some_and(|modal| modal.highlighted_filtered_index == Some(row)),
         "chooser row {row} was not selected"
     );
-    let button = layout.use_map_button;
+    let button = layout.rect(0x6C5);
     chooser_press(state, (button.x + button.w / 2, button.y + button.h / 2));
     Ok(())
 }
