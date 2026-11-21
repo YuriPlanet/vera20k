@@ -3193,6 +3193,7 @@ fn gsi_04_07_damage_nonfatal_infantry_scatter_precedes_fear() {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
         let victim = world
             .substrate

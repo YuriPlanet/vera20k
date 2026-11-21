@@ -463,12 +463,13 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 "{name}"
             );
         }
-        let (_, _, result) = commit_area_with_dispatch(
+        let (_, result) = commit_area_with_dispatch(
             &mut world,
             &mut ReceiverRun::default(),
             &collected.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
         assert_eq!(
             i64::from(result as u8),

@@ -328,6 +328,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
                 None,
                 rules,
                 None,
+                &mut Vec::new(),
             )
         });
         // Reuse the native observer's actual raw words, including ranged

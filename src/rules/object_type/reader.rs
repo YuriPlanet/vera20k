@@ -1006,6 +1006,7 @@ impl ObjectType {
             weapon_list: vec![None; WEAPON_SLOT_COUNT],
             elite_weapon_list: vec![None; WEAPON_SLOT_COUNT],
             resolved_weapons: Default::default(),
+            resolved_debris: Default::default(),
             weapon_offsets: Default::default(),
             weapon_count: 0,
             naval_targeting: section.read_int("NavalTargeting", 0),

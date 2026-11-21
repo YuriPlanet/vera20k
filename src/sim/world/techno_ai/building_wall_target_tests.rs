@@ -343,6 +343,7 @@ fn damage_retaliation_keeps_wall_geometry_through_the_mission_override() {
         None,
         &scene.rules,
         Some(&scene.registry),
+        &mut Vec::new(),
     );
     assert_eq!(
         scene.target(),

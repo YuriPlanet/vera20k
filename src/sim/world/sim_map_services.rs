@@ -610,8 +610,12 @@ impl Simulation {
     }
 
     /// Commit synchronous Tag outcomes to the existing frame-output boundary.
-    /// Object callbacks and the master-frame poll share this single queue.
-    pub(crate) fn publish_trigger_effects(&mut self, effects: Vec<TriggerEffect>) {
+    /// Object callbacks and the master-frame poll share this single queue; a
+    /// single effect comes as a one-element array.
+    pub(crate) fn publish_trigger_effects(
+        &mut self,
+        effects: impl IntoIterator<Item = TriggerEffect>,
+    ) {
         self.trigger_effects.extend(effects);
     }
 

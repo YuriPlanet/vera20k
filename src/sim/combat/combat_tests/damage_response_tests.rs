@@ -369,12 +369,13 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             .is_none()
         };
         assert!(resolve(&sim), "IC {iron_curtain}: no receiver outcome");
-        let (_, _, packet) = world_receiver::commit_receiver(
+        let (_, packet) = world_receiver::commit_receiver(
             &mut sim,
             &mut world_receiver::ReceiverRun::default(),
             combat_aoe::AreaDamageReceiver::Entity(event),
             &rules,
             None,
+            &mut Vec::new(),
         );
         assert_eq!(
             packet, 100,
@@ -710,6 +711,7 @@ fn retail_damage_scatter_tail_admits_by_rank_ability_and_ownership() {
             None,
             &rules,
             None,
+            &mut Vec::new(),
         );
         let actor = sim.substrate.entities.get(id).unwrap();
         assert!(actor.health.current() < rules.object(type_id).unwrap().strength);
@@ -774,7 +776,8 @@ fn retail_arena_hit_by(
     };
     let rng = sim.scenario_rng.state();
     let warhead = sim.interner.intern(warhead);
-    let (_, pings) = crate::sim::combat::world_receiver::commit_entities(
+    let mut pings = Vec::new();
+    crate::sim::combat::world_receiver::commit_entities(
         &mut sim,
         &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
         &[EntityDamageEvent::area(
@@ -788,6 +791,7 @@ fn retail_arena_hit_by(
         None,
         rules,
         None,
+        &mut pings,
     );
     (sim, ids, rng, pings)
 }

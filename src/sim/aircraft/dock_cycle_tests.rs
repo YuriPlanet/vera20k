@@ -414,7 +414,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
             .contains(plane)
     );
     let c4 = sim.interner.intern("DockC4");
-    let (effects, _) = world_receiver::commit_entities(
+    let effects = world_receiver::commit_entities(
         &mut sim,
         &mut world_receiver::ReceiverRun::default(),
         &[EntityDamageEvent::direct_receiver(
@@ -432,6 +432,7 @@ fn a_linked_airborne_aircraft_crashes_in_the_airfields_damage_transaction() {
         Some(false),
         &rules,
         None,
+        &mut Vec::new(),
     );
     let plane = sim
         .substrate

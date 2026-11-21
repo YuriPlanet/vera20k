@@ -2017,6 +2017,7 @@ impl RuleSet {
             allied_wall_transparency,
             elevation_model,
             radiation,
+            radiation_site_warhead: None,
             #[cfg(feature = "phobos")]
             shield_types,
             #[cfg(feature = "phobos")]

@@ -1474,6 +1474,20 @@ impl ObjectType {
         self.resolved_weapons = weapons;
     }
 
+    /// `debris_types` as its RuleSet resolved it; reads go through
+    /// `RuleSet::object_debris_types`, which checks the resolving set.
+    pub(crate) fn resolved_debris(&self) -> &crate::rules::ruleset::ResolvedDebris {
+        &self.resolved_debris
+    }
+
+    /// Store `debris_types` resolved against the current `[VoxelAnims]`.
+    pub(crate) fn project_resolved_debris(
+        &mut self,
+        debris: crate::rules::ruleset::ResolvedDebris,
+    ) {
+        self.resolved_debris = debris;
+    }
+
     /// The ART `SiloDamage=` [`crate::rules::ruleset::RuleSet`] projected;
     /// debug builds compare it with a fresh resolution against `rules`' ART.
     pub(crate) fn silo_damage(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {

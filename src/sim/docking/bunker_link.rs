@@ -983,6 +983,7 @@ mod tests {
             None,
             &rules,
             Some(crate::sim::tiberium::test_support::overlay_registry()),
+            &mut Vec::new(),
         );
         assert!(
             !sim.substrate
@@ -1069,6 +1070,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         assert!(
@@ -1223,6 +1225,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         assert!(
@@ -1306,6 +1309,7 @@ mod tests {
             &area.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
 
         let tank = sim.substrate.entities.get(1).unwrap();

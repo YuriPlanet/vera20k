@@ -2210,6 +2210,9 @@ pub struct ObjectType {
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
     /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
+    /// Derived: `debris_types` as the RuleSet that built the type resolved
+    /// it (`RuleSet::resolve_handles`).
+    resolved_debris: crate::rules::ruleset::ResolvedDebris,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
