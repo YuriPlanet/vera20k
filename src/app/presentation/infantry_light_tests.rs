@@ -120,7 +120,9 @@ fn assert_shp_light(
     expected: i32,
 ) {
     use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
-    use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
+    use crate::app::presentation::render::draw_plan_lowering::{
+        NativeDisplayOrder, ObjectTexture, PlannedObjects,
+    };
     use crate::render::sprite_atlas::{
         ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas,
     };
@@ -169,9 +171,12 @@ fn assert_shp_light(
     let location = crate::sim::movement::ground_pose::object_location(actor, Some(terrain));
     let screen =
         crate::util::lepton::absolute_leptons_to_screen(location.x, location.y, location.z);
-    let frame =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
-    let mut draws = Vec::new();
+    let frame = crate::app::presentation::frame::PresentationFrame::capture(
+        runtime,
+        &Default::default(),
+        false,
+    );
+    let mut draws = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime,
@@ -203,6 +208,7 @@ fn assert_shp_light(
         &mut draws,
         &NativeDisplayOrder::from_world(&sim, None),
     );
+    let draws = draws.into_owned();
     let mut bodies = draws
         .iter()
         .filter(|draw| draw.parent.id == id)

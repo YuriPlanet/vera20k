@@ -1701,7 +1701,7 @@ pub(crate) fn render_terrain_lighting_probe(
 fn bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z() {
     use super::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
     use crate::app::presentation::render::draw_plan_lowering::{
-        NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+        NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, OwnedPlannedObject,
         lower_ground_object_instances,
     };
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -1736,7 +1736,7 @@ fn bunker_front_wall_interleaves_with_indexed_voxel_without_writing_z() {
             } else {
                 SpriteEncoding::Plain
             };
-            PlannedObjectInstance::object(
+            OwnedPlannedObject::object(
                 order.object_draw(ids[index], encoding).unwrap(),
                 vec![ObjectPieceInstance {
                     target: if index == 1 {

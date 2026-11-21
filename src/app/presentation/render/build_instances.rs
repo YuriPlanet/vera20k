@@ -284,7 +284,7 @@ pub(super) fn build_world_instances(
             &own_order
         }
     };
-    let mut planned_objects = Vec::new();
+    let mut planned_objects = super::draw_plan_lowering::PlannedObjects::default();
     let mut bodies = Vec::new();
     instances::build_overlay_instances(
         state,
@@ -361,7 +361,8 @@ pub(super) fn build_world_instances(
                             .record_at(slot)
                             .zip(instances::layer_draw_band(member.layer))
                             .is_none_or(|(entity, band)| {
-                                let mut scratch = Vec::new();
+                                let mut scratch =
+                                    super::draw_plan_lowering::PlannedObjects::default();
                                 if let Some(visit) = units.as_mut() {
                                     visit(&mut scratch, entity, band);
                                 }
@@ -446,17 +447,13 @@ pub(super) fn build_world_instances(
         // Prepare slot binding/light pieces without querying the shared FPS
         // latch. Each Anim's retained Display encounter admits and appends its
         // pieces; preparation shares that encounter's view.
-        let mut building_anim_instances = Vec::new();
+        let mut prepared_building_anims = super::draw_plan_lowering::PlannedObjects::default();
         instances::build_building_anim_instances(
             state,
             input.tactical_admission(),
-            &mut building_anim_instances,
+            &mut prepared_building_anims,
             display_order,
         );
-        let prepared_building_anims = building_anim_instances
-            .into_iter()
-            .map(|parent| (parent.parent.id, parent))
-            .collect();
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
@@ -480,7 +477,7 @@ pub(super) fn build_world_instances(
                 palette,
                 planned_objects.iter().map(|parent| parent.parent.id),
             );
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.brackets = brackets.remove(&parent.parent.id);
         }
     }
@@ -507,7 +504,7 @@ pub(super) fn build_world_instances(
             .as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.status = frame.object(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
                     sim,
@@ -708,7 +705,7 @@ pub(super) fn build_world_instances(
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects
         .iter()
-        .filter(|parent| parent.building_pieces.is_some())
+        .filter(|parent| parent.is_building())
         .map(|parent| parent.parent.id)
         .collect();
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);

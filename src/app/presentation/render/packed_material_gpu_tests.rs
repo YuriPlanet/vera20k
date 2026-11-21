@@ -1,6 +1,6 @@
 //! Original executed packed-material words through retained production replay.
 use super::super::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_object_instances,
 };
 use super::*;
 use crate::app::presentation::frame::ObjectRecord;
@@ -134,7 +134,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             &crate::rules::house_colors::HouseColorRamps::from_schemes(&[]),
                             &[],
                         );
-                        let parents = cases
+                        let parents: Vec<_> = cases
                             .iter()
                             .enumerate()
                             .flat_map(|(y, row)| {
@@ -146,7 +146,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     6 => 0.25,
                                     _ => unreachable!(),
                                 };
-                                let mut parent = PlannedObjectInstance::object(
+                                let mut parent = OwnedPlannedObject::object(
                                     ObjectDraw {
                                         id: y as u64,
                                         layer: TacticalLayer(3),
@@ -194,7 +194,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                 let replays = row["replay_count"].as_u64().unwrap_or(1) as usize;
                                 (0..replays)
                                     .map(|repeat| {
-                                        PlannedObjectInstance::object(
+                                        OwnedPlannedObject::object(
                                             ObjectDraw {
                                                 id: (y * 4 + repeat) as u64,
                                                 layer: parent.parent.layer,
@@ -215,7 +215,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                                     .collect::<Vec<_>>()
                             })
                             .collect();
-                        let layers = lower_object_instances(parents);
+                        let layers = lower_object_instances(parents.into());
                         let layer = &layers[3];
                         let mut pool = InstanceBufferPool::new();
                         pool.upload_on_device(
@@ -604,43 +604,46 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
             assert_eq!(position[0], int(&row["leaves"][0]["x"]) as f32);
             assert_eq!(position[1], int(&row["leaves"][0]["y"]) as f32);
             for pose in [false, true] {
-                let layer = lower_object_instances(vec![PlannedObjectInstance::object(
-                    ObjectDraw {
-                        id: 1,
-                        layer: TacticalLayer(3),
-                        display_order: 0,
-                        policy,
-                    },
-                    vec![ObjectPieceInstance {
-                        target: if pose {
-                            ObjectTexture::UnitPosePage(0)
-                        } else {
-                            ObjectTexture::UnitAtlasPage(0)
+                let layer = lower_object_instances(
+                    vec![OwnedPlannedObject::object(
+                        ObjectDraw {
+                            id: 1,
+                            layer: TacticalLayer(3),
+                            display_order: 0,
+                            policy,
                         },
-                        render_z: RenderZPolicy::ReadOnly,
-                        instance: SpriteInstance {
-                            position,
-                            size: [crop[2] as f32, crop[3] as f32],
-                            uv_origin: [
-                                crop[0] as f32 / source_size[0] as f32,
-                                crop[1] as f32 / source_size[1] as f32,
-                            ],
-                            uv_size: [
-                                crop[2] as f32 / source_size[0] as f32,
-                                crop[3] as f32 / source_size[1] as f32,
-                            ],
-                            tint,
-                            palette_light: light,
-                            alpha: 1.,
-                            // Bit_Blit clipped to the whole surface.
-                            draw_state: DrawState::from_native_selector(remap_row, selector),
-                            z_adjust: int(&row["prepared_z_adjust"][0]) as f32,
-                            z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
-                            zshape_origin: [position[1], crop[3] as f32],
-                            ..Default::default()
-                        },
-                    }],
-                )]);
+                        vec![ObjectPieceInstance {
+                            target: if pose {
+                                ObjectTexture::UnitPosePage(0)
+                            } else {
+                                ObjectTexture::UnitAtlasPage(0)
+                            },
+                            render_z: RenderZPolicy::ReadOnly,
+                            instance: SpriteInstance {
+                                position,
+                                size: [crop[2] as f32, crop[3] as f32],
+                                uv_origin: [
+                                    crop[0] as f32 / source_size[0] as f32,
+                                    crop[1] as f32 / source_size[1] as f32,
+                                ],
+                                uv_size: [
+                                    crop[2] as f32 / source_size[0] as f32,
+                                    crop[3] as f32 / source_size[1] as f32,
+                                ],
+                                tint,
+                                palette_light: light,
+                                alpha: 1.,
+                                // Bit_Blit clipped to the whole surface.
+                                draw_state: DrawState::from_native_selector(remap_row, selector),
+                                z_adjust: int(&row["prepared_z_adjust"][0]) as f32,
+                                z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, false),
+                                zshape_origin: [position[1], crop[3] as f32],
+                                ..Default::default()
+                            },
+                        }],
+                    )]
+                    .into(),
+                );
                 let layer = &layer[3];
                 let mut pool = InstanceBufferPool::new();
                 pool.upload_on_device(
@@ -793,7 +796,7 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
                 .iter()
                 .enumerate()
                 .map(|(i, &position)| {
-                    PlannedObjectInstance::object(
+                    OwnedPlannedObject::object(
                         ObjectDraw {
                             id: i as u64,
                             layer: TacticalLayer(3),
