@@ -57,7 +57,9 @@
 //!   the old house, `value` 1 when CaptureManager's Capture (0x00471D40),
 //!   FreeUnit (0x004720D5), PsyDom's permanent capture or Ares' permanent
 //!   mind control and Dominator transfer the object;
-//! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`).
+//! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`);
+//! - `ModifierStart`, `ModifierStacks` and `ModifierExpire` on the modified
+//!   object, from the modifier store's callers (`ext_modules::modifiers`).
 //!
 //! Polling events (appendix 4.4): `PropertyPoll`, `HousePowerPoll` (the
 //! trigger's house's `PowerOutput` minus `PowerDrain`), `ModifierCountPoll`
@@ -98,9 +100,9 @@ use std::collections::BTreeSet;
 use vera20k_wasm_ext::triggers::{
     EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE,
     EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL,
-    EVENT_PASSENGER_ADDED, EVENT_PASSENGER_REMOVED, EVENT_PROPERTY_POLL,
-    EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER, EVENT_TRANSPORT_ENTERED,
-    EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
+    EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS, EVENT_MODIFIER_START, EVENT_PASSENGER_ADDED,
+    EVENT_PASSENGER_REMOVED, EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE,
+    EVENT_TIMER, EVENT_TRANSPORT_ENTERED, EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
@@ -115,7 +117,7 @@ use crate::sim::trigger_runtime::{
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3).
-const DELIVERED: [i32; 13] = [
+const DELIVERED: [i32; 16] = [
     EVENT_TAKE_DAMAGE,
     EVENT_ATTACKED_BY,
     EVENT_FATAL_DAMAGE,
@@ -129,6 +131,9 @@ const DELIVERED: [i32; 13] = [
     EVENT_HOUSE_TRANSFERRED,
     EVENT_TIMER,
     EVENT_SUPER_WEAPON_LAUNCHED,
+    EVENT_MODIFIER_START,
+    EVENT_MODIFIER_EXPIRE,
+    EVENT_MODIFIER_STACKS,
 ];
 
 /// The polling events (appendix 4.4), every one of which this engine checks.
@@ -232,7 +237,10 @@ impl Host<'_, '_> {
             | EVENT_TRANSPORT_EXITED
             | EVENT_PASSENGER_ADDED
             | EVENT_PASSENGER_REMOVED
-            | EVENT_HOUSE_TRANSFERRED => object,
+            | EVENT_HOUSE_TRANSFERRED
+            | EVENT_MODIFIER_START
+            | EVENT_MODIFIER_EXPIRE
+            | EVENT_MODIFIER_STACKS => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
                 Some("Money") => TriggerScope::Global,

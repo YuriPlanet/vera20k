@@ -287,6 +287,7 @@ impl<'a> FireSubject<'a> {
                     .ares_disable_weapons
                     .remaining(frame as i32)
                     > 0,
+            module_weapons_disabled: firer.module_weapons_disabled(),
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
             on_bridge: firer.on_bridge(),

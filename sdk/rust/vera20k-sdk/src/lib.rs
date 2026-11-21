@@ -686,8 +686,10 @@ macro_rules! stock {
 }
 
 impl Action {
+    pub const FIRE_WEAPON: i32 = 1000;
     pub const LAUNCH_SUPER_WEAPON: i32 = 1001;
     pub const SPAWN_ANIM: i32 = 1002;
+    pub const ATTACH_ANIM: i32 = 1003;
     pub const REMOVE: i32 = 1004;
     pub const KILL: i32 = 1005;
     pub const DAMAGE: i32 = 1006;
@@ -700,8 +702,10 @@ impl Action {
     pub const CLEAR_MIND_CONTROL: i32 = 1013;
     pub const ADD_EXPERIENCE: i32 = 1014;
     pub const ADD_MONEY: i32 = 1015;
+    pub const ALLOW_TYPE: i32 = 1016;
     pub const SET_OWNER: i32 = 1017;
     pub const ADD_AMMO: i32 = 1018;
+    pub const ADD_PASSENGER: i32 = 1019;
     pub const SET_PROPERTY: i32 = 1021;
     pub const MODIFY: i32 = 1022;
     pub const REMOVE_MODIFIERS: i32 = 1023;
@@ -918,6 +922,53 @@ impl Action {
     /// Converts `target` to `kind` for good.
     pub fn convert(target: Techno, kind: TypeRef) -> Result<()> {
         Self::run(Self::CONVERT, target.0, &params!(id: kind.id())).map(drop)
+    }
+
+    /// Converts `target` to `kind` for `frames` frames, then back to the
+    /// type it had before.
+    pub fn convert_for(target: Techno, kind: TypeRef, frames: u32) -> Result<()> {
+        let params = params!(id: kind.id(), value2: i64::from(frames));
+        Self::run(Self::CONVERT, target.0, &params).map(drop)
+    }
+
+    /// Fires `shooter`'s weapon `slot` (0 primary, 1 secondary) at its
+    /// current target now; `Err(Refused)` when it cannot fire now (reloading,
+    /// out of range, ...), `Err(Gone)` without a target.
+    pub fn fire_weapon(shooter: Techno, slot: i32) -> Result<()> {
+        let params = params!(id: -1, value: i64::from(slot));
+        Self::run(Self::FIRE_WEAPON, shooter.0, &params).map(drop)
+    }
+
+    /// As [`Action::fire_weapon`], at the object `at`.
+    pub fn fire_weapon_at(shooter: Techno, slot: i32, at: Techno) -> Result<()> {
+        let params = params!(id: -1, value: i64::from(slot), other: at.0);
+        Self::run(Self::FIRE_WEAPON, shooter.0, &params).map(drop)
+    }
+
+    /// As [`Action::fire_weapon`], at the cell `at` (a cell or waypoint).
+    pub fn fire_weapon_at_cell(shooter: Techno, slot: i32, at: impl Ref) -> Result<()> {
+        let params = params!(id: -1, value: i64::from(slot), cell: at.raw());
+        Self::run(Self::FIRE_WEAPON, shooter.0, &params).map(drop)
+    }
+
+    /// Plays animation `anim` (its rules array position, as
+    /// [`Action::spawn_anim`] takes) once, attached to `target`.
+    pub fn attach_anim(target: Techno, anim: i32) -> Result<()> {
+        Self::run(Self::ATTACH_ANIM, target.0, &params!(id: anim)).map(drop)
+    }
+
+    /// Forbids (`false`) TechnoType `kind` to `house`, or lifts this
+    /// module's forbid (`true`); prerequisites still apply.
+    pub fn allow_type(house: House, kind: TypeRef, allow: bool) -> Result<()> {
+        let params = params!(id: kind.id(), value: i64::from(allow));
+        Self::run(Self::ALLOW_TYPE, house.0, &params).map(drop)
+    }
+
+    /// Boards `passenger` into `transport` (a vehicle or aircraft) at once,
+    /// if the transport would load it; `Err(Refused)` otherwise.
+    pub fn add_passenger(transport: Techno, passenger: Techno) -> Result<()> {
+        let params = params!(other: passenger.0);
+        Self::run(Self::ADD_PASSENGER, transport.0, &params).map(drop)
     }
 
     // Stock actions (5.2) taking a string.

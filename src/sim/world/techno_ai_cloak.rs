@@ -37,7 +37,8 @@ impl Simulation {
 
 /// `HasStealthAbility`: the live `+0x3D2` byte; Phobos'
 /// `TechnoClass_IsReadyToCloak_Wrapper` / `ShouldNotCloak_Wrapper` OR the
-/// active effects' `Cloakable` into it.
+/// active effects' `Cloakable` into it, with Wasm module `Cloakable`
+/// modifiers composed on (`ext_modules::modifiers`).
 fn has_stealth_ability(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
@@ -47,8 +48,7 @@ fn has_stealth_ability(
         entity.category(),
         object,
         ares,
-    ))
-        || entity.phobos_cloakable()
+    )) || entity.effect_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
@@ -149,7 +149,8 @@ fn stock_cloak_tick_facts(
     let sonar_active = rules.ares()
         && entity.seldom.ares.sonar_timer.start_frame() != -1
         && entity
-            .seldom.ares
+            .seldom
+            .ares
             .sonar_timer
             .remaining(sim.session.binary_frame() as i32)
             > 0;
@@ -170,7 +171,8 @@ fn stock_cloak_tick_facts(
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
     // an arbitrary movement destination.
     let destination_is_weapons_factory = entity
-        .seldom.radio_contacts
+        .seldom
+        .radio_contacts
         .slot(0)
         .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
     let current_frame = sim.session.binary_frame() as i32;
@@ -242,7 +244,7 @@ fn stock_cloak_tick_facts(
             || crate::sim::movement::air_movement::current_fly_height(entity, sim.resolved_terrain.as_ref()) < 1)
         // `IsReadyToCloak_Wrapper`: a ready object still refuses while any
         // active effect forces a decloak.
-        && !entity.phobos_force_decloak();
+        && !entity.effect_force_decloak();
 
     // `TechnoClass::ShouldUncloak @ 0x006FBC90`:
     //   if ((IsCloakable() || +0x3D2) && !EMP && !vt+0x380 && !WarpIn && !WarpOut)
@@ -268,7 +270,7 @@ fn stock_cloak_tick_facts(
     };
     // `ShouldNotBeCloaked_Wrapper`: a passing object still reports
     // should-uncloak while an active effect forces the decloak.
-    let should_uncloak = should_uncloak || entity.phobos_force_decloak();
+    let should_uncloak = should_uncloak || entity.effect_force_decloak();
     Some(crate::sim::cloak_disguise::CloakTickFacts::new(
         current_frame,
         // CloakingTick6FB7FD..6FB823 applies this contact exclusion before
@@ -927,17 +929,15 @@ pub(crate) fn cloak_producer_ticks(
         entity.category(),
         object,
         ares,
-    ))
-        || has_weapon_ability(
-            rank_from_u16(entity.veterancy.rank()),
-            object,
-            Ability::Cloak,
-        )
-        || entity
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.state() != 0)
-        || entity.phobos_cloakable()
+    )) || has_weapon_ability(
+        rank_from_u16(entity.veterancy.rank()),
+        object,
+        Ability::Cloak,
+    ) || entity
+        .cloak
+        .as_ref()
+        .is_some_and(|cloak| cloak.state() != 0)
+        || entity.effect_cloakable()
 }
 
 /// The cloak virtual (vt+0x410): `TechnoClass::CloakingTick @ 0x006FB740`

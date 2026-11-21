@@ -53,9 +53,8 @@
 //!   (through ChangeOwner, as the stock change-house action does), `Rank`,
 //!   `Mission` (ordered as a player's order), `Ammo` and a building's
 //!   `Online` ([`writes`]). Other readable properties refuse.
-//! - Only `FirepowerMultiplier`, `ArmorMultiplier` and `SpeedMultiplier`
-//!   take modifiers; other modifiable properties answer `Unsupported`, and
-//!   houses take none.
+//! - The modifiable properties [`modifiers`] wires take modifiers; other
+//!   modifiable properties answer `Unsupported`, and houses take none.
 
 use std::hash::{Hash, Hasher};
 
@@ -72,6 +71,7 @@ mod cells;
 mod chains;
 mod decide;
 mod events;
+mod held;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
@@ -181,6 +181,8 @@ pub struct ExtModules {
     slots: Vec<Slot>,
     modifiers: ModifierStore,
     vars: VarStore,
+    /// Timed conversions and forbidden types actions left ([`held`]).
+    held: held::ActionHeld,
     /// Modules read from a save, instantiated by
     /// [`Simulation::restore_ext_modules`]. Deserializing never compiles a
     /// module, so describing the save layout stays data-only.
@@ -211,6 +213,8 @@ struct SavedExtModules {
     vars: VarValues,
     #[serde(default)]
     rules_ini: Option<IniFile>,
+    #[serde(default)]
+    held: held::ActionHeld,
 }
 
 impl serde::Serialize for ExtModules {
@@ -235,6 +239,7 @@ impl serde::Serialize for ExtModules {
             modifiers: self.modifiers.clone(),
             vars: self.vars.values.clone(),
             rules_ini: self.rules_ini.clone(),
+            held: self.held.clone(),
         }
         .serialize(serializer)
     }
@@ -247,6 +252,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             pending: saved.slots,
             modifiers: saved.modifiers,
             rules_ini: saved.rules_ini,
+            held: saved.held,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -391,6 +397,9 @@ impl ExtModules {
         }
         self.modifiers.hash(hasher);
         self.vars.values.hash(hasher);
+        if !self.held.is_empty() {
+            self.held.hash(hasher);
+        }
     }
 }
 
@@ -508,7 +517,7 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
         }
         TABLE_ACTION => actions::has_action(id, rules),
         TABLE_PROPERTY => property_name(id)
-            .is_some_and(|name| READABLE.contains(&name) || Stat::from_property(name).is_some()),
+            .is_some_and(|name| READABLE.contains(&name) || Stat::wired_property(name).is_some()),
         TABLE_NAME_KIND => matches!(
             id,
             NAME_TECHNO_TYPE
@@ -720,9 +729,9 @@ impl SimHost for Host<'_, '_> {
         if self.sim.entities().get(target).is_none() {
             return Ok((0, Status::Gone));
         }
-        let Some(stat) = Stat::from_property(name) else {
-            // Appendix 7.2's other properties are not wired yet; the rest
-            // are not modifiable.
+        let Some(stat) = Stat::wired_property(name) else {
+            // Appendix 7.2's other properties are not wired (in this
+            // build); the rest are not modifiable.
             let modifiable = property_id_range(MODIFIABLE).contains(&prop);
             return Ok((
                 0,
@@ -747,14 +756,17 @@ impl SimHost for Host<'_, '_> {
             origin: self.source,
         };
         let sim = &mut *self.sim;
+        let before = sim.ext_modules.modifiers.group_count(target, group);
         let handle = sim.substrate.allocate_stable_id();
-        if !sim
-            .ext_modules
-            .modifiers
-            .insert(&mut sim.substrate.entities, handle, modifier)
-        {
+        let Some(replaced) =
+            sim.ext_modules
+                .modifiers
+                .insert(&mut sim.substrate.entities, handle, modifier)
+        else {
             return Ok((0, Status::Refused));
-        }
+        };
+        sim.raise_modifiers_expired(self.rules, self.frame_effects, &replaced);
+        sim.raise_modifier_started(self.rules, self.frame_effects, handle, before);
         Ok((handle as i64, Status::Ok))
     }
 
@@ -765,11 +777,15 @@ impl SimHost for Host<'_, '_> {
             Some(_) => return Err(Invalid(format!("{modifier:#x} is not a modifier"))),
         };
         let sim = &mut *self.sim;
-        let removed = sim
+        let Some(removed) = sim
             .ext_modules
             .modifiers
-            .remove(&mut sim.substrate.entities, handle);
-        Ok(if removed { Status::Ok } else { Status::Gone })
+            .remove(&mut sim.substrate.entities, handle)
+        else {
+            return Ok(Status::Gone);
+        };
+        sim.raise_modifiers_expired(self.rules, self.frame_effects, &[(handle, removed)]);
+        Ok(Status::Ok)
     }
 
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
@@ -1000,7 +1016,7 @@ impl Host<'_, '_> {
                 i64::from(entity.building_online())
             }
             "Online" => return (0, Status::Unsupported),
-            _ => match Stat::from_property(name) {
+            _ => match Stat::wired_property(name) {
                 Some(stat) => entity.effective_stat(stat),
                 None => return (0, Status::Unsupported),
             },
@@ -1471,6 +1487,7 @@ impl Simulation {
             self.ext_modules.modifiers.forget_object(stable_id);
         }
         self.ext_modules.vars.forget_object(stable_id);
+        self.ext_modules.held.forget_object(stable_id);
     }
 
     pub fn ext_modules(&self) -> &ExtModules {
@@ -1481,8 +1498,9 @@ impl Simulation {
         &mut self.ext_modules
     }
 
-    /// The module phase: modifiers whose time is up expire and `Timer`
-    /// triggers whose period ends fire, then each enabled module in order
+    /// The module phase: modifiers whose time is up expire, timed
+    /// conversions whose time is up revert and `Timer` triggers whose
+    /// period ends fire, then each enabled module in order
     /// gets its `on_scenario_start` once, its queued event records
     /// (`on_events`), then `on_frame`.
     pub(crate) fn run_ext_module_phase(
@@ -1493,13 +1511,16 @@ impl Simulation {
     ) {
         if !self.ext_modules.modifiers.is_empty() {
             let frame = self.session.binary_frame();
-            self.ext_modules
+            let expired = self
+                .ext_modules
                 .modifiers
                 .expire(&mut self.substrate.entities, frame);
+            self.raise_modifiers_expired(rules, frame_effects, &expired);
         }
         // The `ProductionAllowed` step: once per frame, before any module
         // runs (`decide`).
         self.decide_production_allowed(rules);
+        self.revert_ext_module_conversions(rules, frame_effects);
         self.fire_deferred_module_triggers(rules, frame_effects);
         self.poll_module_events(rules, frame_effects);
         self.raise_module_timers(rules, frame_effects);

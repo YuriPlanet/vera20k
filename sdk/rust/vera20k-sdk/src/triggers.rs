@@ -24,7 +24,9 @@
 //! vera20k_sdk::on_events!(ON_HIT => on_hit);
 //! ```
 
-use crate::{Action, Cell, House, NO_HANDLE, Op, Prop, Ref, Result, Techno, Var, check, sys};
+use crate::{
+    Action, Cell, House, Modifier, NO_HANDLE, Op, Prop, Ref, Result, Techno, Var, check, sys,
+};
 
 /// Event kinds (appendix 4). Stock events keep 0..61 (4.1); new delivered
 /// events are numbered from 1000 in appendix 4.3 order and the polling
@@ -836,6 +838,30 @@ view!(
         super_weapon: i32 = |r| r.id,
         house: House = |r| House(r.house),
         target_cell: Cell = |r| Cell(r.cell),
+    }
+);
+
+view!(
+    /// `ModifierStart` and `ModifierExpire` (appendix 4.3), on the modified
+    /// object. An expired modifier reads as gone.
+    ModifierEvent {
+        target: Techno = |r| Techno(r.subject),
+        modifier: Modifier = |r| Modifier(r.modifier),
+        /// The modifier's property.
+        property: Prop = |r| Prop(r.value as i32),
+        /// The modifier's source object; `NO_HANDLE` without one.
+        source: Techno = |r| Techno(r.other),
+    }
+);
+
+view!(
+    /// `ModifierStacks` (appendix 4.3), on the modified object.
+    ModifierStacksEvent {
+        target: Techno = |r| Techno(r.subject),
+        /// The modifier just added.
+        modifier: Modifier = |r| Modifier(r.modifier),
+        /// How many modifiers the object now holds in the group.
+        count: i64 = |r| r.value,
     }
 );
 
