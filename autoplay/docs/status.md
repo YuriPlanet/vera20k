@@ -47,11 +47,12 @@
 ### 试过并且更差的（不要重试）
 
 - **把 `Item::Refinery` 加进 `yard_reserve`**（想让第二个精炼厂也能存钱买到）：
-  同一命令下 seed 24301 从 own=158 / credits=20145 掉到 own=141 / credits=9820，
-  全局 `auto play: build` 行从 785 掉到 242——步兵被钱荒饿死，
+  唯一一局胜利从 `won at tick 32491` 掉到 `won at tick 33964`，own 144 → 136，
+  income 8613 → 5402，全局 `auto play: build` 行 785 → 242。加 `fighters>=` 条件
+  也没用（那条件几乎恒真，两局数字完全一样）。步兵被钱荒饿死，
   `src/sim/strategy/assist/build.rs` 里那段注释早就写过这个价。
-  结论：第二个精炼厂确实一直没建（seed 10 整局 1 个），但 `yard_reserve` 不是
-  该用的工具，瓶颈不在「存不下钱」而是在别处。
+  另一条否证：seed 10 的收入在加与不加时都是 1943/min，可见它的贫穷不是
+  「精炼厂不够」造成的，第二个 bay 不是那局的瓶颈。
 - **`ARMY_TO_ATTACK` 10 → 20**（军队门槛抬高，想「屯更多兵再出门」）：三局
   全部 timeout，连原本 32491 胜的那局也丢了。原因不是门槛本身——`army at first
   push` 三局都还是 10，说明门不是它在把；抬它把 `fist_needs` 一起抬到 20，
