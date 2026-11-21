@@ -472,6 +472,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
                     text: crate::app::frontend::shell_pass::resolve_csf(state, "GUI:Random")
                         .into_owned(),
                     swatch: None,
+                    greyed: false,
                 },
                 -2,
             )

@@ -963,6 +963,23 @@ pub(super) fn push_combo_instances(
         },
         layout.scale,
     );
+    // VERA's Quick Team Setup and Bulk Seat Actions under the options.
+    for (id, rect) in [
+        (SkirmishComboId::TeamMenu, layout.team_menu),
+        (SkirmishComboId::SeatMenu, layout.seat_menu),
+    ] {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Combo {
+                rect,
+                swatch: None,
+                open: open == Some(id),
+                disabled: !combo_enabled(shell, maps, id),
+            },
+            layout.scale,
+        );
+    }
 
     for (slot, row, opponent) in shell.paged_opponents(layout.shown_rows) {
         if !player_row_visible(shell, maps, row) {

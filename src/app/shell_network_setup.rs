@@ -21,6 +21,7 @@ pub(crate) use service::{
     fail_go_delivery, fail_go_handoff, invalidate_network_agreement, poll,
     prepare_lan_guest_handoff, refuse_local_acceptance, service_event, set_network_map_progress,
 };
+mod team_menus;
 mod teams;
 pub(crate) use teams::{lobby_refused_building_queue, lobby_refused_option, starts_needed};
 pub(crate) mod view;
@@ -39,7 +40,7 @@ pub(crate) use wol::{
 use super::{App, AppState};
 use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
-use crate::app::match_runtime::session::NetworkVacancy;
+use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::match_runtime::session::SessionMode;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};

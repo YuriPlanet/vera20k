@@ -672,7 +672,7 @@ guest reads and ignores it in such a host's room, which cannot start anyway, sin
 versions differ: the guest's Team list and team headers' Join stay open, that host's
 game keeps the player's team, and the guest is told the host did not acknowledge the
 choice. That host's own balance still moves the players. A released guest in a current
-host's room sees the setting off; the host's Balance button still evens the teams.
+host's room sees the setting off; the host's Balance teams, in Quick Team Setup, still evens the teams.
 
 A VERA room queues its spectators for seats. A spectator who asks to play while no seat
 is free, with a team header's Join Queue or, in a room without teams, as a newcomer who

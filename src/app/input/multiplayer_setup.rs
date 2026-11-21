@@ -419,14 +419,19 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             let press = ui.popup.press_list(popup, x, y, Instant::now());
             if let ComboPress::Pick(index) = press
                 && let Some(control) = open
-                && let Some(item) = view
-                    .combo(control)
-                    .and_then(|combo| combo.choices.get(index))
+                && let Some(combo) = view.combo(control)
+                && let Some(item) = combo.choices.get(index)
             {
-                action = Some(SetupAction::Select {
-                    control,
-                    value: item.value,
-                });
+                if item.greyed {
+                    // A team bar list stays open on an item it cannot
+                    // have now.
+                    ui.open_list(control, combo.row, combo.selected);
+                } else {
+                    action = Some(SetupAction::Select {
+                        control,
+                        value: item.value,
+                    });
+                }
             }
             cue = press.cue().map(LauncherCue::from);
         } else if view.open_box.is_none()
@@ -519,9 +524,6 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
-                TEAM_STARTS => Some(SetupAction::TeamStarts),
-                TEAM_COLORS => Some(SetupAction::TeamColors),
-                BALANCE => Some(SetupAction::Balance),
                 LOBBY => Some(SetupAction::Lobby),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),

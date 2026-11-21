@@ -1448,7 +1448,18 @@ impl WolCapture {
                 if self.target == WolTarget::ModernTeams {
                     use crate::app::input::multiplayer_setup as room_input;
                     use crate::ui::multiplayer_setup::{
-                        BALANCE, SetupAction, SetupColumn, TEAM_COUNT,
+                        SetupAction, SetupColumn, TEAM_COUNT, TEAM_MENU,
+                    };
+                    use crate::ui::team_tools::TeamTool;
+                    // The host's pick from its Quick Team Setup list.
+                    let team_tool = |state: &mut AppState, tool: TeamTool| {
+                        crate::app::shell_network_setup::apply_action(
+                            state,
+                            SetupAction::Select {
+                                control: TEAM_MENU,
+                                value: tool.code(),
+                            },
+                        );
                     };
                     // With Teams Off the room is free-for-all and seats the
                     // guest as it comes in; the guest then picks Team B.
@@ -1490,8 +1501,13 @@ impl WolCapture {
                     let view = setup_view(state)?;
                     let team_list = row_combo(&view, SetupColumn::Team, 0)
                         .is_some_and(|(_, combo)| combo.enabled);
+                    let balance = view.combo(TEAM_MENU).is_some_and(|menu| {
+                        menu.choices
+                            .iter()
+                            .any(|item| item.value == TeamTool::Balance.code() && !item.greyed)
+                    });
                     ensure!(
-                        view.enabled(BALANCE) && team_list,
+                        balance && team_list,
                         "setting Teams online closed the Team lists or Balance"
                     );
                     let captions: Vec<&str> = view
@@ -1502,10 +1518,7 @@ impl WolCapture {
                         .collect();
                     // Team Colors gives the host on Team A YR's Orange and
                     // the guest on Team B its Blue: warm against cool.
-                    let rect = crate::app::input::multiplayer_setup::layout(state)
-                        .control_rect(crate::ui::multiplayer_setup::TEAM_COLORS)
-                        .context("Team Colors")?;
-                    setup_click(state, rect);
+                    team_tool(state, TeamTool::Colors);
                     let colors: Vec<(String, Option<u8>)> = state
                         .match_state
                         .session
@@ -1819,10 +1832,7 @@ impl WolCapture {
                             },
                         );
                     }
-                    let rect = crate::app::input::multiplayer_setup::layout(state)
-                        .control_rect(crate::ui::multiplayer_setup::TEAM_STARTS)
-                        .context("Team Starts")?;
-                    setup_click(state, rect);
+                    team_tool(state, TeamTool::Starts);
                     let session = &state.match_state.session;
                     let players: Vec<(String, u8, String)> = session
                         .network_setup()
@@ -1889,10 +1899,7 @@ impl WolCapture {
                             value: 4,
                         },
                     );
-                    let rect = crate::app::input::multiplayer_setup::layout(state)
-                        .control_rect(crate::ui::multiplayer_setup::TEAM_STARTS)
-                        .context("Team Starts")?;
-                    setup_click(state, rect);
+                    team_tool(state, TeamTool::Starts);
                     // People may still watch with an AI playing: the
                     // Spectators box stays, with its open seat.
                     let watched = setup_view(state)?;
