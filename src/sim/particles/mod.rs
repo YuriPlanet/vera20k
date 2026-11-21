@@ -852,6 +852,12 @@ pub struct ParticleSystemStore {
     /// ([`Self::take_touched`]). Transient: never saved, compared or hashed.
     #[serde(skip)]
     touched: TouchLogs<{ ParticleTouchReader::COUNT }>,
+    /// The (index, id) list a system's tick walks, lent by
+    /// [`Self::take_reverse_walk`] and given back by [`Self::return_walk`]
+    /// so each tick reuses one buffer. Transient: empty between walks, never
+    /// saved, compared or hashed.
+    #[serde(skip)]
+    walk_scratch: Vec<(usize, u64)>,
 }
 
 /// A product derived from the particle systems that re-derives from the touch
@@ -1136,6 +1142,40 @@ impl ParticleSystemStore {
         self.touched.note(id, self.systems.len());
         self.systems.insert(id, sys);
         id
+    }
+
+    /// `system`'s particles that `keep` admits, last first, as (index, id):
+    /// the list a tick walks. It is a copy, not a walk of the live list: the
+    /// walk's own steps push a particle's successor and remove the expired
+    /// child, and a particle's callbacks get `&mut Simulation`, so the list
+    /// can shift under it. The walk visits the particles present when it
+    /// began, each found again by [`Self::particle_for_tick`]. A walk nested
+    /// inside another finds the buffer lent out and fills a fresh one.
+    pub(crate) fn take_reverse_walk(
+        &mut self,
+        system: u64,
+        keep: impl Fn(&Particle) -> bool,
+    ) -> Option<Vec<(usize, u64)>> {
+        let particles = &self.systems.get(&system)?.particles;
+        let mut walk = std::mem::take(&mut self.walk_scratch);
+        walk.extend(
+            particles
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, p)| keep(p))
+                .map(|(index, p)| (index, p.stable_id())),
+        );
+        Some(walk)
+    }
+
+    /// Give back a list [`Self::take_reverse_walk`] lent, keeping the larger
+    /// buffer for the next walk.
+    pub(crate) fn return_walk(&mut self, mut walk: Vec<(usize, u64)>) {
+        walk.clear();
+        if walk.capacity() > self.walk_scratch.capacity() {
+            self.walk_scratch = walk;
+        }
     }
 
     /// Resolve a child across synchronous callbacks which may append or compact
