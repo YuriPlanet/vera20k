@@ -723,7 +723,8 @@ pub(crate) struct SetupRowIcon {
     pub(crate) host: bool,
     pub(crate) accepted: bool,
     /// VERA's online room: the player's badge
-    /// ([`crate::ui::wol_lobby::badge`]), drawn at the right of their name.
+    /// ([`crate::ui::wol_lobby::badge`]), drawn in front of their name
+    /// ([`MultiplayerSetupLayout::badge_rect`]).
     pub(crate) badge: Option<&'static str>,
     /// The local player's own row, which VERA's roster marks.
     pub(crate) local: bool,
@@ -1778,6 +1779,29 @@ impl MultiplayerSetupLayout {
             .iter()
             .position(|rect| rect.is_some_and(|rect| rect.contains(x, y)))
     }
+    /// VERA's roster: where the badge ([`SetupRowIcon::badge`]) of the
+    /// player in Player cell `control` stands, in front of the name: the
+    /// row's margin left of the cell, so names line up with or without one
+    /// and keep their whole cell. `None` for a row without a badge.
+    pub(crate) fn badge_rect(&self, view: &SetupView, control: u16) -> Option<RectPx> {
+        let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
+            return None;
+        };
+        view.row_icons.get(row)?.as_ref()?.badge?;
+        let name = self.control_rect(control)?;
+        let band = self.roster_rows[row];
+        (self.roster && name.x > band.x)
+            .then(|| RectPx::new(band.x, name.y, name.x - band.x, name.h))
+    }
+    /// VERA's roster: the Player cell whose badge stands at `x`, `y`.
+    pub(crate) fn badge_at(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
+        (0..MODERN_SETUP_ROWS)
+            .map(|row| SetupColumn::Player.control(row))
+            .find(|&id| {
+                self.badge_rect(view, id)
+                    .is_some_and(|rect| rect.contains(x, y))
+            })
+    }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
     pub(crate) fn arrange_extended_rows(&mut self) {
@@ -2281,6 +2305,47 @@ mod tests {
             assert!(!foot.header);
             assert!(foot.y + ROSTER_ROW_H <= bottom);
         }
+    }
+
+    /// VERA's online room puts a player's badge in front of the name, in
+    /// the row's margin left of the Player cell, where the pointer finds
+    /// it; a row without a badge has none.
+    #[test]
+    fn a_room_players_badge_stands_in_front_of_the_name() {
+        let mut layout =
+            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
+        let place = |item, y, header| RosterPlace { item, y, header };
+        layout.arrange_roster(&[
+            place(0, ROSTER_TOP, true),
+            place(1, ROSTER_TOP + ROSTER_HEADER_H, false),
+            place(2, ROSTER_TOP + ROSTER_HEADER_H + ROSTER_ROW_H, false),
+        ]);
+        let mut view = vera_room_view();
+        let icon = |badge| {
+            Some(SetupRowIcon {
+                country: None,
+                host: false,
+                accepted: false,
+                badge,
+                local: false,
+            })
+        };
+        view.row_icons[1] = icon(Some("major.pcx"));
+        view.row_icons[2] = icon(None);
+        let name = SetupColumn::Player.control(1);
+        let cell = layout.control_rect(name).unwrap();
+        let badge = layout.badge_rect(&view, name).unwrap();
+        assert!(
+            badge.w > 0 && badge.x + badge.w <= cell.x,
+            "{badge:?} {cell:?}"
+        );
+        assert_eq!((badge.y, badge.h), (cell.y, cell.h));
+        let (x, y) = (badge.x + badge.w / 2, badge.y + badge.h / 2);
+        assert_eq!(layout.badge_at(&view, x, y), Some(name));
+        assert_eq!(
+            layout.badge_rect(&view, SetupColumn::Player.control(2)),
+            None
+        );
     }
 
     /// On a window wider than the shell, VERA's room stands the shell at its

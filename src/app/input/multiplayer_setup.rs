@@ -296,9 +296,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         && layout.map_preview.contains(x, y)
         && preview_box_shows(state, &view, &layout);
     // VERA's online room names the badge, rank and OS of the player whose
-    // name is under the pointer.
-    let player =
-        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
+    // name or badge is under the pointer.
+    let player = layout
+        .badge_at(&view, x, y)
+        .or(over)
+        .and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
     let help = player
         .or_else(|| {
             over.or(over_preview.then_some(MAP_PREVIEW))

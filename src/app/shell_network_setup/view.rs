@@ -71,8 +71,8 @@ enum Listed {
 /// or AI coming in fills one instead of moving the boxes under it.
 const TEAM_BOX_ROWS: usize = 5;
 
-/// VERA's online room: the help under the pointer on the name of a player
-/// with a badge, as the lobby's player list gives it
+/// VERA's online room: the help under the pointer on the name or badge of
+/// a player with a badge, as the lobby's player list gives it
 /// ([`crate::app::shell_wol::lobby::badge_help`]).
 pub(crate) fn player_help(state: &AppState, view: &SetupView, control: u16) -> Option<String> {
     let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
