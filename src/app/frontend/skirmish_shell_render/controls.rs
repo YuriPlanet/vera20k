@@ -1543,15 +1543,18 @@ mod tests {
                 (true, skirmish.unit_count),
                 (true, players),
             ];
-            // 640x480 fits Options to the window, so its rects map back first.
+            // 640x480 fits Options to the window, so its rects map back first
+            // and take the drawn frame lookup, as the paint does.
+            let mut drawn = Vec::new();
             for category in crate::ui::main_menu_dialogs::options::Category::ALL {
                 let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
-                windows.extend(
-                    layout
-                        .trackbars
-                        .iter()
-                        .map(|&(id, rect)| (id.plaque_reserve() > 0, layout.scale.base_rect(rect))),
-                );
+                drawn.extend(layout.trackbars.iter().map(|&(id, rect)| {
+                    (
+                        id.plaque_reserve() > 0,
+                        layout.scale.base_rect(rect),
+                        layout.scale,
+                    )
+                }));
             }
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
@@ -1578,7 +1581,6 @@ mod tests {
             // gamemd's setup dialogs and VERA's room, in a centred shell and
             // one filling the window; only the room paints its Teams count,
             // Superweapon Limit and Tech Level, and only its host Room size.
-            let mut drawn = Vec::new();
             for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
