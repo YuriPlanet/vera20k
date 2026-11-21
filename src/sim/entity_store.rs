@@ -11,15 +11,18 @@
 //!   ordered iterators. Store operations maintain the indexes when an entity
 //!   enters, leaves, or changes owner.
 //! - Within simulation, `store.get_mut(id)` borrows one actor for an update.
-//! - Cross-entity reads during mutation: read target first (clone needed data),
-//!   then get_mut on the other entity
-//! - Batch iteration with mutation: collect `keys_sorted()`, loop with
-//!   `get_mut_if()` so an entity the walk leaves unchanged is not handed out
-//!   (every hand-out enters the touch logs; see `touched`)
-//! - A walk that writes only each visited entity's own fields:
-//!   `for_each_entry_mut`, which needs no id list or lookup by id
+//! - Cross-entity reads during mutation: read target first (copy the facts
+//!   needed), then get_mut on the other entity
+//! - A walk that writes only each visited entity's own fields (and fields
+//!   beside the store, such as an output channel): `for_each_entry_mut`,
+//!   which needs no id list or lookup by id, and hands an entity out only
+//!   through `EntryMut::into_mut` (every hand-out enters the touch logs; see
+//!   `touched`)
 //! - A sweep from the highest id down whose visits mutate the world:
 //!   `descending_ids`, a cursor that copies no ids
+//! - Only where neither fits, a copy of the ids: `keys_sorted()`, looping
+//!   with `get_mut_if()` so an entity the walk leaves unchanged is not
+//!   handed out
 //!
 //! ## Dependency rules
 //! - Part of sim/ — stores sim/game_entity; the shared AirTracker query reads
@@ -862,15 +865,13 @@ impl EntityStore {
         self.slot_of.is_empty()
     }
 
-    /// Get sorted keys for deterministic iteration.
-    ///
-    /// Callers typically iterate with `get()` or `get_mut_if()`:
-    /// ```ignore
-    /// let keys = store.keys_sorted();
-    /// for &id in &keys {
-    ///     if let Some(entity) = store.get_mut_if(id, |entity| entity.rocking.is_some()) { ... }
-    /// }
-    /// ```
+    /// A copy of the stored ids in ascending order. Right only where the
+    /// walk needs the ids as they stood when it began, in ascending order,
+    /// while its visits change the store through the whole world: a visit
+    /// that may insert or remove entities below the walk, or callers outside
+    /// the simulation. A walk that writes only the visited entity uses
+    /// [`Self::for_each_entry_mut`]; a sweep from the highest id down uses
+    /// [`Self::descending_ids`]; both copy no ids.
     pub fn keys_sorted(&self) -> Vec<u64> {
         self.stored().map(|(id, _)| id).collect()
     }

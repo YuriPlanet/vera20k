@@ -518,13 +518,15 @@ impl Simulation {
         let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
-        let info = warhead.attach_effect.clone();
-        // Without a source object the native hook has nothing to hit.
+        let info = &warhead.attach_effect;
+        // Without a source object the native hook has nothing to hit. The
+        // list stays borrowed while the walk below draws from the scenario
+        // stream, a field of its own.
         let Some(list) = self
             .substrate
             .entities
             .get(target_id)
-            .map(|target| target.phobos_attach_effects().clone())
+            .map(|target| target.phobos_attach_effects())
         else {
             return;
         };
@@ -557,7 +559,7 @@ impl Simulation {
             i32,
             Option<u64>,
             Option<crate::sim::intern::InternedId>,
-            String,
+            &str,
             usize,
             i32,
         )> = Vec::new();
@@ -605,9 +607,9 @@ impl Simulation {
                 .unwrap_or_else(|| scale_i32(damage, effect.reflect_damage_multiplier));
             let warhead_name = effect
                 .reflect_damage_warhead
-                .clone()
-                .unwrap_or_else(|| rules.bridge_warheads.c4_name.clone());
-            if warhead_name.is_empty() || rules.warhead(&warhead_name).is_none() {
+                .as_deref()
+                .unwrap_or(&rules.bridge_warheads.c4_name);
+            if warhead_name.is_empty() || rules.warhead(warhead_name).is_none() {
                 continue;
             }
             let affects = effect.reflect_damage_affects_house;
@@ -671,10 +673,10 @@ impl Simulation {
         for (detonate, reflected, invoker, house, warhead_name, instance_index, delay) in actions {
             let previous = self
                 .reflected_warhead
-                .replace(self.interner.intern(&warhead_name));
+                .replace(self.interner.intern(warhead_name));
             if detonate {
                 if let Some((detonation, _)) = self.attach_effect_warhead_detonation(
-                    &warhead_name,
+                    warhead_name,
                     reflected,
                     attacker_id,
                     invoker,
@@ -695,7 +697,7 @@ impl Simulation {
                     0,
                     invoker.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
                     house,
-                    self.interner.intern(&warhead_name),
+                    self.interner.intern(warhead_name),
                     crate::sim::combat::ReceiverCallFlags {
                         ignore_defenses: false,
                         arg6: false,
@@ -912,7 +914,7 @@ impl Simulation {
         let Some(warhead) = self.interner.warhead_type(warhead_ref, rules) else {
             return;
         };
-        let info = warhead.attach_effect.clone();
+        let info = &warhead.attach_effect;
         if info.is_empty() {
             return;
         }
@@ -923,7 +925,7 @@ impl Simulation {
         // `CreateAndAttach` gating reads the live target; snapshot the pair
         // before the attach list mutably borrows the entity.
         let target_category = target.category();
-        let target_invulnerability = target.invulnerability.clone();
+        let target_invulnerability = target.invulnerability;
         let target_type_ref = target.type_ref();
         let Some(target_type) = self.interner.object_type(target_type_ref, rules) else {
             return;
