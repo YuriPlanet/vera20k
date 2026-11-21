@@ -335,6 +335,14 @@ pub struct AssetManager {
     /// Precomputed first-match lookup across all archives.
     lookup_index: HashMap<i32, AssetLocation>,
     /// `LoadFileFromMIX`'s process-lifetime, normalized-CRC first-winner cache.
+    ///
+    /// Filled through `&self` because its readers (the Rules effect and alpha
+    /// image catalogs, the shell, sidebar, cursor and loading-screen chrome)
+    /// are handed the manager by `&` beside their other reads of it. A lock,
+    /// not a `RefCell`, because the manager must stay `Sync`: the test
+    /// fixture (`rules::retail_ini_fixture::retail_assets`) keeps one opened
+    /// install for every test thread and copies it from there. In the game
+    /// one thread at a time asks, so the lock is never contended.
     mix_file_cache: Mutex<HashMap<i32, MixFileLoad>>,
     /// Case-insensitive, non-recursive view of the retail executable directory.
     /// Payloads are owned snapshots at first lookup (including failed reads).
