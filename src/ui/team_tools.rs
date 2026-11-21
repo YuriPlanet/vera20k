@@ -44,7 +44,7 @@ impl TeamTool {
 pub enum TeamPreset {
     /// Every player on Team A, every AI on Team B.
     PlayersVsAi,
-    /// The AIs dealt into this many teams of their own.
+    /// The AIs dealt onto this many teams, from Team A.
     AiTeams(u8),
     /// Every seat off its team.
     FreeForAll,
@@ -69,7 +69,7 @@ pub enum ToolRefusal {
     NoAi,
     /// Fewer AIs than the teams asked for.
     FewAi(u8),
-    /// The players hold every team the list has but too few.
+    /// The Team list offers too few teams.
     NoFreeTeam,
     /// The mode needs every player on a team.
     ModeNeedsTeams,
@@ -85,9 +85,9 @@ pub enum Seat {
 /// A quick team's team for each of `seats` (`None`: it keeps its own), or
 /// why it cannot be had. `teams` is how many teams the Team list offers.
 /// Players vs AI puts every player on A and every AI on B. Splitting the AIs
-/// deals them in seat order into `count` teams of near equal size, on teams
-/// no player holds; the players keep theirs. Free-for-all takes every seat
-/// off its team, which a mode that must ally refuses.
+/// deals them in seat order onto `count` teams of near equal size, from
+/// Team A; the players keep theirs, sharing a team with its AIs. Free-for-all
+/// takes every seat off its team, which a mode that must ally refuses.
 pub(crate) fn preset_teams(
     preset: TeamPreset,
     seats: &[Seat],
@@ -117,23 +117,11 @@ pub(crate) fn preset_teams(
             if ais < usize::from(count) {
                 return Err(ToolRefusal::FewAi(count));
             }
-            let held: Vec<LaunchTeam> = seats
-                .iter()
-                .filter_map(|seat| match *seat {
-                    Seat::Player(team) => Some(team),
-                    Seat::Ai(_) => None,
-                })
-                .collect();
-            let free: Vec<u8> = (0..teams)
-                .filter(|team| !held.contains(&LaunchTeam::Team(*team)))
-                .take(usize::from(count))
-                .collect();
-            if free.len() < usize::from(count) {
+            if count > teams {
                 return Err(ToolRefusal::NoFreeTeam);
             }
             // Team k takes the next ais / count AIs, one more while some
             // are left over.
-            let count = usize::from(count);
             let mut dealt = 0;
             Ok(seats
                 .iter()
@@ -143,11 +131,12 @@ pub(crate) fn preset_teams(
                     };
                     let team = (0..count)
                         .find(|&team| {
-                            dealt < (team + 1) * (ais / count) + (team + 1).min(ais % count)
+                            let (through, count) = (usize::from(team + 1), usize::from(count));
+                            dealt < through * (ais / count) + through.min(ais % count)
                         })
                         .unwrap_or(count - 1);
                     dealt += 1;
-                    Some(LaunchTeam::Team(free[team]))
+                    Some(LaunchTeam::Team(team))
                 })
                 .collect())
         }
@@ -525,11 +514,11 @@ mod tests {
     const B: LaunchTeam = LaunchTeam::Team(1);
     const NONE: LaunchTeam = LaunchTeam::None;
 
-    /// Five AIs in two teams: three on the first free team, two on the
-    /// next, in seat order, skipping the team the player holds. The player
-    /// keeps theirs. Four teams of AIs need four AIs and four free teams.
+    /// Five AIs in two teams: three on Team A, two on Team B, in seat
+    /// order. The player keeps Team A, with its AIs. Four teams of AIs need
+    /// four AIs and a Team list of four.
     #[test]
-    fn ai_teams_deal_the_ais_onto_teams_no_player_holds() {
+    fn ai_teams_deal_the_ais_from_team_a() {
         let seats = [
             Seat::Player(A),
             Seat::Ai(NONE),
@@ -538,13 +527,17 @@ mod tests {
             Seat::Ai(NONE),
             Seat::Ai(NONE),
         ];
-        let c = LaunchTeam::Team(2);
+        let (c, d) = (LaunchTeam::Team(2), LaunchTeam::Team(3));
         assert_eq!(
             preset_teams(TeamPreset::AiTeams(2), &seats, false, 4),
-            Ok(vec![None, Some(B), Some(B), Some(B), Some(c), Some(c)])
+            Ok(vec![None, Some(A), Some(A), Some(A), Some(B), Some(B)])
         );
         assert_eq!(
             preset_teams(TeamPreset::AiTeams(4), &seats, false, 4),
+            Ok(vec![None, Some(A), Some(A), Some(B), Some(c), Some(d)])
+        );
+        assert_eq!(
+            preset_teams(TeamPreset::AiTeams(4), &seats, false, 3),
             Err(ToolRefusal::NoFreeTeam)
         );
         assert_eq!(

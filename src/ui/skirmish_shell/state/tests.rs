@@ -2681,8 +2681,8 @@ fn a_low_row_of_the_longer_list_opens_its_list_upward() {
 }
 
 /// Bulk Seat Actions and a quick team on a four-start map: Fill with AI
-/// fills only the empty rows, AIs in 2 teams deals the three AIs onto the
-/// first two teams the player does not hold, the bigger first, and Remove
+/// fills only the empty rows, AIs in 2 teams deals the three AIs onto
+/// Teams A and B, the bigger first, the player keeping Team A, and Remove
 /// all AI empties them again.
 #[test]
 fn seat_actions_and_ai_teams_go_through_the_rows() {
@@ -2722,7 +2722,7 @@ fn seat_actions_and_ai_teams_go_through_the_rows() {
         .iter()
         .map(|opponent| opponent.team)
         .collect();
-    assert_eq!((shell.player_team, teams), (0, vec![1, 1, 2]));
+    assert_eq!((shell.player_team, teams), (0, vec![0, 0, 1]));
     assert!(!apply_team_preset(
         &mut shell,
         &maps,

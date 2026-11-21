@@ -152,8 +152,8 @@ fn seat_counts(session: &MatchSession, ai_allowed: bool) -> SeatCounts {
 /// A quick team for the room: the Teams count it needs (`None`: Off) and
 /// each seated row's team, or why it cannot be had. With Teams Off nobody
 /// is on a team, unless the mode allies everyone on its default team, so
-/// each person off a team stands alone, as on a team of their own, and
-/// splitting the AIs keeps them so. A quick team already in place is
+/// each person off a team stands alone, as on a team of their own: after
+/// the AIs' teams when splitting the AIs. A quick team already in place is
 /// refused, so picking it again leaves the guests' Accept.
 fn plan_preset(
     launch: &SkirmishLaunchSession,
@@ -162,7 +162,10 @@ fn plan_preset(
     let most = *ROOM_TEAMS.end();
     let teams = launch.options.teams;
     let rows = super::teams::seats(launch);
-    let mut alone = 0;
+    let mut alone = match preset {
+        TeamPreset::AiTeams(count) => count,
+        _ => 0,
+    };
     let seats: Vec<Seat> = rows
         .iter()
         .map(|&(row, team, _)| {
@@ -358,11 +361,11 @@ mod tests {
     use super::*;
 
     /// A room with Teams Off, two people (rows 0 and 1) and two AIs (rows 2
-    /// and 28): AIs in 2 teams leaves each person a team of their own and
-    /// puts the AIs on the next two, so Teams becomes four; Players vs AI
-    /// needs two; Free-for-all is in place until Teams is set, as is Players
-    /// vs AI once played. A mode that allies everyone keeps its people
-    /// together on its default team.
+    /// and 28): AIs in 2 teams puts the AIs on Teams A and B and each person
+    /// on a team of their own after them, so Teams becomes four; Players vs
+    /// AI needs two; Free-for-all is in place until Teams is set, as is
+    /// Players vs AI once played. A mode that allies everyone keeps its
+    /// people together on its default team, Team A, with Team A's AI.
     #[test]
     fn quick_teams_set_the_teams_count_they_need() {
         let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
@@ -377,7 +380,7 @@ mod tests {
             plan_preset(&launch, TeamPreset::AiTeams(2)),
             Ok((
                 Some(4),
-                vec![(0, team(0)), (1, team(1)), (2, team(2)), (28, team(3))]
+                vec![(0, team(2)), (1, team(3)), (2, team(0)), (28, team(1))]
             ))
         );
         assert_eq!(
@@ -418,8 +421,8 @@ mod tests {
         assert_eq!(
             plan_preset(&launch, TeamPreset::AiTeams(2)),
             Ok((
-                Some(3),
-                vec![(0, team(0)), (1, team(0)), (2, team(1)), (28, team(2))]
+                Some(2),
+                vec![(0, team(0)), (1, team(0)), (2, team(0)), (28, team(1))]
             ))
         );
     }
