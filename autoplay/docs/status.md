@@ -103,6 +103,14 @@ seed 19 仍是 timeout，但它的物质力量比基线强得多（own 126→158
   1200 不是随手取的数，是这三局里刚好能站住的下限。
   结论：门不是无谓的谨慎。同等兵力出门，等于用军队换一块守不住的基地——
   这正是 `squads.rs:88-101` 那段注释写的，现在有数了。1200 回退后三局逐字节复原。
+- **把「原地待命」的 Move 重新接下来**（advance.rs 的 push 循环原来对 `mission == Move`
+  无条件 `continue`，改成只有 `obs.destination()` 还在时才跳过）：三局全 timeout。
+  seed 24301 `won 31893` -> timeout own=136 enemy=52 army=61；
+  seed 19 timeout own=162 enemy=52 -> own=137 enemy=61 army=72；
+  seed 10 `won 35437` -> timeout own=160 enemy=61 army=90。
+  推论本身成立（到达之后任务号不会自己变回 Sleep，这些兵会被永远跳过），
+  但把它们接回来等于把已经到位的兵一次次重新编队，军队的集中度反而更差：
+  三局的 army 一个降、一个降、一个升，全都输了。已回退。
 - **把 limbo 里的兵从 `able` 里去掉**（src/sim/strategy/assist/census.rs，一个兵在
   `limbo` 里既走不动也不能开火，`fighters` 早就不数它了，`able` 却还在数）：
   这是对的方向，但只换来「有变化」，没换来胜利。
