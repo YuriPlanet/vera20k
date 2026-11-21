@@ -573,19 +573,17 @@ fn load_with_assets_and_mod_module(
     // and cannot admit Full_Init's mode-5 TMCJ4F route.
     // Wasm extension modules (RFC 0001): the mod's rules.wasm, then the
     // map's. Their `on_rules` runs at their layers of this rules load.
+    let mod_file;
     let mod_module = match mod_module {
-        Some(bytes) => Some(bytes.to_vec()),
-        None => assets
-            .mod_dir()
-            .map(|dir| dir.join("rules.wasm"))
-            .filter(|path| path.is_file())
-            .map(crate::util::file_system::read)
-            .transpose()
-            .map_err(|error| format!("the mod's rules.wasm: {error}"))?,
+        Some(bytes) => Some(bytes),
+        None => {
+            mod_file = crate::sim::ext_modules::PreparedExtModules::read_mod_file(&assets)?;
+            mod_file.as_deref()
+        }
     };
     let mut ext_modules = crate::sim::ext_modules::PreparedExtModules::load(
         native_rules_owner.selected_rules_root(),
-        mod_module.as_deref(),
+        mod_module,
         &map.ini,
     )
     .map_err(|error| format!("Wasm extension module: {error}"))?;

@@ -7,6 +7,7 @@
 //! platform's frame sizes (the RFC wants an instrumented depth counter), and
 //! module memory is not saved yet.
 
+use std::ops::Range;
 use std::ptr::NonNull;
 use std::sync::OnceLock;
 
@@ -569,8 +570,11 @@ fn typed_export(
 /// the budget stops the module as a budget fault.
 fn enter<'a>(caller: &'a mut Caller<'_, Ctx>, extra: u64) -> wasmtime::Result<&'a mut dyn SimHost> {
     charge(caller, HOST_CALL_COST.saturating_add(extra))?;
-    let host = caller.data().host;
-    match host {
+    host(caller)
+}
+
+fn host<'a>(caller: &'a mut Caller<'_, Ctx>) -> wasmtime::Result<&'a mut dyn SimHost> {
+    match caller.data().host {
         // SAFETY: see `Ctx::host`.
         Some(mut host) => Ok(unsafe { host.as_mut() }),
         None => Err(wasmtime::Error::msg("host call outside a module call")),
@@ -597,17 +601,17 @@ fn check_buffer(
     ptr: i32,
     count: usize,
     size: usize,
-) -> Result<(), Invalid> {
+) -> Result<(Memory, Range<usize>), Invalid> {
     let memory = memory_of(caller)?;
-    let end = usize::try_from(ptr)
-        .ok()
-        .and_then(|p| p.checked_add(count.checked_mul(size)?));
-    match end {
-        Some(end) if end <= memory.data_size(&*caller) => Ok(()),
-        _ => Err(Invalid(format!(
+    let range = usize::try_from(ptr).ok().and_then(|start| {
+        let end = start.checked_add(count.checked_mul(size)?)?;
+        (end <= memory.data_size(&*caller)).then_some(start..end)
+    });
+    range.map(|range| (memory, range)).ok_or_else(|| {
+        Invalid(format!(
             "buffer {ptr} of {count} x {size} bytes is outside module memory"
-        ))),
-    }
+        ))
+    })
 }
 
 /// A count or capacity argument, which may not be negative.
@@ -628,42 +632,43 @@ fn memory_of(caller: &mut Caller<'_, Ctx>) -> Result<Memory, Invalid> {
     }
 }
 
-fn read_bytes(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> Result<Vec<u8>, Invalid> {
-    let memory = memory_of(caller)?;
-    let (Ok(ptr), Ok(len)) = (usize::try_from(ptr), usize::try_from(len)) else {
-        return Err(Invalid(format!(
-            "negative pointer or length ({ptr}, {len})"
-        )));
-    };
-    let mut out = vec![0; len];
-    memory
-        .read(&*caller, ptr, &mut out)
-        .map_err(|_| Invalid(format!("buffer {ptr}+{len} is outside module memory")))?;
-    Ok(out)
+fn input_buffer(
+    caller: &mut Caller<'_, Ctx>,
+    ptr: i32,
+    len: i32,
+) -> wasmtime::Result<(Memory, Range<usize>)> {
+    let len = count_arg(len, "buffer length").map_err(|e| fail(caller, e))?;
+    check_buffer(caller, ptr, len, 1).map_err(|e| fail(caller, e))
+}
+
+/// Variable-size copies use both the guest memory bounds and the fuel budget.
+fn copy_input(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> wasmtime::Result<Vec<u8>> {
+    let (memory, range) = input_buffer(caller, ptr, len)?;
+    charge(caller, range.len() as u64)?;
+    Ok(memory.data(&*caller)[range].to_vec())
 }
 
 /// `trigger_create` copies each action's `text` out of module memory into
-/// the definition (appendix "Fixed layouts"); returns the bytes copied. Text
+/// the definition (appendix "Fixed layouts"). Text
 /// that is not UTF-8 or longer than [`ActionDef::MAX_TEXT`] is invalid.
-fn read_action_texts(caller: &mut Caller<'_, Ctx>, def: &mut TriggerDef) -> Result<usize, Invalid> {
-    let mut copied = 0;
+fn read_action_texts(caller: &mut Caller<'_, Ctx>, def: &mut TriggerDef) -> wasmtime::Result<()> {
     for action in &mut def.actions {
         let len = action.params.text_len;
         if len == 0 {
             continue;
         }
         if usize::try_from(len).is_ok_and(|len| len > ActionDef::MAX_TEXT) {
-            return Err(Invalid(format!(
-                "trigger action text of {len} bytes, at most {}",
-                ActionDef::MAX_TEXT
-            )));
+            return Err(fail(
+                caller,
+                Invalid(format!(
+                    "trigger action text of {len} bytes, at most {}",
+                    ActionDef::MAX_TEXT
+                )),
+            ));
         }
-        let bytes = read_bytes(caller, action.params.text, len)?;
-        copied += bytes.len();
-        action.text = String::from_utf8(bytes)
-            .map_err(|_| Invalid("trigger action text is not UTF-8".into()))?;
+        action.text = read_str(caller, action.params.text, len)?;
     }
-    Ok(copied)
+    Ok(())
 }
 
 fn write_bytes(caller: &mut Caller<'_, Ctx>, ptr: i32, bytes: &[u8]) -> Result<(), Invalid> {
@@ -710,9 +715,10 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         m,
         "log",
         |mut caller: Caller<'_, Ctx>, ptr: i32, len: i32| -> wasmtime::Result<()> {
-            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
-            let line = String::from_utf8_lossy(&bytes).into_owned();
-            enter(&mut caller, bytes.len() as u64)?.log(&line);
+            charge(&mut caller, HOST_CALL_COST)?;
+            let bytes = copy_input(&mut caller, ptr, len)?;
+            let line = String::from_utf8_lossy(&bytes);
+            host(&mut caller)?.log(&line);
             Ok(())
         },
     ));
@@ -732,19 +738,20 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          len: i32,
          out: i32|
          -> wasmtime::Result<i32> {
-            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
             if !(0..NAME_KINDS).contains(&kind) {
                 return Err(fail(
                     &mut caller,
                     Invalid(format!("unknown name kind {kind}")),
                 ));
             }
+            charge(&mut caller, HOST_CALL_COST)?;
+            let bytes = copy_input(&mut caller, ptr, len)?;
             // This module's own `vera.actions` answers ModuleAction.
             let module_action = std::str::from_utf8(&bytes)
                 .ok()
                 .filter(|_| kind == NAME_MODULE_ACTION)
                 .map(|name| caller.data().sections.action_key(name));
-            let host = enter(&mut caller, bytes.len() as u64)?;
+            let host = host(&mut caller)?;
             // A name that is not UTF-8 names nothing.
             let result = match std::str::from_utf8(&bytes) {
                 Err(_) => Ok((-1, Status::NotFound)),
@@ -958,18 +965,15 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          out: i32|
          -> wasmtime::Result<i32> {
             deny_in_decide(&mut caller, "action")?;
-            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
-            let params = ActionParams::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
+            let (memory, range) = input_buffer(&mut caller, ptr, len)?;
+            charge(&mut caller, HOST_CALL_COST)?;
+            let params = ActionParams::parse(&memory.data(&caller)[range])
+                .map_err(|e| fail(&mut caller, e))?;
             let text = match params.text_len {
-                0 => Vec::new(),
-                len => {
-                    read_bytes(&mut caller, params.text, len).map_err(|e| fail(&mut caller, e))?
-                }
+                0 => String::new(),
+                len => read_str(&mut caller, params.text, len)?,
             };
-            let text = String::from_utf8(text)
-                .map_err(|_| fail(&mut caller, Invalid("action text is not UTF-8".into())))?;
-            let result =
-                enter(&mut caller, text.len() as u64)?.action(kind, target, &params, &text);
+            let result = host(&mut caller)?.action(kind, target, &params, &text);
             let (handle, status) = result.map_err(|e| fail(&mut caller, e))?;
             write_bytes(&mut caller, out, &handle.to_le_bytes())
                 .map_err(|e| fail(&mut caller, e))?;
@@ -981,15 +985,16 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         "trigger_create",
         |mut caller: Caller<'_, Ctx>, ptr: i32, len: i32, out: i32| -> wasmtime::Result<i32> {
             deny_in_decide(&mut caller, "trigger_create")?;
-            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
+            let (memory, range) = input_buffer(&mut caller, ptr, len)?;
             check_buffer(&mut caller, out, 1, 8).map_err(|e| fail(&mut caller, e))?;
             let (handle, status) = if in_init(&caller) {
                 (0, Status::Unsupported)
             } else {
-                let mut def = TriggerDef::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
-                let texts =
-                    read_action_texts(&mut caller, &mut def).map_err(|e| fail(&mut caller, e))?;
-                let result = enter(&mut caller, (bytes.len() + texts) as u64)?.trigger_create(&def);
+                charge(&mut caller, HOST_CALL_COST + range.len() as u64)?;
+                let mut def = TriggerDef::parse(&memory.data(&caller)[range])
+                    .map_err(|e| fail(&mut caller, e))?;
+                read_action_texts(&mut caller, &mut def)?;
+                let result = host(&mut caller)?.trigger_create(&def);
                 result.map_err(|e| fail(&mut caller, e))?
             };
             let handle = if status == Status::Ok { handle } else { 0 };
@@ -1046,15 +1051,11 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          cap: i32,
          len_out: i32|
          -> wasmtime::Result<i32> {
-            let checked = (|| {
-                let cap = count_arg(cap, "capacity")?;
-                let section = read_str(&mut caller, sec, sec_len)?;
-                let key = read_str(&mut caller, key, key_len)?;
-                Ok((section, key, cap))
-            })();
-            let (section, key, cap) = checked.map_err(|e| fail(&mut caller, e))?;
-            let cost = (section.len() + key.len()) as u64;
-            let result = enter(&mut caller, cost)?.rules_get(&section, &key);
+            let cap = count_arg(cap, "capacity").map_err(|e| fail(&mut caller, e))?;
+            charge(&mut caller, HOST_CALL_COST)?;
+            let section = read_str(&mut caller, sec, sec_len)?;
+            let key = read_str(&mut caller, key, key_len)?;
+            let result = host(&mut caller)?.rules_get(&section, &key);
             let (value, status) = result.map_err(|e| fail(&mut caller, e))?;
             let (value, status) = match (value, status) {
                 (Some(value), Status::Ok) => (value, Status::Ok),
@@ -1090,16 +1091,11 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          val_len: i32|
          -> wasmtime::Result<i32> {
             deny_in_decide(&mut caller, "rules_set")?;
-            let checked = (|| {
-                Ok((
-                    read_str(&mut caller, sec, sec_len)?,
-                    read_str(&mut caller, key, key_len)?,
-                    read_str(&mut caller, val, val_len)?,
-                ))
-            })();
-            let (section, key, value) = checked.map_err(|e| fail(&mut caller, e))?;
-            let cost = (section.len() + key.len() + value.len()) as u64;
-            let result = enter(&mut caller, cost)?.rules_set(&section, &key, &value);
+            charge(&mut caller, HOST_CALL_COST)?;
+            let section = read_str(&mut caller, sec, sec_len)?;
+            let key = read_str(&mut caller, key, key_len)?;
+            let value = read_str(&mut caller, val, val_len)?;
+            let result = host(&mut caller)?.rules_set(&section, &key, &value);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
     ));
@@ -1108,11 +1104,14 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
         "order",
         |mut caller: Caller<'_, Ctx>, house: i64, ptr: i32, len: i32| -> wasmtime::Result<i32> {
             deny_in_decide(&mut caller, "order")?;
-            let bytes = read_bytes(&mut caller, ptr, len).map_err(|e| fail(&mut caller, e))?;
-            let order = Order::parse(&bytes).map_err(|e| fail(&mut caller, e))?;
+            let (memory, range) = input_buffer(&mut caller, ptr, len)?;
+            let unit_bytes = range.len().saturating_sub(Order::HEADER);
             // Charged per order and per unit entry (RFC 6g).
-            let cost = (order.units.len() as u64).saturating_mul(ENTRY_COST);
-            let result = enter(&mut caller, cost)?.order(house, &order);
+            let cost = (unit_bytes / size_of::<i64>()).min(Order::MAX_UNITS) as u64 * ENTRY_COST;
+            charge(&mut caller, HOST_CALL_COST + cost)?;
+            let order =
+                Order::parse(&memory.data(&caller)[range]).map_err(|e| fail(&mut caller, e))?;
+            let result = host(&mut caller)?.order(house, &order);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
         },
     ));
@@ -1121,9 +1120,9 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
 
 /// A section, key or value name: UTF-8 text in module memory. Text that is
 /// not UTF-8 is an invalid argument.
-fn read_str(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> Result<String, Invalid> {
-    String::from_utf8(read_bytes(caller, ptr, len)?)
-        .map_err(|_| Invalid(format!("text at {ptr}+{len} is not UTF-8")))
+fn read_str(caller: &mut Caller<'_, Ctx>, ptr: i32, len: i32) -> wasmtime::Result<String> {
+    String::from_utf8(copy_input(caller, ptr, len)?)
+        .map_err(|_| fail(caller, Invalid(format!("text at {ptr}+{len} is not UTF-8"))))
 }
 
 /// Write imports are unavailable in `on_decide` (appendix 1.1, "decide"):
@@ -1154,33 +1153,35 @@ fn get_many(
     out: i32,
     count_out: i32,
 ) -> wasmtime::Result<i32> {
-    let checked = (|| {
-        let n = count_arg(n, "reference count")?;
-        let m = count_arg(m, "property count")?;
-        let total = n
-            .checked_mul(m)
-            .ok_or_else(|| Invalid(format!("{n} x {m} values")))?;
-        check_buffer(caller, out, total, 8)?;
-        check_buffer(caller, refs, n, 8)?;
-        check_buffer(caller, props, m, 4)?;
-        // Both buffers lie in a 32-bit memory, so their lengths fit an i32.
-        let refs = read_bytes(caller, refs, (n * 8) as i32)?;
-        let props = read_bytes(caller, props, (m * 4) as i32)?;
-        let refs: Vec<i64> = refs
+    let n = count_arg(n, "reference count").map_err(|e| fail(caller, e))?;
+    let m = count_arg(m, "property count").map_err(|e| fail(caller, e))?;
+    let total = n
+        .checked_mul(m)
+        .ok_or_else(|| fail(caller, Invalid(format!("{n} x {m} values"))))?;
+    check_buffer(caller, out, total, 8).map_err(|e| fail(caller, e))?;
+    let (memory, refs) = check_buffer(caller, refs, n, 8).map_err(|e| fail(caller, e))?;
+    let (_, props) = check_buffer(caller, props, m, 4).map_err(|e| fail(caller, e))?;
+    // A query with no references still validates each property. Without
+    // properties there is no need to read or allocate the reference list.
+    let cost = (total.max(m) as u64).saturating_mul(ENTRY_COST);
+    charge(caller, HOST_CALL_COST.saturating_add(cost))?;
+    let data = memory.data(&*caller);
+    let refs: Vec<i64> = if m == 0 {
+        Vec::new()
+    } else {
+        data[refs]
             .chunks_exact(8)
             .map(|c| i64::from_le_bytes(c.try_into().unwrap_or_default()))
-            .collect();
-        let props: Vec<i32> = props
-            .chunks_exact(4)
-            .map(|c| i32::from_le_bytes(c.try_into().unwrap_or_default()))
-            .collect();
-        if let Some(bad) = props.iter().find(|p| property_name(**p).is_none()) {
-            return Err(Invalid(format!("unknown property {bad}")));
-        }
-        Ok((refs, props, total))
-    })();
-    let (refs, props, total) = checked.map_err(|e| fail(caller, e))?;
-    let host = enter(caller, (total as u64).saturating_mul(ENTRY_COST))?;
+            .collect()
+    };
+    let props: Vec<i32> = data[props]
+        .chunks_exact(4)
+        .map(|c| i32::from_le_bytes(c.try_into().unwrap_or_default()))
+        .collect();
+    if let Some(bad) = props.iter().find(|p| property_name(**p).is_none()) {
+        return Err(fail(caller, Invalid(format!("unknown property {bad}"))));
+    }
+    let host = host(caller)?;
     let mut first = Status::Ok;
     let mut values = Vec::with_capacity(total * 8);
     let mut result = Ok(());
@@ -1217,27 +1218,24 @@ fn find(
     cap: i32,
     res: i32,
 ) -> wasmtime::Result<i32> {
-    let checked = (|| {
-        let cap = count_arg(cap, "capacity")?;
-        let query = Query::parse(&read_bytes(caller, query, len)?)?;
-        check_buffer(caller, out, cap, 8)?;
-        check_buffer(caller, res, 1, 16)?;
-        Ok((query, cap))
-    })();
-    let (query, cap) = checked.map_err(|e| fail(caller, e))?;
+    let cap = count_arg(cap, "capacity").map_err(|e| fail(caller, e))?;
+    let (memory, range) = input_buffer(caller, query, len)?;
+    check_buffer(caller, out, cap, 8).map_err(|e| fail(caller, e))?;
+    check_buffer(caller, res, 1, 16).map_err(|e| fail(caller, e))?;
+    charge(caller, HOST_CALL_COST)?;
+    let query = Query::parse(&memory.data(&*caller)[range]).map_err(|e| fail(caller, e))?;
     let write_result = |caller: &mut Caller<'_, Ctx>, count: usize, next: i64| {
         let mut bytes = [0u8; 16];
         bytes[..4].copy_from_slice(&(count as i32).to_le_bytes());
         bytes[8..].copy_from_slice(&next.to_le_bytes());
         write_bytes(caller, res, &bytes).map_err(|e| fail(caller, e))
     };
-    let host = enter(caller, 0)?;
     // A valid zero-capacity query scans nothing.
     if cap == 0 {
         write_result(caller, 0, 0)?;
         return Ok(Status::Ok as i32);
     }
-    let result = host.find(&query, cap);
+    let result = host(caller)?.find(&query, cap);
     let (page, status) = result.map_err(|e| fail(caller, e))?;
     if page.found.len() > cap {
         return Err(fail(

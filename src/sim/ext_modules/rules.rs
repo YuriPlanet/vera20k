@@ -130,6 +130,15 @@ pub struct PreparedExtModules {
 }
 
 impl PreparedExtModules {
+    /// Read the selected mod's loose rules module through the asset catalogue.
+    pub fn read_mod_file(
+        assets: &crate::assets::asset_manager::AssetManager,
+    ) -> Result<Option<std::sync::Arc<[u8]>>, String> {
+        assets
+            .read_mod_file_bounded("rules.wasm", crate::map::ext_module_pack::MAX_MODULE_BYTES)
+            .map_err(|error| format!("the mod's rules.wasm: {error}"))
+    }
+
     /// Loads the selected mod's `rules.wasm` and the map's embedded module,
     /// under the mod's `[VeraWasm]` policy (read from `mod_rules`, the mod's
     /// own `rulesmd.ini`, or the stock one without a mod). Checks the map's

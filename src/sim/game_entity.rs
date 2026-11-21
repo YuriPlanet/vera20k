@@ -714,9 +714,8 @@ pub struct Seldom {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_stat_multipliers: crate::sim::attach_effect::PhobosStatMultipliers,
-    /// Derived from the Wasm modules' modifiers on this object, which
-    /// `sim::ext_modules::modifiers` owns and rebuilds this from; `None`
-    /// without any. Not saved or hashed.
+    /// Derived stats and counts rebuilt by the Wasm modifier store; `None`
+    /// without modifiers. Not saved or hashed.
     #[serde(skip)]
     pub(crate) module_modifiers: Option<Box<crate::sim::ext_modules::modifiers::ModifierTerms>>,
     /// Phobos ShieldClass state: shield points and their recovery timers.

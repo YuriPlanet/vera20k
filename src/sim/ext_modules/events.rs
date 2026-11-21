@@ -587,19 +587,12 @@ impl Simulation {
                     Some(get(house, "PowerOutput")? - get(house, "PowerDrain")?)
                 }
                 // The module's own modifiers in group `id` (appendix 4.4).
-                EVENT_MODIFIER_COUNT_POLL => {
-                    host.sim.entities().get(holder)?;
-                    let count = host
-                        .sim
-                        .ext_modules
-                        .modifiers
-                        .iter()
-                        .filter(|(_, m)| {
-                            m.target == holder && m.group == def.id && m.origin == source
-                        })
-                        .count();
-                    Some(count as i64)
-                }
+                EVENT_MODIFIER_COUNT_POLL => Some(
+                    host.sim
+                        .entities()
+                        .get(holder)?
+                        .module_modifier_count(source, def.id) as i64,
+                ),
                 // VERA's reading: the subject's `X`, `Y` to the cell's
                 // centre, by the shared lepton distance (Sqrt_Approx).
                 EVENT_DISTANCE_POLL => {

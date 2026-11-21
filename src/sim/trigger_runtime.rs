@@ -337,7 +337,10 @@ pub(crate) use module_events::{
     StockClass, StockInput, StockReading, stock_class, stock_poll_due, value_filters_actor_house,
     value_names_house,
 };
-pub(crate) use module_triggers::{DeferredFiring, ModuleTrigger, ModuleTriggers, TriggerScope};
+pub(crate) use module_triggers::{
+    DeferredFiring, MAX_BACKLOG_RECORDS, MAX_QUEUED_RECORDS, MAX_RECORDS_PER_FRAME, ModuleTrigger,
+    ModuleTriggers, TriggerScope,
+};
 
 #[cfg(test)]
 use definitions::event_classification;

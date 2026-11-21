@@ -102,8 +102,8 @@ use crate::sim::world::{FrameEffects, Simulation};
 mod triggers;
 pub(crate) use triggers::ModuleEvent;
 
-/// Operations per `on_frame` call (RFC 15.2 proposes about 2 ms on the
-/// slowest platform; open question 7).
+/// Maximum operations per module per frame (RFC 15.2 proposes about 2 ms on
+/// the slowest platform; open question 7).
 pub const FRAME_BUDGET: u64 = 200_000;
 /// Operations for each one-time call: `vera_init` and `on_scenario_start`.
 pub const ONCE_BUDGET: u64 = 5_000_000;
@@ -150,14 +150,32 @@ struct Slot {
     disabled: Option<String>,
     /// Operations used by the latest `on_frame`.
     last_frame_ops: u64,
-    /// Operations per `on_frame` call: [`FRAME_BUDGET`], or the mod's
+    /// Operations per frame: [`FRAME_BUDGET`], or the mod's
     /// `[VeraWasm]` budget for this source.
     frame_budget: u64,
+    /// Shared by event delivery, decisions and `on_frame`. Saves resume at
+    /// frame boundaries, so they carry only the configured budget.
+    budget_frame: u32,
+    frame_ops_used: u64,
     /// Orders waiting for the next command step ([`orders`]).
     orders: Vec<orders::PendingOrder>,
     /// The memory digests the state hash and the checksum read
     /// ([`PageDigests`]).
     digests: PageDigests,
+}
+
+impl Slot {
+    fn remaining_frame_ops(&mut self, frame: u32) -> u64 {
+        if self.budget_frame != frame {
+            self.budget_frame = frame;
+            self.frame_ops_used = 0;
+        }
+        self.frame_budget.saturating_sub(self.frame_ops_used)
+    }
+
+    fn charge_frame_ops(&mut self, used: u64) {
+        self.frame_ops_used += used;
+    }
 }
 
 impl ModuleSource {
@@ -270,8 +288,7 @@ pub struct ExtModules {
     /// The mod's `[VeraWasm] MapUI=`, kept for client modules (phase 2).
     /// Not saved: a loaded match reads the default.
     map_ui: MapUi,
-    /// Decision budget use and `random` substreams of the current frame
-    /// ([`decide`]); not saved.
+    /// Decision `random` substreams of the current frame ([`decide`]); not saved.
     decide: decide::DecideState,
 }
 
@@ -1546,6 +1563,8 @@ impl Simulation {
                 disabled: None,
                 last_frame_ops: 0,
                 frame_budget,
+                budget_frame: 0,
+                frame_ops_used: 0,
                 orders: Vec::new(),
                 // Digested in full at the first module phase.
                 digests: PageDigests::default(),
@@ -1654,7 +1673,9 @@ impl Simulation {
                 started: saved.started,
                 disabled: saved.disabled,
                 last_frame_ops: saved.last_frame_ops,
-                frame_budget: saved.frame_budget,
+                frame_budget: saved.frame_budget.clamp(1, FRAME_BUDGET),
+                budget_frame: 0,
+                frame_ops_used: 0,
                 orders: saved.orders,
                 digests,
             });
@@ -1695,8 +1716,8 @@ impl Simulation {
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
+        let frame = self.session.binary_frame();
         if !self.ext_modules.modifiers.is_empty() {
-            let frame = self.session.binary_frame();
             let expired = self
                 .ext_modules
                 .modifiers
@@ -1734,7 +1755,10 @@ impl Simulation {
                 self.disable_ext_module(index, Export::Events, fault);
                 continue;
             }
-            let budget = self.ext_modules.slots[index].frame_budget;
+            let budget = self.ext_modules.slots[index].remaining_frame_ops(frame);
+            if budget == 0 {
+                continue;
+            }
             match self.call_ext_module(
                 rules,
                 overlay_registry,
@@ -1743,13 +1767,16 @@ impl Simulation {
                 Export::Frame,
                 budget,
             ) {
-                Ok(ops) => self.ext_modules.slots[index].last_frame_ops = ops,
+                Ok(ops) => {
+                    let slot = &mut self.ext_modules.slots[index];
+                    slot.charge_frame_ops(ops);
+                    slot.last_frame_ops = ops;
+                }
                 Err(fault) => self.disable_ext_module(index, Export::Frame, fault),
             }
         }
         // This frame's share of every module's memory digests, a stopped
         // module's frozen memory included (RFC 15.1, item 7).
-        let frame = self.session.binary_frame();
         for slot in &mut self.ext_modules.slots {
             slot.digests.refresh(slot.module.memory(), frame);
         }

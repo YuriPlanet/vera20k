@@ -106,7 +106,8 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
   Units that died or changed owner drop out; a defeated house's orders are dropped.
   Orders never enter the network stream.
 - Mod policy (`[VeraWasm]` in the mod's own `rulesmd.ini`): `Budget`, `MapBudget`
-  (clamped to 1..=200000 operations per `on_frame`), `MapWasm=no` refusing maps with
+  (clamped to 1..=200000 operations per simulation frame, shared by event delivery,
+  decisions and `on_frame`), `MapWasm=no` refusing maps with
   modules, `MapUI`, `Api`. A map's `[Basic] VeraMinVersion=` above this build refuses
   the map with a message; `version_serves` moved to `util::version` and serves mods
   and maps.
@@ -129,16 +130,20 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
   `VarStore`, the write through the host's `var_set`.
 - Writes through owners: `Health` (no kill credit; 0 or less refused), `Owner`
   (ChangeOwner, as the stock change-house action), `Rank` (SetRookie/Veteran/Elite).
-- Runtime triggers: the registry lives in the trigger runtime, saved with it, hashed and
-  checksummed only when non-empty, checked on restore, dropped with an object's
-  storage. Events `TakeDamage` (after the Strength write, Object5F5390), `Killed` (end
+- Runtime triggers: each module may register up to 256 triggers and 16 object
+  polling events across those triggers. Creating a trigger beyond either limit
+  returns `Refused`. Removing a trigger frees capacity. The trigger runtime
+  saves and validates the registry and includes it in hashes and checksums
+  when populated. It removes object-bound state when the object leaves play. Events `TakeDamage` (after the Strength write, Object5F5390), `Killed` (end
   of a terminal `record_the_kill`, Techno702D40), `Fire` (after a FireAt that launched
   its bullet, Techno6FDD50), `Timer` (start of the module phase). Object and TechnoType
   bindings; filter clauses on Subject/Other/House properties and variables; immediate
   actions are every kind `run_action` implements, with the trigger house for house 0
   (`trigger_create` checks the kind and SetVar's scope); `Module` actions queue 112-byte `EventRecord`s delivered to
-  `on_events` in subject order under the frame budget, dropped for disabled or removed
-  triggers or an ended game; a backlog past 16 frames stops the module
+  `on_events` in subject order under the frame budget. Delivery drops records for
+  disabled or removed triggers and stops when the game ends. After up to 1024
+  records are delivered, a backlog beyond 16384 records stops the module. Enqueueing a record beyond the 17408 pending
+  records limit also stops the module before further delivery
   (`Fault::Backlog`). Trigger `Enabled`/`House`/`Repeat` via `get`/`set`.
 - Custom sections: `vera.vars`, `vera.actions` and `vera.delivery` are read and
   checked at load by one parser; `lookup(ModuleAction)` answers from `vera.actions`.
@@ -180,7 +185,7 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
   synchronously, mod links then map links; every write import disables the module;
   20,000 operations per call within the frame budget; `random` uses a substream of
   (seed, source, frame, subject, kind) and leaves the main stream. A decision raised
-  inside a module call keeps the native result.
+  inside a module call can ask the other module while its budget lasts.
 - INI triggers: the mod's `rulesmd.ini` `Wasm.Tags` on TechnoTypes, tag sections and
   trigger sections (`Event`, `Where`, `Action` as `Wasm:name` or `name(target,…)`,
   `Decide=Wasm:name`, `House`, `Difficulty`, `Repeat`) become module triggers through
