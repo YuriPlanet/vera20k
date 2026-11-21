@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES, MAX_PEERS,
-    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
-    OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS, REORDER_WINDOW,
-    RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, paced_rates,
+    CHECKSUM_INTERVAL, CertificatePacing, ClientLinkStats, MAX_FEDERATED_RELAYS,
+    MAX_FRAME_BATCHES, MAX_PEERS, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent,
+    OrderPace, OrderingCertificate, OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS,
+    REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, admits_rate,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -469,6 +469,9 @@ pub(super) struct SequencedSession {
     fps: u16,
     /// The relay's current sealing rate, which paces playout.
     pub(super) pace_fps: u16,
+    /// The certificate's pacing, which says what rates the relay may seal at
+    /// (`admits_rate`).
+    pacing: CertificatePacing,
     pace_meter: PaceMeter,
     /// The relay runs this match's clock now. A relay that lost the match's
     /// configuration (NotConfigured) clears it until it is configured again.
@@ -583,6 +586,7 @@ impl SequencedSession {
             return Err(StartupError::InvalidAdmission.into());
         }
         let mut session = Self::with_roster(houses, local_source, identity, cert.tick_hz);
+        session.pacing = cert.pacing;
         session.watch = watch_delay.map(|delay_seconds| Watch {
             delay_seconds,
             samples: VecDeque::new(),
@@ -605,6 +609,7 @@ impl SequencedSession {
             agreement,
             fps,
             pace_fps: fps,
+            pacing: CertificatePacing::On,
             pace_meter: PaceMeter::default(),
             started: false,
             ever_started: false,
@@ -1606,13 +1611,21 @@ impl SequencedSession {
                     let slowed_by = source.map(|source| self.houses[usize::from(source)]);
                     if frame.checked_add(1) != Some(self.assembling.frame)
                         || !self.assembling.records.is_empty()
-                        || !paced_rates(self.fps).contains(&frames_per_second)
+                        || !admits_rate(self.fps, self.pacing, frames_per_second)
                         || frames_per_second == self.pace_fps
                         || slowed_by.is_some() != (frames_per_second < self.pace_fps)
                         || slowed_by.is_some_and(|house| house.is_none())
                     {
                         return Err(SequencedError::InvalidTimeline);
                     }
+                    log::info!(
+                        "Relay rate: {} -> {frames_per_second} frames a second at frame {frame} ({})",
+                        self.pace_fps,
+                        match source {
+                            Some(source) => format!("slowed by source {source}"),
+                            None => "raised".to_owned(),
+                        }
+                    );
                     self.pace_fps = frames_per_second;
                     self.assembling.speed = match slowed_by.flatten() {
                         Some(house) => Some(MatchSpeedChange::SlowedBy(house)),

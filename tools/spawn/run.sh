@@ -15,7 +15,11 @@
 #                    (same key and state directory)
 #   BOUND=S          every other source presses Leave ACT_SECONDS+S into the
 #                    match (default 60); on a score screen Leave is Continue
-#   PACING=on|off    relay: sign a VO2C certificate with that pacing flag
+#   PACING=on|off|continuous  relay: sign a VO2C certificate with that pacing flag
+#   SPEED=N          GameSpeed setting (default 2, 30 frames a second; 0 is 60)
+#   SLOW=K           source K plays as a slow PC: SLOW_DRAW_MS (default 0) more
+#                    per drawn picture and SLOW_TICK_MS (default 0) more per
+#                    simulation tick (VERA20K_SPAWN_SLOW_DRAW_MS / _TICK_MS)
 #   AI=N             N computer houses after the humans (relay: PLAYERS=1 allowed)
 #   ALONE=on         relay, PLAYERS=1: a certificate the relay orders alone
 #   WATCHERS=N       relay: N watchers (OUT/w0..), started WATCH_AFTER seconds
@@ -52,6 +56,7 @@ extra="--players $players"
 [ -n "${SPECTATORS:-}" ] && extra="$extra --spectators $SPECTATORS"
 [ -n "${AI:-}" ] && extra="$extra --ai $AI"
 [ "${ALONE:-}" = on ] && extra="$extra --alone on"
+[ -n "${SPEED:-}" ] && extra="$extra --speed $SPEED"
 watchers=${WATCHERS:-0}
 [ "$watchers" -gt 0 ] && extra="$extra --watchers $watchers"
 
@@ -104,6 +109,9 @@ while [ "$source" -lt "$players" ]; do
   elif [ "$source" = "$leaver" ]; then
     hooks="VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$act"
   fi
+  if [ "$source" = "${SLOW:-none}" ]; then
+    hooks="$hooks VERA20K_SPAWN_SLOW_DRAW_MS=${SLOW_DRAW_MS:-0} VERA20K_SPAWN_SLOW_TICK_MS=${SLOW_TICK_MS:-0}"
+  fi
   rm -f "$out/p$source/spawn_result.json"
   # VERA20K_SPAWN_HIDDEN_WINDOW=1: invisible window, no Dock/menu bar entry.
   # shellcheck disable=SC2086
@@ -117,8 +125,14 @@ pids="$pids $clients"
 # Watchers join the match once it plays; each exits when it has watched it
 # to its end.
 watcher_clients=""
+deadline=$(( $(date +%s) + limit ))
 if [ "$watchers" -gt 0 ]; then
-  until grep -q "External launch: match on screen" "$out/p0/logs/ra2.log" 2>/dev/null; do sleep 0.5; done
+  # A player that never reaches the match (a refused launch) must not hold
+  # the run past its limit.
+  until grep -q "External launch: match on screen" "$out/p0/logs/ra2.log" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "timeout after ${limit}s: no match for the watchers" >&2; exit 1; }
+    sleep 0.5
+  done
   sleep "${WATCH_AFTER:-0}"
   index=0
   while [ "$index" -lt "$watchers" ]; do
@@ -150,7 +164,6 @@ if [ "$kill_target" != none ]; then
   pids="$pids $!"
 fi
 
-deadline=$(( $(date +%s) + limit ))
 source=0
 for pid in $clients; do
   while kill -0 "$pid" 2>/dev/null; do

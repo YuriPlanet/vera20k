@@ -20,9 +20,9 @@ export function relayGrant(keyHex, address, matchId, sourceIndex, now, playerId,
   ticket.writeBigUInt64LE(BigInt(generation), 58);
   sign('VERA20k relay ticket v2\0', ticket.subarray(0, 66)).copy(ticket, 66);
   // The clock capability outlives loading and renewals; each control still
-  // needs its own live ticket. ordering.pacing 'on' or 'off' issues VO2C with
-  // the host's pacing flag; without it, VO1C.
-  const v2 = ordering.pacing === 'on' || ordering.pacing === 'off';
+  // needs its own live ticket. ordering.pacing 'on', 'off' or 'continuous'
+  // issues VO2C with that pacing flag; without it, VO1C.
+  const v2 = ['on', 'off', 'continuous'].includes(ordering.pacing);
   const signed = v2 ? 35 : 34;
   const certificate = Buffer.alloc(signed + 32);
   certificate.write(v2 ? 'VO2C' : 'VO1C');
@@ -30,8 +30,12 @@ export function relayGrant(keyHex, address, matchId, sourceIndex, now, playerId,
   certificate.writeUInt32LE(ordering.sources_mask, 20);
   certificate.writeUInt16LE(ordering.tick_hz, 24);
   certificate.writeBigUInt64LE(BigInt(now + 86400), 26);
-  // Flags: bit 0 pacing off, bit 1 ordered alone (one source the relay orders).
-  if (v2) certificate[34] = (ordering.pacing === 'off' ? 1 : 0) | (ordering.alone ? 2 : 0);
+  // Flags: bit 0 pacing off, bit 1 ordered alone (one source the relay orders),
+  // bit 2 continuous pacing.
+  if (v2) {
+    certificate[34] = (ordering.pacing === 'off' ? 1 : 0) | (ordering.alone ? 2 : 0)
+      | (ordering.pacing === 'continuous' ? 4 : 0);
+  }
   sign(`VERA20k relay ordering certificate ${v2 ? 'v2' : 'v1'}\0`, certificate.subarray(0, signed))
     .copy(certificate, signed);
   return { address, ticket: base64url(ticket), packet_key: base64url(sign('VERA20k relay packet key v2\0', ticket)),

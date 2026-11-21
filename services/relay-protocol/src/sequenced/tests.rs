@@ -878,7 +878,7 @@ fn a_vo2c_certificate_signs_its_pacing_flag_under_its_own_domain() {
     );
     // A VO1C body relabelled VO2C does not verify, and unknown flags fail.
     let mut relabelled = on.clone();
-    relabelled[34] = 4;
+    relabelled[34] = 8;
     assert!(matches!(
         OrderingCertificate::parse(&relabelled),
         Err(RelayError::Malformed)

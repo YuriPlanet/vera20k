@@ -38,9 +38,9 @@ pub use sequenced::watch::{
     MAX_ROOM_WATCHERS, MAX_WATCH_DELAY_SECONDS, WATCH_MARK_MS, WATCH_TICKET_VERSION, WatchTicket,
 };
 pub use sequenced::{
-    ABSENT_MS, CHECKSUM_INTERVAL, CertificatePacing, FRAME_RATES, MAX_FRAME_BATCHES,
-    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderStatus,
-    OrderingCertificate, paced_rates, turn_frames, turn_ms,
+    ABSENT_MS, CHECKSUM_INTERVAL, CONTINUOUS_FLOOR, CertificatePacing, FRAME_RATES,
+    MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
+    OrderStatus, OrderingCertificate, admits_rate, paced_rates, turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
