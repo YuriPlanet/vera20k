@@ -2372,6 +2372,7 @@ fn accepted_future_batches_deduplicate_and_renewal_recovers_a_lost_ack_from_own_
             [89; 32],
         )
         .unwrap();
+    assert!(candidate.ordering.is_none());
     connect(&mut server, &mut candidate, 300);
     candidate.adopt_ordering_from(&mut first).unwrap();
     assert!(first.ordering.is_none());

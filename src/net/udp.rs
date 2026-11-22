@@ -828,15 +828,10 @@ impl LanUdpTransport {
         let mut io = self.lock();
         let route =
             active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
-        let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
+        route
+            .session
+            .admit_certificate(&certificate)
             .map_err(relay_io_error)?;
-        // A watcher has no source of its own (relay README "Watchers").
-        if !route.session.is_watching() && parsed.sources_mask & (1 << route.session.source()) == 0
-        {
-            return Err(io::Error::other(
-                "ordering certificate excludes local source",
-            ));
-        }
         route.ordering_certificate = Some(certificate);
         Ok(())
     }

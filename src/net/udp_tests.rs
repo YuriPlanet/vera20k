@@ -521,6 +521,52 @@ fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
         .unwrap();
 }
 
+/// The route keeps only a certificate its session admits: one for the
+/// ticket's room that names its source.
+#[test]
+fn a_relay_route_refuses_an_ordering_certificate_for_another_room() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let mut wire = transport();
+    wire.enable_relay(
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+        &ticket,
+        *derive_packet_key(&key, &ticket).expose_for_https(),
+        [29; 32],
+    )
+    .unwrap();
+    let certificate = |room| {
+        OrderingCertificate {
+            room,
+            sources_mask: 0b11,
+            tick_hz: 30,
+            expires: 2000,
+            pacing: Default::default(),
+            ordered_alone: false,
+        }
+        .sign(&key)
+        .unwrap()
+    };
+    assert!(
+        wire.set_ordering_certificate(certificate([28; 16]))
+            .is_err()
+    );
+    assert_eq!(wire.ordering_certificate(), None);
+    wire.set_ordering_certificate(certificate([27; 16]))
+        .unwrap();
+}
+
 /// `ordered_relay` once a second source's Ready has started its match and the
 /// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
 /// relay a heartbeat 250 ms later (spec §6.6). The relay has read nothing
