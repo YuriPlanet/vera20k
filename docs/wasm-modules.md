@@ -207,6 +207,8 @@ difference shows within 15 frames.
 
 ## More
 
+- [Tutorial (Chinese)](wasm-modules-tutorial.zh-CN.md): a first module step by
+  step, from installing Rust to a working bounty mod in a skirmish.
 - [RFC 0001](rfcs/0001-wasm-extension-modules.md): the design, in particular
   sections 2 (mods and maps), 3 (loading and errors), 6 (triggers, actions,
   properties, variables, decisions, orders) and 15 (performance).
@@ -215,4 +217,4 @@ difference shows within 15 frames.
 - [Development status](rfcs/0001-wasm-extension-modules-status.md): what this build
   implements so far.
 - `sdk/examples/` in the source: `minimal-rules`, `modifier-vars`, `panic-triggers`,
-  `actions-demo`, `orders-rules`, `decide-damage`.
+  `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`.
