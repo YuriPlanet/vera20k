@@ -106,30 +106,19 @@ receiver and Main draws ([ares-rmg.md](ares-rmg.md)), the country picks and flag
 ([ares-country-presentation.md](ares-country-presentation.md)), and the side theme and
 dialog caching ([ares-side-defaults.md](ares-side-defaults.md)).
 
-## WaterImage voxel path
+## WaterImage indexed guns
 
-`[VehicleType] WaterImage=OtherVehicleType` retains a registered VehicleType
-through the Rules owner and saved scenario. The exact-case key alone selects the
-runtime Ares switch. The reader is Ares `TechnoTypeClass_LoadFromINI_EarlyReader`
-(`715320`, body `10041DC0`, resume `715326`), with an empty default and a 2048-byte
-Find-only read. Missing, empty and unknown values retain the pointer. The values
-`none` and `<none>` clear it.
+`WaterImage=` is ported: the read (`715320`, body `10041DC0`) in
+`rules::native_processing::pass_techno`, the VXL draw (`73B4A0`, body `100481E0`) in
+`app::presentation::instances::units`, and the SHP draw (`73C5FC`, `73C655`, `73C69D`,
+`73C702`) in `app::presentation::instances::shp`.
 
-The VXL draw uses `GetUnitType10045340` through
-`UnitClass_DrawVXL_WaterType` (`73B4A0`, body `100481E0`, resume `73B4DA`). A water
-cell with OnBridge clear selects the alternate before deployed and disguise art.
-The ordinary type has already selected SHP/VXL dispatch. The shared atlas admits
-the alternate model, including an unloading harvester's alternate, before that
-model has its own unit. The current bounded chain is ordinary base-gun VXL art.
-RNG draws 0, simulation timer writes 0, detach calls 0.
-
-The SHP draw takes the same alternate (`UnitClass_DrawSHP_WaterType` `73C5FC`,
-`UnitClass_DrawSHP_ChangeType1`, in `app::presentation::instances::shp`). Mixed
-actual/alternate indexed-gun modes remain open. Native uses actual TurretCount/IsGattling to choose the selected model's base or
-indexed slots, while the current atlas keys derive this from the selected model.
-Custom combinations can show a different gun or omit it. These
-require separate physical slot identities through the existing voxel catalog and
-atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
+Open: a pair whose two types differ in TurretCount or IsGattling. Native uses the
+actual type's TurretCount/IsGattling to choose the drawn model's base or indexed gun
+slots, while the atlas keys derive them from the drawn model, so such a pair can show
+a different gun or none. Fixing it needs separate physical slot identities through
+the voxel catalog and atlas. The mods scanned so far (Red
+Resurrection's nine pairs) have no such pair.
 
 [Ares WaterImage specification](https://ares-developers.github.io/Ares-docs/restored/amphibiousimagechanges.html)
 
