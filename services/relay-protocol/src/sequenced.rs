@@ -1305,14 +1305,14 @@ struct Source {
     principal: Option<([u8; 16], u64)>,
     last_batch: Option<(u64, u32, Vec<u8>)>,
     pending: usize,
-    leave_packets: RateBudget,
     pause_supported: bool,
     pause_request: Option<PauseRequest>,
     // Also its capability: a source that reported reads rate markers.
     pace: Option<PaceReport>,
     // Coordinator only: last pace packet sequence and reported age at the follower.
     forwarded_pace: (u64, u32),
-    // Last authenticated packet from this source, keepalives included.
+    // Last packet from this source that passed authentication and its rate
+    // limits, keepalives included, or the latest a federated relay reported.
     heard_ms: u64,
 }
 
@@ -1537,8 +1537,9 @@ impl OrderingRoom {
         counts.start_mismatches += u64::from(std::mem::take(&mut self.mismatch_uncounted));
     }
 
-    /// Any authenticated packet keeps a source's place; a newer admission of
-    /// another principal for the same source does not.
+    /// Any packet that passed authentication and the rate limits keeps a
+    /// source's place; a newer admission of another principal for the same
+    /// source does not.
     pub(super) fn heard(&mut self, source: u8, principal: ([u8; 16], u64), now_ms: u64) {
         if let Some(state) = self.sources.get_mut(usize::from(source))
             && state.admits(principal)
@@ -2824,10 +2825,6 @@ impl RelayServer {
                 }
                 let source = &mut ordering.sources[usize::from(message.ticket.source)];
                 source.bind((message.ticket.player, message.ticket.generation))?;
-                if !source.leave_packets.permits(now, 1, 8) {
-                    return Err(RelayError::RateLimited);
-                }
-                source.leave_packets.charge(now, 1);
                 // A failed archive keeps its files for inspection, but still
                 // records the departure in memory and acknowledges it: the
                 // client may join no other match until it does.
@@ -2916,7 +2913,7 @@ impl RelayServer {
 
     /// Driven by the server clock even when no datagram arrives.
     pub fn advance_clock(&mut self, now_ms: u64, now: u64) {
-        self.prune(now);
+        self.prune(now, now_ms);
         let mut total = self.ordering_memory();
         let mut rooms: Vec<_> = self.rooms.keys().copied().collect();
         rooms.sort_unstable();
@@ -3205,9 +3202,7 @@ impl RelayServer {
                 for peer in &room.peers {
                     if let Some(source) = ordering.sources.get_mut(usize::from(peer.ticket.source))
                     {
-                        source.heard_ms = now_ms.saturating_sub(
-                            now.saturating_sub(peer.last_seen).saturating_mul(1000),
-                        );
+                        source.heard_ms = peer.link.last_heard_ms;
                     }
                 }
                 ordering
