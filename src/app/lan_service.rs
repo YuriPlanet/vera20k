@@ -2018,34 +2018,14 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                     crate::skirmish_launch::LaunchStartPosition::Position(u8::try_from(values[2])?)
                 };
                 choices.team = crate::skirmish_launch::LaunchTeam::from_shell_value(values[3]);
-                // A guest's own seat and team pick keep to the room's teams.
-                let mut observer = values[0] == -3;
-                let refused = state.match_state.session.admit_network_team(
-                    source,
-                    &mut choices,
-                    &mut observer,
-                );
-                let mut change = state
-                    .match_state
-                    .session
-                    .accept_lan_peer_choices(source, choices, observer)?;
-                change.options |= refused;
-                // A VERA room's guest who starts or stops watching changes
-                // rows: the roster, then the options, as WOL's R arm.
-                let mut deferred = Vec::new();
-                if change.roster && !options::publish_roster(state)? {
-                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishRoster);
-                }
-                if change.options && !options::publish_options(state)? {
-                    deferred.push(super::shell_network_setup::NetworkSetupRequest::PublishOptions);
-                }
-                state
-                    .match_state
-                    .lan_service
-                    .as_mut()
-                    .ok_or_else(closed_visit)?
-                    .deferred_setup
-                    .extend(deferred);
+                super::shell_network_setup::service_event(
+                    state,
+                    super::shell_network_setup::NetworkSetupEvent::PlayerChoices {
+                        index: source,
+                        choices,
+                        observer: values[0] == -3,
+                    },
+                )?;
             }
         }
         LanPayload::ReadyToGo => {
