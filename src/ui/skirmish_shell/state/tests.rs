@@ -2829,20 +2829,29 @@ fn saved_setup_keeps_computer_rows_scrolled_out_of_view() {
 }
 
 #[test]
-fn a_scrolling_start_list_keeps_the_face_width_for_its_captions() {
-    // Ten starts give the Start list eleven rows, two past its nine, so it
-    // scrolls; its 38 px face less the scrollbar left the captions no width.
+fn a_scrolling_start_or_team_list_keeps_the_face_width_for_its_captions() {
+    // Ten starts give the Start list eleven rows and the Team list None and
+    // A to O, both past their nine, so they scroll; a 38 px face less the
+    // scrollbar left the captions no width.
     let maps = [test_map_entry_with_starts("ten.mmx", 10)];
     let mut shell = SkirmishShellState::default();
     initialize_rows_for_selected_map(&mut shell, &maps);
     let layout = compute_layout(800, 600);
-    let id = SkirmishComboId::Start(0);
-    assert!(combo_dropdown_needs_scrollbar(&shell, &maps, id));
-    let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
-    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
-    let bar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
-    assert_eq!((content.x, content.w), (face.x, face.w));
-    assert_eq!(bar.x, face.x + face.w);
+    assert_eq!(
+        combo_items(&shell, &maps, SkirmishComboId::Team(0)),
+        std::iter::once(-2)
+            .chain(0..i32::from(crate::skirmish_launch::SKIRMISH_TEAMS))
+            .map(SkirmishComboItem::Team)
+            .collect::<Vec<_>>()
+    );
+    for id in [SkirmishComboId::Start(0), SkirmishComboId::Team(0)] {
+        assert!(combo_dropdown_needs_scrollbar(&shell, &maps, id), "{id:?}");
+        let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+        let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+        let bar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
+        assert_eq!((content.x, content.w), (face.x, face.w), "{id:?}");
+        assert_eq!(bar.x, face.x + face.w, "{id:?}");
+    }
 }
 
 #[test]

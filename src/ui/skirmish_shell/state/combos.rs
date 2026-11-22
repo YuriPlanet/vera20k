@@ -41,10 +41,11 @@ pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
-        SkirmishComboId::AiType(_)
-        | SkirmishComboId::Team(_)
-        | SkirmishComboId::TeamMenu
-        | SkirmishComboId::SeatMenu => 0,
+        SkirmishComboId::AiType(_) | SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => 0,
+        // VERA: past eight starts the Team list runs A to O, so it scrolls
+        // at nine rows instead of running over the status line. gamemd's
+        // five rows never reach the cap.
+        SkirmishComboId::Team(_) => 9,
     }
 }
 
@@ -104,7 +105,10 @@ pub fn combo_items(
                 capacity,
             )
         }
-        SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
+        SkirmishComboId::Team(_) => team_choices(
+            state.selected_mode_must_ally,
+            skirmish_team_count(state, maps),
+        ),
         SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
         SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
@@ -185,13 +189,28 @@ pub fn available_start_choices(
         )
         .collect()
 }
-/// Shared4E5B60 team catalog; mode default team decides whether None is listed.
-pub fn team_choices(must_ally: bool) -> Vec<SkirmishComboItem> {
+/// Shared4E5B60 team catalog: None (-2) unless the mode must ally, then
+/// teams `0..count`. gamemd lists [`NATIVE_TEAMS`], A to D.
+///
+/// [`NATIVE_TEAMS`]: crate::skirmish_launch::NATIVE_TEAMS
+pub fn team_choices(must_ally: bool, count: u8) -> Vec<SkirmishComboItem> {
     let none = (!must_ally).then_some(-2);
     none.into_iter()
-        .chain(0..i32::from(crate::skirmish_launch::NATIVE_TEAMS))
+        .chain(0..i32::from(count))
         .map(SkirmishComboItem::Team)
         .collect()
+}
+
+/// The teams a skirmish Team list offers: gamemd's A to D, and VERA's
+/// [`SKIRMISH_TEAMS`] on a map past gamemd's eight starts.
+///
+/// [`SKIRMISH_TEAMS`]: crate::skirmish_launch::SKIRMISH_TEAMS
+fn skirmish_team_count(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> u8 {
+    if super::selected_player_rows(state, maps) > SKIRMISH_PLAYER_SLOT_COUNT {
+        crate::skirmish_launch::SKIRMISH_TEAMS
+    } else {
+        crate::skirmish_launch::NATIVE_TEAMS
+    }
 }
 
 pub fn selected_combo_item(

@@ -772,7 +772,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             Some(count) => (0..count)
                 .map(|team| SkirmishComboItem::Team(i32::from(team)))
                 .collect(),
-            None => skirmish_shell::team_choices(mode.must_ally || grouped),
+            None => skirmish_shell::team_choices(
+                mode.must_ally || grouped,
+                crate::skirmish_launch::NATIVE_TEAMS,
+            ),
         };
         let team_items = team_items
             .into_iter()

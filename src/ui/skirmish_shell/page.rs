@@ -307,12 +307,17 @@ pub fn sync_page(
                 Prop::VisibleRows,
                 Value::Int(combo_dropdown_max_visible_rows(id)),
             ),
-            // A scrolling Start list grows by its scrollbar, so the rows keep
-            // the face's width for a caption (gamemd's nine starts never
-            // scroll; ComboDropWin 0x0060D540 narrows the rows instead).
+            // A scrolling Start or Team list grows by its scrollbar, so the
+            // rows keep the face's width for a caption (gamemd's nine starts
+            // and four teams never scroll; ComboDropWin 0x0060D540 narrows
+            // the rows instead).
             (
                 Prop::PopupWiden,
-                Value::Int(if kind == 3 { scrollbar_w } else { 0 }),
+                Value::Int(if matches!(kind, 3 | 4) {
+                    scrollbar_w
+                } else {
+                    0
+                }),
             ),
             (Prop::PopupFlipBelow, Value::Int(flip)),
         ] {
