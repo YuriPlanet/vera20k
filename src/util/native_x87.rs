@@ -480,7 +480,8 @@ pub(crate) fn sqrt_approx_bits(bits: u32) -> u32 {
         mantissa |= 0x0080_0000;
     }
     let half_exponent = unbiased >> 1;
-    sqrt_approx_table_entry(mantissa >> 10).wrapping_add(((half_exponent + 127) as u32) << 23)
+    sqrt_approx_table()[(mantissa >> 10) as usize]
+        .wrapping_add(((half_exponent + 127) as u32) << 23)
 }
 
 /// One entry of `Sqrt_Approx`'s 16,384-entry mantissa table (`0x008650BC`).
@@ -501,6 +502,55 @@ pub(crate) fn sqrt_approx_table_entry(index: u32) -> u32 {
     // The root always lands in [1, 2), so the exponent field is zero and only
     // the mantissa varies.
     ((significand.sqrt() - 1.0) * 8_388_608.0) as u32
+}
+
+/// The number of entries in `Sqrt_Approx`'s mantissa table.
+const SQRT_TABLE_LEN: usize = 16_384;
+
+/// The mantissa table, computed once and read by every root.
+///
+/// The source of truth is [`sqrt_approx_table_entry`]; the entries are pure
+/// arithmetic, so the table never changes and needs no invalidation.
+fn sqrt_approx_table() -> &'static [u32] {
+    static TABLE: crate::util::sync::OnceLock<Box<[u32]>> = crate::util::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        (0..SQRT_TABLE_LEN as u32)
+            .map(sqrt_approx_table_entry)
+            .collect::<Vec<u32>>()
+            .into()
+    })
+}
+
+/// `Sqrt_Approx` (`0x004CAC40`) on a squared distance, without the x87 round
+/// trip.
+///
+/// The native helper stores its argument as a binary32 — `FSTP m32real` under
+/// the chop control word, 24 significant bits, truncated toward zero — and
+/// reads the mantissa table with the top 14 of those bits. An integer square
+/// is exact in binary64, so the store keeps its top 24 bits and drops the rest,
+/// and the table index reads none of the dropped bits: the same root comes out
+/// of the integer alone. The sign is ignored, as the native helper ignores it.
+pub(crate) fn sqrt_approx_square_bits(squares: i32) -> u32 {
+    let bits = chopped_f32_bits(squares.unsigned_abs());
+    if bits == 0 {
+        return NativeF32Bits::POSITIVE_ZERO.bits();
+    }
+    sqrt_approx_bits(bits)
+}
+
+/// A positive integer as the binary32 `FSTP m32real` stores it under the chop
+/// control word: 24 significant bits, truncated toward zero.
+fn chopped_f32_bits(magnitude: u32) -> u32 {
+    if magnitude == 0 {
+        return 0;
+    }
+    let top = 31 - magnitude.leading_zeros();
+    let fraction = if top <= 23 {
+        (magnitude << (23 - top)) & 0x007f_ffff
+    } else {
+        (magnitude >> (top - 23)) & 0x007f_ffff
+    };
+    ((top + 127) << 23) | fraction
 }
 
 /// Evaluate the native height-to-screen conversion with an injected multiplier.
@@ -975,6 +1025,52 @@ mod tests {
                 adjust_for_z_standard(z),
                 adjust_for_z_standard_evaluated(z),
                 "Z {z}"
+            );
+        }
+    }
+
+    /// The integer root and the x87-stored root agree bit for bit, at the
+    /// binary32 chopping boundary and around it.
+    #[test]
+    fn an_integer_square_root_matches_the_x87_stored_root() {
+        for squares in [
+            0,
+            1,
+            2,
+            3,
+            15,
+            16,
+            17,
+            255,
+            256,
+            1_000_000,
+            16_777_215,
+            16_777_216,
+            16_777_217,
+            1 << 30,
+            i32::MAX,
+            i32::MIN,
+            -1,
+            -3,
+            -16_777_217,
+        ] {
+            let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                .expect("finite")
+                .bits();
+            assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+        }
+    }
+
+    /// The memoized mantissa table is the computed table, entry for entry.
+    #[test]
+    fn the_memoized_mantissa_table_is_the_computed_one() {
+        let table = sqrt_approx_table();
+        assert_eq!(table.len(), SQRT_TABLE_LEN);
+        for (index, entry) in table.iter().enumerate() {
+            assert_eq!(
+                *entry,
+                sqrt_approx_table_entry(index as u32),
+                "entry {index}"
             );
         }
     }
