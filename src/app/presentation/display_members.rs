@@ -39,20 +39,15 @@ impl ScreenSpan {
         let [x, y] = record.pose.screen;
         let lifted = y - record.pose.visual_lift;
         let (top, bottom) = (y.min(lifted), y.max(lifted));
-        // An object above the ground is picked over the column between its
-        // shadow and its drawn body. Its height is the simulation's Z, which
-        // the rules produce: an aircraft reads `FlightLevel` (global
-        // `[General]` and the type's key), a jumpjet its own `JumpjetHeight`.
-        let [world_x, world_y] =
-            crate::sim::movement::ground_pose::position_world_xy(&record.position);
-        let (_, ground) = crate::util::lepton::absolute_leptons_to_screen(world_x, world_y, 0);
-        let airborne = record.category() == EntityCategory::Aircraft || y < ground - 1.0;
-        if !airborne {
+        if record.category() != EntityCategory::Aircraft {
             return Self { x, top, bottom };
         }
         // An aircraft's shadow lies on the ground straight below it
         // (`aircraft_shadow::pose`), a rocket's lower again by its height:
         // never past twice the body's height above its Z = 0 point.
+        let [world_x, world_y] =
+            crate::sim::movement::ground_pose::position_world_xy(&record.position);
+        let (_, ground) = crate::util::lepton::absolute_leptons_to_screen(world_x, world_y, 0);
         Self {
             x,
             top: top.min(ground),

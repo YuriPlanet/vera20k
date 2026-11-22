@@ -303,7 +303,6 @@ fn tactical_world_tip_text_for_viewer(
             sim,
             rules: Some(rules),
             translucent_viewer,
-            frame,
         },
         order.iter().map(|(_, id)| id),
         fog,

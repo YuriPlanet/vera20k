@@ -36,16 +36,6 @@ pub(crate) trait PickSource: Copy {
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
         crate::render::locomotor_visual::screen_position(entity)
     }
-    /// The drawn sprite's screen span, when the presentation has one. Native
-    /// picks over the object's whole drawn body (`Is_Point_In_Object`); the
-    /// span does that for air units and other sprites taller than the ground
-    /// ellipse, which only covers the anchor. Without it the ellipse decides.
-    fn screen_span(
-        &self,
-        _entity: &crate::sim::game_entity::GameEntity,
-    ) -> Option<crate::app::presentation::display_members::ScreenSpan> {
-        None
-    }
     /// The cell's ground-list head the point picker falls back to. A bare
     /// EntityStore has no cell lists.
     fn first_ground_cell_object(&self, _cell: (u16, u16)) -> Option<CellObjectMember> {
@@ -133,9 +123,6 @@ pub(crate) struct PresentedWorld<'a> {
     pub rules: Option<&'a RuleSet>,
     /// [`crate::app::presentation::instances::translucent_fog_viewer`].
     pub translucent_viewer: Option<InternedId>,
-    /// The presentation frame whose drawn poses the pick shares, when the
-    /// world has one: it supplies each sprite's [`ScreenSpan`].
-    pub frame: Option<&'a crate::app::presentation::frame::PresentationFrame>,
 }
 impl PickSource for PresentedWorld<'_> {
     fn type_invisible(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
@@ -156,15 +143,6 @@ impl PickSource for PresentedWorld<'_> {
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
         let (x, y) = crate::render::locomotor_visual::screen_position(entity);
         (x, y - f32::from(entity.ion_blast_lift_pixels()))
-    }
-    fn screen_span(
-        &self,
-        entity: &crate::sim::game_entity::GameEntity,
-    ) -> Option<crate::app::presentation::display_members::ScreenSpan> {
-        let record = self.frame?.object(entity.stable_id())?;
-        Some(crate::app::presentation::display_members::ScreenSpan::of(
-            record,
-        ))
     }
     fn first_ground_cell_object(&self, cell: (u16, u16)) -> Option<CellObjectMember> {
         self.sim.first_ground_cell_object(cell)
@@ -202,7 +180,6 @@ pub(crate) fn presented<'a>(
         sim,
         rules: state.rules(),
         translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
-        frame: state.match_state.sim_runtime.frame(),
     }
 }
 
@@ -1599,16 +1576,7 @@ pub(crate) fn pick_object_at_point<'a>(
         // They only read, so the winner is the same.
         let (sx, sy) = source.screen_position(entity);
         let distance = pick_distance_sq(sx - world_x, sy - world_y) as i32;
-        // Native asks whether the point is inside the drawn body
-        // (`Is_Point_In_Object`); the presentation span answers that, which
-        // covers an air unit's whole sprite and ground shadow. Without a frame
-        // the ground ellipse around the anchor decides.
-        let inside = source
-            .screen_span(entity)
-            .map_or(distance < PICK_DISTANCE_THRESHOLD as i32, |span| {
-                may_pick(span, world_x, world_y)
-            });
-        if inside
+        if distance < PICK_DISTANCE_THRESHOLD as i32
             && best.is_none_or(|(_, best_distance)| distance < best_distance)
             && pick_admits_object(entity, fog, player)
             && !source.conceals(entity)
@@ -2152,7 +2120,6 @@ mod tests {
                     sim: &sim,
                     rules: None,
                     translucent_viewer,
-                    frame: None,
                 };
                 let (bx, by) = source.screen_position(sim.entities().get(1).unwrap());
                 assert!(
@@ -2268,7 +2235,6 @@ mod tests {
                     sim: &sim,
                     rules: None,
                     translucent_viewer,
-                    frame: None,
                 };
                 let case = format!("{id} {translucent_viewer:?}");
                 let (x, y) = source.screen_position(entity);

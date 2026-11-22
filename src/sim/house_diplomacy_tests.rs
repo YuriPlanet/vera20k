@@ -144,7 +144,7 @@ fn observer_only_matches_leave_the_computers_free_for_all() {
     );
     paranoid(&mut sim, &rules);
 
-    assert!(sim.no_participating_human());
+    assert!(sim.watched_ai_alone());
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
     for computer in &ids[1..] {

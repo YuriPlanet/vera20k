@@ -87,7 +87,6 @@ fn cursor(
         sim,
         rules: Some(rules),
         translucent_viewer: None,
-        frame: None,
     };
     let (x, y) = source.screen_position(sim.entities().get(target).unwrap());
     let hover = hover_target_at_point(source, x, y, "Americans", false).unwrap();

@@ -649,7 +649,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/snapshot/simulation_restore.rs", 1),
-                // `no_participating_human` asks the whole room's list once, so
+                // `watched_ai_alone` asks the whole room's list once, so
                 // a shared match decision never depends on one client's view.
                 ("sim/world/house_defeat.rs", 1),
             ],
