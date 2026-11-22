@@ -11,7 +11,6 @@ use vera20k_gui::{NodeId, Rect, Rgba};
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::text_engine::Fit;
 
 /// What a run of instances samples.
@@ -23,20 +22,6 @@ pub(crate) enum Material {
     Glyphs,
     /// The atlas the host's pictures are in.
     Pictures,
-}
-
-/// What the host adds to a node's commands.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct NodeDraw {
-    /// The squeeze of the node's text.
-    pub(crate) fit: Fit,
-    /// The fill's size where it is not the rect's. A HUD neither holds a
-    /// negative size nor paints an empty rect, so such a fill's node has a
-    /// rect one pixel big.
-    pub(crate) size: Option<[i32; 2]>,
-    /// What the node's `Art` shows, drawn at its own size from the rect's top
-    /// left.
-    pub(crate) picture: Option<SidebarChromeEntry>,
 }
 
 /// Where a HUD's pixels land on the target.
@@ -56,6 +41,32 @@ impl HudSpace {
     }
 }
 
+/// What a host adds to one node's drawing.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct NodeDraw {
+    /// The squeeze a text draws at.
+    pub(crate) fit: Fit,
+    /// Target pixels per font pixel, where not the [`HudSpace`]'s scale.
+    pub(crate) text_scale: Option<f32>,
+    /// The node's top left on the target, where it falls between the HUD's
+    /// whole pixels; otherwise its rect's through the [`HudSpace`].
+    pub(crate) position: Option<[f32; 2]>,
+    /// A fill's size on the target, where a rect cannot hold it: between
+    /// whole pixels, empty or negative.
+    pub(crate) size: Option<[f32; 2]>,
+    /// What the node's `Art` shows.
+    pub(crate) picture: Option<Picture>,
+}
+
+/// A part of the host's picture atlas, drawn at its own size from its node's
+/// top left.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Picture {
+    pub(crate) uv_origin: [f32; 2],
+    pub(crate) uv_size: [f32; 2],
+    pub(crate) pixel_size: [f32; 2],
+}
+
 /// One HUD's instances, with buffers kept from frame to frame.
 #[derive(Default)]
 pub(crate) struct HudPaint {
@@ -66,14 +77,13 @@ pub(crate) struct HudPaint {
 
 impl HudPaint {
     /// Replace the last frame's instances with `hud`'s. A text is literal,
-    /// starts at its rect's top left and is not held to its size. `host`
-    /// gives what a node's commands leave to it.
+    /// starts at its node's top left.
     pub(crate) fn build(
         &mut self,
         hud: &Hud,
         space: HudSpace,
         font: &BitFont,
-        host: impl Fn(NodeId) -> NodeDraw,
+        draw: impl Fn(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
         self.runs.clear();
@@ -81,27 +91,35 @@ impl HudPaint {
         hud.paint(&mut commands);
         for command in &commands {
             let start = self.instances.len();
+            let node = draw(command.node);
             let material = match command.op {
                 PaintOp::Fill { rect, color } => {
-                    let [w, h] = host(command.node).size.unwrap_or([rect.w, rect.h]);
-                    let rect = Rect::new(rect.x, rect.y, w, h);
-                    self.instances.push(fill(rect, color, space));
+                    self.instances.push(fill(rect, color, space, node));
                     Material::Solid
                 }
                 PaintOp::Image { rect, .. } => {
-                    let Some(art) = host(command.node).picture else {
+                    let Some(picture) = node.picture else {
                         continue;
                     };
-                    self.instances.push(picture(rect, art, space));
+                    self.instances.push(SpriteInstance {
+                        position: node.position.unwrap_or_else(|| space.point(rect.x, rect.y)),
+                        size: picture.pixel_size.map(|length| length * space.scale),
+                        uv_origin: picture.uv_origin,
+                        uv_size: picture.uv_size,
+                        tint: [1.0; 3],
+                        alpha: 1.0,
+                        ..Default::default()
+                    });
                     Material::Pictures
                 }
                 PaintOp::Text {
                     rect, key, color, ..
                 } => {
                     let (rgb, alpha) = tint(color.unwrap_or(Rgba(255, 255, 255, 255)));
-                    let [x, y] = space.point(rect.x, rect.y);
-                    let glyphs = font.fitted(host(command.node).fit, |font| {
-                        font.build_text(key, x, y, space.scale, 0.0, rgb, [0.0; 2])
+                    let [x, y] = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
+                    let scale = node.text_scale.unwrap_or(space.scale);
+                    let glyphs = font.fitted(node.fit, |font| {
+                        font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2])
                     });
                     self.instances
                         .extend(glyphs.into_iter().map(|glyph| SpriteInstance {
@@ -149,28 +167,20 @@ impl HudPaint {
     }
 }
 
-fn fill(rect: Rect, color: Rgba, space: HudSpace) -> SpriteInstance {
+fn fill(rect: Rect, color: Rgba, space: HudSpace, node: NodeDraw) -> SpriteInstance {
     let (tint, alpha) = tint(color);
+    let position = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
+    let size = node
+        .size
+        .unwrap_or_else(|| [rect.w as f32 * space.scale, rect.h as f32 * space.scale]);
     SpriteInstance {
-        position: space.point(rect.x, rect.y),
-        size: [rect.w as f32 * space.scale, rect.h as f32 * space.scale],
+        position,
+        size,
         uv_origin: [0.0; 2],
         uv_size: [1.0; 2],
         depth: 0.0,
         tint,
         alpha,
-        ..Default::default()
-    }
-}
-
-fn picture(rect: Rect, art: SidebarChromeEntry, space: HudSpace) -> SpriteInstance {
-    SpriteInstance {
-        position: space.point(rect.x, rect.y),
-        size: art.pixel_size.map(|length| length * space.scale),
-        uv_origin: art.uv_origin,
-        uv_size: art.uv_size,
-        tint: [1.0; 3],
-        alpha: 1.0,
         ..Default::default()
     }
 }

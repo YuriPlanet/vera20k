@@ -21,7 +21,7 @@ use crate::app::AppState;
 use crate::app::input::hotkeys::HotkeyCommand;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw};
+use crate::render::hud_paint::{HudPaint, HudSpace, Material, NodeDraw, Picture};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextValue};
 
@@ -452,7 +452,7 @@ impl PartsHud {
         let [_, _, width, height] = rect;
         if width < 1 || height < 1 {
             let draw = NodeDraw {
-                size: Some([width, height]),
+                size: Some([width as f32, height as f32]),
                 ..Default::default()
             };
             self.draws.insert(node, draw);
@@ -467,7 +467,11 @@ impl PartsHud {
             self.set(node, Prop::Art, Value::Text(PICTURE.to_owned()));
         }
         let draw = NodeDraw {
-            picture: Some(picture),
+            picture: Some(Picture {
+                uv_origin: picture.uv_origin,
+                uv_size: picture.uv_size,
+                pixel_size: picture.pixel_size,
+            }),
             ..Default::default()
         };
         self.draws.insert(node, draw);
