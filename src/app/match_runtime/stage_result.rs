@@ -171,7 +171,7 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
         state
             .match_state
             .session
-            .confirm_campaign_stage_delivery(|discarded| live.global_sends_delivered(discarded));
+            .confirm_campaign_stage_delivery(|batch| live.global().batch_delivered(batch));
     }
     let session = &state.match_state.session;
     let Some(result) = session.campaign_result() else {
@@ -217,13 +217,13 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
     if !session.host() && peers.is_empty() {
         return;
     }
-    if let Some(CampaignControlSend::Queued(discarded_at_enqueue)) =
+    if let Some(CampaignControlSend::Queued(batch)) =
         crate::app::lan_service::send_campaign_control(state, &peers, signal)
     {
         state
             .match_state
             .session
-            .confirm_campaign_stage_send(signal, now_ms, discarded_at_enqueue);
+            .confirm_campaign_stage_send(signal, now_ms, batch);
     }
 }
 
