@@ -143,7 +143,7 @@ pub(super) fn spark_spawn_pass(
                 // exceed `ParticleCap`. `WeldingSys` (cap 15, 20 spawn frames)
                 // relies on that.
                 let particle =
-                    construct_spark_particle(sim, &particle_type, particle_type_id, system_coords)?;
+                    construct_spark_particle(sim, rules, particle_type_id, system_coords)?;
                 sys.particles.push(particle);
                 let particle = sys
                     .particles
@@ -275,13 +275,13 @@ pub(super) fn spark_spawn_pass(
 /// type controls the constructor's Smoke draw and colour/lifetime draws.
 fn construct_spark_particle(
     sim: &mut Simulation,
-    particle_type: &ParticleType,
+    rules: &RuleSet,
     particle_type_id: crate::rules::particle_type::ParticleTypeId,
     system_coords: IVec3,
 ) -> Result<Particle, SparkSpawnError> {
     construct_spark_particle_with_ground(
         sim,
-        particle_type,
+        rules,
         particle_type_id,
         system_coords,
         |sim, x, y| Ok(super::spark_world::constructor_ground_height(sim, x, y)?),
@@ -290,7 +290,7 @@ fn construct_spark_particle(
 
 fn construct_spark_particle_with_ground<F>(
     sim: &mut Simulation,
-    particle_type: &ParticleType,
+    rules: &RuleSet,
     particle_type_id: crate::rules::particle_type::ParticleTypeId,
     system_coords: IVec3,
     mut ground_height: F,
@@ -304,12 +304,13 @@ where
         particle_type_id,
         system_coords,
         system_coords,
-        particle_type,
+        rules.particle_type(particle_type_id),
         sim,
         &mut ground_height,
     )?;
 
     Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
+    sim.unlimbo_particle_alpha_shape(&particle, rules);
     Ok(particle)
 }
 
@@ -432,7 +433,6 @@ mod tests {
     fn gsi_04_03_particle_constructor_clamps_at_or_below_level_two_104_floor() {
         let rules = spark_rules(1, 2, "1");
         let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
-        let particle_type = rules.particle_type(particle_type_id).clone();
         let mut cell = super::super::spark_world::tests::terrain_cell(0, 0);
         cell.level = 2;
         let mut sim = super::super::spark_world::tests::one_cell_sim(cell);
@@ -440,7 +440,7 @@ mod tests {
         for (input_z, expected_z) in [(207, 208), (208, 208), (209, 209)] {
             let particle = construct_spark_particle(
                 &mut sim,
-                &particle_type,
+                &rules,
                 particle_type_id,
                 IVec3::new(128, 128, input_z),
             )
@@ -496,7 +496,7 @@ mod tests {
 
         let particle = construct_spark_particle_with_ground(
             &mut sim,
-            &particle_type,
+            &rules,
             particle_type_id,
             IVec3::new(7, 9, 100),
             |sim, x, y| {
@@ -522,20 +522,15 @@ mod tests {
     fn gsi_04_03_constructor_miss_uses_dummy_nonzero_slope_off_center() {
         let rules = spark_rules(1, 2, "1");
         let particle_type_id = crate::rules::particle_type::ParticleTypeId(0);
-        let particle_type = rules.particle_type(particle_type_id).clone();
         let mut sim = super::super::spark_world::tests::one_cell_sim(
             super::super::spark_world::tests::terrain_cell(0, 0),
         );
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         terrain.test_set_dummy_cell_level_slope(2, 1);
 
-        let particle = construct_spark_particle(
-            &mut sim,
-            &particle_type,
-            particle_type_id,
-            IVec3::new(320, 192, 0),
-        )
-        .unwrap();
+        let particle =
+            construct_spark_particle(&mut sim, &rules, particle_type_id, IVec3::new(320, 192, 0))
+                .unwrap();
 
         assert_eq!(
             particle.coords.z, 234,

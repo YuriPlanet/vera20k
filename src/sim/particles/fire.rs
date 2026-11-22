@@ -404,7 +404,7 @@ fn spawn_with_insert(
     else {
         return;
     };
-    let particle = Particle::new(kind, from, to, rules.particle_type(kind), sim);
+    let particle = Particle::new(kind, from, to, rules, sim);
     let back = sim
         .particle_rng()
         .next_raw_abs_modulo(INSERT_RANGE.min(count) as u32) as usize;

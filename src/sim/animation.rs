@@ -227,28 +227,17 @@ pub fn resolve_shp_frame<'a>(
             i32::from(infantry_facing_slot(facing)),
             frame_index,
         ),
-        ShpFrameDefinition::Generic(def) => {
-            resolve_generic_shp_frame(def, facing, frame_index, false)
-        }
+        ShpFrameDefinition::Generic(def) => resolve_generic_shp_frame(def, facing, frame_index),
     }
 }
 
-fn resolve_generic_shp_frame(
-    def: &SequenceDef,
-    facing: u8,
-    frame_index: i32,
-    suppress_facing: bool,
-) -> i32 {
-    let slot = if suppress_facing {
-        0
-    } else {
-        match def.facing_slots {
-            FacingSlots::InfantryTable => infantry_facing_slot(facing),
-            FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
-                vehicle_facing_slot(facing)
-            }
-            FacingSlots::VehicleOctant => 0,
+fn resolve_generic_shp_frame(def: &SequenceDef, facing: u8, frame_index: i32) -> i32 {
+    let slot = match def.facing_slots {
+        FacingSlots::InfantryTable => infantry_facing_slot(facing),
+        FacingSlots::VehicleOctant if def.facings == VEHICLE_FACING_SLOTS => {
+            vehicle_facing_slot(facing)
         }
+        FacingSlots::VehicleOctant => 0,
     };
     resolve_shp_frame_parts(
         i32::from(def.start_frame),
@@ -259,6 +248,18 @@ fn resolve_generic_shp_frame(
             i32::from(def.facing_multiplier)
         },
         i32::from(slot),
+        frame_index,
+    )
+}
+
+/// One SHP Unit block's image: its start, the bucket times the block's
+/// frames, and the step within it (`0x0073C65B..0x0073C71D`).
+fn vehicle_block_frame(def: &SequenceDef, slot: i32, frame_index: i32) -> i32 {
+    resolve_shp_frame_parts(
+        i32::from(def.start_frame),
+        i32::from(def.frame_count),
+        i32::from(def.facing_multiplier),
+        slot,
         frame_index,
     )
 }
@@ -508,41 +509,70 @@ pub(crate) fn foot_body_frame_due(
             && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0)
 }
 
+/// The facing bucket an SHP Unit's body draws (`UnitClass::Draw_Body_And_Turret`
+/// `0x0073C613..0x0073C64B`), from the actual type's `Facings=` (UnitType
+/// `+0xE3C`) and PrimaryFacing's current 16-bit facing. A disguised Unit
+/// (vt+0xC4) draws bucket 0.
+///
+/// Stock gamemd buckets only an eight-facing type:
+/// `(((facing >> 12) + 1) >> 1) + 1 & 7`; any other count draws bucket 0.
+/// Ares 3.0 `UnitClass_DrawSHP_FacingsA` (hook `0x0073C613`, Ares.dll
+/// `0x10047FE0`, resuming at `0x0073C64B`) buckets any count of at least 8:
+/// with `n = floor(log2(Facings))`, `(((facing + 0x2000) >> (15 - n)) + 1) >> 1`
+/// masked to `2^n - 1`, which is the stock value for 8. A count below 8, or
+/// not positive, draws bucket 0. From `n = 16` the hook neither shifts nor
+/// masks. `facing` is PrimaryFacing's current value: stock reads it through
+/// FacingClass::Current (`0x004C93D0`, called at `0x0073C636`); the Ares hook
+/// through its own inline copy (`0x10048064..0x10048102`,
+/// [`FacingClass::current_ares`](crate::sim::movement::FacingClass::current_ares)).
+pub fn shp_vehicle_facing_slot(facings: i32, facing: u16, disguised: bool, ares: bool) -> i32 {
+    if disguised {
+        return 0;
+    }
+    if !ares {
+        return if facings == i32::from(VEHICLE_FACING_SLOTS) {
+            i32::from(vehicle_facing_slot((facing >> 8) as u8))
+        } else {
+            0
+        };
+    }
+    let count = u32::try_from(facings).unwrap_or(0);
+    crate::util::direction_tables::ares_facing_bucket(count, facing) as i32
+}
+
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
-/// advances one image per two counter steps, in descending image order.
+/// advances one image per two counter steps, in descending image order,
+/// with no bound
+/// ([`ShpVehicleFireFrames::image`](crate::rules::animation_sequence::ShpVehicleFireFrames::image)).
 /// The persistent Foot counter continues to own Stand/Walk. A still body
 /// with no `IdleRate=` and a running death counter draws its death image
-/// instead of Stand (`0x0073C6AD..0x0073C6D3`).
+/// instead of Stand (`0x0073C6AD..0x0073C6D3`), and one whose Foot
+/// occupation enable is clear draws its bare bucket. `set` is the type whose
+/// frame layout the draw reads (`UnitType+0x6C4`, or the Ares water type,
+/// see `UnitClass_DrawSHP_ChangeType1`), and `slot` its facing bucket
+/// ([`shp_vehicle_facing_slot`]); each block multiplies the bucket by its
+/// own frame count (`0x0073C65B..0x0073C71D`).
 pub fn resolve_shp_vehicle_body_frame(
     set: &SequenceSet,
-    facing: u8,
+    slot: i32,
     body_frame_counter: u32,
     firing_counter: i32,
     death_counter: i32,
     locomotor_is_moving: bool,
-    disguised: bool,
+    occupation_enabled: bool,
 ) -> Option<u16> {
     let cadence = set.shp_vehicle_cadence()?;
     if firing_counter >= 0 {
-        let def = set.get(&SequenceKind::Attack)?;
-        let frame_index = firing_counter / 2;
-        // The native seed is within its type's fire block. Do not wrap an
-        // incompatible/invalid retained counter onto an unrelated atlas frame.
-        if frame_index >= i32::from(def.frame_count) {
-            return None;
-        }
-        return u16::try_from(resolve_generic_shp_frame(
-            def,
-            facing,
-            frame_index,
-            disguised,
-        ))
-        .ok();
+        return u16::try_from(set.shp_vehicle_fire()?.image(slot, firing_counter)).ok();
     }
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
         SequenceKind::Walk
     } else if death_counter >= 0 {
         return u16::try_from(set.shp_vehicle_death()?.image(death_counter)).ok();
+    } else if !occupation_enabled {
+        // `0x0073C6D5..0x0073C6DD`: with the Foot occupation enable
+        // (`+0x6B6`) clear, the image is the bare facing bucket.
+        return u16::try_from(slot).ok();
     } else {
         SequenceKind::Stand
     };
@@ -552,16 +582,7 @@ pub fn resolve_shp_vehicle_body_frame(
     } else {
         0
     };
-    // Unit73C654..73C681 only computes the facing bucket when the actual
-    // type has eight facings AND the object is not disguised. Slot zero is
-    // not equivalent to raw facing zero in the vehicle direction table.
-    u16::try_from(resolve_generic_shp_frame(
-        def,
-        facing,
-        i32::from(frame_index),
-        disguised,
-    ))
-    .ok()
+    u16::try_from(vehicle_block_frame(def, slot, i32::from(frame_index))).ok()
 }
 
 /// Advance a single animation by one reached native gameplay frame.
