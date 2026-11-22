@@ -106,6 +106,7 @@ Thumbs.db
 !/docs/personal-rules.md
 !/docs/modding.md
 !/docs/wasm-modules.md
+!/docs/wasm-modules-tutorial.zh-CN.md
 !/docs/map-format.md
 !/docs/terrain-deformation.md
 !/docs/ts-ice.md
