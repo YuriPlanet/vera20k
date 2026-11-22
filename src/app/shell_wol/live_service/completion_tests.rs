@@ -874,8 +874,8 @@ fn an_expired_start_says_whose_game_could_not_reach_the_relay() {
 }
 
 /// The lobby's reasons for refusing a start show as their own lines; one
-/// this game does not know keeps the general line. The lobby's tests read
-/// the same reasons.
+/// this game does not know keeps the general line. The fixture lists the
+/// reasons the lobby sends.
 #[test]
 fn a_refused_start_shows_the_lobbys_reason() {
     let (mut service, _input, _output) = control_service(None);
@@ -900,6 +900,14 @@ fn a_refused_start_shows_the_lobbys_reason() {
             "{message}"
         );
     }
+    assert_eq!(
+        service.start_rejected_line("A player cancelled the game start."),
+        "VERA:StartPlayerCancelled"
+    );
+    assert_eq!(
+        service.start_rejected_line("A player could not complete the peer latency check."),
+        "VERA:StartLatencyCheckFailed"
+    );
     assert_eq!(
         service.start_rejected_line(relay),
         "VERA:StartRelayNotReached",

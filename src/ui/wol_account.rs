@@ -1147,7 +1147,7 @@ mod tests {
     }
 
     /// The lobby checks names, passwords and emails with its own copy of
-    /// these rules, and its tests read the same cases.
+    /// these rules and gives each case the same answer.
     #[test]
     fn account_fields_give_the_shared_cases_their_answers() {
         let cases = &crate::test_fixture::json("tests/fixtures/lobby/accounts.json")["cases"];

@@ -305,7 +305,7 @@ player's game could not reach the server, and any other says its own could not. 
 other message, including a reworded one, shows the general line that the match could
 not start, as every message does in older games. The lobby therefore keeps these four
 messages unchanged while it admits games from 0.3.6 on;
-`tests/fixtures/lobby/start_rejected.json` lists them for the game's and the lobby's tests.
+`tests/fixtures/lobby/start_rejected.json` lists them.
 
 A start that times out connecting also says who held it up: every game's
 `start_rejected` then carries `phrases`, one `StartNotConnected` holding
@@ -908,8 +908,8 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   `name_unavailable` or `email_in_use`, or 429. Names follow the session rule;
   passwords are 8–64 printable ASCII characters; emails are at most 254 characters of
   the `x@y.z` shape, one account each. `tests/fixtures/lobby/accounts.json` holds names,
-  passwords and emails at the edges of these rules, each with whether the game takes it,
-  for the game's and the lobby's tests.
+  passwords and emails at the edges of these rules, each with whether the game takes it;
+  the lobby gives each the same answer.
 - `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
   `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
 - `/v1/accounts/forgot` `{name}` returns 202 whether or not the name has an account,
