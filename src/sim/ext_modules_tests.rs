@@ -1608,8 +1608,8 @@ fn a_query_reads_viewpoint_and_passability_properties_for_its_viewpoint() {
 }
 
 /// RFC 15.1, item 7: each frame digests a fifteenth of the pages, so a
-/// write shows within 15 frames, on the frame its page comes round; grown
-/// pages are digested at once.
+/// write shows within 15 frames, on the frame its page comes round; new
+/// pages wait for theirs with digest 0.
 #[test]
 fn memory_digests_visit_every_page_within_fifteen_frames() {
     use super::PageDigests;
@@ -1617,7 +1617,10 @@ fn memory_digests_visit_every_page_within_fifteen_frames() {
     let mut memory = vec![0u8; 20 * page];
     let mut digests = PageDigests::default();
     digests.refresh(&memory, 0);
-    assert_eq!(digests, PageDigests::of(&memory), "new pages at once");
+    assert_eq!(digests.0.len(), 20, "the page count shows at once");
+    assert_eq!(digests.0[1], 0, "a new page waits for its turn");
+    assert_ne!(digests.0[15], 0, "page 15 is frame 0's");
+    digests = PageDigests::of(&memory);
     let before = digests.clone();
     memory[7 * page + 3] = 1;
     for frame in 1..7 {
@@ -1635,8 +1638,47 @@ fn memory_digests_visit_every_page_within_fifteen_frames() {
     digests.refresh(&memory, 19);
     assert_eq!(digests, PageDigests::of(&memory));
     memory.extend(std::iter::repeat_n(5u8, page));
+    digests.refresh(&memory, 19);
+    assert_eq!(digests.0[20], 0, "a grown page waits");
     digests.refresh(&memory, 20);
-    assert_eq!(digests, PageDigests::of(&memory), "grown page at once");
+    assert_eq!(digests, PageDigests::of(&memory), "its turn");
+}
+
+/// A save before any page's turn resumes with the running game's digests.
+#[test]
+fn a_save_before_the_first_module_phase_keeps_its_digests() {
+    let Some(mut live) = scenario() else { return };
+    let house = neutral_index(&live);
+    live.runtime
+        .simulation
+        .install_ext_module(
+            &live.runtime.resources.rules,
+            ModuleSource::Map,
+            &paying_module(house_ref(house)),
+        )
+        .expect("module installs");
+    let mut resumed = saved_and_loaded(&live);
+    let digests = |scene: &HeadlessScenario| {
+        scene
+            .sim()
+            .ext_modules
+            .checksum_digests()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(digests(&resumed), digests(&live));
+    live.tick();
+    resumed.tick();
+    assert_eq!(digests(&resumed), digests(&live));
+}
+
+/// The published XXH32 vectors: short input, then stripes, words and bytes.
+#[test]
+fn page_digests_are_xxh32() {
+    use super::page_digest;
+    assert_eq!(page_digest(b""), 0x02CC_5D05);
+    assert_eq!(page_digest(b"abc"), 0x32D1_53FF);
+    let long = b"Nobody inspects the spammish repetition";
+    assert_eq!(page_digest(long), 0xE229_3B2F);
 }
 
 /// `Wasm.Tags` on a weapon section binds the weapon; enum parameters take

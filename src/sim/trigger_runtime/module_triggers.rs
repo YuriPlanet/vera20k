@@ -471,6 +471,10 @@ impl ModuleTriggers {
         let Some(mask) = 1u32.checked_shl(bit as u32) else {
             return false;
         };
+        // An earlier holder's action may have removed the trigger.
+        if !self.triggers.contains_key(&handle) {
+            return false;
+        }
         let mut state = self
             .instances
             .get(&(handle, holder))
@@ -542,7 +546,12 @@ impl ModuleTriggers {
             return;
         }
         self.objects.remove(&object);
-        self.instances.retain(|(_, holder), _| *holder != object);
+        // Every instance is a live trigger's, so there is no table to scan.
+        if !self.instances.is_empty() {
+            for &handle in self.triggers.keys() {
+                self.instances.remove(&(handle, object));
+            }
+        }
     }
 
     /// The triggers with an event of `kind` bound to `subject`, to its
