@@ -57,8 +57,6 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new behaviour with a script or plugin. VERA20k has neither, so that means changing
   its code.
 - Play without the original game.
-- Play a mod whose authors don't allow it in other engines. VERA20k refuses it and
-  starts the original game.
 
 ## Where things go
 
@@ -136,6 +134,9 @@ Other changed rules and terrain files still need to match between players.
 A mod is an external data package. VERA20k reads its files and never runs its
 executables, DLLs or launcher. A manifest selects resources and supported extensions;
 it does not install new engine code.
+
+A mod's own terms still apply. Some authors don't allow their mod in other engines:
+check a mod's terms before you use it here. VERA20k doesn't support such mods.
 
 | What you can put in a mod's folder | What it does |
 | --- | --- |
