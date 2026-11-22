@@ -307,7 +307,7 @@ fn saturate(v: i64) -> i32 {
 }
 
 /// `rect` without a negative size, its far edges saturated.
-fn bounded(rect: Rect) -> Rect {
+pub(super) fn bounded(rect: Rect) -> Rect {
     Rect::new(
         rect.x,
         rect.y,

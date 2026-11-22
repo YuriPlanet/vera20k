@@ -8,7 +8,8 @@
 use crate::Rect;
 use crate::node::{Refused, Rgba};
 
-use super::Origin;
+use super::layout::bounded;
+use super::{Origin, others_share};
 
 // Every count limit is per world, shared by all origins. Going past one is
 // `Refused::Limit` and changes nothing.
@@ -22,9 +23,11 @@ pub const MAX_TYPES_PER_TEMPLATE: usize = 4096;
 /// Counted as supplied, repeats included.
 pub const MAX_BANDS_PER_BAR: usize = 16;
 pub const MAX_SEGMENTS: u16 = 64;
-/// The most commands one object gets from [`World::paint_status`]. A template
-/// that could pass this alone is refused; where several do together, the
-/// first one not to fit whole and those registered after it are left out.
+/// The most commands one object gets from [`World::paint_status`], of which
+/// other origins than the host get three quarters (384) between them. A
+/// template that could pass its share alone is refused. Where several do
+/// together, the first not to fit whole is left out with those registered
+/// after it; one of another origin's takes none of the host's with it.
 pub const MAX_COMMANDS_PER_OBJECT: usize = 512;
 pub const MAX_LISTS: usize = 4096;
 pub const MAX_SHAPES_PER_LIST: usize = 128;
@@ -155,6 +158,7 @@ pub enum Shape {
     },
 }
 
+/// No rect has a negative size, and `x + w` and `y + h` fit an i32.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldOp<'a> {
     Rect {
@@ -214,12 +218,7 @@ impl<T> Default for Store<T> {
 
 impl<T> Store<T> {
     fn add(&mut self, origin: Origin, item: T, limit: usize) -> Result<u64, Refused> {
-        // A quarter of each limit is the host's alone.
-        let limit = if origin == Origin::Host {
-            limit
-        } else {
-            limit - limit / 4
-        };
+        let limit = origin.share(limit);
         if self.rows.len() >= limit {
             return Err(Refused::Limit);
         }
@@ -314,7 +313,7 @@ impl World {
         template: StatusTemplate,
     ) -> Result<TemplateId, Refused> {
         let item = Template {
-            def: normalized(template)?,
+            def: normalized(template, origin)?,
             shown: true,
         };
         let id = self.templates.add(origin, item, MAX_TEMPLATES)?;
@@ -328,10 +327,11 @@ impl World {
         id: TemplateId,
         template: StatusTemplate,
     ) -> Result<(), Refused> {
-        let current = self.templates.get_mut(id.0)?;
-        let def = normalized(template)?;
-        if current.def != def {
-            current.def = def;
+        let index = self.templates.index(id.0)?;
+        let row = &mut self.templates.rows[index];
+        let def = normalized(template, row.origin)?;
+        if row.item.def != def {
+            row.item.def = def;
             self.revision += 1;
         }
         Ok(())
@@ -416,18 +416,28 @@ impl World {
     pub fn paint_status<'a, 'v>(&'a self, objects: &[ObjectView<'v>], out: &mut Vec<WorldCmd<'a>>) {
         for object in objects {
             let first = out.len();
+            // What is left for other origins than the host.
+            let mut spare = others_share(MAX_COMMANDS_PER_OBJECT);
             for row in &self.templates.rows {
-                if !row.item.matches(object) {
+                let host = row.origin == Origin::Host;
+                if (!host && spare == 0) || !row.item.matches(object) {
                     continue;
                 }
                 let before = out.len();
                 for element in &row.item.def.elements {
                     paint_element(object, element, out);
                 }
+                let used = out.len() - before;
                 // No template alone passes the bound, so neither does the overshoot.
-                if out.len() - first > MAX_COMMANDS_PER_OBJECT {
+                let fits = out.len() - first <= MAX_COMMANDS_PER_OBJECT && (host || used <= spare);
+                if !fits {
                     out.truncate(before);
-                    break;
+                    if host {
+                        break;
+                    }
+                    spare = 0;
+                } else if !host {
+                    spare -= used;
                 }
             }
         }
@@ -459,7 +469,7 @@ impl World {
 
 /// The template within its limits, with types sorted for the lookup and
 /// bands from the highest percent down, both without repeats.
-fn normalized(mut template: StatusTemplate) -> Result<StatusTemplate, Refused> {
+fn normalized(mut template: StatusTemplate, origin: Origin) -> Result<StatusTemplate, Refused> {
     if template.name.len() > MAX_TEXT_BYTES
         || template.types.len() > MAX_TYPES_PER_TEMPLATE
         || template.when.len() > MAX_CONDITIONS_PER_TEMPLATE
@@ -481,7 +491,7 @@ fn normalized(mut template: StatusTemplate) -> Result<StatusTemplate, Refused> {
             Element::Icon { .. } | Element::Number { .. } => 1,
         };
     }
-    if most_commands > MAX_COMMANDS_PER_OBJECT {
+    if most_commands > origin.share(MAX_COMMANDS_PER_OBJECT) {
         return Err(Refused::Limit);
     }
     template.types.sort_unstable();
@@ -536,11 +546,7 @@ fn saturate(v: i64) -> i32 {
 }
 
 fn moved(rect: Rect, (x, y): (i32, i32)) -> Rect {
-    Rect {
-        x: rect.x.saturating_add(x),
-        y: rect.y.saturating_add(y),
-        ..rect
-    }
+    bounded(rect.translate(x, y))
 }
 
 fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<WorldCmd<'_>>) {
@@ -599,11 +605,11 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
                 let Some(art) = (if i < lit { Some(full) } else { empty }) else {
                     break;
                 };
-                let rect = Rect {
+                let rect = bounded(Rect {
                     x: saturate(x + i * i64::from(step.0)),
                     y: saturate(y + i * i64::from(step.1)),
                     ..at
-                };
+                });
                 push(WorldOp::Image { rect, art });
             }
         }
@@ -1537,6 +1543,27 @@ mod tests {
     }
 
     #[test]
+    fn others_templates_leave_the_host_its_share() {
+        let per_element = usize::from(MAX_SEGMENTS);
+        let wide = |count| template(vec![segments(MAX_SEGMENTS, Some(EMPTY)); count]);
+        let client = Origin::External(1);
+        let mut world = World::default();
+        let first = world.add_template(client, wide(5)).unwrap();
+        // The first not to fit, and the one after it that would.
+        world.add_template(client, wide(2)).unwrap();
+        world.add_template(client, template(vec![icon(9)])).unwrap();
+        world.add_template(Origin::Host, wide(2)).unwrap();
+        let values = some(1, 1);
+        let count = |world: &World| status(world, &[object(&values)]).len();
+        assert_eq!(count(&world), 7 * per_element);
+
+        assert_eq!(world.set_template(first, wide(7)), Err(Refused::Limit));
+        assert_eq!(world.add_template(client, wide(7)), Err(Refused::Limit));
+        world.set_template(first, wide(6)).unwrap();
+        assert_eq!(count(&world), MAX_COMMANDS_PER_OBJECT);
+    }
+
+    #[test]
     fn template_count_is_limited() {
         let mut world = World::default();
         let first = world.add_template(Origin::Host, named("t")).unwrap();
@@ -1664,6 +1691,13 @@ mod tests {
                             ..object(&values)
                         };
                         for cmd in status(&world, &[seen]) {
+                            if let WorldOp::Rect { rect, .. }
+                            | WorldOp::Image { rect, .. }
+                            | WorldOp::Number { rect, .. } = cmd.op
+                            {
+                                assert!(rect.w >= 0 && rect.x.checked_add(rect.w).is_some());
+                                assert!(rect.h >= 0 && rect.y.checked_add(rect.h).is_some());
+                            }
                             if let WorldOp::Rect { rect, color: A } = cmd.op {
                                 assert!((1..=edge).contains(&rect.w), "{value}/{max} in {edge}");
                             }
@@ -1677,7 +1711,8 @@ mod tests {
     #[test]
     fn the_widest_bar_fills_exactly() {
         let world = world(template(vec![bar(i32::MAX, &[(100, A)], None)]));
-        assert_eq!(fill(&world, i32::MAX, i32::MAX), Some((i32::MAX, A)));
+        // It starts at x 10, and its far edge fits an i32.
+        assert_eq!(fill(&world, i32::MAX, i32::MAX), Some((i32::MAX - 10, A)));
         assert_eq!(fill(&world, i32::MAX - 1, i32::MAX), None);
     }
 
@@ -1696,7 +1731,7 @@ mod tests {
         assert_eq!(
             status(&world, &[seen])[0].op,
             WorldOp::Image {
-                rect: edge,
+                rect: Rect::new(i32::MAX, i32::MIN, 0, 1),
                 art: FULL
             }
         );
@@ -1717,11 +1752,14 @@ mod tests {
             x: i32::MIN,
             ..object(&values)
         };
-        let expected = [(-1, 0), (i32::MAX - 1, i32::MIN), (i32::MAX, i32::MIN)].map(|(x, y)| {
-            WorldOp::Image {
-                rect: Rect::new(x, y, 1, 1),
-                art: FULL,
-            }
+        let expected = [
+            (-1, 0, 1),
+            (i32::MAX - 1, i32::MIN, 1),
+            (i32::MAX, i32::MIN, 0),
+        ]
+        .map(|(x, y, w)| WorldOp::Image {
+            rect: Rect::new(x, y, w, 1),
+            art: FULL,
         });
         let found: Vec<_> = status(&world, &[seen])
             .into_iter()

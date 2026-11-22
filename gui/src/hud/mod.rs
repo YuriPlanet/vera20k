@@ -67,6 +67,22 @@ pub enum Origin {
     External(u16),
 }
 
+/// What others than the host share of a limit: a quarter, rounded up, is
+/// the host's alone.
+fn others_share(limit: usize) -> usize {
+    limit - limit.div_ceil(4)
+}
+
+impl Origin {
+    fn share(self, limit: usize) -> usize {
+        if self == Origin::Host {
+            limit
+        } else {
+            others_share(limit)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Meta {
     pub origin: Origin,
@@ -137,8 +153,7 @@ impl Hud {
         if layer.host_only() {
             return Err(Refused::Denied);
         }
-        let max = self.tree.max_nodes();
-        if self.tree.live_count() >= max - max / 4 {
+        if self.tree.live_count() >= others_share(self.tree.max_nodes()) {
             return Err(Refused::Limit);
         }
         Ok(())

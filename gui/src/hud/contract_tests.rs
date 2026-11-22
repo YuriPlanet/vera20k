@@ -221,3 +221,32 @@ fn a_deep_tree_is_routed_and_removed() {
     assert_eq!(hud.tree().live_count(), 0);
     assert_eq!(hud.origin(leaf), Err(Refused::Stale));
 }
+
+#[test]
+fn others_fill_three_quarters_rounded_down() {
+    for (limit, share) in [(1, 0), (2, 1), (3, 2), (4, 3), (5, 3), (16, 12)] {
+        let mut hud = Hud::new(limit, InputPolicy::default());
+        for _ in 0..share {
+            hud.create_root(Layer::Overlay, CLIENT, NodeKind::Panel)
+                .unwrap();
+        }
+        let more = hud.create_root(Layer::Overlay, CLIENT, NodeKind::Panel);
+        assert_eq!(more, Err(Refused::Limit), "{limit}");
+    }
+
+    let (mut hud, at) = (hud(), Anchor::Screen { x: 0, y: 0 });
+    for _ in 0..MAX_TEMPLATES * 3 / 4 {
+        hud.world
+            .add_template(CLIENT, StatusTemplate::default())
+            .unwrap();
+    }
+    let more = hud.world.add_template(CLIENT, StatusTemplate::default());
+    assert_eq!(more, Err(Refused::Limit));
+    for _ in 0..MAX_LISTS * 3 / 4 {
+        hud.world.add_list(CLIENT, at, Vec::new()).unwrap();
+    }
+    assert_eq!(
+        hud.world.add_list(CLIENT, at, Vec::new()),
+        Err(Refused::Limit)
+    );
+}
