@@ -83,7 +83,7 @@ impl HudPaint {
         hud: &Hud,
         space: HudSpace,
         font: &BitFont,
-        draw: impl Fn(NodeId) -> NodeDraw,
+        mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
         self.runs.clear();
