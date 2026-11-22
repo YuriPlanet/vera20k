@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.17, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.18, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 

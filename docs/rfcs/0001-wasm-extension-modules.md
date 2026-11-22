@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.17 |
+| RFC version | 0.0.18 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -904,7 +904,7 @@ These are preview defaults, not frozen values. Values marked "measure" freeze wi
 | Load-time shape | 20,000 functions. 1 MiB body. 1,024 locals per function. 256 distinct imports. 1,024 exports. 1,024 mutable globals. 65,536 table entries. 10,000 types. 10,000 of each segment kind. 4,096 entries each in `vera.actions` and `vera.vars`. | Measure worst compile time |
 | Call stack | 512 levels, 16,384 weighted slots | Measure stack high-water marks per platform |
 | Delivery | At most 16 per call within the delivery area. 2,048 per frame. Backlog 32,768, queue 34,816. | Measure records per frame in battle |
-| Search | Examine at most 16,384 items per call, returning a nonzero `next` if unfinished, also when nothing matched. `.first()` follows `next`. | Bounds the work of one host call. The budget still bounds the callback, so searches longer than B are paged across frames by the module. |
+| Search | Examine per call at most 16,384 items and no more than half the calling callback's budget pays for (at least one), returning a nonzero `next` if unfinished, also when nothing matched. Keys that hold no item, such as cells outside the map, are also charged and capped. `.first()` follows `next`. | Bounds the work of one host call. The budget still bounds the callback, so searches longer than B are paged across frames by the module. |
 | Filter clauses | 16 per event and per query | 16 bytes each in the layout |
 | Triggers | 1,024 per module, including 16 object poll events. 65,536 bindings. 16 events and 32 actions per trigger, 1,024 bytes per action text. | Measure |
 | Poll interval | Object-scope polls and `Timer` ≥ 15 frames, global ≥ 1 frame | Measure |
@@ -980,6 +980,7 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 
 ## Revision history
 
+- **0.0.18** (2026-11-22): Sized a search page by the caller's budget as well. With two clauses a page of 16,384 items cost more than a whole callback's budget, so the paging 0.0.17 describes could never start. Keys without an item are charged and capped.
 - **0.0.17** (2026-11-22): Corrected open question 7: the 4.6 ms search figure in 0.0.16 was extrapolated from 42,442 operations and presented as a measurement. Direct measurement gives 2.34 ms with one clause and 10.05 ms with eight, and the computation and property-read figures are now labelled as extrapolations. Made search pagination consistent with the per-call scan limit: `next` is nonzero whenever a scan is unfinished, `.first()` follows it and a scan never outruns the caller's budget.
 - **0.0.16** (2026-11-22): Answered the 18 open questions (12 decided, 6 to measure with provisional answers). From external review: one request per decision call and complete substream keys; bulk memory reduced to `memory.copy` and `memory.fill` with exported memory; rotating hash separated from an on-demand full hash; `TakeDamage` stated as settled damage, with preview `DamageIncoming` and `TargetArmor`. From performance measurements: a used-up budget defers or skips instead of disabling a healthy module, host costs are charged in advance in proportion to work, and engine work for modules is bounded. Numbers now start at 100000, `Wasm.Tags` becomes `Vera.Tags`, files distributed with a map have only map permissions and random stream seeds separate their domains.
 - **0.0.15** (2026-11-21): Host imports return a status and write values through out pointers, because stable Rust and AssemblyScript cannot import multi-value functions; frame returns its value directly.
