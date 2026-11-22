@@ -113,6 +113,7 @@ impl SlideDialogSpec {
             rows,
             top_buttons: self.top_buttons,
             bottom_button: self.bottom_button,
+            button_above_back: false,
             map_button: self.map_button,
             top_panel: self.top_panel,
             campaign_score: self.campaign_score,
@@ -162,7 +163,10 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec::new(0x010E, 6),
     SlideDialogSpec::new(0x010F, 3),
     SlideDialogSpec::new(0x0113, 8).top_panel(),
-    SlideDialogSpec::new(crate::ui::mods_shell::DIALOG.0, 2),
+    SlideDialogSpec::new(
+        crate::ui::mods_shell::DIALOG.0,
+        crate::ui::mods_shell::PAGE.stacked.len() as u32,
+    ),
     SlideDialogSpec::new(0x02BC, 2),
     SlideDialogSpec::new(0x0112, 1),
     SlideDialogSpec::new(0x0117, 0),
@@ -205,6 +209,8 @@ pub(crate) fn slide_spec_for(id: DialogResourceId) -> Option<SlideDialogSpec> {
 /// tile row with its own entry at `rows`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SlideColumn {
+    /// An action in the physical slot immediately above Back.
+    pub button_above_back: bool,
     /// Right-panel tile rows (`[0x00B0FA20]`, from `0x0072EE88`).
     pub rows: u32,
     pub top_buttons: u32,
@@ -296,7 +302,13 @@ impl SlideColumn {
         let mut draws: Vec<ColumnDraw> = (0..regular)
             .map(|c| ColumnDraw {
                 row: first + c,
-                frame: frame_for_tick(tick, self.entry_tick(c), c < self.top_buttons, direction),
+                frame: frame_for_tick(
+                    tick,
+                    self.entry_tick(c),
+                    c < self.top_buttons
+                        || (self.button_above_back && first + c == self.rows.saturating_sub(2)),
+                    direction,
+                ),
             })
             .collect();
         if self.bottom_button {

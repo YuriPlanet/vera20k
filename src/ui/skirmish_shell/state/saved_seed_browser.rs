@@ -34,6 +34,7 @@ pub const NO: u16 = 2;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SavedSeedOutcome<I = SavedSeedFile> {
     Load(I),
+    Convert(I),
     Save {
         file_name: Option<I>,
         description: SeedDescription,
@@ -101,6 +102,8 @@ pub struct SavedSeedBrowserRow<I = SavedSeedFile> {
     /// wrote stays listed in Load and Delete (gamemd hides it at
     /// `0x005599DF`), so the player can see why it is gone and delete it.
     pub loadable: bool,
+    /// The save format has a converter for this row and the current build.
+    pub migratable: bool,
 }
 
 impl<I> SavedSeedBrowserRow<I> {
@@ -136,6 +139,7 @@ impl SavedSeedBrowserState<SavedSeedFile> {
             file_name: Some(entry.file_name),
             visible: !entry.description.is_empty(),
             loadable: true,
+            migratable: false,
             description: entry.description,
             last_write_time: entry.last_write_time,
         });
@@ -207,6 +211,49 @@ impl<I> SavedSeedBrowserState<I> {
         usize::try_from(int(self.ui.prop(BROWSER_DIALOG, LIST, Prop::Selected))?).ok()
     }
 
+    pub fn selected_entry(&self) -> Option<&SavedSeedBrowserRow<I>> {
+        self.selected().and_then(|index| self.entries.get(index))
+    }
+
+    fn action_converts(&self) -> bool {
+        self.mode == SavedSeedMode::Load
+            && self
+                .selected_entry()
+                .is_some_and(|row| row.migratable && !row.loadable)
+    }
+
+    pub fn action_label(&self) -> (&'static str, &'static str) {
+        if self.action_converts() {
+            ("VERA:ConvertSave", "Convert")
+        } else {
+            self.mode.action_label()
+        }
+    }
+
+    fn sync_load_action_caption(&mut self) {
+        if self.mode != SavedSeedMode::Load {
+            return;
+        }
+        let label = self.action_label().0;
+        let tooltip = if self.action_converts() {
+            "VERA:ConvertSaveHelp"
+        } else {
+            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.stacked[0].tooltip_key
+        };
+        self.ui.set_prop(
+            BROWSER_DIALOG,
+            ACTION,
+            Prop::Label,
+            Value::Text(label.to_owned()),
+        );
+        self.ui.set_prop(
+            BROWSER_DIALOG,
+            ACTION,
+            Prop::Tooltip,
+            Value::Text(tooltip.to_owned()),
+        );
+    }
+
     pub fn top(&self) -> usize {
         int(self.ui.prop(BROWSER_DIALOG, LIST, Prop::Top)).map_or(0, |top| top.max(0) as usize)
     }
@@ -219,6 +266,7 @@ impl<I> SavedSeedBrowserState<I> {
             .set_prop(BROWSER_DIALOG, LIST, Prop::Selected, selected);
         self.ui
             .set_prop(BROWSER_DIALOG, LIST, Prop::Top, Value::Int(top as i32));
+        self.sync_load_action_caption();
     }
 
     /// Whether button `id` holds the press (a box's buttons, or the
@@ -334,6 +382,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
                 last_write_time: new_slot_time,
                 visible: true,
                 loadable: true,
+                migratable: false,
             });
         }
         rows.extend(entries);
@@ -378,10 +427,6 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         result
     }
 
-    pub fn selected_entry(&self) -> Option<&SavedSeedBrowserRow<I>> {
-        self.selected().and_then(|index| self.entries.get(index))
-    }
-
     fn assign_selected_description(&mut self) {
         let row = self.selected_entry().filter(|row| row.file_name.is_some());
         let text = row
@@ -404,6 +449,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
         if self.mode == SavedSeedMode::Save {
             self.assign_selected_description();
         }
+        self.sync_load_action_caption();
     }
 
     pub fn action_enabled(&self) -> bool {
@@ -419,6 +465,9 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
                 file_name: entry.file_name.clone(),
                 description: self.description(),
             }),
+            SavedSeedMode::Load if self.action_converts() => {
+                Some(SavedSeedOutcome::Convert(entry.file_name.clone()?))
+            }
             SavedSeedMode::Load => Some(SavedSeedOutcome::Load(entry.file_name.clone()?)),
             SavedSeedMode::Delete => Some(SavedSeedOutcome::Delete(entry.file_name.clone()?)),
         }
@@ -556,6 +605,7 @@ mod tests {
             last_write_time: 110,
             visible: true,
             loadable: true,
+            migratable: false,
         };
         let mut state = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,

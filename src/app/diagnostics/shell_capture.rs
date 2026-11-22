@@ -94,7 +94,10 @@ const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-stead
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
 /// A page's column button pressed on the settled `0xD5`: that page showing.
-const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 9] = [
+    ("options-0xd5-settings-main", Category::LauncherMain),
+    ("options-0xd5-settings-enhancements", Category::Enhancements),
+    ("options-0xd5-settings-extensions", Category::Extensions),
     ("options-0xd5-settings-display", Category::Display),
     ("options-0xd5-settings-gameplay", Category::Gameplay),
     ("options-0xd5-settings-interface", Category::Interface),
@@ -1180,7 +1183,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
@@ -1190,7 +1193,7 @@ impl ShellCaptureCheckpoint {
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                category: Category::Display,
+                category: Category::LauncherMain,
             },
             Self::Options0xD5Hover(index) => {
                 let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];

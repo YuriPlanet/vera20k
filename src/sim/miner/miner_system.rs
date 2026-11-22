@@ -1078,7 +1078,7 @@ pub(crate) fn find_docking_bay(
     frame_effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     let mut result: Option<u64> = None;
-    let mut best = -1_i32;
+    let mut best = -1_i64;
     for dock_type in dock_types {
         if let Some((found, nearest)) = scan_docking_type(
             sim,
@@ -1147,7 +1147,9 @@ pub(crate) fn find_docking_bay_of_type(
 ///   0x004DEF20) — see [`dock_zone_reachable`];
 /// - `Receive_Radio(0xF)` must return 1 — the shared building radio receiver;
 /// - distance `FUN_005F6500`: `dx² + dy²` in leptons between both objects'
-///   `GetCoords` (Z ignored, `native_coord::squared_xy_distance`); the candidate
+///   `GetCoords` (Z ignored,
+///   [`squared_xy_distance_for_map`](crate::util::native_coord::squared_xy_distance_for_map));
+///   the candidate
 ///   replaces the best when the best is still -1, when it is strictly
 ///   nearer (signed `JL`, so ties keep the earlier building) or when it is a
 ///   primary factory (`TechnoClass+0x3D3`, 0x004DF004).
@@ -1159,7 +1161,7 @@ fn scan_docking_type(
     wide: bool,
     ignore_dock_capacity: bool,
     frame_effects: &mut FrameEffects<'_>,
-) -> Option<(u64, i32)> {
+) -> Option<(u64, i64)> {
     let (owner, own_x, own_y, aircraft) = {
         let entity = sim.substrate.entities.get(requester)?;
         let coords = object_get_coords(entity, sim.resolved_terrain.as_ref());
@@ -1191,7 +1193,7 @@ fn scan_docking_type(
         .buildings()
         .to_vec();
     let mut found: Option<u64> = None;
-    let mut nearest = -1_i32;
+    let mut nearest = -1_i64;
     for &sid in &buildings {
         let Some(entity) = sim.substrate.entities.get(sid) else {
             continue;
@@ -1227,10 +1229,11 @@ fn scan_docking_type(
         {
             continue;
         }
-        let distance = crate::util::native_coord::squared_xy_distance(
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
             [own_x, own_y],
             [centre.x, centre.y],
             rules.ares(),
+            sim.session.map_exceeds_original_size(),
         );
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);

@@ -8,6 +8,7 @@
 
 use crate::app::AppState;
 use crate::app::shell_route::ShellRoute;
+use crate::app::shell_wol::WolPage;
 use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout};
 use crate::ui::movies_credits_shell;
 use crate::ui::shell::geom::{ScaledRects, ShellScale, fit_window};
@@ -38,28 +39,46 @@ pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
     !shell_scale_for_screen(size).is_unscaled()
 }
 
-/// How much a menu's software cursor grows: with a fitted menu's art, by the
-/// same factor, and half that in VERA's online lobby and its rooms, whose
-/// text is smaller. An active-game shell draws its cursor in the match
-/// frame, which the match zoom scales instead.
+/// The fitted shell sets the cursor scale. VERA's visible online lobby and
+/// rooms use a compact cursor. In-game shell cursors follow the match zoom.
 pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
     if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
         return 1.0;
     }
-    let fitted = if fills_window(state) {
-        let (width, height) = shell_screen_size(state);
-        crate::ui::shell::geom::shell_scale(width as i32, height as i32).factor()
-    } else {
-        1.0
-    };
+    let fitted = shell_scale_for_screen(shell_screen_size(state)).factor();
+    if crate::app::input::precedence::modal_page(state).is_some() {
+        return fitted;
+    }
+
     let route = state.frontend.shell_route;
-    let vera_online = (route == ShellRoute::WolLobby
-        && crate::app::shell_wol::lobby::modern_lobby(state))
-        || (route == ShellRoute::NetworkSetup && {
-            let dialog = crate::app::shell_network_setup::dialog(state);
-            dialog.wol() && dialog.modern
-        });
-    if vera_online { fitted * 0.5 } else { fitted }
+    if route == ShellRoute::WolLobby
+        && let Some(visit) = state.frontend.wol.as_ref()
+    {
+        // The visit keeps the lobby route while a separate page or dialog owns the screen.
+        let visible = visit
+            .lobby()
+            .is_some_and(|lobby| lobby.ui.is_modern() && lobby.shown && !lobby.covered);
+        let dialog = visit.message().is_some()
+            || visit.wait_box().is_some_and(|wait| wait.shown)
+            || crate::app::shell_wol::page::page_dialog(state).is_some()
+            || crate::app::shell_wol::page::page_received(state).is_some();
+        return wol_lobby_cursor_scale(fitted, &visit.page, visible, dialog);
+    }
+    if route == ShellRoute::NetworkSetup {
+        let dialog = crate::app::shell_network_setup::dialog(state);
+        if dialog.wol() && dialog.modern {
+            return fitted * 0.5;
+        }
+    }
+    fitted
+}
+
+fn wol_lobby_cursor_scale(fitted: f32, page: &WolPage, visible: bool, dialog: bool) -> f32 {
+    if matches!(page, WolPage::Lobby) && visible && !dialog {
+        fitted * 0.5
+    } else {
+        fitted
+    }
 }
 
 /// `retail` laid out at the window's size, or in a fitted window on the
@@ -274,6 +293,38 @@ mod tests {
             let layout = parts(size);
             assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
             assert!(layout.scale.is_unscaled());
+        }
+    }
+
+    #[test]
+    fn only_the_visible_online_lobby_uses_the_compact_cursor() {
+        use super::{WolPage, shell_scale_for_screen, wol_lobby_cursor_scale};
+        use crate::app::shell_wol::options::WolOptionsPage;
+
+        let options = WolPage::Options(Box::new(WolOptionsPage {
+            shown: Default::default(),
+            sound: None,
+        }));
+        let sound = WolPage::Options(Box::new(WolOptionsPage {
+            shown: Default::default(),
+            sound: Some(([0; 3], true)),
+        }));
+        for (size, full, compact) in [((800, 600), 1.0, 0.5), ((1200, 900), 1.5, 0.75)] {
+            let fitted = shell_scale_for_screen(size).factor();
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, true, false),
+                compact
+            );
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, true, true),
+                full
+            );
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, false, false),
+                full
+            );
+            assert_eq!(wol_lobby_cursor_scale(fitted, &options, true, false), full);
+            assert_eq!(wol_lobby_cursor_scale(fitted, &sound, true, false), full);
         }
     }
 
