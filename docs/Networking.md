@@ -96,14 +96,26 @@ optional `langrule.ini` is neither loaded nor included in agreement or changed-f
 checks, even when it comes from a language archive. Selected mods retain that
 layer and compare it. Translated `.csf` text still loads. Mixed builds are refused
 by the existing build check; a rollback restores that build's LANGRULE selection.
-The agreement also covers each theater's INI as the theater
-loader reads it (`map::theater::theater_ini_names`: the file
+The agreement also covers each theater's INI (`map::theater::theater_ini_names`: the file
 [`theater_suffix`](ini-roots.md) selects, else the stock name such as `snowmd.ini`),
-whose tilesets decide each cell's land and height. It also covers the theater tiles the
+whose tilesets decide each cell's land and height. With a mod in use it is the INI the
+theater loader reads, and the agreement also covers the theater tiles the
 game folder changes (`map::theater::changed_tiles`, found once per process): by name and
 content, each tile file a theater reads whose bytes differ from the ones a retail install
 reads, variants included, since map loading picks each cell's variant by how many its tile
-has. A theater MIX that takes a retail one's place counts even if it does not open. With a
+has. A theater MIX that takes a retail one's place counts even if it does not open.
+The original game (**No mod**) agrees on the theater INIs a retail install ships and
+leaves its folder's terrain files, such as a tile pack in `expandmd06.mix`, out of the
+agreement. A network match, the random map made for a room and a replay of either read
+the original theater INI, tiles and tile palette whatever the game folder holds
+(`map::theater::TerrainFiles::Original`), when every tile the map names exists among
+them (`loading::init::load_match_theater`), so players whose terrain files differ load
+one world. A match whose map names another tile reads the game folder's terrain, and its
+start agreement then names those files (`ProcessAssets::match_terrain_digest`): players
+whose terrain files differ are refused at that start, each game naming the terrain files
+it read, and not before. Skirmish and campaign read the game folder's terrain as before.
+A game from before this rule is another version and is refused by the build check first;
+a rollback compares the terrain files as that build did. With a
 mod in use ([modding guide](modding.md#the-mods-folder)) it also covers every file in the mod's
 folder but `mod.ini`, `veraui.ini` and `mod-files.txt`, by path and content, so players whose copies of a mod differ are
 refused as on any rules difference. The effective file, catalog, archive and extension
@@ -128,13 +140,13 @@ on that build. Quick Match plays the original game, and the matchbot pairs witho
 rules hash, so a client ends its search before it queues with a message saying what to
 turn off, for the first of what it changes from the original game
 (`agreement::original_game_changes`): a mod in use; `[ini]` roots or a
-`theater_suffix` in config.toml other than YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD,
-the theater INIs) or a theater's tiles from the retail copy; a copy from a retail
+`theater_suffix` in config.toml other than YR's; an [Ares setting](ares.md#the-ares-setting) other than Auto; game-folder files that change a compared INI (Rules, Art, AI, MPModesMD and the mode INIs, CoopCampMD)
+from the retail copy; a copy from a retail
 archive (`langmd.mix`, `language.mix`, `expandmd01.mix`, `ra2md.mix`, `ra2.mix`) counts as
-the original, another INI is compared with the retail archives' own entry, else
-`ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), and another
-tile with the one a retail install reads (`map::theater::changed_tiles`), both found at
-startup; the message names three and counts the rest, which the log lists. Personal
+the original, and another INI is compared with the retail archives' own entry, else
+`ra2md.mix`'s `localmd.mix` (`retail_sources::files_changing_shipped_inis`), found at
+startup; the message names three and counts the rest, which the log lists. Terrain files
+in the game folder do not count: Quick Match's matches read the original terrain (above). Personal
 rules, Terrain Deformation, the Superweapon Limit and the Building Production Queue
 need nothing: Quick Match's room has no
 [room rules](#room-rules), so its match plays without them. A difference none of
@@ -854,9 +866,10 @@ The two checks also read different files, so they can disagree either way. The d
 every mode's INI, CoopCampMD, AIMD and ARTMD whatever mode the room plays, but no
 LANGRULE, theater INI, theater tile or other file of a mod. The digest
 (`ProcessAssets::multiplayer_rules_digest`) covers only the mode played, and adds
-LANGRULE, the theater INIs, the changed tiles, the switches and a mod's other files.
+LANGRULE, the theater INIs (a mod's with its changed tiles, else the retail copies), the
+switches and a mod's other files.
 So a player whose only change is another mode's INI is refused at the join though the
-match would agree, and one whose theater INI or tiles differ is let in and refused at
+match would agree, and one whose mod's theater INI or tiles differ is let in and refused at
 the start. This is kept on purpose: the door is gamemd's admission check, which
 released games rely on. When the door
 still refuses a join because the rules files differ, or the digest a start, each game

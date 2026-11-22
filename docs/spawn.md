@@ -84,7 +84,9 @@ agree.
   without the Options switches, which `settings` names), `langrule` (only when read), `art`, `ai`,
   `mode` (the mode's INI; none for a mode without one), `theater:<ini name>` for each theater's INI,
   `tiles` (the theater tiles the game folder changes), and with a mod `mod_files` (its folder) and
-  `map_additions` (when it has any). `name` is the file name, never a path; `digest` the first 16
+  `map_additions` (when it has any). Without a mod the theater parts are the copies a retail
+  install ships (`source` `retail`, unchanged) and `tiles` is `absent`: the original game leaves
+  its folder's terrain files to each match ([Networking](Networking.md)), so they are in no part. `name` is the file name, never a path; `digest` the first 16
   hex digits of the part's digest, or `absent`; `source` `retail` (the original archives), `loose`
   (a file in the game folder), `mix:<archive>` (another archive by its lowercased name, such as `expandmd99.mix`), `mod`
   or `unknown`; `changed` whether it differs from the retail copy. A changed INI names in

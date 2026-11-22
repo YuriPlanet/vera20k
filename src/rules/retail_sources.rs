@@ -464,6 +464,16 @@ pub enum ShippedCopy<'a> {
     Changed(Option<&'a [u8]>),
 }
 
+impl<'a> UsedIni<'a> {
+    /// The copy a retail install ships: this one when it is the same.
+    pub fn shipped_bytes(&self) -> Option<&'a [u8]> {
+        match self.shipped {
+            ShippedCopy::Same => Some(self.bytes),
+            ShippedCopy::Changed(shipped) => shipped,
+        }
+    }
+}
+
 impl<'a> ShippedInis<'a> {
     pub fn new(assets: &'a AssetManager) -> Self {
         Self {

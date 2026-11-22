@@ -761,7 +761,16 @@ pub(super) fn prepare_random_map_generation(
 ) -> Option<PreparedRandomMapGeneration> {
     let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
     let theater_name = crate::map::rmg::emit::theater_name(options.theater);
-    let Some(theater) = crate::map::theater::load_theater(asset_manager, theater_name) else {
+    // VERA: a network room's players make one map, and agree on its inputs,
+    // from the original terrain files (`theater::network_terrain_files`).
+    let network = matches!(
+        preparation,
+        RandomMapRulesPreparation::NetworkAgreement(_)
+            | RandomMapRulesPreparation::NetworkGeneration(_)
+    );
+    let Some(theater) =
+        crate::map::theater::load_theater_for_play(asset_manager, theater_name, network)
+    else {
         log::warn!("random map: theater {theater_name} unavailable");
         return None;
     };
