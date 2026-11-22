@@ -219,4 +219,14 @@ difference shows within 15 frames.
 - [Development status](rfcs/0001-wasm-extension-modules-status.md): what this build
   implements so far.
 - `sdk/examples/` in the source: `minimal-rules`, `modifier-vars`, `panic-triggers`,
-  `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`.
+  `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`, and
+  four playtest mods whose features do not overlap:
+  - `veteran-fury`: kill and damage events, object and global variables, modifiers,
+    money, healing and created units, orders for computer houses.
+  - `siege-doctrine`: rules edits in `on_rules` and the four decisions
+    (`ProductionAllowed`, `ProductionQueued`, `CommandAllowed`, `Defeat`).
+  - `meteor-storm`: cell searches and cell properties, a `Timer` trigger, warheads
+    and animations on cells, `random`, the mission timer and lightning storms.
+  - `trigger-lab`: `Birth`, `Fire` on a weapon, `PassengerAdded`, the money, power,
+    variable and distance polls, immediate actions, `once`, enabling and disabling
+    triggers, house variables and `get_many`.
