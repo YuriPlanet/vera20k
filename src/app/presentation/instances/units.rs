@@ -1374,8 +1374,9 @@ fn unit_body_draw<'a>(
 /// WaterImage wins over deployed UnloadingClass and observer disguise. The
 /// miner's temporary Type swap73D29C..73D2C4 precedes this lookup. The live
 /// object's OnBridge and GetCell5F6960 decide admission, independently of Z
-/// or locomotor. The ordinary model already decided SHP/VXL dispatch.
-fn water_image_type<'a>(
+/// or locomotor. The ordinary model already decided SHP/VXL dispatch. The
+/// SHP draw's hooks call the same function (`shp::ShpUnitLayout`).
+pub(super) fn water_image_type<'a>(
     entity: &crate::app::presentation::frame::ObjectRecord,
     interner: &crate::sim::intern::StringInterner,
     rules: Option<&'a crate::rules::ruleset::RuleSet>,

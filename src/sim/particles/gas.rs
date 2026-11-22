@@ -59,7 +59,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<u64> {
         let system = self.initialize_gas_cloud_system(rules)?;
-        let particle = Particle::new(kind, coords, IVec3::ZERO, rules.particle_type(kind), self);
+        let particle = Particle::new(kind, coords, IVec3::ZERO, rules, self);
         let id = particle.stable_id();
         self.substrate
             .particle_systems
@@ -125,8 +125,7 @@ pub(super) fn tick_system(
             let pt = rules.particle_type(p.type_id);
             if let Some(next) = pt.next_particle {
                 let coords = offset(p.coords, pt.next_particle_offset);
-                let mut child =
-                    Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
+                let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
                 //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
                 //or CC/D0/D4. The constructor still takes its lifetime draw.
                 child.velocity = p.velocity;

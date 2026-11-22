@@ -784,6 +784,7 @@ impl Simulation {
                     // direct disposal must still remove each individual AIR entry.
                     for particle in system.particles() {
                         self.substrate.conceal_particle(particle.stable_id());
+                        self.delete_alpha_shape(particle.stable_id(), context.rules());
                     }
                 }
                 system.is_some()
@@ -825,6 +826,10 @@ impl Simulation {
             // constructor-owned child's ticket).
             None => false,
         };
+        // Ares `ObjectClass_DTOR` (hook `0x005F3D65`, `Ares.dll 100476E0`).
+        if removed {
+            self.delete_alpha_shape(stable_id, context.rules());
+        }
         debug_assert!(
             removed || kind.is_none(),
             "{kind:?} {stable_id} left no store at its destructor"
@@ -903,7 +908,9 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
-        self.substrate.anims.drain_local_deletes();
+        for anim in self.substrate.anims.drain_local_deletes() {
+            self.delete_anim_alpha_shape(anim);
+        }
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.

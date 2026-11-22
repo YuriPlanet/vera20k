@@ -25,7 +25,7 @@ use crate::rules::ini_parser::IniSection;
 /// can change between reached Rules passes. The final image metadata alone
 /// cannot reconstruct this state. Native controls: mirage_disguise.json.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct UnitShpReadState {
+pub struct UnitShpReadState {
     walk_frames: i8,
     firing_frames: i8,
     standing_frames: i32,
@@ -68,6 +68,22 @@ impl UnitShpReadState {
     /// death to its counter (`UnitClass::ReceiveDamage`, `0x00737DA7`).
     pub(crate) const fn death_frames(&self) -> i32 {
         self.death_frames
+    }
+
+    /// `Facings=` (`+0xE3C`), which picks the body's facing bucket
+    /// (`sim::animation::shp_vehicle_facing_slot`).
+    pub const fn facings(&self) -> i32 {
+        self.facings
+    }
+
+    /// The first turret frame of a `Turret=yes` SHP Unit under Ares 3.0's
+    /// `UnitClass_DrawSHP_FacingsB` (hook `0x0073CD01`, Ares.dll
+    /// `0x10048150`, resuming at `0x0073CD06`): `WalkFrames * Facings` of the
+    /// actual type (`+0xE5C`, `+0xE3C`) in place of the stock
+    /// `WalkFrames * 8` ([`ShpVehicleTurret`]). `None` past the atlas's
+    /// frame numbering.
+    pub fn ares_turret_start_frame(&self) -> Option<u16> {
+        u16::try_from(i32::from(self.walk_frames).wrapping_mul(self.facings)).ok()
     }
 
     /// `MaxDeathCounter=` (`+0xE38`), the count `UnitClass::AI` ends it at.
@@ -317,7 +333,9 @@ pub(crate) fn build_shp_vehicle_sequences(
     // `WalkFrames * 8` (UnitClass SHP draw `0x0073CCF7..0x0073CD03`: the
     // signed `WalkFrames` byte at UnitType `+0xE5C` times a literal 8, plus
     // the heading frame). `Facings`, `StartWalkFrame` and the standing and
-    // firing blocks do not move it. `CYCL` (WalkFrames=22) starts at 176.
+    // firing blocks do not move it in stock; Ares' draw reads `Facings`
+    // instead of the 8 (`UnitShpReadState::ares_turret_start_frame`).
+    // `CYCL` (WalkFrames=22) starts at 176.
     if has_turret {
         let start = u32::from(walk_frames).wrapping_mul(8);
         if let Ok(start_frame) = u16::try_from(start) {

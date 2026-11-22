@@ -277,7 +277,7 @@ pub(crate) fn unit_z_adjust(
     )
 }
 
-fn unit_z_adjust_in(
+pub(super) fn unit_z_adjust_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,
