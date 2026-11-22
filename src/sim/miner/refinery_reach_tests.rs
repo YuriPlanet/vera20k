@@ -69,6 +69,10 @@ fn an_extended_map_picks_the_true_nearest_refinery() {
     let Some((mut sim, rules, _)) = scene_with_size(300) else {
         return;
     };
+    // The session stores `[Map] Size` width plus height as the canonical
+    // cell-array extent; 300 + 300 is past the original's 512.
+    sim.session.set_map_width_for_test(600);
+    sim.session.set_map_height_for_test(600);
     // The shared arena's fixed playfield stops short of an extended map's
     // eastern and southern cells, which would refuse the far refinery.
     sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
@@ -103,6 +107,9 @@ fn a_native_readable_map_keeps_the_original_wrapped_distance() {
     let Some((mut sim, rules, _)) = scene_with_size(256) else {
         return;
     };
+    // 256 + 256 is exactly the original's 512 sum boundary.
+    sim.session.set_map_width_for_test(512);
+    sim.session.set_map_height_for_test(512);
     sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -1000,
