@@ -4237,17 +4237,9 @@ mod full_init_rules_gate_tests {
 
     #[test]
     fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
-        // The game loads a map on its main thread, which has 8 MiB on every
-        // platform (build.rs links `/STACK` on Windows), as the simulation
-        // thread has. Unoptimized, the frames from here to RuleSet::project
-        // hold about 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
-        let test = std::thread::Builder::new()
-            .stack_size(8 << 20)
-            .spawn(generated_rules_read_before_generation_and_carried)
-            .unwrap();
-        if let Err(panic) = test.join() {
-            std::panic::resume_unwind(panic);
-        }
+        // Unoptimized, the frames from here to RuleSet::project hold about
+        // 2.2 MiB of Rules copies, past libtest's 2 MiB thread.
+        crate::test_fixture::on_game_stack(generated_rules_read_before_generation_and_carried);
     }
 
     fn generated_rules_read_before_generation_and_carried() {
