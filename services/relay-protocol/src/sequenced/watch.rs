@@ -27,7 +27,7 @@ const MAX_WATCHERS: usize = 1024;
 /// The `source` of a watcher's hop: none of the match's.
 pub(crate) const WATCH_SOURCE: u8 = MAX_PEERS;
 /// A watcher silent this long loses its place.
-const WATCH_SILENCE_S: u64 = 30;
+const WATCH_SILENCE_MS: u64 = 30_000;
 /// A room notes its stream's end this often, and keeps enough of these
 /// marks for the longest delay: a delayed watcher's stream grows by this
 /// much at a time.
@@ -135,7 +135,6 @@ pub(crate) struct Watcher {
     pub(crate) session: u32,
     pub(crate) endpoint: SocketAddrV4,
     pub(crate) sent: u64,
-    last_seen: u64,
     // For the feedback tail of its STATUS (spec §3.4).
     link: crate::link::ReaderLink,
     // Its Ready named the match's startup agreement.
@@ -151,7 +150,6 @@ impl Watcher {
         delay_seconds: u32,
         session: u32,
         endpoint: SocketAddrV4,
-        now: u64,
         now_ms: u64,
     ) -> Self {
         Self {
@@ -161,7 +159,6 @@ impl Watcher {
             session,
             endpoint,
             sent: 0,
-            last_seen: now,
             link: crate::link::ReaderLink::new(now_ms),
             agreed: false,
             packets: RateBudget::default(),
@@ -223,11 +220,11 @@ fn spend(
 
 /// Drops `room`'s watchers whose ticket expired, who fell silent, or whose
 /// match the relay no longer holds; `prune` then releases their sessions.
-pub(crate) fn prune_watchers(room: &mut Room, now: u64) {
+pub(crate) fn prune_watchers(room: &mut Room, now: u64, now_ms: u64) {
     let held = room.ordering.is_some();
     room.watchers.retain(|watcher| {
         held && watcher.ticket.expires > now
-            && now.saturating_sub(watcher.last_seen) <= WATCH_SILENCE_S
+            && now_ms.saturating_sub(watcher.link.last_heard_ms) <= WATCH_SILENCE_MS
     });
 }
 
@@ -451,12 +448,11 @@ impl RelayServer {
             (Some(index), None) => {
                 let watcher = &mut room.watchers[index];
                 watcher.heard(message.sequence, source, now_ms)?;
-                watcher.last_seen = now;
                 watcher.packet(READY, &[])?
             }
             (_, Some(session)) => {
                 let mut watcher =
-                    Watcher::new(message, watch.delay_seconds, session, source, now, now_ms);
+                    Watcher::new(message, watch.delay_seconds, session, source, now_ms);
                 watcher.heard(message.sequence, source, now_ms)?;
                 let reply = watcher.packet(READY, &[])?;
                 if let Some(index) = existing {
@@ -532,7 +528,6 @@ impl RelayServer {
         ) {
             return Err(RelayError::RateLimited);
         }
-        watcher.last_seen = now;
         let Some(request) = request else {
             // A keepalive, answered as a player's (spec §6.1).
             if !spend(

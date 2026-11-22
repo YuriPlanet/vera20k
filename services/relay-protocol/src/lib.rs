@@ -760,7 +760,6 @@ struct Peer {
     session: u32,
     endpoint: SocketAddrV4,
     sent: u64,
-    last_seen: u64,
     // After its LEAVE the hop accepts only LEAVE, until this second
     // (spec §6.2 "释放").
     left_until: Option<u64>,
@@ -1005,7 +1004,7 @@ impl RelayServer {
         now_millis: u64,
     ) -> Result<Vec<ForwardDatagram>, RelayError> {
         // Rooms reserve their fair parts of this second before any budget.
-        self.prune(now);
+        self.prune(now, now_millis);
         // Relay-wide budgets are charged only after authentication and the
         // sender's own limits, so forged, junk or replayed datagrams cannot
         // spend capacity other players need. Rejecting one before any budget
@@ -1089,7 +1088,6 @@ impl RelayServer {
         }
         admission.packets.charge(now, 1);
         self.ingress.charge_part(&mut room.ingress, 1);
-        room.peers[index].last_seen = now;
         if let Some(ordering) = room.ordering.as_mut() {
             ordering.heard(
                 message.ticket.source,
@@ -1105,7 +1103,9 @@ impl RelayServer {
         } else {
             room.peers
                 .iter()
-                .filter(|peer| data_recipient(peer, message.ticket.source, message.target, now))
+                .filter(|peer| {
+                    data_recipient(peer, message.ticket.source, message.target, now_millis)
+                })
                 .count()
         };
         let packet_bytes = envelope::OVERHEAD
@@ -1151,7 +1151,7 @@ impl RelayServer {
         }
         let mut output = Vec::with_capacity(recipients);
         for peer in &mut room.peers {
-            if data_recipient(peer, message.ticket.source, message.target, now) {
+            if data_recipient(peer, message.ticket.source, message.target, now_millis) {
                 output.push(server_packet(
                     peer,
                     DATA,
@@ -1175,7 +1175,7 @@ impl RelayServer {
         Ok(output)
     }
 
-    fn prune(&mut self, now: u64) {
+    fn prune(&mut self, now: u64, now_ms: u64) {
         if self.last_pruned == now {
             return;
         }
@@ -1183,7 +1183,7 @@ impl RelayServer {
         // (spec §6.2 "释放").
         let mut expired = Vec::new();
         self.rooms.retain(|_, room| {
-            sequenced::watch::prune_watchers(room, now);
+            sequenced::watch::prune_watchers(room, now, now_ms);
             room.peers.retain_mut(|peer| {
                 if peer.ticket.expires > now {
                     return true;
@@ -1424,8 +1424,7 @@ impl RelayServer {
                     return Err(RelayError::Authentication);
                 }
                 // A renewed hop keeps the measured loss (spec §5.4).
-                let previous =
-                    std::mem::replace(peer, new_peer(message, session, source, now, now_ms));
+                let previous = std::mem::replace(peer, new_peer(message, session, source, now_ms));
                 peer.link.carry_path(&previous.link);
                 replaced = Some(previous);
             }
@@ -1439,7 +1438,6 @@ impl RelayServer {
                 peer.push = None;
             }
             peer.endpoint = source;
-            peer.last_seen = now;
             server_packet(
                 peer,
                 READY,
@@ -1449,7 +1447,7 @@ impl RelayServer {
                 link::SEND_OTHER,
             )?
         } else {
-            let mut peer = new_peer(message, session, source, now, now_ms);
+            let mut peer = new_peer(message, session, source, now_ms);
             peer.link.heard(message.sequence, now_ms)?;
             let reply = server_packet(
                 &mut peer,
@@ -1567,20 +1565,13 @@ impl RelayServer {
     }
 }
 
-fn new_peer(
-    message: &Incoming<'_>,
-    session: u32,
-    endpoint: SocketAddrV4,
-    now: u64,
-    now_ms: u64,
-) -> Peer {
+fn new_peer(message: &Incoming<'_>, session: u32, endpoint: SocketAddrV4, now_ms: u64) -> Peer {
     Peer {
         ticket: message.ticket,
         key: message.key.clone(),
         session,
         endpoint,
         sent: 0,
-        last_seen: now,
         left_until: None,
         push: None,
         link: link::ReaderLink::new(now_ms),
@@ -1589,9 +1580,9 @@ fn new_peer(
 
 /// A player DATA packet goes to other addressed peers heard from in the last
 /// 30 seconds, whether it arrived on a player hop or a federation link.
-fn data_recipient(peer: &Peer, source: u8, target: u8, now: u64) -> bool {
+fn data_recipient(peer: &Peer, source: u8, target: u8, now_ms: u64) -> bool {
     peer.ticket.source != source
-        && now.saturating_sub(peer.last_seen) <= 30
+        && now_ms.saturating_sub(peer.link.last_heard_ms) <= 30_000
         && (target == BROADCAST || target == peer.ticket.source)
 }
 
@@ -2095,6 +2086,26 @@ mod tests {
         assert_eq!(at_limit[0].endpoint, to);
         sender.data(1, b"ping", &mut bytes).unwrap();
         assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_wall_clock_step_does_not_silence_a_data_recipient() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut sender = client(&key, 1, 0);
+        let mut recipient = client(&key, 1, 1);
+        let from = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let to = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut sender, from);
+        connect(&mut server, &mut recipient, to);
+
+        // One second after both were heard, though the wall clock stepped
+        // forty seconds ahead.
+        let mut bytes = Vec::new();
+        sender.data(1, b"ping", &mut bytes).unwrap();
+        let output = server.process_at(from, &bytes, 1040, 1_001_000).unwrap();
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].endpoint, to);
     }
 
     #[test]
