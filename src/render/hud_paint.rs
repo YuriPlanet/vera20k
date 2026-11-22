@@ -1,0 +1,245 @@
+//! Turns a [`vera20k_gui::hud::Hud`]'s paint list into sprite instances and
+//! the runs that draw them in the list's order.
+//!
+//! It draws fills and text, what its users have. Pictures and host areas
+//! come with the first HUD that shows one, and so do the world commands.
+
+use std::ops::Range;
+
+use vera20k_gui::hud::{Hud, PaintCmd, PaintOp, recycle};
+use vera20k_gui::{NodeId, Rect, Rgba};
+
+use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::BitFont;
+use crate::render::text_engine::Fit;
+
+/// What a run of instances samples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Material {
+    /// One white texel, tinted.
+    Solid,
+    /// The font's atlas.
+    Glyphs,
+}
+
+/// Where a HUD's pixels land on the target.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HudSpace {
+    pub(crate) origin: [f32; 2],
+    /// Target pixels per HUD pixel.
+    pub(crate) scale: f32,
+}
+
+impl HudSpace {
+    fn point(self, x: i32, y: i32) -> [f32; 2] {
+        [
+            self.origin[0] + x as f32 * self.scale,
+            self.origin[1] + y as f32 * self.scale,
+        ]
+    }
+}
+
+/// What a host adds to one node's drawing.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct NodeDraw {
+    /// The squeeze a text draws at.
+    pub(crate) fit: Fit,
+    /// Target pixels per font pixel, where not the [`HudSpace`]'s scale.
+    pub(crate) text_scale: Option<f32>,
+    /// The node's position and size on the target, where they fall between
+    /// the HUD's whole pixels; otherwise its rect's through the [`HudSpace`].
+    pub(crate) exact: Option<([f32; 2], [f32; 2])>,
+}
+
+/// One HUD's instances, with buffers kept from frame to frame.
+#[derive(Default)]
+pub(crate) struct HudPaint {
+    commands: Vec<PaintCmd<'static>>,
+    instances: Vec<SpriteInstance>,
+    runs: Vec<(Material, Range<u32>)>,
+}
+
+impl HudPaint {
+    /// Replace the last frame's instances with `hud`'s. A text is literal,
+    /// starts at its node's top left.
+    pub(crate) fn build(
+        &mut self,
+        hud: &Hud,
+        space: HudSpace,
+        font: &BitFont,
+        draw: impl Fn(NodeId) -> NodeDraw,
+    ) {
+        self.instances.clear();
+        self.runs.clear();
+        let mut commands = recycle(std::mem::take(&mut self.commands));
+        hud.paint(&mut commands);
+        for command in &commands {
+            let start = self.instances.len();
+            let node = draw(command.node);
+            let material = match command.op {
+                PaintOp::Fill { rect, color } => {
+                    self.instances.push(fill(rect, color, space, node.exact));
+                    Material::Solid
+                }
+                PaintOp::Text {
+                    rect, key, color, ..
+                } => {
+                    let (rgb, alpha) = tint(color.unwrap_or(Rgba(255, 255, 255, 255)));
+                    let [x, y] = node
+                        .exact
+                        .map_or_else(|| space.point(rect.x, rect.y), |(at, _)| at);
+                    let scale = node.text_scale.unwrap_or(space.scale);
+                    let glyphs = font.fitted(node.fit, |font| {
+                        font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2])
+                    });
+                    self.instances
+                        .extend(glyphs.into_iter().map(|glyph| SpriteInstance {
+                            alpha: glyph.alpha * alpha,
+                            ..glyph
+                        }));
+                    Material::Glyphs
+                }
+                PaintOp::Image { .. } | PaintOp::External { .. } => continue,
+            };
+            if let Some(clip) = command.clip {
+                clip_from(&mut self.instances, start, clip, space);
+            }
+            self.extend_runs(material, start as u32..self.instances.len() as u32);
+        }
+        self.commands = recycle(commands);
+    }
+
+    pub(crate) fn instances(&self) -> &[SpriteInstance] {
+        &self.instances
+    }
+
+    /// The draws, bottom to top: only neighbours of one material share one.
+    pub(crate) fn runs(&self) -> &[(Material, Range<u32>)] {
+        &self.runs
+    }
+
+    fn extend_runs(&mut self, material: Material, added: Range<u32>) {
+        if added.is_empty() {
+            return;
+        }
+        match self.runs.last_mut() {
+            Some((last, range)) if *last == material => range.end = added.end,
+            _ => self.runs.push((material, added)),
+        }
+    }
+}
+
+fn fill(
+    rect: Rect,
+    color: Rgba,
+    space: HudSpace,
+    exact: Option<([f32; 2], [f32; 2])>,
+) -> SpriteInstance {
+    let (tint, alpha) = tint(color);
+    // A bar's fill is narrower than its node, so `exact` is for whole fills.
+    let (position, size) = exact.unwrap_or_else(|| {
+        let size = [rect.w as f32 * space.scale, rect.h as f32 * space.scale];
+        (space.point(rect.x, rect.y), size)
+    });
+    SpriteInstance {
+        position,
+        size,
+        uv_origin: [0.0; 2],
+        uv_size: [1.0; 2],
+        depth: 0.0,
+        tint,
+        alpha,
+        ..Default::default()
+    }
+}
+
+/// The batch shader writes tints straight to the 8-bit surface.
+fn tint(Rgba(r, g, b, a): Rgba) -> ([f32; 3], f32) {
+    (
+        [r, g, b].map(|channel| f32::from(channel) / 255.0),
+        f32::from(a) / 255.0,
+    )
+}
+
+/// Cut the instances from `start` to `clip`, dropping those wholly outside.
+/// On the CPU, so a clip splits no draw.
+fn clip_from(instances: &mut Vec<SpriteInstance>, start: usize, clip: Rect, space: HudSpace) {
+    let low = space.point(clip.x, clip.y);
+    let high = space.point(clip.x.saturating_add(clip.w), clip.y.saturating_add(clip.h));
+    let mut kept = start;
+    for at in start..instances.len() {
+        let mut quad = instances[at];
+        let mut shows = true;
+        for axis in 0..2 {
+            let (from, size) = (quad.position[axis], quad.size[axis]);
+            let (cut_from, cut_to) = (from.max(low[axis]), (from + size).min(high[axis]));
+            if cut_to <= cut_from {
+                shows = false;
+                break;
+            }
+            if cut_from > from || cut_to < from + size {
+                let per_pixel = quad.uv_size[axis] / size;
+                quad.position[axis] = cut_from;
+                quad.size[axis] = cut_to - cut_from;
+                quad.uv_origin[axis] += (cut_from - from) * per_pixel;
+                quad.uv_size[axis] = (cut_to - cut_from) * per_pixel;
+            }
+        }
+        if shows {
+            instances[kept] = quad;
+            kept += 1;
+        }
+    }
+    instances.truncate(kept);
+}
+
+#[cfg(all(test, tests_render_a_r))]
+mod tests {
+    use super::*;
+    use vera20k_gui::hud::{InputPolicy, Layer, Origin};
+    use vera20k_gui::{NodeKind, Prop, Value};
+
+    #[test]
+    fn a_clipped_hud_keeps_paint_order_and_cuts_each_quad_with_its_texture() {
+        let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'a'), 4)], 3);
+        let mut hud = Hud::new(16, InputPolicy::default());
+        let root = hud
+            .create_root(Layer::Field, Origin::Host, NodeKind::Panel)
+            .unwrap();
+        hud.set(root, Prop::Rect, Value::Rect(Rect::new(0, 0, 10, 40)))
+            .unwrap();
+        hud.set(root, Prop::Clip, Value::Bool(true)).unwrap();
+        let mut child = |kind, rect| {
+            let node = hud.create(kind, root, Origin::Host).unwrap();
+            hud.set(node, Prop::Rect, Value::Rect(rect)).unwrap();
+            match kind {
+                NodeKind::Text => hud.set(node, Prop::Text, Value::Text("a".into())).unwrap(),
+                _ => hud
+                    .set(node, Prop::Background, Value::Rgba(Rgba(255, 0, 0, 255)))
+                    .unwrap(),
+            }
+        };
+        child(NodeKind::Panel, Rect::new(6, 0, 8, 8));
+        child(NodeKind::Text, Rect::new(0, 0, 6, 16));
+        child(NodeKind::Panel, Rect::new(0, 4, 4, 4));
+        hud.layout(Rect::new(0, 0, 100, 100));
+
+        let mut paint = HudPaint::default();
+        let space = HudSpace {
+            origin: [100.0, 50.0],
+            scale: 2.0,
+        };
+        paint.build(&hud, space, &font, |_| NodeDraw::default());
+        assert_eq!(
+            paint.runs(),
+            [
+                (Material::Solid, 0..1),
+                (Material::Glyphs, 1..2),
+                (Material::Solid, 2..3)
+            ]
+        );
+        let cut = paint.instances()[0];
+        assert_eq!((cut.position, cut.size), ([112.0, 50.0], [8.0, 16.0]));
+        assert_eq!(cut.uv_size, [0.5, 1.0]);
+    }
+}
