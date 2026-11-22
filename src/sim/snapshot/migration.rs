@@ -59,11 +59,12 @@ pub fn migrate(bytes: &mut [u8]) -> Result<(), MigrationError> {
     }
     GameSnapshot::read_compatible_header(bytes)?;
 
-    let (snapshot, remainder) = save_codec::deserialize_with_remainder(bytes)?;
+    let (mut snapshot, remainder): (GameSnapshot, _) =
+        save_codec::deserialize_with_remainder(bytes)?;
     if !remainder.is_empty() {
         return Err(MigrationError::TrailingBytes);
     }
-    let snapshot = GameSnapshot::validate_admitted(snapshot)?;
+    GameSnapshot::validate_admitted(&mut snapshot)?;
     snapshot.require_player_resources()?;
     if let Some((id, _)) = snapshot
         .sim
@@ -123,7 +124,9 @@ mod tests {
         assert!(supports(&GameSnapshot::read_metadata(&before).unwrap()));
         assert!(matches!(
             migrate(&mut bytes),
-            Err(MigrationError::HeaderOrState(SnapshotError::MissingScenarioResources))
+            Err(MigrationError::HeaderOrState(
+                SnapshotError::MissingScenarioResources
+            ))
         ));
         assert_eq!(bytes, before);
 

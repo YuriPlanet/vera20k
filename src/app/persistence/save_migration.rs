@@ -37,8 +37,11 @@ impl SaveMigrationError {
 impl SaveRepository {
     pub(crate) fn can_migrate(header: &GameSnapshotHeader) -> bool {
         // The browser host's memory write does not confirm IndexedDB persistence.
-        !cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))
-            && migration::supports(header)
+        !cfg!(all(
+            feature = "wasm",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        )) && migration::supports(header)
     }
 
     pub(super) fn migrate_for_load(&self, source: &Path) -> Result<PathBuf, SaveMigrationError> {

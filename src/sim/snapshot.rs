@@ -1082,10 +1082,14 @@ impl GameSnapshot {
     }
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
-        Self::validate_admitted(save_codec::deserialize(bytes)?)
+        let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
+        Self::validate_admitted(&mut snapshot)?;
+        Ok(snapshot)
     }
 
-    fn validate_admitted(mut snapshot: GameSnapshot) -> Result<GameSnapshot, SnapshotError> {
+    /// The checks a decoded snapshot passes before anything reads it, in
+    /// place: a snapshot is large, and a load passes it on by value once.
+    fn validate_admitted(snapshot: &mut GameSnapshot) -> Result<(), SnapshotError> {
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
@@ -1094,7 +1098,7 @@ impl GameSnapshot {
         }
         if snapshot.map_name != snapshot.sim.session.map_name() {
             return Err(SnapshotError::MapNameMetadataMismatch {
-                header_map_name: snapshot.map_name,
+                header_map_name: snapshot.map_name.clone(),
                 simulation_map_name: snapshot.sim.session.map_name().to_owned(),
             });
         }
@@ -1114,7 +1118,7 @@ impl GameSnapshot {
         } else {
             snapshot.sim.reset_planning_after_player_load();
         }
-        Ok(snapshot)
+        Ok(())
     }
 
     /// Admit a current-layout header without deserializing Simulation. The

@@ -164,8 +164,9 @@ impl App {
         };
         log::warn!("Load Saved Game: {}: {error}", path.display());
         if was_converted {
-            let rows =
-                super::shell_saved_seeds::saved_browser_rows(&load_saved_game_layout(state).browser);
+            let rows = super::shell_saved_seeds::saved_browser_rows(
+                &load_saved_game_layout(state).browser,
+            );
             state.frontend.load_saved_game =
                 Some(Self::open_converted_save_for_retry(state, path, rows));
         }

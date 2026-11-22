@@ -79,10 +79,12 @@ pub fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
 
 /// Decode a `T` from the start of `bytes`; any bytes after it are ignored.
 pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    deserialize_with_remainder(bytes).map(|(value, _)| value)
+    T::deserialize(&mut Deserializer { input: bytes })
 }
 
-/// Decode a value and return the bytes that its decoder did not read.
+/// Decode a value and return the bytes that its decoder did not read. Kept
+/// apart from [`deserialize`], which every load calls: handing the value back
+/// in a pair costs an unoptimized build another copy of it on the stack.
 pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
     bytes: &'de [u8],
 ) -> Result<(T, &'de [u8]), Error> {
