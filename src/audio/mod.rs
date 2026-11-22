@@ -9,6 +9,7 @@
 //! - audio/ does NOT depend on: render/, ui/, net/
 
 pub mod arbiter;
+pub(crate) mod custom_music;
 pub mod events;
 pub mod movie_stream;
 pub mod music;

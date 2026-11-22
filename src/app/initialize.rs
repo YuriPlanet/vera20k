@@ -1055,8 +1055,16 @@ impl App {
                         music_player.is_some(),
                         sfx_player.is_some(),
                     );
+                // Player-supplied in-match music: read once at startup from
+                // <settings>/musics/music.ini. Any absence or error keeps the
+                // retail playlist; this is a VERA-only, data-gated extension.
+                let custom_music = game_config
+                    .as_ref()
+                    .and_then(|config| crate::audio::custom_music::load(&config.paths.musics_dir()));
+                let mut startup_theme = crate::audio::theme::ThemeRuntime::default();
+                startup_theme.set_custom_music(custom_music);
                 let mut startup_audio_runtime = crate::app::audio_runtime::AppAudioRuntime {
-                    theme: crate::audio::theme::ThemeRuntime::default(),
+                    theme: startup_theme,
                     service_clock: crate::audio::arbiter::AudioServiceClock::default(),
                     music_player,
                     sfx_player,
