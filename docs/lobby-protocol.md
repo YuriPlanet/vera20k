@@ -296,15 +296,16 @@ its `{name}`, while every game shows `text` for a key it lacks.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
-`start_rejected`'s `message` is English. Current games match
+`start_rejected`'s `message` is English. Games from 0.3.6 on match
 the four messages the lobby sends: `A player left before the game started.`,
 `A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
 and `A player could not complete the peer latency check.`, and show each in the player's
 language; for the relay message a game whose `relay_ready` the service took says another
 player's game could not reach the server, and any other says its own could not. Any
 other message, including a reworded one, shows the general line that the match could
-not start, so a change to these messages needs the game's
-`LiveService::start_rejected_line` changed with it.
+not start, as every message does in older games. The lobby therefore keeps these four
+messages unchanged while it admits games from 0.3.6 on;
+`tests/fixtures/lobby/start_rejected.json` lists them.
 
 A start that times out connecting also says who held it up: every game's
 `start_rejected` then carries `phrases`, one `StartNotConnected` holding
@@ -906,7 +907,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   It refuses with 400 `invalid_name`, `invalid_email` or `invalid_password`, 409
   `name_unavailable` or `email_in_use`, or 429. Names follow the session rule;
   passwords are 8–64 printable ASCII characters; emails are at most 254 characters of
-  the `x@y.z` shape, one account each.
+  the `x@y.z` shape, one account each. `tests/fixtures/lobby/accounts.json` holds names,
+  passwords and emails at the edges of these rules, each with whether the game takes it;
+  the lobby gives each the same answer.
 - `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
   `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
 - `/v1/accounts/forgot` `{name}` returns 202 whether or not the name has an account,
