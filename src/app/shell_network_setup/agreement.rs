@@ -23,8 +23,13 @@ pub(crate) fn version() -> String {
 }
 
 pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
-    if state.match_state.session.campaign_room().is_some() {
-        state.process_assets.use_personal_rules(Default::default());
+    let session = &state.match_state.session;
+    let rules = session
+        .network_personal_rules()
+        .ok_or_else(|| anyhow!("no setup"))?
+        .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
+    state.process_assets.use_personal_rules(rules);
+    if session.campaign_room().is_some() {
         let rules_digest = state
             .process_assets
             .multiplayer_rules_digest("")
@@ -34,25 +39,12 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
             rules_digest,
         });
     }
-    let setup = state
-        .match_state
-        .session
-        .network_setup()
-        .ok_or_else(|| anyhow!("no setup"))?;
+    let setup = session.network_setup().ok_or_else(|| anyhow!("no setup"))?;
     let file = setup
         .selected_map_file
         .as_deref()
         .ok_or_else(|| anyhow!("no selected map"))?;
     let mode = setup.mode.override_file.clone();
-    // VERA: every player plays the room's rules, the host's, and agrees on
-    // them; a Quick Match room has none (`live_service` drops what its host
-    // sends), a launcher's room each player's own.
-    let room_rules = setup
-        .options
-        .host_rules
-        .personal_rules()
-        .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
-    state.process_assets.use_personal_rules(room_rules);
     let seed_options = if crate::map::rmg::is_seed_selection(file) {
         let root = &state
             .platform
@@ -163,8 +155,8 @@ pub(crate) enum OriginalGameChange<'a> {
 /// first. Ares comes before the files: On can mount the installation's
 /// `ares.mix`, which counts as a changed file, and a box naming the files
 /// would send the player to delete it. Empty when it plays the original.
-/// The Options switches never count: a room plays its host's (`HostRules`),
-/// and a Quick Match room has none.
+/// The Options switches never count: the room decides which its players play
+/// (`MatchSession::network_personal_rules`).
 pub(crate) fn original_game_changes<'a>(
     mod_title: Option<&'a str>,
     assets: &'a crate::app::process_assets::ProcessAssets,
@@ -303,7 +295,7 @@ mod tests {
             )])),
             json!({})
         );
-        let title = format!("Mental\u{7}Omega {}", "é".repeat(40));
+        let title = format!("Long\u{7}ModName {}", "é".repeat(40));
         let files: Vec<String> = (0..40).map(|n| format!("expandmd{n:02}.mix")).collect();
         let header = changes_header(&[
             OriginalGameChange::Mod(&title),
@@ -314,7 +306,7 @@ mod tests {
         assert_eq!(
             decoded(header),
             json!({
-                "mod": format!("MentalOmega {}", "é".repeat(26)),
+                "mod": format!("LongModName {}", "é".repeat(26)),
                 "ini_roots": true,
                 "ares": "off",
                 "files": files[..32],

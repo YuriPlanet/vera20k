@@ -18,6 +18,6 @@
     "current": "0x004C93D0",
     "ares_current": "0x10009CC0"
   },
-  "replay_command": "python -m tools.spatial_oracle.facing_class --ares-dll \"$HOME\"/Documents/vera20k-dev/mental-omega/game/Ares.dll",
+  "replay_command": "python -m tools.spatial_oracle.facing_class --ares-dll <Ares.dll>",
   "payload_sha256": "696c0a7e27940352d0624bc39d6fccc17ebccdff324f074dddf23f4b3f674c48"
 }

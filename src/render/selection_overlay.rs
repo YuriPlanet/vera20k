@@ -945,7 +945,7 @@ mod tests {
         root.write("palette.pal", &[0; 768]);
         root.write("digits.pal", &[0; 768]);
         let assets = AssetManager::from_loose_root_for_test(root.path());
-        // MO 3.3.6 names `interior.pal`, which none of its archives ship.
+        // A mod may name a palette that none of its archives ship.
         assert_eq!(
             digital_display_palette(&assets, "interior.pal"),
             "palette.pal"

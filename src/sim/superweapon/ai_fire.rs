@@ -455,7 +455,7 @@ fn extension_target(
         // the House's buildings (+0x6C, in order) that has the type
         // (HasSuperWeapon 10011E60, upgrades too) and is operational
         // (vt+0x350, Building4555D0) whose own cell CanFireAt (vt+4, not
-        // manual) admits; the cell of its GetCoords. MO's Iron Guard.
+        // manual) admits; the cell of its GetCoords.
         M::SelfTarget => sim
             .houses
             .get(&owner)?

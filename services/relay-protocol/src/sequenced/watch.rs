@@ -729,23 +729,10 @@ impl ClientSession {
         if !self.ready {
             return Err(RelayError::Unregistered);
         }
-        let parsed = OrderingCertificate::parse(certificate)?;
-        if !self.is_watching() || parsed.room != self.ticket.room {
+        if !self.is_watching() {
             return Err(RelayError::Authentication);
         }
-        match &self.ordering {
-            Some(current) if current.agreement != agreement => {
-                return Err(RelayError::Authentication);
-            }
-            Some(_) => {}
-            None => {
-                self.ordering = Some(ClientOrdering::new(
-                    certificate.to_vec(),
-                    agreement,
-                    parsed.tick_hz,
-                ));
-            }
-        }
+        self.join_ordering(certificate, agreement)?;
         let mut payload = vec![READY_REQUEST];
         payload.extend_from_slice(&agreement);
         self.encode(CONTROL, &payload, out)

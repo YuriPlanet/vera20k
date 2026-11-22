@@ -93,15 +93,14 @@ Instruction-level references: `Calc_Center` action-10 arm
 `0x006EAF13..0x006EB1B2`, action handler `0x006EDB50..0x006EDC6B`,
 dispatch `0x006E9832..0x006E984A`, directional House query `0x004F9A50`,
 and shared movement completion `0x006EBF25..0x006EBF45`.
-The contributor inspected their existing saved disassembly from the local
-Mental Omega `gamemd.exe` and the Coord magnitude instructions at `0x0041C380`.
+The contributor inspected their existing saved disassembly of a local
+`gamemd.exe` and the Coord magnitude instructions at `0x0041C380`.
 This is static instruction-level evidence, not a newly captured retail
 executable comparison. The local dump is not added as a repository artifact.
 
 `follow_friendlies_tests.rs` exercises the Rust production paths using
 synthetic rules without proprietary assets. These checks do not establish
-complete retail/Ares/MO parity, native class-array slot-reuse ordering,
+complete retail/Ares parity, native class-array slot-reuse ordering,
 off-map dummy-cell identity or live gameplay acceptance. Tube references use
 the host's validated `TubeId` rather than reproducing the original signed-byte
-index's truncation for oversized registries. Full donor MO support is not
-implied by this one action.
+index's truncation for oversized registries.

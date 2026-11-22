@@ -40,7 +40,8 @@ pub use sequenced::watch::{
 pub use sequenced::{
     ABSENT_MS, CHECKSUM_INTERVAL, CONTINUOUS_FLOOR, CertificatePacing, FRAME_RATES,
     MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderStatus, OrderingCertificate, admits_rate, paced_rates, turn_frames, turn_ms,
+    OrderStatus, OrderingCertificate, PaceLag, SUSTAIN_PERCENT, admits_rate, paced_rates,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -145,6 +146,14 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         Ok(ticket)
+    }
+
+    /// The same player in the same match seat; a hop renewal keeps it.
+    fn same_identity(&self, other: &Self) -> bool {
+        self.room == other.room
+            && self.source == other.source
+            && self.player == other.player
+            && self.generation == other.generation
     }
 
     /// Cloudflare and native test clients use this same fixed byte layout.
@@ -388,16 +397,12 @@ impl ClientSession {
         _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
         let mut next = Self::new(ticket, packet_key, [0; 32])?;
-        if next.ticket.room != self.ticket.room
-            || next.ticket.source != self.ticket.source
-            || next.ticket.player != self.ticket.player
-            || next.ticket.generation != self.ticket.generation
+        if !next.ticket.same_identity(&self.ticket)
             || next.ticket.nonce == self.ticket.nonce
             || next.ticket.expires <= self.ticket.expires
         {
             return Err(RelayError::Authentication);
         }
-        next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
         next.stream_transport = self.stream_transport;
         Ok(next)
@@ -471,7 +476,7 @@ impl ClientSession {
         )?;
         self.sent = sequence;
         if kind != HELLO {
-            self.hop_sent(self.sent);
+            self.hop_sent(self.sent, kind != PING);
         }
         Ok(())
     }
@@ -2105,6 +2110,38 @@ mod tests {
         assert_eq!(at_limit[0].endpoint, to);
         sender.data(1, b"ping", &mut bytes).unwrap();
         assert!(server.process(from, &bytes, 1031).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_hop_is_busy_only_while_traffic_other_than_its_keepalive_goes_both_ways() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut hop = client(&key, 1, 0);
+        let mut peer = client(&key, 1, 1);
+        let a = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let b = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut hop, a);
+        connect(&mut server, &mut peer, b);
+        // A PING and the READY answering it are not traffic, or one
+        // keepalive exchange would stand in for the next.
+        let mut bytes = Vec::new();
+        hop.data_at(1, b"to the peer", 10, &mut bytes).unwrap();
+        hop.probe_at(20, &mut bytes).unwrap();
+        let ready = server.process(a, &bytes, 1000).unwrap().remove(0);
+        assert!(matches!(
+            hop.receive_at(&ready.bytes, 30),
+            Ok(ServerEvent::Ready)
+        ));
+        assert!(!hop.busy_both_ways(40), "only READY heard");
+        peer.data(0, b"to the hop", &mut bytes).unwrap();
+        let forwarded = server.process(b, &bytes, 1000).unwrap().remove(0);
+        hop.receive_at(&forwarded.bytes, 3_000).unwrap();
+        hop.probe_at(3_000, &mut bytes).unwrap();
+        assert!(!hop.busy_both_ways(3_001), "only a PING sent since 10 ms");
+        // Traffic both ways, until either has been quiet for the interval.
+        hop.data_at(1, b"to the peer", 3_001, &mut bytes).unwrap();
+        assert!(hop.busy_both_ways(4_999));
+        assert!(!hop.busy_both_ways(5_000), "nothing heard since 3000 ms");
     }
 
     #[test]

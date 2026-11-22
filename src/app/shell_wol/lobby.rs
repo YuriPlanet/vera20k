@@ -210,8 +210,6 @@ enum Step {
         name: String,
         deadline: Instant,
     },
-    /// VERA: after a match from VERA's own room, behind a wait box until the
-    /// lobby gives the room back or closes it.
     /// VERA: a watch row's `watch` behind the wait box, until the lobby
     /// grants it ([`watch_admitted`]) or refuses it.
     Watching {
@@ -2710,10 +2708,6 @@ pub(super) fn box_command(state: &mut AppState, answer: usize) {
         }
     }
 }
-
-/// `0x007A5890`'s failure tail: rejoin flag from the pending channel, the
-/// pending and current channels cleared, the wait closed, the lists
-/// refilled and `0x113` shown; event 5 then ends the runner.
 
 /// The runner's timeouts, the wait box reveal, the dialog's timers (only
 /// while it is the current window) and the shared scrollbar repeats.

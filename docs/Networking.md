@@ -83,8 +83,8 @@ from the same files read without it; a game without it adds nothing.
 Players on one build reach the same answer. Older builds, including those that
 load an installed `ares.mix` with No mod selected, are refused by the existing
 build check. A rollback restores that build's earlier selection and INI reading.
-Ares needs no build feature: the rules digest still hashes `false` where the retired
-`ares` feature's flag was, as a released game's does.
+Ares needs no build feature; the retired `ares` feature's `false` is kept only in the
+replay and save rules hash (`RuleSet::simulation_config_hash`).
 Whether Phobos plays is decided from the same rules, mode and map
 ([the Phobos switch](phobos.md#the-phobos-switch)) and adds nothing to the
 digest, so players on one build reach the same answer; older builds are refused
@@ -474,6 +474,14 @@ An older game can still fall silent in that window and be dropped before it
 starts.
 The relay and the packets are unchanged. A released game keeps sending for a
 crashed or frozen game, so it is never named.
+The keepalive is a PING every two seconds, which the relay answers with READY.
+An established connection that traded other packets both ways within those two
+seconds skips it: in a match the game's UPLINKs and the relay's pushes already
+keep each end hearing the other, and the relay treats every packet of a
+connection as it does a PING. The keepalive's own packets do not count, so a
+connection with nothing else to say pings every two seconds, and one that
+falls quiet within four. The relay and the packets are unchanged; a released
+game pings through its matches as well, and both kinds play in one room.
 After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:
@@ -828,7 +836,9 @@ The switches compose over the root each scenario reads, never over the
 cold start or the shell's Country reads, so every player's one rules registry is the
 same whichever rules a room plays. Offline games play the player's own, a network
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
-any its host sends, and the lobby refuses them there. A launcher's network game
+any its host sends, and the lobby refuses them there. A
+[campaign room](#multiplayer-campaign-rooms) plays none either, whatever its host's
+are (`MatchSession::network_personal_rules`). A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
 `ExpectedRulesDigest` compares, and the start barrier compares again; it plays
 without the Building Production Queue, which its probe leaves out too, so a player's
@@ -1166,6 +1176,11 @@ command stream above is an intentional adaptation.
   online name may be 24 characters, so VERA writes the first 19 bytes of a longer
   name and receivers match a sender by that same prefix (together with its
   endpoint, as before). LAN names are at most 19 and travel unchanged.
+  A match chat line from an endpoint in the roster shows under the name and
+  colour the room admitted for it, so a longer online name arrives whole. On a
+  relay match, whose sources the relay authenticates, no player can speak as
+  another. On LAN or a direct spawn a sender at an endpoint outside the roster
+  (a rebound address, or a second socket) still shows the packet's own.
   A LAN name is the saved player name's bytes: gamemd copies them into each packet
   (`5DC6A6`) and shows them one byte to a character (`735120`), so every player,
   the sender too, sees the same name, and a name beyond ASCII shows as its bytes.

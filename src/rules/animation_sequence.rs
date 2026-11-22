@@ -341,8 +341,7 @@ impl ShpVehicleFireFrames {
 /// (UnitClass SHP draw `0x0073CCF7..0x0073CD03`). The frames share the body's
 /// draw point; `TurretOffset` does not apply.
 ///
-/// MO's Cyclops Walker (`CYCL`, `Voxel=no`, `Turret=yes`, `WalkFrames=22`)
-/// is the shipped example: frames 0..175 walk, 176..207 the turret.
+/// With `WalkFrames=22`, frames 0..175 walk and 176..207 are the turret.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ShpVehicleTurret {
     /// First turret frame, in the body SHP's own frame numbering.
