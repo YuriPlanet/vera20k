@@ -79,7 +79,10 @@ pub fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
 
 /// Decode a `T` from the start of `bytes`; any bytes after it are ignored.
 pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    T::deserialize(&mut Deserializer { input: bytes })
+    T::deserialize(&mut Deserializer {
+        input: bytes,
+        previous: None,
+    })
 }
 
 /// Decode a value and return the bytes that its decoder did not read. Kept
@@ -88,7 +91,37 @@ pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<
 pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
     bytes: &'de [u8],
 ) -> Result<(T, &'de [u8]), Error> {
-    let mut decoder = Deserializer { input: bytes };
+    let mut decoder = Deserializer {
+        input: bytes,
+        previous: None,
+    };
+    let value = T::deserialize(&mut decoder)?;
+    Ok((value, decoder.input))
+}
+
+/// An audited predecessor of the target serde types. Its struct lacks the
+/// final (defaulted) field and its enum may lack the final variant.
+pub(crate) struct PreviousLayout {
+    pub struct_name: &'static str,
+    pub current_fields: &'static [&'static str],
+    pub absent_variant: Option<(&'static str, &'static str)>,
+}
+
+/// Read the old layout and record byte offsets at which its missing field
+/// belongs. The caller can then preserve every byte the reader normalized.
+pub(crate) fn deserialize_previous<'de, T: serde::Deserialize<'de>>(
+    bytes: &'de [u8],
+    layout: PreviousLayout,
+    missing_fields: &mut Vec<usize>,
+) -> Result<(T, &'de [u8]), Error> {
+    let mut decoder = Deserializer {
+        input: bytes,
+        previous: Some(PreviousInput {
+            layout,
+            input_len: bytes.len(),
+            missing_fields,
+        }),
+    };
     let value = T::deserialize(&mut decoder)?;
     Ok((value, decoder.input))
 }
@@ -356,11 +389,18 @@ impl ser::SerializeStructVariant for &mut Serializer {
     }
 }
 
-struct Deserializer<'de> {
-    input: &'de [u8],
+struct PreviousInput<'a> {
+    layout: PreviousLayout,
+    input_len: usize,
+    missing_fields: &'a mut Vec<usize>,
 }
 
-impl<'de> Deserializer<'de> {
+struct Deserializer<'de, 'a> {
+    input: &'de [u8],
+    previous: Option<PreviousInput<'a>>,
+}
+
+impl<'de> Deserializer<'de, '_> {
     fn take(&mut self, len: usize) -> Result<&'de [u8], Error> {
         let (head, tail) = self
             .input
@@ -393,7 +433,7 @@ macro_rules! deserialize_le {
     )*};
 }
 
-impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
+impl<'de> de::Deserializer<'de> for &mut Deserializer<'de, '_> {
     type Error = Error;
 
     deserialize_le! {
@@ -523,19 +563,46 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
 
     fn deserialize_struct<V: Visitor<'de>>(
         self,
-        _name: &'static str,
+        name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
+        if let Some(previous) = &self.previous
+            && previous.layout.struct_name == name
+        {
+            if fields != previous.layout.current_fields || fields.is_empty() {
+                return Err(Error::Custom(format!("unexpected fields in {name}")));
+            }
+            let value = (&mut *self).deserialize_tuple(fields.len() - 1, visitor)?;
+            if let Some(previous) = &mut self.previous {
+                previous
+                    .missing_fields
+                    .push(previous.input_len - self.input.len());
+            }
+            return Ok(value);
+        }
         self.deserialize_tuple(fields.len(), visitor)
     }
 
     fn deserialize_enum<V: Visitor<'de>>(
         self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
+        name: &'static str,
+        variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Error> {
+        if let Some((old_enum, absent)) = self
+            .previous
+            .as_ref()
+            .and_then(|old| old.layout.absent_variant)
+            && old_enum == name
+        {
+            let tag = u32::from_le_bytes(*self.input.first_chunk().ok_or(Error::UnexpectedEnd)?);
+            if variants.last() != Some(&absent) || variants.get(tag as usize) == Some(&absent) {
+                return Err(Error::Custom(format!(
+                    "invalid {name} tag {tag} for the saved layout"
+                )));
+            }
+        }
         visitor.visit_enum(self)
     }
 
@@ -545,12 +612,12 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
 }
 
 /// The remaining elements of a sequence, tuple, struct or map.
-struct Elements<'a, 'de> {
-    de: &'a mut Deserializer<'de>,
+struct Elements<'a, 'de, 'layout> {
+    de: &'a mut Deserializer<'de, 'layout>,
     remaining: usize,
 }
 
-impl<'de> de::SeqAccess<'de> for Elements<'_, 'de> {
+impl<'de> de::SeqAccess<'de> for Elements<'_, 'de, '_> {
     type Error = Error;
 
     fn next_element_seed<T: DeserializeSeed<'de>>(
@@ -569,7 +636,7 @@ impl<'de> de::SeqAccess<'de> for Elements<'_, 'de> {
     }
 }
 
-impl<'de> de::MapAccess<'de> for Elements<'_, 'de> {
+impl<'de> de::MapAccess<'de> for Elements<'_, 'de, '_> {
     type Error = Error;
 
     fn next_key_seed<K: DeserializeSeed<'de>>(
@@ -592,7 +659,7 @@ impl<'de> de::MapAccess<'de> for Elements<'_, 'de> {
     }
 }
 
-impl<'de> de::EnumAccess<'de> for &mut Deserializer<'de> {
+impl<'de> de::EnumAccess<'de> for &mut Deserializer<'de, '_> {
     type Error = Error;
     type Variant = Self;
 
@@ -603,7 +670,7 @@ impl<'de> de::EnumAccess<'de> for &mut Deserializer<'de> {
     }
 }
 
-impl<'de> de::VariantAccess<'de> for &mut Deserializer<'de> {
+impl<'de> de::VariantAccess<'de> for &mut Deserializer<'de, '_> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Error> {

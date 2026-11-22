@@ -2236,7 +2236,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "automatic save retained already-consumed Options input"
     );
     let browser =
-        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8);
+        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8, None);
     ensure!(
         browser
             .selected_entry()

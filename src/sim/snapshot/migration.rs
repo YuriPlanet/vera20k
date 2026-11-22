@@ -6,21 +6,24 @@ use super::{
 };
 
 const MIGRATION_ENVELOPE_VERSION: u32 = 2;
-const V0_3_9: u32 = 0xFD30_A463;
+// The stock desktop v0.3.8 and v0.3.9 writers share this layout.
+const V0_3_8_AND_0_3_9: u32 = 0xFD30_A463;
 const V0_4_0: u32 = 0x9BB2_0D64;
+// The next desktop writer stores an AlphaShape's Anim expiry listener.
+const ALPHA_SHAPE_LISTENER: u32 = 0xFD54_FFFF;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
-    #[error("this build cannot write v0.4.0 migration output (layout {0:#010x})")]
+    #[error("this build cannot write the audited migration target (layout {0:#010x})")]
     UnsupportedTarget(u32),
-    #[error("the save uses layout {0:#010x}; conversion expects a v0.3.9 save")]
+    #[error("the save uses an unsupported source layout {0:#010x}")]
     UnsupportedSource(u32),
-    #[error("the save is already in the v0.4.0 layout")]
+    #[error("the save is already in the current layout")]
     AlreadyCurrent,
     #[error("unexpected bytes after the saved world")]
     TrailingBytes,
-    #[error("entity {0} was saved in a map tunnel; finish transit in v0.3.9 and save again")]
-    TunnelTransit(u64),
+    #[error("entity {0} has an invalid saved map tunnel or path cursor")]
+    InvalidTunnelTransit(u64),
     #[error(transparent)]
     HeaderOrState(#[from] SnapshotError),
     #[error(transparent)]
@@ -32,59 +35,115 @@ pub enum MigrationError {
 pub fn supports(header: &GameSnapshotHeader) -> bool {
     header.product_magic == SNAPSHOT_PRODUCT_MAGIC
         && header.envelope_version == MIGRATION_ENVELOPE_VERSION
-        && header.layout == V0_3_9
+        && matches!(header.layout, V0_3_8_AND_0_3_9 | V0_4_0)
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == V0_4_0
+        && snapshot_layout() == ALPHA_SHAPE_LISTENER
 }
 
-/// Convert a v0.3.9 player save to the v0.4.0 layout in memory.
-///
-/// Appending `Mech` to `LocomotorKind` preserves the existing variant tags.
-/// Keep the world bytes verbatim after decoding all of them with the target
-/// reader. Tunnel movement changed meaning in v0.4.0, so refuse any saved
-/// actor in transit. The game still checks the rules and assets on restore.
-pub fn migrate(bytes: &mut [u8]) -> Result<(), MigrationError> {
+fn previous_layout(source: u32) -> save_codec::PreviousLayout {
+    save_codec::PreviousLayout {
+        struct_name: "AlphaShape",
+        current_fields: &["object", "origin", "image", "disabled", "anim_listener"],
+        // v0.4.0 appended Mech without changing the earlier discriminants.
+        absent_variant: (source == V0_3_8_AND_0_3_9).then_some(("LocomotorKind", "Mech")),
+    }
+}
+
+/// Decode the entire historical world, then publish only the audited wire
+/// changes. Older AlphaShapes belonged to Technos and never listened for
+/// Anim expiry. The game still checks the rules and assets at restore.
+pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != V0_4_0 {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != ALPHA_SHAPE_LISTENER {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
     let preamble = GameSnapshot::read_preamble(bytes)?;
     GameSnapshot::validate_version(preamble.envelope_version)?;
     match preamble.layout {
-        V0_4_0 => return Err(MigrationError::AlreadyCurrent),
-        V0_3_9 => {}
+        ALPHA_SHAPE_LISTENER => return Err(MigrationError::AlreadyCurrent),
+        V0_3_8_AND_0_3_9 | V0_4_0 => {}
         layout => return Err(MigrationError::UnsupportedSource(layout)),
     }
     GameSnapshot::read_compatible_header(bytes)?;
 
-    let (mut snapshot, remainder): (GameSnapshot, _) =
-        save_codec::deserialize_with_remainder(bytes)?;
-    if !remainder.is_empty() {
-        return Err(MigrationError::TrailingBytes);
-    }
-    GameSnapshot::validate_admitted(&mut snapshot)?;
-    snapshot.require_player_resources()?;
-    if let Some((id, _)) = snapshot
-        .sim
-        .substrate
-        .entities
-        .iter_sorted()
-        .find(|(_, entity)| entity.low_bridge_tube_state.is_some())
+    let mut listeners = Vec::new();
     {
-        return Err(MigrationError::TunnelTransit(id));
+        let (mut snapshot, remainder): (GameSnapshot, _) = save_codec::deserialize_previous(
+            bytes,
+            previous_layout(preamble.layout),
+            &mut listeners,
+        )?;
+        if !remainder.is_empty() {
+            return Err(MigrationError::TrailingBytes);
+        }
+        GameSnapshot::validate_admitted(&mut snapshot)?;
+        let resources = snapshot.require_player_resources()?;
+        if preamble.layout == V0_3_8_AND_0_3_9 {
+            for (id, entity) in snapshot.sim.substrate.entities.iter_sorted() {
+                if let Some(transit) = entity.low_bridge_tube_state
+                    && !valid_old_transit(transit, resources.terrain())
+                {
+                    return Err(MigrationError::InvalidTunnelTransit(id));
+                }
+            }
+        }
     }
 
     let target_preamble = save_codec::serialize(&GameSnapshotPreamble {
         layout: target,
         ..preamble
     })?;
-    let output = bytes
+    // Offsets are produced by the successful sequential decoder. Back-fill
+    // in a single pass so each original byte moves at most once.
+    let mut end = bytes.len();
+    bytes
+        .try_reserve_exact(listeners.len())
+        .map_err(|error| save_codec::Error::Custom(error.to_string()))?;
+    bytes.resize(end + listeners.len(), 0);
+    for (index, &offset) in listeners.iter().enumerate().rev() {
+        bytes.copy_within(offset..end, offset + index + 1);
+        bytes[offset + index] = 0;
+        end = offset;
+    }
+    bytes
         .get_mut(..target_preamble.len())
-        .ok_or(save_codec::Error::UnexpectedEnd)?;
-    output.copy_from_slice(&target_preamble);
+        .ok_or(save_codec::Error::UnexpectedEnd)?
+        .copy_from_slice(&target_preamble);
     Ok(())
+}
+
+/// Convert the world, then replace its variable-length browser description.
+/// Keep all bytes following the metadata, including state the runtime resets
+/// when a player loads the result.
+pub fn migrate_named(mut bytes: Vec<u8>, description: &str) -> Result<Vec<u8>, MigrationError> {
+    migrate(&mut bytes)?;
+    let (mut header, world): (GameSnapshotHeader, _) =
+        save_codec::deserialize_with_remainder(&bytes)?;
+    let header_len = bytes.len() - world.len();
+    header.description = description.to_owned();
+    let replacement = save_codec::serialize(&header)?;
+    // A longer name needs only a few extra bytes, even for a very large world.
+    bytes.reserve_exact(replacement.len().saturating_sub(header_len));
+    bytes.splice(..header_len, replacement);
+    Ok(bytes)
+}
+
+// v0.3.8 and v0.3.9's tube_word admitted only IDs 0..=127 and explicit
+// nonempty paths. UnitClass::TubeMovement (0x007359F0) and its infantry
+// counterpart (0x0051B350) still consume the same cursor and target XYZ.
+// A blocked exit legitimately holds cursor == path length between turns.
+fn valid_old_transit(
+    state: crate::sim::movement::tube_movement::LowBridgeTubeMovementState,
+    terrain: &crate::map::resolved_terrain::SavedTerrainTemplate,
+) -> bool {
+    state.tube_id().0 <= i8::MAX as u16
+        && terrain.tube(state.tube_id()).is_some_and(|tube| {
+            tube.source == crate::map::tube_facts::TubeSource::ExplicitMap
+                && tube.path_len() > 0
+                && usize::from(state.cursor()) <= tube.path_len()
+        })
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -93,8 +152,30 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
+    fn old_tunnel_cursor_may_wait_at_the_exit_but_not_pass_it() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_loader_clear_cell};
+        use crate::map::tube_facts::{TubeFact, TubeId};
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+        let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+            2,
+            1,
+            vec![test_loader_clear_cell(0, 0), test_loader_clear_cell(1, 0)],
+            vec![TubeFact::explicit((0, 0), (1, 0), 2, vec![2])],
+        )
+        .capture_saved_template()
+        .unwrap();
+        let target = DriveCoord::cell(1, 0, 0);
+        let state = |id, cursor| LowBridgeTubeMovementState::for_test(TubeId(id), cursor, target);
+        assert!(valid_old_transit(state(0, 1), &terrain));
+        assert!(!valid_old_transit(state(0, 2), &terrain));
+        assert!(!valid_old_transit(state(1, 0), &terrain));
+    }
+
+    #[test]
     fn migration_leaves_unsupported_and_invalid_snapshots_byte_exact() {
-        let wrong_layout = V0_3_9 ^ 1;
+        let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
         let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -104,7 +185,9 @@ mod tests {
         let original = bytes.clone();
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || snapshot_layout() != V0_4_0 {
+        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+            || snapshot_layout() != ALPHA_SHAPE_LISTENER
+        {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
         }
@@ -116,7 +199,7 @@ mod tests {
         let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: V0_3_9,
+            layout: V0_3_8_AND_0_3_9,
         })
         .unwrap();
         bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
@@ -137,5 +220,20 @@ mod tests {
             Err(MigrationError::TrailingBytes)
         ));
         assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn mech_tag_is_valid_only_from_v0_4_0() {
+        use crate::rules::locomotor_type::LocomotorKind;
+        let bytes = save_codec::serialize(&LocomotorKind::Mech).unwrap();
+        let decode = |layout| {
+            save_codec::deserialize_previous::<LocomotorKind>(
+                &bytes,
+                previous_layout(layout),
+                &mut Vec::new(),
+            )
+        };
+        assert!(decode(V0_3_8_AND_0_3_9).is_err());
+        assert_eq!(decode(V0_4_0).unwrap(), (LocomotorKind::Mech, &[][..]));
     }
 }

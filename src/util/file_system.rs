@@ -23,11 +23,11 @@ pub fn try_exists(path: impl AsRef<std::path::Path>) -> std::io::Result<bool> {
 /// to `publish` to move it into place. The staged file is removed when the
 /// write or `publish` fails, so no partial file is published or left behind.
 #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-pub(crate) fn write_staged(
+pub fn write_staged<E: From<std::io::Error>>(
     dir: &std::path::Path,
     bytes: &[u8],
-    publish: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
-) -> std::io::Result<()> {
+    publish: impl FnOnce(&std::path::Path) -> Result<(), E>,
+) -> Result<(), E> {
     use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT_STAGE: AtomicU64 = AtomicU64::new(0);
@@ -41,10 +41,10 @@ pub(crate) fn write_staged(
         {
             Ok(file) => break (stage, file),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     };
-    let result = (|| -> std::io::Result<()> {
+    let result = (|| -> Result<(), E> {
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
@@ -63,12 +63,19 @@ pub(crate) fn write_staged(
 pub fn write_new(path: impl AsRef<std::path::Path>, bytes: &[u8]) -> std::io::Result<()> {
     let path = path.as_ref();
     let directory = path.parent().unwrap_or(std::path::Path::new("."));
-    write_staged(directory, bytes, |stage| {
-        std::fs::File::create_new(path)?;
-        std::fs::rename(stage, path).inspect_err(|_| {
-            let _ = std::fs::remove_file(path);
-        })
-    })
+    write_staged(directory, bytes, |stage| persist_noclobber(stage, path))
+}
+
+/// Move an existing file to a fresh name. On failure the source stays in
+/// place: it may be the player's backup, or a stage whose caller owns cleanup.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub fn persist_noclobber(
+    source: &std::path::Path,
+    target: &std::path::Path,
+) -> std::io::Result<()> {
+    let mut file = tempfile::TempPath::try_from_path(source)?;
+    file.disable_cleanup(true);
+    file.persist_noclobber(target).map_err(|error| error.error)
 }
 
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
