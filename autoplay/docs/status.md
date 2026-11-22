@@ -333,6 +333,31 @@ spread 没降——这是对的：军队在家里 continuously 生产，最远�
 从没超过 12，所以这条只在突袭大于 12 时才生效。留着是因为地板 12 只对小于 12 的突袭正确，
 而回归测试 `a_raid_bigger_than_the_floor_calls_more_than_the_floor`（20 个敌人、30 个兵 → 15 个防守）
 在去掉这条公式时失败（left: 12, right: 15）。
+
+### 把第二、第三座精炼厂提到战车工厂之前（本轮否决）
+
+动机来自账本：开局一万字aster 里，前一万 tick 只有一座精炼厂、一到三辆采矿车，
+收入 680–1860/min，军队长期只有 8–17 个单位。计划表的顺序是 Power、Barracks、
+Refinery(1)、**Weapons**、Aircraft、Radar、Tech、Repair、Refinery(3)，也就是说
+第二座精炼厂排在战车工厂、空军、雷达、实验室、修理厂之后（`src/sim/strategy/assist/plan.rs`）。
+把 `Item::Refinery want:3 Gate::HarvestersServed` 那一格挪到 `Refinery want:1` 之后，
+让经济先于科技。
+
+六局（target/autoplay-results/refinery-early.jsonl）：
+
+| seed | 基线 14cdef80d | 精炼厂提前 |
+| 24301 | **won 27425** own=121 enemy=2 inc=7375 | **timeout** own=123 enemy=66 army=64 inc=4932 |
+| 19 | timeout own=162 enemy=13 inc=4445 | timeout own=159 enemy=17 inc=5069 |
+| 10 | won 33824 own=157 enemy=2 | won 33824 own=157 enemy=2（逐字相同） |
+| 7 | timeout own=137 enemy=37 inc=6025 | timeout own=134 enemy=40 inc=5720 |
+| 4242 | timeout own=157 enemy=1 | **won 34489** own=152 enemy=0 |
+| 31337 | timeout own=157 enemy=48 inc=7720 | **lost 34731** own=30 army=14 inc=1620 |
+
+否决：两胜变一胜，31337 直接崩盘（30  own、14 上兵）。经济确实重要，但把船坞／实验室／
+空军往后排会把开局节奏整体打乱——战车工厂晚一步，采矿车就晚一步，收入反而更低
+（7375 -> 4932）。这份账已经记在 `plan.rs` 的注释里："the lab's own Prerequisite=GAWEAP,RADAR,GACNST"。
+教训：build order 是刀刃上的平衡，经济优先不是免费的。
+
 ### 试过并且更差的（不要重试）
 
 - **把 `Item::Refinery` 加进 `yard_reserve`**（想让第二个精炼厂也能存钱买到）：
