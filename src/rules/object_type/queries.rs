@@ -390,6 +390,13 @@ impl ObjectType {
         self.no_spawn_alt_model.as_deref()
     }
 
+    /// `SmallVisceroid=` or `LargeVisceroid=` of a VehicleType (UnitType
+    /// `+0xE18`/`+0xE19`); the SHP Unit shadow refuses both
+    /// (`0x00705FF3..0x00706007`, and Ares' `UnitClass_DrawSHP_DrawShadowEarlier`).
+    pub fn visceroid(&self) -> bool {
+        self.small_visceroid || self.large_visceroid
+    }
+
     /// Read-only projection of the retained WaterImage pointer.
     pub fn water_image(&self) -> Option<&str> {
         self.water_image.as_deref()

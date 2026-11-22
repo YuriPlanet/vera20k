@@ -576,7 +576,7 @@ impl RuleSet {
     }
 
     /// [`Self::unit_shp_read_state`] for a type already in hand.
-    pub(crate) fn unit_shp_read_state_of(
+    pub fn unit_shp_read_state_of(
         &self,
         object: &ObjectType,
     ) -> Option<&crate::rules::shp_vehicle_sequence::UnitShpReadState> {

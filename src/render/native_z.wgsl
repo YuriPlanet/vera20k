@@ -95,3 +95,57 @@ fn native_row_z(entry: u32, screen_top: i32, height: i32, z_adjust: i32, row: i3
     let steps: i32 = (accum + max(row, 0) * increment) / threshold;
     return seed + step_dir * steps;
 }
+
+// The Unit final composite (`0x0073B140`, Unit vtable +0x55C) that a voxel
+// body and a turreted SHP Unit's body and turret (`0x0073C7AC..0x0073CDF9`)
+// reach the screen through: every part shares one rectangle
+// (`rect_top_height`, world top and height), so their depth decision is
+// identical at every pixel. With 0x400 the rectangle splits into a
+// full-width upper h-16 and a bottom 16, seeded independently by
+// Standard_SHP_blitter. Each blit is a Bit_Blit, which clips its rectangle
+// to the view rows `view` before seeding (0x00437461, then
+// 0x004374BB..0x004375A7); its bottom-seeded walk follows the clipped
+// bottom. Returns the candidate in x, and y = 0 where the clip cuts the
+// fragment. Mirrors `native_z::voxel_depth_region`.
+fn unit_composite_candidate(rect_top_height: vec2f, world_y: f32, z_gradient: u32,
+                            z_adjust_in: f32, view: vec2i, z_origin: i32) -> vec2i {
+    var rect_top: f32 = rect_top_height.x;
+    var height: i32 = max(i32(round(rect_top_height.y)), 1);
+    var gradient: u32 = z_gradient & 0xFFu;
+    var z_adjust: i32 = i32(round(z_adjust_in));
+    // Retain full quads/UVs so both regions sample the same source pixel grid.
+    if ((z_gradient & 0x400u) != 0u) {
+        rect_top = round(rect_top);
+        if (height > 16) {
+            let boundary: f32 = rect_top + f32(height - 16);
+            if (world_y < boundary) {
+                height = height - 16;
+                gradient = 0u;
+                z_adjust = z_adjust - 5;
+            } else {
+                rect_top = boundary;
+                height = 16;
+                gradient = 2u;
+            }
+        }
+    }
+    if ((z_gradient & 0x1400u) != 0u) {
+        rect_top = round(rect_top);
+        let region_top: f32 = rect_top;
+        let region_bottom: f32 = rect_top + f32(height);
+        let bottom: f32 = min(region_bottom, f32(view.y));
+        rect_top = max(rect_top, f32(view.x));
+        height = i32(bottom - rect_top);
+        // Only actual tactical clip intersections cut coverage; the full quad
+        // and the row clamp own natural edges. Re-testing those edges
+        // against interpolated coordinates can discard a boundary source row.
+        if (height <= 0
+            || (rect_top > region_top && world_y < rect_top)
+            || (bottom < region_bottom && world_y >= bottom)) {
+            return vec2i(0, 0);
+        }
+    }
+    let screen_top: i32 = i32(round(rect_top)) - z_origin;
+    let row: i32 = clamp(i32(floor(world_y - rect_top)), 0, height - 1);
+    return vec2i(native_row_z(gradient, screen_top, height, z_adjust, row), 1);
+}

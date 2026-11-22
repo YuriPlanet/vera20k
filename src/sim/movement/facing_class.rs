@@ -150,6 +150,33 @@ impl FacingClass {
         i32::from(self.current).wrapping_sub(delta) as u16
     }
 
+    /// Animated facing through Ares' own copy of `current`
+    /// (Ares.dll `0x10009CC0`, and inline at `0x10048064..0x10048102`), which
+    /// its SHP vehicle facing bucket and AlphaImage facing frame read. It
+    /// multiplies the arc by the remaining time before dividing by the steps,
+    /// `Desired - (diff * remaining) / steps`, where gamemd's `current`
+    /// divides first. The gates are the same.
+    pub fn current_ares(&self, binary_frame: u32) -> u16 {
+        if (self.rot_per_frame as i16) <= 0 {
+            return self.current;
+        }
+        let remaining = self.remaining_frames(binary_frame);
+        if remaining == 0 {
+            return self.current;
+        }
+        let diff = i32::from(self.current.wrapping_sub(self.prev) as i16);
+        let steps = diff.unsigned_abs() / u32::from(self.rot_per_frame);
+        // `movzx eax,ax; test ax,ax; jle` at 0x10009D1C: the step count as a
+        // signed word.
+        let steps = i32::from(steps as u16 as i16);
+        if steps <= 0 {
+            return self.current;
+        }
+        // |diff| <= 0x8000 and remaining <= duration <= 0x80: no overflow.
+        let delta = diff.wrapping_mul(remaining) / steps;
+        i32::from(self.current).wrapping_sub(delta) as u16
+    }
+
     /// Smooth setter — initiates a new rotation toward `new_target`.
     /// Snapshots the current animated position into `prev` (research doc
     /// §2.4) so retargets continue smoothly from the visible position.
@@ -242,12 +269,14 @@ impl FacingClass {
 mod tests {
     use super::*;
 
-    #[test]
-    fn signed_rates_and_retained_histories_match_native() {
-        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/spatial_oracle/facing_class.json",
-        ))
-        .unwrap();
+    /// Replays each native history of `corpus` and hands every observation to
+    /// `check` with the replayed controller, its frame and the setter's return.
+    fn replay(
+        corpus: &'static str,
+        mut check: impl FnMut(&FacingClass, u32, Option<bool>, &serde_json::Value, &str),
+    ) {
+        let rows: serde_json::Value =
+            serde_json::from_str(crate::test_fixture::text(corpus)).unwrap();
         for row in rows.as_array().unwrap() {
             let input = &row["input"];
             let mut facing = FacingClass::new(0, input["rot"].as_i64().unwrap() as i32);
@@ -273,15 +302,12 @@ mod tests {
                     "sample" => None,
                     kind => panic!("unknown facing operation {kind}"),
                 };
-                assert_eq!(
-                    serde_json::json!({
-                        "destination": facing.destination(), "previous": facing.prev,
-                        "start": facing.start_frame.unwrap(), "duration": facing.duration_frames,
-                        "rate": facing.rot_per_frame(), "animated": facing.current(frame),
-                        "rotating": facing.is_rotating(frame), "result": result,
-                    }),
-                    *expected,
-                    "input={input}, operation={operation}"
+                check(
+                    &facing,
+                    frame,
+                    result,
+                    expected,
+                    &format!("input={input}, operation={operation}"),
                 );
                 // Resume each history through the same serialized fields used
                 // by snapshots; signed rate bits and a live timer must survive.
@@ -291,6 +317,42 @@ mod tests {
                 facing = restored;
             }
         }
+    }
+
+    #[test]
+    fn signed_rates_and_retained_histories_match_native() {
+        replay(
+            "tools/spatial_oracle/facing_class.json",
+            |facing, frame, result, expected, context| {
+                assert_eq!(
+                    serde_json::json!({
+                        "destination": facing.destination(), "previous": facing.prev,
+                        "start": facing.start_frame.unwrap(), "duration": facing.duration_frames,
+                        "rate": facing.rot_per_frame(), "animated": facing.current(frame),
+                        "rotating": facing.is_rotating(frame), "result": result,
+                    }),
+                    *expected,
+                    "{context}"
+                );
+            },
+        );
+    }
+
+    /// Ares.dll's own Current (`0x10009CC0`) sampled on the same retained
+    /// object as gamemd's: mid-turn the two differ.
+    #[test]
+    fn ares_current_matches_native() {
+        replay(
+            "tools/spatial_oracle/facing_class_ares.json",
+            |facing, frame, _, expected, context| {
+                assert_eq!(
+                    [facing.current(frame), facing.current_ares(frame)],
+                    [&expected["animated"], &expected["ares_animated"]]
+                        .map(|value| value.as_u64().unwrap() as u16),
+                    "{context}"
+                );
+            },
+        );
     }
 
     #[test]

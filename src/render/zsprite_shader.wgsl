@@ -149,6 +149,18 @@ fn skip_overshoot(input: VertexOutput) -> i32 {
 
 fn native_candidate(input: VertexOutput) -> i32 {
     let z_origin: i32 = native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan);
+    // A turreted SHP Unit's body and turret reach the screen through the
+    // Unit composite (`0x0073B140`) as a voxel body does, on the composite's
+    // rectangle (zshape_origin; native_z::Z_GRADIENT_VOXEL_VIEW_CLIP_FLAG).
+    // An overlay's linear shape (0x800) uses bit 0x1000 for its channel.
+    if ((input.z_gradient & 0x1800u) == 0x1000u) {
+        let candidate: vec2i = unit_composite_candidate(input.zshape_origin, input.world_pos.y,
+            input.z_gradient, input.z_adjust, tactical_view_rows(input.fx_params.w), z_origin);
+        if (candidate.y == 0) {
+            discard;
+        }
+        return candidate.x;
+    }
     var rect_top: i32 = i32(round(input.rect.y));
     var rect_bottom: i32 = rect_top + max(i32(round(input.rect.w)), 1);
     let extended_shape: bool = (input.z_gradient & 0x100u) != 0u;

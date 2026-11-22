@@ -1065,6 +1065,11 @@ impl RuleSet {
         &self.voxel_anim_types[id.0 as usize]
     }
 
+    /// [`Self::voxel_anim_type`], or `None` for an id these rules do not hold.
+    pub(crate) fn find_voxel_anim_type(&self, id: VoxelAnimTypeId) -> Option<&VoxelAnimType> {
+        self.voxel_anim_types.get(id.0 as usize)
+    }
+
     /// Resolve a `[VoxelAnims]` type name to its ID (case-insensitive).
     pub fn voxel_anim_type_id_by_name(&self, name: &str) -> Option<VoxelAnimTypeId> {
         crate::util::native_string::with_ascii_uppercase(name, |key| {

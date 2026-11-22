@@ -516,7 +516,7 @@ pub(crate) fn prepare_presentation_manifest(
             rules,
             art,
             house_colors,
-            &coverage.extra_buildings,
+            &coverage.extra_types,
             &coverage.anim_remap_keys,
             &coverage.cell_drawer_type_ids,
             &coverage.frozen_keys,

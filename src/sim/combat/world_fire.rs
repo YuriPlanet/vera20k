@@ -2126,6 +2126,7 @@ pub(super) fn emit_admitted_fire(
             fire.aim_facing16,
             snap.garrison.is_some(),
             in_open_transport,
+            rules.ares(),
         )
         .map(|name| world.interner.intern(name)),
         occupied_building: snap.garrison.is_some(),
