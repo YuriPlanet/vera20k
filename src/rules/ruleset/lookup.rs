@@ -1007,6 +1007,16 @@ impl RuleSet {
         self.phobos && self.parallel_ai_queues.allows_parallel()
     }
 
+    /// Whether Ares' serial AI queues act in this game: Ares plays and
+    /// `[GlobalControls] AllowParallelAIQueues=no`. Ares then lets one
+    /// factory building per category start production at a time
+    /// (`BuildingClass_Update_Factory`, hook `0x4502F4`, Ares.dll
+    /// `10024E00`). The one key keeps it apart from the Phobos hooks
+    /// ([`Self::parallel_ai_queues_act`]), so the two share the house's slots.
+    pub fn serial_ai_queues_act(&self) -> bool {
+        self.ares && !self.parallel_ai_queues.allows_parallel()
+    }
+
     /// A superweapon type's `SuperWeaponTypeClass` array index (its
     /// `[SuperWeaponTypes]` position, case-insensitive), the value
     /// `SuperWeapon=` stores (BuildingType `+0x16F0`).
