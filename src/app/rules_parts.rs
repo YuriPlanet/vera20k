@@ -70,8 +70,8 @@ pub(crate) struct RulesSettings {
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
     pub(crate) ares_mix: bool,
-    /// The Rules, Art and AI roots, the theater suffix and the mode and map
-    /// catalogs are YR's (`ProcessAssets::stock_ini_roots`).
+    /// The INI roots listed under `resources` and the theater suffix are all
+    /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
     /// The INI roots and archive names the game reads, when a mod requires
     /// Ares or any of them is not YR's; absent otherwise. The rules digest

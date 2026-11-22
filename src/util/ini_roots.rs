@@ -164,6 +164,36 @@ impl IniRoots {
     pub fn names(&self) -> [&str; 3] {
         [self.rules(), self.art(), self.ai()]
     }
+
+    /// Every root and catalog file: Rules, Art, AI, sound, EVA, theme,
+    /// campaign, mission, map selection, mode and map catalog, in the order
+    /// the multiplayer rules agreement compares them.
+    pub fn files(&self) -> [&str; 11] {
+        [
+            self.rules(),
+            self.art(),
+            self.ai(),
+            self.sound(),
+            self.eva(),
+            self.theme(),
+            self.battle(),
+            self.mission(),
+            self.mapsel(),
+            self.modes(),
+            self.map_catalog(),
+        ]
+    }
+
+    /// Every file in [`Self::files`] and the theater suffix are YR's,
+    /// ignoring ASCII case.
+    pub fn is_stock(&self) -> bool {
+        let stock = Self::default();
+        self.files()
+            .into_iter()
+            .zip(stock.files())
+            .chain([(self.theater_suffix(), stock.theater_suffix())])
+            .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
+    }
 }
 
 impl IniRootConfig {
