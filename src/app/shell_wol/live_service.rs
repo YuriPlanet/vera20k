@@ -336,7 +336,6 @@ impl OnlineCleanup {
 }
 
 pub(super) struct LiveService {
-    pub(super) campaign_rooms: bool,
     #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
     _browser_requests: http::RequestOwner,
     stopping: Arc<AtomicBool>,
