@@ -4,7 +4,7 @@
 //! it is a family page (right panel, heading, status line, slides). Back
 //! (result 2) tears it down and state 1 recreates Single Player.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use winit::keyboard::KeyCode;
 
@@ -142,26 +142,65 @@ impl App {
                         );
                     }
                 }
+                BrowserInputResult::Outcome(SavedSeedOutcome::Convert(path)) => {
+                    crate::app::persistence::commands::request_saved_game_conversion(state, path);
+                }
                 BrowserInputResult::Outcome(_) => {}
             }
         }
     }
 
-    /// 559D60 shares Load67E440 with the in-game browser. Failure keeps
-    /// the existing sorted rows/selection; it never rescans the directory.
+    /// 559D60 shares Load67E440 with the in-game browser. Ordinary failure keeps
+    /// these rows. After a conversion the new file is available for retry.
     pub(crate) fn finish_load_saved_game_from_menu(
         state: &mut AppState,
-        path: &std::path::Path,
+        path: &Path,
         result: Result<(), crate::app::persistence::PreparedLoadError>,
+        was_converted: bool,
     ) {
-        if let Err(error) = result {
-            log::warn!("Load Saved Game: {}: {error}", path.display());
-        } else {
+        let Err(error) = result else {
             state.frontend.load_saved_game = None;
             return;
+        };
+        log::warn!("Load Saved Game: {}: {error}", path.display());
+        if was_converted {
+            let rows =
+                super::shell_saved_seeds::saved_browser_rows(&load_saved_game_layout(state).browser);
+            state.frontend.load_saved_game =
+                Some(Self::open_converted_save_for_retry(state, path, rows));
         }
-        let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
+        let body = Self::saved_game_load_error_message(state, &error, was_converted);
         Self::show_load_saved_game_error(state, body);
+    }
+
+    pub(super) fn saved_game_load_error_message(
+        state: &AppState,
+        error: &crate::app::persistence::PreparedLoadError,
+        was_converted: bool,
+    ) -> String {
+        if was_converted {
+            return crate::i18n::tr("VERA:SaveConvertedLoadFailed");
+        }
+        match error.migration_message_key() {
+            Some(key) => crate::i18n::tr(key),
+            None => state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game."),
+        }
+    }
+
+    pub(super) fn open_converted_save_for_retry(
+        state: &AppState,
+        path: &Path,
+        visible_rows: usize,
+    ) -> SavedSeedBrowserState<PathBuf> {
+        let mut browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, visible_rows);
+        if let Some(index) = browser
+            .entries
+            .iter()
+            .position(|row| row.file_name.as_deref() == Some(path))
+        {
+            browser.select(index);
+        }
+        browser
     }
 
     /// Status help of the control under the cursor (`0x006040B0`): the list,
@@ -225,6 +264,8 @@ fn saved_game_row(
     other_version: &str,
 ) -> crate::ui::skirmish_shell::SavedSeedBrowserRow<PathBuf> {
     let loadable = entry.header.is_compatible();
+    let migratable = mode == SavedSeedMode::Load
+        && crate::app::persistence::SaveRepository::can_migrate(&entry.header);
     let description = if loadable {
         entry.header.description
     } else {
@@ -233,6 +274,7 @@ fn saved_game_row(
     crate::ui::skirmish_shell::SavedSeedBrowserRow {
         visible: loadable || mode != SavedSeedMode::Save,
         loadable,
+        migratable,
         file_name: Some(entry.path),
         description: description.into(),
         last_write_time,
@@ -276,6 +318,7 @@ mod tests {
             let row = browser.selected_entry().expect("the old save is listed");
             assert_eq!(row.file_name.as_ref(), Some(&path));
             assert!(!row.loadable);
+            assert!(!row.migratable);
             assert_eq!(
                 row.description.display_text(),
                 "Old campaign (other version)"

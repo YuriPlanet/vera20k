@@ -79,7 +79,16 @@ pub fn serialize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
 
 /// Decode a `T` from the start of `bytes`; any bytes after it are ignored.
 pub fn deserialize<'de, T: serde::Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Error> {
-    T::deserialize(&mut Deserializer { input: bytes })
+    deserialize_with_remainder(bytes).map(|(value, _)| value)
+}
+
+/// Decode a value and return the bytes that its decoder did not read.
+pub(crate) fn deserialize_with_remainder<'de, T: serde::Deserialize<'de>>(
+    bytes: &'de [u8],
+) -> Result<(T, &'de [u8]), Error> {
+    let mut decoder = Deserializer { input: bytes };
+    let value = T::deserialize(&mut decoder)?;
+    Ok((value, decoder.input))
 }
 
 struct Serializer {

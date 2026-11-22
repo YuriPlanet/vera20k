@@ -23,6 +23,41 @@ fn snapshot(description: &str, timestamp: u64) -> Vec<u8> {
 }
 
 #[test]
+fn migration_backs_up_original_before_decoding_the_old_world() {
+    use super::save_migration::SaveMigrationError;
+
+    let mut header = GameSnapshot::read_header(&snapshot("old", 1)).unwrap();
+    header.layout = 0xFD30_A463;
+    if !SaveRepository::can_migrate(&header) {
+        return;
+    }
+    // The header qualifies, but there is no body to convert.
+    let original = crate::util::save_codec::serialize(&header).unwrap();
+    let repository = fixture("migration-backup");
+    let source = repository.write_named("old.sav", &original).unwrap();
+    let backups = repository.directory().join("backups");
+
+    std::fs::write(&backups, b"obstruction").unwrap();
+    assert!(matches!(
+        repository.migrate_for_load(&source),
+        Err(SaveMigrationError::Backup(_))
+    ));
+    std::fs::remove_file(&backups).unwrap();
+
+    assert!(matches!(
+        repository.migrate_for_load(&source),
+        Err(SaveMigrationError::Convert(_))
+    ));
+    let mut copies = std::fs::read_dir(&backups).unwrap();
+    let copy = copies.next().unwrap().unwrap().path();
+    assert_eq!(std::fs::read(copy).unwrap(), original);
+    assert!(copies.next().is_none());
+    assert_eq!(repository.read(&source).unwrap(), original);
+    assert_eq!(repository.browser_entries().len(), 1);
+    std::fs::remove_dir_all(repository.directory()).unwrap();
+}
+
+#[test]
 fn explicit_overwrite_replaces_selected_save_and_refreshes_exact_description() {
     let repository = fixture("explicit-overwrite");
     let original = snapshot("original", 1);

@@ -200,7 +200,7 @@ pub(crate) fn render_saved_game_shell(
             (
                 ACTION,
                 layout.action,
-                browser.mode.action_label(),
+                browser.action_label(),
                 browser.action_enabled(),
             ),
             (BACK, layout.back, ("GUI:Back", "Back"), true),

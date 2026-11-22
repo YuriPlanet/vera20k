@@ -15,6 +15,7 @@ pub(crate) mod phobos_settings;
 pub(crate) mod profile_file;
 mod resource_load;
 pub(crate) mod rules_profile;
+mod save_migration;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod startup_backend;
 pub(crate) mod wol_profile;
@@ -99,6 +100,8 @@ impl PersistenceState {
 pub(crate) enum PreparedLoadError {
     #[error("could not read save file: {0}")]
     ReadFile(#[source] std::io::Error),
+    #[error(transparent)]
+    SaveMigration(#[from] save_migration::SaveMigrationError),
     #[error("a network match cannot load a saved game")]
     NetworkMatch,
     // The three `#[cfg(test)]` variants belong to the headless same-content
@@ -134,6 +137,15 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
+}
+
+impl PreparedLoadError {
+    pub(crate) fn migration_message_key(&self) -> Option<&'static str> {
+        match self {
+            Self::SaveMigration(error) => Some(error.message_key()),
+            _ => None,
+        }
+    }
 }
 
 impl From<SnapshotRestoreError> for PreparedLoadError {

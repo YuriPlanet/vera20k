@@ -427,13 +427,15 @@ pub(crate) fn quickload(state: &mut AppState) {
 
 pub(crate) struct PendingSavedGameLoad {
     path: PathBuf,
+    convert: bool,
     presented: bool,
 }
 
 impl PendingSavedGameLoad {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: PathBuf, convert: bool) -> Self {
         Self {
             path,
+            convert,
             presented: false,
         }
     }
@@ -450,8 +452,16 @@ impl PendingSavedGameLoad {
 /// LoadOptions559D60 shows F0 before LoadGame67E440. Returning after that
 /// frame gives the browser a paint opportunity before synchronous restoration.
 pub(crate) fn request_saved_game_load(state: &mut AppState, path: PathBuf) {
+    queue_saved_game_load(state, path, false);
+}
+
+pub(crate) fn request_saved_game_conversion(state: &mut AppState, path: PathBuf) {
+    queue_saved_game_load(state, path, true);
+}
+
+fn queue_saved_game_load(state: &mut AppState, path: PathBuf, convert: bool) {
     if state.persistence.pending_load.is_none() {
-        state.persistence.pending_load = Some(PendingSavedGameLoad::new(path));
+        state.persistence.pending_load = Some(PendingSavedGameLoad::new(path, convert));
         state.platform.window.request_redraw();
     }
 }
@@ -459,6 +469,7 @@ pub(crate) fn request_saved_game_load(state: &mut AppState, path: PathBuf) {
 /// Called before ordinary frame service; the retained browser owns failure UI.
 pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
     let mut pending = state.persistence.pending_load.take()?;
+    let convert = pending.convert;
     let Some(path) = pending.advance(|| {
         match crate::app::loading::pump::present_saved_game_loading(state) {
             Ok(presented) => presented,
@@ -481,11 +492,22 @@ pub(crate) fn pump_saved_game_load(state: &mut AppState) -> Option<bool> {
         .match_presentation
         .saved_game_browser
         .is_some();
-    let result = restore_save_file(state, path);
+    let mut converted = None;
+    let result = (|| {
+        if convert {
+            if state.match_state.live_network.is_some() {
+                return Err(super::PreparedLoadError::NetworkMatch);
+            }
+            converted = Some(state.persistence.repository.migrate_for_load(path)?);
+        }
+        restore_save_file(state, converted.as_deref().unwrap_or(path))
+    })();
+    let was_converted = converted.is_some();
+    let path = converted.as_deref().unwrap_or(path);
     if from_menu {
-        crate::app::App::finish_load_saved_game_from_menu(state, path, result);
+        crate::app::App::finish_load_saved_game_from_menu(state, path, result, was_converted);
     } else if from_browser {
-        crate::app::App::finish_saved_game_load(state, path, result);
+        crate::app::App::finish_saved_game_load(state, path, result, was_converted);
     } else if let Err(error) = result {
         #[cfg(feature = "dev-overlays")]
         log_prepared_load_error(path, &error);
@@ -608,7 +630,9 @@ fn log_prepared_load_error(
         PreparedLoadError::ReadFile(source) => {
             log::warn!("Load: could not read {}: {source}", path.display())
         }
-        PreparedLoadError::MissingRules | PreparedLoadError::NetworkMatch => {
+        PreparedLoadError::MissingRules
+        | PreparedLoadError::NetworkMatch
+        | PreparedLoadError::SaveMigration(_) => {
             log::warn!("Load: {error}")
         }
         #[cfg(test)]
@@ -682,7 +706,7 @@ mod pending_load_tests {
     #[test]
     fn restoration_waits_for_a_presented_loading_frame() {
         for path in ["menu-save.bin", "in-game-save.sav"] {
-            let mut pending = PendingSavedGameLoad::new(PathBuf::from(path));
+            let mut pending = PendingSavedGameLoad::new(PathBuf::from(path), false);
             // A lost/minimized surface must retry the loading frame first.
             assert!(pending.advance(|| false).is_none());
             // Successful presentation still returns to the event loop.

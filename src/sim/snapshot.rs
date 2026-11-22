@@ -14,6 +14,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
+pub mod migration;
 mod object_references;
 mod saved_ids;
 #[path = "snapshot/saved_local_view.rs"]
@@ -1059,24 +1060,32 @@ impl GameSnapshot {
     pub fn load_with_resources(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         Self::read_header(bytes)?;
         let snapshot = Self::deserialize_admitted(bytes)?;
-        let resources = snapshot
-            .scenario_resources
-            .as_ref()
-            .ok_or(SnapshotError::MissingScenarioResources)?;
-        if resources.map().map_hash() != snapshot.map_hash {
-            return Err(SnapshotError::MapMismatch {
-                expected: resources.map().map_hash(),
-                found: snapshot.map_hash,
-            });
-        }
-        if snapshot.local_view.is_none() {
-            return Err(SnapshotError::MissingLocalView);
-        }
+        snapshot.require_player_resources()?;
         Ok(snapshot)
     }
 
+    fn require_player_resources(&self) -> Result<(), SnapshotError> {
+        let resources = self
+            .scenario_resources
+            .as_ref()
+            .ok_or(SnapshotError::MissingScenarioResources)?;
+        if resources.map().map_hash() != self.map_hash {
+            return Err(SnapshotError::MapMismatch {
+                expected: resources.map().map_hash(),
+                found: self.map_hash,
+            });
+        }
+        if self.local_view.is_none() {
+            return Err(SnapshotError::MissingLocalView);
+        }
+        Ok(())
+    }
+
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
-        let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
+        Self::validate_admitted(save_codec::deserialize(bytes)?)
+    }
+
+    fn validate_admitted(mut snapshot: GameSnapshot) -> Result<GameSnapshot, SnapshotError> {
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
@@ -1120,6 +1129,10 @@ impl GameSnapshot {
                 found: preamble.layout,
             });
         }
+        Self::read_compatible_header(bytes)
+    }
+
+    fn read_compatible_header(bytes: &[u8]) -> Result<GameSnapshotHeader, SnapshotError> {
         let header: GameSnapshotHeader = save_codec::deserialize(bytes)?;
         if !header.compatibility.matches_build() {
             return Err(SnapshotError::CapabilityMismatch {

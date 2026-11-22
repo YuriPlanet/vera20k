@@ -90,12 +90,19 @@ fn take_events<I: Clone + PartialEq>(
             PageEvent::DoubleClicked(LIST, _)
                 if browser.mode == SavedSeedMode::Load && browser.action_enabled() =>
             {
-                browser.action_outcome().map(BrowserInputResult::Outcome)
+                browser
+                    .selected_saved()
+                    .cloned()
+                    .map(SavedSeedOutcome::Load)
+                    .map(BrowserInputResult::Outcome)
             }
             PageEvent::DoubleClicked(LIST, _) if setups => {
                 browser.setup_outcome(LOAD).map(BrowserInputResult::Outcome)
             }
-            PageEvent::Activated(ACTION) | PageEvent::Submitted(EDIT, _) => {
+            PageEvent::Activated(ACTION) => {
+                browser.action_outcome().map(BrowserInputResult::Outcome)
+            }
+            PageEvent::Submitted(EDIT, _) if browser.mode == SavedSeedMode::Save => {
                 browser.action_outcome().map(BrowserInputResult::Outcome)
             }
             PageEvent::Activated(BACK) => {
@@ -195,6 +202,7 @@ mod tests {
                 last_write_time: (count - i) as u64,
                 visible: true,
                 loadable: true,
+                migratable: false,
             })
             .collect();
         let visible =
@@ -282,6 +290,39 @@ mod tests {
             [BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))] if *path == *"save1.bin"
         ));
         assert_eq!(browser.selected(), Some(1));
+    }
+
+    #[test]
+    fn only_the_convert_button_asks_to_migrate_a_supported_old_save() {
+        let (mut browser, layout) = fixture(SavedSeedMode::Load, 2);
+        let action = (layout.action.x + 5, layout.action.y + 5);
+        assert!(matches!(
+            &click(&mut browser, &layout, action)[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))]
+                if *path == *"save0.bin"
+        ));
+        browser.entries[1].loadable = false;
+        browser.entries[1].migratable = true;
+        let geometry = ShellListGeometry::new(layout.list, 2, 0, ListMetrics::scaled(layout.scale));
+        let row = geometry.row(1);
+        let old_save = (row.x + 2, row.y + 2);
+        click(&mut browser, &layout, old_save);
+        assert_eq!(
+            browser.ui.prop(BROWSER_DIALOG, ACTION, Prop::Label),
+            Some(&Value::Text("VERA:ConvertSave".into()))
+        );
+        assert!(key(&mut browser, Some(KeyCode::Enter), None).is_empty());
+        assert!(matches!(
+            &click(&mut browser, &layout, old_save)[..],
+            [BrowserInputResult::Outcome(SavedSeedOutcome::Load(path))] if *path == *"save1.bin"
+        ));
+        assert!(matches!(
+            &click(&mut browser, &layout, action)[..],
+            [BrowserInputResult::Cue(PageCue::Button), BrowserInputResult::Outcome(SavedSeedOutcome::Convert(path))]
+                if *path == *"save1.bin"
+        ));
+        browser.select(0);
+        assert_eq!(browser.action_label().0, "GUI:Load");
     }
 
     #[test]
