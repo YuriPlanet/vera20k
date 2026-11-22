@@ -506,10 +506,47 @@ pub fn holds_master_archives(dir: &Path) -> bool {
         .all(|name| crate::util::case_insensitive_path::find(dir, name).is_some())
 }
 
+/// A mod whose authors don't allow its files in other engines or
+/// recompilations of the game, known by its client's `[Settings] LocalGame`
+/// and by the suffix of its renamed files. VERA honors that and refuses it.
+const WITHHELD_GAME: &str = "MO";
+const WITHHELD_FAMILY: &str = "mo";
+
 /// Use the selected folder's authored loader settings when it has them.
 /// Otherwise recognize a classic RA2 folder by its files, or a launcher
-/// folder by its client catalog and numbered archive family.
+/// folder by its client catalog. A withheld mod is refused, with or without
+/// loader settings.
 pub fn mod_resources(
+    dir: &crate::util::mod_package::ModFolder,
+    definition: &ModDefinition,
+    base: &IniRootConfig,
+) -> Result<ResourceConfig, String> {
+    let resources = select_mod_resources(dir, definition, base)?;
+    let named = |name: &str, stem: &str, end: &str| {
+        name.eq_ignore_ascii_case(&format!("{stem}{WITHHELD_FAMILY}{end}"))
+    };
+    // An unreadable client file is select_mod_resources's to report.
+    let withheld = ClientInstall::local_game(dir)
+        .ok()
+        .flatten()
+        .is_some_and(|game| game.eq_ignore_ascii_case(WITHHELD_GAME))
+        || named(&resources.archives.expansion_prefix, "expand", "")
+        || resources
+            .ini
+            .rules
+            .as_deref()
+            .is_some_and(|rules| named(rules, "rules", ".ini"));
+    if withheld {
+        return Err(
+            "This mod's authors don't allow it to run in other engines, so VERA20k \
+             won't load it. Play it with its own launcher instead."
+                .into(),
+        );
+    }
+    Ok(resources)
+}
+
+fn select_mod_resources(
     dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
     base: &IniRootConfig,
@@ -537,12 +574,6 @@ pub fn mod_resources(
         }
         return Ok(resources);
     };
-    if let Some((ini, archives)) = super::numbered_mod_resources::discover(dir)? {
-        if base.profile != IniProfile::Custom {
-            resources.ini = ini;
-        }
-        resources.archives = archives;
-    }
     let has_file = |name| {
         crate::util::case_insensitive_path::find(dir, name)
             .is_some_and(crate::util::file_system::is_file)
@@ -2771,6 +2802,54 @@ mod tests {
         assert_eq!(original.get_ref("rulesmd.ini"), Some(&b"game rules"[..]));
         assert_eq!(original.get_ref("unit.shp"), Some(&b"game unit"[..]));
         assert_eq!(original.get_ref("new.vxl"), None);
+    }
+
+    /// A withheld mod is refused by its client's game ID, with or without
+    /// loader settings, and by its file names when `mod.ini` declares them.
+    /// Another client folder loads with stock names: a renamed family is
+    /// never guessed, only declared.
+    #[test]
+    fn a_withheld_mod_is_refused_however_it_is_selected() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        use crate::util::mod_package::ModFolder;
+        let client = |game: &str| {
+            let files = TestDirectory::new(&format!("withheld-{game}"));
+            std::fs::create_dir_all(files.path().join("Resources")).unwrap();
+            std::fs::write(
+                files.path().join("Resources/ClientDefinitions.ini"),
+                format!("[Settings]\nLocalGame={game}\nMPMapsPath=maps.ini\n"),
+            )
+            .unwrap();
+            std::fs::write(files.path().join("maps.ini"), "[GameModes]\n").unwrap();
+            files
+        };
+        let select = |files: &TestDirectory, definition: &str| {
+            mod_resources(
+                &ModFolder::loose(files.path().to_owned()),
+                &ModDefinition::parse(definition).unwrap(),
+                &IniRootConfig::default(),
+            )
+        };
+        let withheld = client("mo");
+        assert!(select(&withheld, "").unwrap_err().contains("own launcher"));
+        assert!(select(&withheld, "[Archives]\nMapPrefix=mapsalt\n").is_err());
+
+        let other = client("YR");
+        std::fs::write(
+            other.path().join("expandalt99.mix"),
+            make_new_format_mix_bytes(&[
+                ("rulesalt.ini", b"[General]\n"),
+                ("artalt.ini", b"[Unit]\n"),
+                ("aialt.ini", b"[AI]\n"),
+            ]),
+        )
+        .unwrap();
+        let stock = select(&other, "").unwrap();
+        assert!(stock.client_install.is_some());
+        assert_eq!(stock.archives, ArchiveNames::default());
+        let declared = "[Files]\nRules=RulesMO.ini\nArt=artalt.ini\nAI=aialt.ini\n";
+        assert!(select(&other, declared).is_err());
+        assert!(select(&other, "[Archives]\nExpansionPrefix=expandmo\n").is_err());
     }
 
     #[test]
