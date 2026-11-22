@@ -184,15 +184,20 @@ impl IniRoots {
         ]
     }
 
-    /// Every file in [`Self::files`] and the theater suffix are YR's,
-    /// ignoring ASCII case.
-    pub fn is_stock(&self) -> bool {
-        let stock = Self::default();
+    /// Every file in [`Self::files`] is YR's, ignoring ASCII case.
+    pub fn files_are_stock(&self) -> bool {
         self.files()
             .into_iter()
-            .zip(stock.files())
-            .chain([(self.theater_suffix(), stock.theater_suffix())])
+            .zip(Self::default().files())
             .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
+    }
+
+    /// The files and the theater suffix are YR's, ignoring ASCII case.
+    pub fn is_stock(&self) -> bool {
+        self.files_are_stock()
+            && self
+                .theater_suffix()
+                .eq_ignore_ascii_case(Self::default().theater_suffix())
     }
 }
 

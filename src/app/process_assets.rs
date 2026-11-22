@@ -290,7 +290,7 @@ impl ProcessAssets {
         };
         self.map_additions
             .get_or_init(|| {
-                let mut names = assets.ini_roots().files().map(str::to_owned).to_vec();
+                let mut names = Vec::from(assets.ini_roots().files().map(str::to_owned));
                 names.extend(crate::map::theater::theater_ini_names(assets));
                 crate::app::mod_additions::MapAdditions::read(dir, &names)
                     .map(|additions| additions.map(std::sync::Arc::new))
@@ -686,13 +686,7 @@ impl ProcessAssets {
         &self,
         assets: &AssetManager,
     ) -> Option<crate::app::rules_parts::ResourceSelection> {
-        let stock = crate::util::ini_roots::IniRoots::default();
-        let root_names: Vec<_> = assets
-            .ini_roots()
-            .files()
-            .into_iter()
-            .zip(stock.files())
-            .collect();
+        let roots = assets.ini_roots();
         let archives = &self.resources.archives;
         let stock_archives = crate::util::archive_names::ArchiveNames::default();
         let archive_names = [
@@ -715,20 +709,17 @@ impl ProcessAssets {
             ),
         ];
         let chosen = self.resources.requires_ares
-            || root_names
+            || !roots.files_are_stock()
+            || archive_names
                 .iter()
-                .chain(&archive_names)
                 .any(|(name, stock)| !name.eq_ignore_ascii_case(stock));
-        let lowercase = |names: &[(&str, &str)]| -> Vec<String> {
-            names
-                .iter()
-                .map(|(name, _)| name.to_ascii_lowercase())
-                .collect()
-        };
         chosen.then(|| crate::app::rules_parts::ResourceSelection {
             requires_ares: self.resources.requires_ares,
-            roots: lowercase(&root_names),
-            archives: lowercase(&archive_names),
+            roots: roots.files().map(str::to_ascii_lowercase).into(),
+            archives: archive_names
+                .iter()
+                .map(|(name, _)| name.to_ascii_lowercase())
+                .collect(),
         })
     }
 
@@ -1519,8 +1510,10 @@ mod tests {
     /// players whose theater INIs differ never agree, and Quick Match, which
     /// pairs without the agreement, names the changed file. The agreement reads
     /// the file a theater suffix selects, else the stock one, as the loader does.
+    /// Every INI root the agreement compares, an EVA root too, counts against
+    /// the original game, so Quick Match refuses it before it queues.
     #[test]
-    fn theater_inis_take_part_in_the_agreement() {
+    fn ini_roots_and_theater_inis_take_part_in_the_agreement() {
         use crate::util::ini_roots::IniRootConfig;
         let dir =
             crate::assets::asset_manager::test_support::audio_test_install("theater-agreement");
@@ -1531,11 +1524,7 @@ mod tests {
         ] {
             std::fs::write(dir.path().join(name), bytes).unwrap();
         }
-        let started = |theater_suffix: Option<&str>| {
-            let roots = IniRootConfig {
-                theater_suffix: theater_suffix.map(str::to_owned),
-                ..IniRootConfig::default()
-            };
+        let with_roots = |roots: IniRootConfig| {
             let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
             let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
                 .unwrap()
@@ -1546,8 +1535,20 @@ mod tests {
             process.return_from_loading(assets);
             process
         };
+        let started = |theater_suffix: Option<&str>| {
+            with_roots(IniRootConfig {
+                theater_suffix: theater_suffix.map(str::to_owned),
+                ..IniRootConfig::default()
+            })
+        };
         let digest = |theater_suffix| started(theater_suffix).multiplayer_rules_digest("");
         let original = digest(None).unwrap();
+        let eva = with_roots(IniRootConfig {
+            eva: Some("my-eva.ini".to_owned()),
+            ..IniRootConfig::default()
+        });
+        assert_ne!(eva.multiplayer_rules_digest("").unwrap(), original);
+        assert!(!eva.stock_ini_roots());
         std::fs::write(
             dir.path().join("snowmd.ini"),
             "[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
@@ -1573,49 +1574,6 @@ mod tests {
         // file, as `nmd` picks New Urban's `urbannmd.ini` for Urban.
         assert!(changed.stock_ini_roots());
         assert!(!started(Some("nmd")).stock_ini_roots());
-    }
-
-    /// VERA: every INI root the agreement compares counts against the
-    /// original game, the presentation roots too, so Quick Match refuses an
-    /// EVA root before it queues and a refused start names config.toml.
-    #[test]
-    fn an_eva_root_alone_is_no_original_game() {
-        use crate::app::shell_network_setup::agreement::{
-            OriginalGameChange, original_game_changes,
-        };
-        use crate::util::ini_roots::IniRootConfig;
-        let dir = crate::assets::asset_manager::test_support::audio_test_install("eva-root");
-        for (name, bytes) in [
-            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
-            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
-            ("aimd.ini", "[AI]\nValue=1\n"),
-        ] {
-            std::fs::write(dir.path().join(name), bytes).unwrap();
-        }
-        let started = |eva: Option<&str>| {
-            let roots = IniRootConfig {
-                eva: eva.map(str::to_owned),
-                ..IniRootConfig::default()
-            };
-            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
-            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
-                .unwrap()
-                .with_ini_roots(&roots)
-                .unwrap();
-            process.initialize_sources_if_needed(&assets).unwrap();
-            process.return_from_loading(assets);
-            process
-        };
-        let (stock, eva) = (started(None), started(Some("my-eva.ini")));
-        assert_ne!(
-            stock.multiplayer_rules_digest("").unwrap(),
-            eva.multiplayer_rules_digest("").unwrap()
-        );
-        assert!(original_game_changes(None, &stock).is_empty());
-        assert_eq!(
-            original_game_changes(None, &eva),
-            [OriginalGameChange::IniRoots]
-        );
     }
 
     /// VERA: a theater's tiles decide its cells' land and height, and map
