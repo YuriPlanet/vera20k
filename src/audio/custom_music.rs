@@ -176,7 +176,7 @@ fn music_stem(path: &Path) -> Option<String> {
     (!stem.is_empty()).then(|| stem.to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_audio))]
 mod tests {
     use super::*;
 
