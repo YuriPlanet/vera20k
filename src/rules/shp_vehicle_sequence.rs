@@ -339,7 +339,7 @@ pub(crate) fn build_shp_vehicle_sequences(
     // the heading frame). `Facings`, `StartWalkFrame` and the standing and
     // firing blocks do not move it in stock; Ares' draw reads `Facings`
     // instead of the 8 (`UnitShpReadState::ares_turret_start_frame`).
-    // `CYCL` (WalkFrames=22) starts at 176.
+    // `WalkFrames=22` starts it at 176.
     if has_turret {
         let start = u32::from(walk_frames).wrapping_mul(8);
         if let Ok(start_frame) = u16::try_from(start) {
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn a_turreted_shp_unit_appends_its_thirty_two_facing_frames() {
-        // MO's Cyclops Walker: Voxel=no, Turret=yes, Facings=8, WalkFrames=22,
+        // A walker: Voxel=no, Turret=yes, Facings=8, WalkFrames=22,
         // no standing or firing block. Its SHP carries the walk block in
         // 0..175 and a 32-frame turret rotation in 176..207 before the shadow
         // half, the layout the unit SHP convention puts after the body blocks.

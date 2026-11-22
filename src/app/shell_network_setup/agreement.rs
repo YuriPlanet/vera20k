@@ -303,7 +303,7 @@ mod tests {
             )])),
             json!({})
         );
-        let title = format!("Mental\u{7}Omega {}", "é".repeat(40));
+        let title = format!("Long\u{7}ModName {}", "é".repeat(40));
         let files: Vec<String> = (0..40).map(|n| format!("expandmd{n:02}.mix")).collect();
         let header = changes_header(&[
             OriginalGameChange::Mod(&title),
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(
             decoded(header),
             json!({
-                "mod": format!("MentalOmega {}", "é".repeat(26)),
+                "mod": format!("LongModName {}", "é".repeat(26)),
                 "ini_roots": true,
                 "ares": "off",
                 "files": files[..32],

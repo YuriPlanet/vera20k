@@ -115,5 +115,5 @@ The common [money](ares-superweapon-money.md) and
 Its default automatic mode remains ParaDrop. The mission a Foot payload takes is
 queued after its Put (AreaGuard for a human, Hunt for the computer), where Ares
 queues Guard or Hunt before it. The implementation and
-synthetic regression scenes do not establish full Mental Omega compatibility or
+synthetic regression scenes do not establish compatibility with any one Ares mod or
 executable Ares parity.
