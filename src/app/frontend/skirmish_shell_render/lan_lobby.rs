@@ -35,12 +35,11 @@ fn paint_create_box(
     use crate::app::shell_lan::{
         CANCEL, MODAL, OK, ROOM_PLAYERS, ROOM_PLAYERS_CAPTION, ROOM_SPECTATORS,
     };
-    let (width, height) = (state.render_width() as i32, state.render_height() as i32);
-    let dialog = crate::ui::shell::modal::lan_create_game_layout(width, height).dialog;
+    let layout = crate::app::shell_lan::create_box_layout(state);
     overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
-        dialog,
-        crate::ui::shell::geom::RETAIL_SCALE,
+        layout.dialog,
+        layout.scale,
     ));
     let controller = &state.frontend.shell_controller;
     let Some(root) = controller.root_in(MODAL) else {
@@ -54,14 +53,8 @@ fn paint_create_box(
         ROOM_SPECTATORS,
     ];
     let style = super::gui_paint::GuiStyle::popup();
-    let widgets = super::gui_paint::paint_gui_ids(
-        state,
-        controller.gui(),
-        root,
-        ids,
-        crate::ui::shell::geom::RETAIL_SCALE,
-        style,
-    );
+    let widgets =
+        super::gui_paint::paint_gui_ids(state, controller.gui(), root, ids, layout.scale, style);
     overlay.controls.extend(widgets.controls);
     overlay.texts.extend(widgets.texts);
 }
@@ -157,7 +150,7 @@ pub(crate) fn render_lan_lobby(
     // lobby's does.
     let gui = state.frontend.shell_controller.gui();
     let root = state.frontend.shell_controller.root_in(PAGE.dialog);
-    if !leaving && !runtime.creating {
+    if !leaving {
         for (id, key) in crate::ui::lan_shell::LABELS {
             texts.push(text(
                 &state.csf_label(key, key),

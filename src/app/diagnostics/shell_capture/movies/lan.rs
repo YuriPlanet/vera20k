@@ -3863,11 +3863,7 @@ fn create_lan_game(state: &mut AppState) -> Result<()> {
         .as_ref()
         .is_some_and(|runtime| runtime.creating)
     {
-        let ok = crate::ui::shell::modal::lan_create_game_layout(
-            state.render_width() as i32,
-            state.render_height() as i32,
-        )
-        .ok;
+        let ok = lobby::create_box_layout(state).ok;
         lobby_click(state, ok);
     }
     Ok(())
