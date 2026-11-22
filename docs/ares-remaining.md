@@ -22,7 +22,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1041; the chain docs give 360 more a disposition
+  removed). The engine source cites 1042; the chain docs give 359 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 47 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
@@ -143,7 +143,7 @@ atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
   [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
   ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
   (`0x6A9A43`, `0x712045`), so both stay in the list.
-- Technos: the radial indicators of non-buildings (`0x41BE80`), the damage spark and smoke
+- Technos: the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
   `0x6FAD49`, `0x702894`). See [ares-techno-hooks.md](ares-techno-hooks.md).
 - Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
