@@ -1252,7 +1252,8 @@ struct Source {
     pace: Option<PaceReport>,
     // Coordinator only: last pace packet sequence and reported age at the follower.
     forwarded_pace: (u64, u32),
-    // Last authenticated packet from this source, keepalives included.
+    // Last packet from this source that passed authentication and its rate
+    // limits, keepalives included, or the latest a federated relay reported.
     heard_ms: u64,
 }
 
@@ -1465,8 +1466,9 @@ impl OrderingRoom {
         counts.start_mismatches += u64::from(std::mem::take(&mut self.mismatch_uncounted));
     }
 
-    /// Any authenticated packet keeps a source's place; a newer admission of
-    /// another principal for the same source does not.
+    /// Any packet that passed authentication and the rate limits keeps a
+    /// source's place; a newer admission of another principal for the same
+    /// source does not.
     pub(super) fn heard(&mut self, source: u8, principal: ([u8; 16], u64), now_ms: u64) {
         if let Some(state) = self.sources.get_mut(usize::from(source))
             && state.admits(principal)
