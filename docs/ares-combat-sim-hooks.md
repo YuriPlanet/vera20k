@@ -50,6 +50,7 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | `0x686D7F` | `1002F680` | INIClass_ReadScenario_CacheSP | `CampaignLoadingMetadata::load_text_color` (MISSIONMD `LoadScreenText.Color`, default by the file name's `SOV`/`YUR`/`TUT` prefix); without a MISSIONMD the static keeps an earlier scenario's colour in Ares, the stock one in VERA |
 | `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `app::loading::pump`: the campaign title and briefing take that scheme when it exists |
 | `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `NativeLoadingScreenState::resolve_player_colors`: the Country's `LoadScreenText.Color` (early `0x6847B7` read) after the observer LightGrey test |
+| `0x715320` | `10041DC0` | TechnoTypeClass_LoadFromINI_EarlyReader | `WaterImage=`, read in `rules::native_processing::pass_techno`; its VXL and SHP draws are in `app::presentation::instances` (`0x73B4A0`, `0x73C5FC`) |
 
 - Area damage walks Ares' `CellSpreadEnumerator` over the stock band
   `ftol(CellSpread + 0.99)`, capped at 0x100. For bands 1..10 the cells are
@@ -158,7 +159,6 @@ it: ported (the Rust cites both addresses next to the code), equivalent
 | Hook | Ares.dll | Name | Reason |
 |---|---|---|---|
 | `0x5227A3` | `1002F9C0` | Sides_Disguise | the PermaDisguise arm of `InfantryClass::ClearDisguise` (`0x522780`) has no Rust caller (the damage reveal admits only non-PermaDisguise types); the construction arm `0x6F422F` of the same function is ported |
-| `0x715320` | `10041DC0` | TechnoTypeClass_LoadFromINI_EarlyReader | reads `WaterImage` (unread), whose only consumer swaps a vehicle's draw image on water (presentation) |
 | `0x4016F0` | `1005AF20` | IDXContainer_LoadSample | Ares loose-WAV samples and extra audio bags (`Misc/Audio.cpp`); the client audio has neither |
 
 Notes on the mechanisms ported in the 2026-11-08 follow-up pass:
