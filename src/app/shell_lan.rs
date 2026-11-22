@@ -184,6 +184,10 @@ pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
     shell_layout::on(state, LanLobbyLayout::new)
 }
 
+pub(crate) fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
+    shell_layout::on(state, crate::ui::shell::modal::lan_create_game_layout_on)
+}
+
 impl App {
     /// MainMenu52E418 and setup-return5DC624/5DC964 construct a fresh BB.
     /// The retained preference owner supplies the edit; admission stays empty.
@@ -400,7 +404,7 @@ fn box_spec(buttons: &[u16]) -> NodeSpec {
 fn push_box(state: &mut AppState, spec: NodeSpec) {
     let controller = &mut state.frontend.shell_controller;
     controller.gui_mut().cancel_pointer();
-    controller.push(MODAL);
+    controller.push_modal(MODAL);
     if let Some(root) = controller.root_in(MODAL) {
         page::ensure_built(controller.gui_mut(), root, || spec);
     }
@@ -579,15 +583,9 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             return;
         }
     }
-    if matches!(
-        action,
-        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) {
-        // The player chose another room: no longer wait for the old host.
-        state.match_state.session.take_network_room_return();
-    }
     match action {
-        // VERA's lobby asks for its room's limits first.
+        // VERA's room limits are modal within BB (0x005DDBD0). Stock BB's
+        // Create command goes straight to room setup.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
             let limits = state.frontend.room_limits;
             state.frontend.lan.as_mut().expect("active BB").creating = true;
@@ -606,6 +604,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         }
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
+            state.match_state.session.take_network_room_return();
             let reserved = reserved_names(state);
             let error = join_error(
                 &state.frontend.lan.as_ref().expect("active BB").lobby,
@@ -855,6 +854,8 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
 }
 
 fn create(state: &mut AppState, name: &str) {
+    // Opening the picker is reversible; retire an old room wait on confirmation.
+    state.match_state.session.take_network_room_return();
     let observe = state
         .frontend
         .multiplayer_shell_runtime
@@ -989,6 +990,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// and the box over it, if any, on its layout.
 pub(crate) fn sync_gui(state: &mut AppState) {
     let layout = layout(state);
+    let create = create_box_layout(state);
     let (width, height) = (state.render_width() as i32, state.render_height() as i32);
     let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
     let font = &state.renderer.bit_font;
@@ -999,9 +1001,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
     let (Some(root), boxed) = (controller.root_in(PAGE.dialog), controller.root_in(MODAL)) else {
         return;
     };
-    if controller.top_id() == Some(PAGE.dialog) {
-        controller.set_scale(layout.page.scale);
-    }
+    controller.set_scale_in(PAGE.dialog, layout.page.scale);
     if page::ensure_built(controller.gui_mut(), root, spec) {
         let name = runtime.lobby.notified_name.clone();
         controller.set_text(PAGE.dialog, NAME, &name);
@@ -1045,7 +1045,10 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         }
     }
     if let Some(boxed) = boxed {
-        let create = crate::ui::shell::modal::lan_create_game_layout(width, height);
+        if runtime.creating {
+            controller.set_scale_in(MODAL, create.scale);
+        }
+        let gui = controller.gui_mut();
         let ok = match runtime.creating {
             true => create.ok,
             false => crate::ui::shell::modal::menu_message_box(1, width, height).button(0),

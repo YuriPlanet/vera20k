@@ -653,10 +653,22 @@ vera20k_gui::scaled_rects!(WolPlayerCardLayout {
 /// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanCreateGameLayout {
+    pub scale: geom::ShellScale,
     pub dialog: RectPx,
     pub room: crate::ui::room_limits::RoomLimitsLayout,
     pub ok: RectPx,
     pub cancel: RectPx,
+}
+
+vera20k_gui::scaled_rects!(LanCreateGameLayout { [scale] dialog, room, ok, cancel });
+
+/// The Create Game box drawn and hit on the LAN lobby's shell mapping.
+pub fn lan_create_game_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> LanCreateGameLayout {
+    geom::layout_on(scale, screen_w, screen_h, lan_create_game_layout)
 }
 
 pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayout {
@@ -665,6 +677,7 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     let clan = native.clan.expect("the native box has its clan row");
     let players = RectPx::new(field.x, field.y, 129, 22);
     LanCreateGameLayout {
+        scale: geom::RETAIL_SCALE,
         dialog: native.dialog,
         room: crate::ui::room_limits::RoomLimitsLayout {
             players_label: RectPx {
@@ -1008,6 +1021,22 @@ mod tests {
             wol_create_game_layout_on(1024, 768, true, geom::RETAIL_SCALE),
             wol_create_game_layout(1024, 768, true)
         );
+    }
+
+    #[test]
+    fn lan_create_game_box_and_controls_follow_a_wide_lobby() {
+        let retail = lan_create_game_layout(800, 600);
+        let scale = geom::shell_scale(1600, 900);
+        let wide = lan_create_game_layout_on(1600, 900, scale);
+        assert_eq!(wide.scale, scale);
+        assert_eq!(wide.dialog, scale.scale_rect(retail.dialog));
+        assert_eq!(wide.room.players, scale.scale_rect(retail.room.players));
+        assert_eq!(
+            wide.room.spectators,
+            scale.scale_rect(retail.room.spectators)
+        );
+        assert_eq!(wide.ok, scale.scale_rect(retail.ok));
+        assert_eq!(wide.cancel, scale.scale_rect(retail.cancel));
     }
 
     #[test]
