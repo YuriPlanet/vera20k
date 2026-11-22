@@ -440,6 +440,42 @@ fn legacy_ai_limit_switch_keeps_default_cloning_and_requires_npatch() {
     );
 }
 
+/// NPExt ext173 spells the global parallel switch `DisableAIParallelProduction=`
+/// (reader `0xC2BDDA..0xC2BDE7`, gate `0xC2D482`); either name selects the one
+/// field, and neither selection changes a build without the capability.
+#[test]
+fn parallel_ai_switch_accepts_the_extended_builds_name() {
+    let (plain, _, _) = ai_limit_fixture("", "BuildLimit=1");
+    assert!(!plain.rules.general.disable_parallel_ai_queues);
+
+    for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
+        let (named, _, _) = ai_limit_fixture(&format!("{key}=yes"), "BuildLimit=1");
+        assert_eq!(
+            named.rules.general.disable_parallel_ai_queues,
+            crate::rules::NPATCH_ENABLED,
+            "{key}",
+        );
+    }
+}
+
+/// With both names in `[General]`, the NPSE name is read first; a value it
+/// cannot parse falls through to the ext173 name, as `ReadBool` would there.
+#[cfg(feature = "npatch")]
+#[test]
+fn parallel_ai_switch_prefers_the_npse_name_when_both_are_set() {
+    let (npse_wins, _, _) = ai_limit_fixture(
+        "DisableParallelAIQueues=no\nDisableAIParallelProduction=yes",
+        "BuildLimit=1",
+    );
+    assert!(!npse_wins.rules.general.disable_parallel_ai_queues);
+
+    let (fallthrough, _, _) = ai_limit_fixture(
+        "DisableParallelAIQueues=maybe\nDisableAIParallelProduction=yes",
+        "BuildLimit=1",
+    );
+    assert!(fallthrough.rules.general.disable_parallel_ai_queues);
+}
+
 /// NPExt173 C2D00D..C2D037 also checks owned counts for a negative cap,
 /// even when no factory has produced an object of this type yet.
 #[cfg(feature = "npatch")]
@@ -891,15 +927,17 @@ fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
 #[cfg(not(feature = "npatch"))]
 #[test]
 fn npse_switches_are_ignored_without_the_build_capability() {
-    let (mut f, weap_1, weap_2) = ai_limit_fixture("DisableParallelAIQueues=yes", "");
-    assert!(!f.rules.general.disable_parallel_ai_queues);
-    ai_limit_visit(&mut f, weap_1);
-    ai_limit_visit(&mut f, weap_2);
-    assert!(ai_limit_holds(&f, weap_1));
-    assert!(
-        ai_limit_holds(&f, weap_2),
-        "NPSE keys leave stock parallel production intact"
-    );
+    for key in ["DisableParallelAIQueues", "DisableAIParallelProduction"] {
+        let (mut f, weap_1, weap_2) = ai_limit_fixture(&format!("{key}=yes"), "");
+        assert!(!f.rules.general.disable_parallel_ai_queues, "{key}");
+        ai_limit_visit(&mut f, weap_1);
+        ai_limit_visit(&mut f, weap_2);
+        assert!(ai_limit_holds(&f, weap_1), "{key}");
+        assert!(
+            ai_limit_holds(&f, weap_2),
+            "{key} leaves stock parallel production intact"
+        );
+    }
 }
 
 /// NPSE 2.0 C3395E releases before the caller drops the Factory's held
