@@ -37,10 +37,8 @@ fn paint_create_box(
     picker: &crate::ui::room_limits::RoomLimitsPicker,
     overlay: &mut ShellFrameOverlay,
 ) {
-    let layout = crate::ui::shell::modal::lan_create_game_layout(
-        state.render_width() as i32,
-        state.render_height() as i32,
-    );
+    let layout = crate::app::shell_lan::create_box_layout(state);
+    let scale = layout.scale;
     let mut buttons = Vec::new();
     let mut labels = Vec::new();
     for (id, rect, key) in [(1, layout.ok, "GUI:OK"), (2, layout.cancel, "GUI:Cancel")] {
@@ -52,7 +50,9 @@ fn paint_create_box(
         });
         labels.push(PaintLabel {
             text: localized_label(state, key, key).into(),
-            rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+            rect: scale.derive_rect(rect, |rect| {
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed)
+            }),
             align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             rgb: SHELL_LABEL_TEXT_RGB,
             path_a_reveal: None,
@@ -65,7 +65,7 @@ fn paint_create_box(
         &mut labels,
         picker.limits.players,
         layout.room.players,
-        ShellScale::RETAIL,
+        scale,
     );
     paint_control(
         &mut controls,
@@ -74,7 +74,7 @@ fn paint_create_box(
             rect: layout.room.spectators,
             checked: picker.limits.spectators,
         },
-        ShellScale::RETAIL,
+        scale,
     );
     for (key, rect, align) in [
         (
@@ -84,10 +84,7 @@ fn paint_create_box(
         ),
         (
             "VERA:AllowSpectators",
-            crate::ui::skirmish_shell::checkbox_text_rect(
-                layout.room.spectators,
-                ShellScale::RETAIL,
-            ),
+            crate::ui::skirmish_shell::checkbox_text_rect(layout.room.spectators, scale),
             ShellAlign::V_CENTER,
         ),
     ] {
@@ -108,7 +105,7 @@ fn paint_create_box(
         layout.dialog,
         &buttons,
         &labels,
-        ShellScale::RETAIL,
+        scale,
         super::wol_lobby::POPUP_DEPTHS,
     );
     // The box first, then its controls.
@@ -208,10 +205,8 @@ pub(crate) fn render_lan_lobby(
             scale.factor(),
         )
     };
-    // VERA's Create Game box shows over the bare backdrop, as the online
-    // lobby's does.
     let creating = runtime.create.as_ref();
-    if !leaving && creating.is_none() {
+    if !leaving {
         for (key, rect) in layout.labels {
             texts.push(text(
                 &localized_label(state, key, key),

@@ -12,7 +12,6 @@ use crate::ui::lan_shell::*;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::room_limits::{RoomLimitsPicker, RoomLimitsPress};
 use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::ShellScale;
 use crate::util::time::{Duration, Instant};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -543,15 +542,9 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             return;
         }
     }
-    if matches!(
-        action,
-        LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) {
-        // The player chose another room: no longer wait for the old host.
-        state.match_state.session.take_network_room_return();
-    }
     match action {
-        // VERA's lobby asks for its room's limits first.
+        // The VERA room limits are modal within BB (0x005DDBD0). Stock BB's
+        // Create command goes straight to room setup.
         LanLobbyAction::Create { observe: _ } if !state.frontend.native_shell_ui => {
             let limits = state.frontend.room_limits;
             let runtime = state.frontend.lan.as_mut().expect("active BB");
@@ -561,6 +554,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         }
         LanLobbyAction::Create { observe: _ } => create(state, &name),
         LanLobbyAction::Join { game_id, observe } => {
+            state.match_state.session.take_network_room_return();
             let reserved = reserved_names(state);
             let error = join_error(
                 &state.frontend.lan.as_ref().expect("active BB").lobby,
@@ -802,6 +796,8 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
 }
 
 fn create(state: &mut AppState, name: &str) {
+    // Opening the picker is reversible; retire an old room wait on confirmation.
+    state.match_state.session.take_network_room_return();
     let observe = state
         .frontend
         .multiplayer_shell_runtime
@@ -852,11 +848,13 @@ fn close_create_box(state: &mut AppState, confirmed: bool) {
     state.platform.window.request_redraw();
 }
 
-/// VERA's Create Game box, centred as the online one.
-fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
+/// The Create Game mapping shared by drawing and pointer input.
+pub(crate) fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
+    let size = shell_layout::shell_screen_size(state);
     crate::ui::shell::modal::lan_create_game_layout(
-        state.render_width() as i32,
-        state.render_height() as i32,
+        size.0 as i32,
+        size.1 as i32,
+        shell_layout::shell_scale_for_screen(size),
     )
 }
 
@@ -1012,7 +1010,7 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         let lobby = &mut runtime.lobby;
         lobby.buttons.hovered = control;
         if let Some(picker) = runtime.create.as_mut() {
-            picker.drag(&create_layout.room, ShellScale::RETAIL, x);
+            picker.drag(&create_layout.room, create_layout.scale, x);
         } else if runtime.modal.is_none() && lobby.enabled {
             for (list, rect, count) in [
                 (&mut lobby.game_list, layout.games, lobby.games.len() + 1),
@@ -1048,7 +1046,7 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if let Some(picker) = runtime.create.as_mut() {
         let buttons = &mut runtime.lobby.buttons;
         if pressed {
-            let cue = match picker.press(&create_layout.room, ShellScale::RETAIL, x, y) {
+            let cue = match picker.press(&create_layout.room, create_layout.scale, x, y) {
                 RoomLimitsPress::Players => None,
                 RoomLimitsPress::Spectators => Some(LauncherCue::Checkbox),
                 RoomLimitsPress::Missed => {

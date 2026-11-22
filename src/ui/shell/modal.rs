@@ -770,30 +770,42 @@ pub fn wol_player_card_layout_on(
 /// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanCreateGameLayout {
+    pub scale: geom::ShellScale,
     pub dialog: RectPx,
     pub room: crate::ui::room_limits::RoomLimitsLayout,
     pub ok: RectPx,
     pub cancel: RectPx,
 }
 
-pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayout {
-    let native = wol_create_game_layout(screen_w, screen_h, false);
+pub(crate) fn lan_create_game_layout(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> LanCreateGameLayout {
+    let (w, h) = if scale.is_retail() {
+        (screen_w, screen_h)
+    } else {
+        (geom::SHELL_BASE_W, geom::SHELL_BASE_H)
+    };
+    let native = wol_create_game_layout(w, h, false);
+    let scaled = |rect| scale.scale_rect(rect);
     let field = modal_child(native.dialog, geom::child_window(133, 47, 140, 12));
     let clan = native.clan.expect("the native box has its clan row");
     let players = RectPx::new(field.x, field.y, 129, 22);
     LanCreateGameLayout {
-        dialog: native.dialog,
+        scale,
+        dialog: scaled(native.dialog),
         room: crate::ui::room_limits::RoomLimitsLayout {
-            players_label: RectPx {
+            players_label: scaled(RectPx {
                 y: players.y,
                 h: players.h,
                 ..native.password_label
-            },
-            players,
-            spectators: RectPx::new(field.x, clan.y, field.w, clan.h),
+            }),
+            players: scaled(players),
+            spectators: scaled(RectPx::new(field.x, clan.y, field.w, clan.h)),
         },
-        ok: native.ok,
-        cancel: native.cancel,
+        ok: scaled(native.ok),
+        cancel: scaled(native.cancel),
     }
 }
 
@@ -1363,6 +1375,56 @@ mod tests {
             wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
             wol_create_game_layout(1024, 768, true)
         );
+    }
+
+    #[test]
+    fn lan_create_box_scales_with_the_lobby_and_accepts_scaled_picker_hits() {
+        use crate::ui::room_limits::{RoomLimitsPicker, RoomLimitsPress};
+
+        let retail = lan_create_game_layout(800, 600, geom::ShellScale::RETAIL);
+        // A wide viewport also adds a horizontal offset to the fitted page.
+        let scale = geom::ShellScale::from_screen(1600, 900);
+        let wide = lan_create_game_layout(1600, 900, scale);
+        assert_eq!(wide.dialog, scale.scale_rect(retail.dialog));
+        assert_eq!(wide.ok, scale.scale_rect(retail.ok));
+        assert_eq!(wide.cancel, scale.scale_rect(retail.cancel));
+
+        let mut picker = RoomLimitsPicker::default();
+        let slider = wide.room.players;
+        assert_eq!(
+            picker.press(
+                &wide.room,
+                wide.scale,
+                slider.x + 1,
+                slider.y + slider.h / 2
+            ),
+            RoomLimitsPress::Players
+        );
+        assert_eq!(picker.limits.players, 2);
+        picker.release();
+
+        let thumb = slider.x + crate::ui::room_limits::PLAYERS.thumb_left_in(2, slider, wide.scale);
+        assert_eq!(
+            picker.press(&wide.room, wide.scale, thumb + 4, slider.y + slider.h / 2),
+            RoomLimitsPress::Players
+        );
+        picker.drag(&wide.room, wide.scale, slider.x + slider.w);
+        assert_eq!(picker.limits.players, 30);
+        picker.release();
+        picker.drag(&wide.room, wide.scale, slider.x);
+        assert_eq!(picker.limits.players, 30);
+
+        let icon = crate::ui::skirmish_shell::checkbox_icon_rect(wide.room.spectators, wide.scale);
+        assert_eq!(
+            picker.press(
+                &wide.room,
+                wide.scale,
+                icon.x + icon.w - 1,
+                icon.y + icon.h - 1
+            ),
+            RoomLimitsPress::Spectators
+        );
+        assert!(!picker.limits.spectators);
     }
 
     #[test]
