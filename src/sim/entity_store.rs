@@ -1412,6 +1412,17 @@ impl EntityStore {
         self.stored()
     }
 
+    /// [`Self::iter_sorted`] from the first id not below `after`, reached
+    /// without walking those before it.
+    pub(crate) fn iter_sorted_from(&self, after: u64) -> impl Iterator<Item = (u64, &GameEntity)> {
+        self.check_attached();
+        let start = self.ids.partition_point(|&id| id < after);
+        self.ids[start..]
+            .iter()
+            .zip(&self.entities[start..])
+            .filter_map(|(&id, entity)| Some((id, entity.as_deref()?)))
+    }
+
     /// Iterate all entity values in deterministic stable_id order (immutable).
     pub fn values_sorted(&self) -> impl ExactSizeIterator<Item = &GameEntity> {
         self.stored().map(|(_, entity)| entity)

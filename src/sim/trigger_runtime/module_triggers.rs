@@ -221,6 +221,11 @@ impl ModuleTriggers {
         self.production_refusals.contains(&(house, type_id))
     }
 
+    /// Takes the `ProductionAllowed` refusals out for the next step.
+    pub(crate) fn take_production_refusals(&mut self) -> BTreeSet<(u32, u32)> {
+        std::mem::take(&mut self.production_refusals)
+    }
+
     /// Replaces the `ProductionAllowed` refusals with a step's answers.
     pub(crate) fn set_production_refusals(&mut self, refusals: BTreeSet<(u32, u32)>) {
         self.production_refusals = refusals;
@@ -631,6 +636,13 @@ impl ModuleTriggers {
         }
         self.store_instance(handle, holder, state);
         fires
+    }
+
+    /// Whether a one-time trigger's instance has fired.
+    pub(crate) fn is_done(&self, handle: u64, holder: u64) -> bool {
+        self.instances
+            .get(&(handle, holder))
+            .is_some_and(|state| state.done)
     }
 
     pub(crate) fn enqueue(&mut self, source: ModuleSource, record: EventRecord) {
