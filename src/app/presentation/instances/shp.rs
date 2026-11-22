@@ -898,6 +898,60 @@ pub(crate) fn shp_visitor<'a>(
                 }
                 _ => ares_shadow.flatten(),
             };
+            // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
+            // turret from the same SHP after the body (`0x0073CD08`), at the
+            // body's draw point; no `TurretOffset` applies. That draw goes
+            // through `TechnoClass_DrawSHP @ 0x00705E00` too, whose `+0x6D3`
+            // gate draws no embedded shadow for it. Both go through the Unit
+            // composite ([`shp_unit_composite`]).
+            // RESIDUAL: the branch also draws the type's barrel voxel
+            // (`+0xC0`, before or after the turret by its facing,
+            // `0x0073CC3C..0x0073CCA8`, `0x0073CD0E..0x0073CD7A`) when it
+            // loaded. Its slots load only with the Voxel byte set
+            // (`TechnoRead716090..7160A4`) and this draw needs it clear, so
+            // only a type that a later rules pass turns `Voxel=no` reaches
+            // it; VERA draws none there.
+            let turret = turret_start.and_then(|start_frame| {
+                let turret_key = ShpSpriteKey {
+                    frame: shp_turret_frame(start_frame, render_pose.turret),
+                    ..body_key.clone()
+                };
+                let turret_entry = atlas.get(&turret_key)?;
+                let turret_instance = SpriteInstance {
+                    position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
+                    size: turret_entry.pixel_size,
+                    uv_origin: turret_entry.uv_origin,
+                    uv_size: turret_entry.uv_size,
+                    source_palette: turret_entry.source_palette,
+                    depth,
+                    tint: body_tint,
+                    palette_light: palette_light.with_colour_word(
+                        if parent.policy.ors_colour_word(turret_entry.extended) {
+                            colour_word
+                        } else {
+                            0
+                        },
+                    ),
+                    alpha: 1.0,
+                    draw_state,
+                    z_adjust,
+                    z_gradient: z_gradient | native_z::shp_frame_flag(turret_entry.extended),
+                    zshape_origin,
+                };
+                Some((turret_entry.page as usize, turret_instance))
+            });
+            let mut instance = instance;
+            let mut turret = turret;
+            if turret_start.is_some() {
+                shp_unit_composite(
+                    depth_world,
+                    entity,
+                    [
+                        Some(&mut instance),
+                        turret.as_mut().map(|(_, turret)| turret),
+                    ],
+                );
+            }
             pieces.clear();
             pieces.extend(shadow);
             pieces.push(ObjectPieceInstance {
@@ -935,50 +989,12 @@ pub(crate) fn shp_visitor<'a>(
             {
                 pieces.push(shadow);
             }
-            // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
-            // turret from the same SHP after the body (`0x0073CD08`), at the
-            // body's draw point; no `TurretOffset` applies. That draw goes
-            // through `TechnoClass_DrawSHP @ 0x00705E00` too, whose `+0x6D3`
-            // gate draws no embedded shadow for it. Residual: the native
-            // turret branch draws body and
-            // turret with flags 0x2800/0x2820 and no -16 Z (unlike the
-            // no-turret branch used here), lifts the point 14 px when `+0x424`
-            // is set (`0x0073C753`) and draws a voxel barrel (`type+0xC0`)
-            // around the turret; none is ported. Retail ships no such unit;
-            // MO's `CYCL` does.
-            if let Some(start_frame) = turret_start {
-                let turret_key = ShpSpriteKey {
-                    frame: shp_turret_frame(start_frame, render_pose.turret),
-                    ..body_key.clone()
-                };
-                if let Some(turret_entry) = atlas.get(&turret_key) {
-                    let turret_instance = SpriteInstance {
-                        position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
-                        size: turret_entry.pixel_size,
-                        uv_origin: turret_entry.uv_origin,
-                        uv_size: turret_entry.uv_size,
-                        source_palette: turret_entry.source_palette,
-                        depth,
-                        tint: body_tint,
-                        palette_light: palette_light.with_colour_word(
-                            if parent.policy.ors_colour_word(turret_entry.extended) {
-                                colour_word
-                            } else {
-                                0
-                            },
-                        ),
-                        alpha: 1.0,
-                        draw_state,
-                        z_adjust,
-                        z_gradient: z_gradient | native_z::shp_frame_flag(turret_entry.extended),
-                        zshape_origin,
-                    };
-                    pieces.push(ObjectPieceInstance {
-                        target: ObjectTexture::ShpPage(turret_entry.page as usize),
-                        render_z: parent.policy.render_z,
-                        instance: turret_instance,
-                    });
-                }
+            if let Some((page, turret_instance)) = turret {
+                pieces.push(ObjectPieceInstance {
+                    target: ObjectTexture::ShpPage(page),
+                    render_z: parent.policy.render_z,
+                    instance: turret_instance,
+                });
             }
             ground_objects.object(parent, pieces.drain(..));
         }
@@ -1284,6 +1300,42 @@ fn ares_shp_unit_shadow_piece(
         super::foot_depth::unit_z_adjust_in(world, entity, true, None).wrapping_sub(2) as f32,
         policy,
     )
+}
+
+/// A turreted SHP Unit's body and turret reach the screen through the Unit
+/// composite (`0x0073C7AC..0x0073CDF9`): both draw to the scratch surface
+/// (`0x00B1D13C`) at its point (0x80, 0x80) with flags 0x2800 and 0x2820,
+/// TechnoClass_DrawSHP unioning each frame's rectangle into `0x00B1CFC0`
+/// (`0x00706177..0x007062EF`), and `UnitClass::Draw_Final @ 0x0073B140`
+/// (vtable +0x55C, `0x0073CDDB`) blits that rectangle as it does a voxel
+/// body: FootClass's Z adjust (vtable +0x2EC), the vertical gradient, split
+/// over a bridge (`0x0073B1A8..0x0073B207`). So every part takes the
+/// composite's rectangle and depth, not the no-turret branch's own rect and
+/// `-16` (`0x0073CE0D..0x0073CE7F`).
+fn shp_unit_composite<'a>(
+    world: super::foot_depth::DepthWorld<'_>,
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    parts: impl IntoIterator<Item = Option<&'a mut SpriteInstance>>,
+) {
+    let mut parts: Vec<&mut SpriteInstance> = parts.into_iter().flatten().collect();
+    let top = parts
+        .iter()
+        .map(|part| part.position[1])
+        .fold(f32::INFINITY, f32::min);
+    let bottom = parts
+        .iter()
+        .map(|part| part.position[1] + part.size[1])
+        .fold(f32::NEG_INFINITY, f32::max);
+    let z_adjust = super::foot_depth::unit_z_adjust_in(world, entity, true, None) as f32;
+    let z_gradient = native_z::pack_voxel_z_gradient(
+        ZGradient::Vertical,
+        super::foot_depth::unit_bridge_split_in(world, entity, true),
+    );
+    for part in &mut parts {
+        part.z_adjust = z_adjust;
+        part.z_gradient = z_gradient;
+        part.zshape_origin = [top, bottom - top];
+    }
 }
 
 /// The shadow stock gamemd's turreted SHP Unit branch draws before the body
@@ -2511,6 +2563,7 @@ impl<'r> ShpUnitLayout<'r> {
             entity.unit_death_counter.get(),
             // The draw asks the locomotor's Is_Moving (vt+0x10 at `0x0073C696`).
             entity.place.moving == Some(true),
+            entity.foot_occupation_enabled,
         )
     }
 

@@ -541,10 +541,13 @@ pub fn shp_vehicle_facing_slot(facings: i32, facing: u16, disguised: bool, ares:
 }
 
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
-/// advances one image per two counter steps, in descending image order.
+/// advances one image per two counter steps, in descending image order,
+/// with no bound
+/// ([`ShpVehicleFireFrames::image`](crate::rules::animation_sequence::ShpVehicleFireFrames::image)).
 /// The persistent Foot counter continues to own Stand/Walk. A still body
 /// with no `IdleRate=` and a running death counter draws its death image
-/// instead of Stand (`0x0073C6AD..0x0073C6D3`). `set` is the type whose
+/// instead of Stand (`0x0073C6AD..0x0073C6D3`), and one whose Foot
+/// occupation enable is clear draws its bare bucket. `set` is the type whose
 /// frame layout the draw reads (`UnitType+0x6C4`, or the Ares water type,
 /// see `UnitClass_DrawSHP_ChangeType1`), and `slot` its facing bucket
 /// ([`shp_vehicle_facing_slot`]); each block multiplies the bucket by its
@@ -556,22 +559,20 @@ pub fn resolve_shp_vehicle_body_frame(
     firing_counter: i32,
     death_counter: i32,
     locomotor_is_moving: bool,
+    occupation_enabled: bool,
 ) -> Option<u16> {
     let cadence = set.shp_vehicle_cadence()?;
     if firing_counter >= 0 {
-        let def = set.get(&SequenceKind::Attack)?;
-        let frame_index = firing_counter / 2;
-        // The native seed is within its type's fire block. Do not wrap an
-        // incompatible/invalid retained counter onto an unrelated atlas frame.
-        if frame_index >= i32::from(def.frame_count) {
-            return None;
-        }
-        return u16::try_from(vehicle_block_frame(def, slot, frame_index)).ok();
+        return u16::try_from(set.shp_vehicle_fire()?.image(slot, firing_counter)).ok();
     }
     let sequence = if locomotor_is_moving || cadence.idle_rate != 0 {
         SequenceKind::Walk
     } else if death_counter >= 0 {
         return u16::try_from(set.shp_vehicle_death()?.image(death_counter)).ok();
+    } else if !occupation_enabled {
+        // `0x0073C6D5..0x0073C6DD`: with the Foot occupation enable
+        // (`+0x6B6`) clear, the image is the bare facing bucket.
+        return u16::try_from(slot).ok();
     } else {
         SequenceKind::Stand
     };

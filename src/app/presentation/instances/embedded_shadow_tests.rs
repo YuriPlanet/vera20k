@@ -298,8 +298,10 @@ fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
 /// and `TechnoClass_DrawSHP` draws no embedded shadow for a Unit with it set
 /// (`0x00706151..0x00706163`). A stock turreted SHP Unit therefore draws one
 /// shadow, the branch's own (`0x0073C733`), under its body and turret.
-#[test]
-fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
+/// The pieces a stock turreted SHP Unit draws: eight body frames at the
+/// draw point, the 32-frame turret ring from frame 8 three pixels higher,
+/// then the shadow half.
+fn stock_turreted_shp_pieces() -> Vec<ObjectPieceInstance> {
     use crate::app::presentation::frame::PresentationFrame;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
@@ -355,6 +357,7 @@ fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
                     },
                     ShpSpriteEntry {
                         page: u8::from(frame >= 40),
+                        offset_y: if (8..40).contains(&frame) { -3.0 } else { 0.0 },
                         ..entry
                     },
                 )
@@ -398,11 +401,18 @@ fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
         &mut draws,
         frame.display_order(&runtime.simulation),
     );
-    let draws = draws.into_owned();
-    let targets: Vec<_> = draws
+    draws
+        .into_owned()
         .iter()
         .filter(|draw| draw.parent.id == id)
-        .flat_map(|draw| &draw.pieces)
+        .flat_map(|draw| draw.pieces.iter().cloned())
+        .collect()
+}
+
+#[test]
+fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
+    let targets: Vec<_> = stock_turreted_shp_pieces()
+        .iter()
         .map(|piece| piece.target)
         .collect();
     let shadow =
@@ -412,4 +422,26 @@ fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
         [shadow, ObjectTexture::ShpPage(0), ObjectTexture::ShpPage(0)],
         "branch shadow, body, turret"
     );
+}
+
+/// The branch draws body and turret to a scratch surface whose rectangle
+/// the Unit composite (`0x0073B140`) blits: both seed from the union of
+/// their rectangles, with FootClass's Z adjust and the vertical gradient,
+/// not the no-turret branch's own rectangle.
+#[test]
+fn a_turreted_shp_units_body_and_turret_share_the_composite() {
+    let pieces = stock_turreted_shp_pieces();
+    let [body, turret] = [&pieces[1].instance, &pieces[2].instance];
+    assert_eq!(turret.position[1], body.position[1] - 3.0);
+    for part in [body, turret] {
+        assert_eq!(part.zshape_origin, [turret.position[1], 5.0]);
+        assert_eq!(
+            part.z_gradient,
+            crate::render::native_z::pack_voxel_z_gradient(
+                crate::render::native_z::ZGradient::Vertical,
+                false
+            )
+        );
+        assert_eq!(part.z_adjust, body.z_adjust);
+    }
 }

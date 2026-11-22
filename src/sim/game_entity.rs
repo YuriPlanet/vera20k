@@ -1786,7 +1786,7 @@ impl GameEntity {
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 

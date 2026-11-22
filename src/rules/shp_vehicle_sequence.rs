@@ -265,6 +265,10 @@ pub(crate) fn build_shp_vehicle_sequences(
         (facings, walk, fire, stand, 0, start_stand, start_fire)
     };
 
+    set.set_shp_vehicle_fire(crate::rules::animation_sequence::ShpVehicleFireFrames::new(
+        i32::from(start_firing_frame),
+        i32::from(firing_frames),
+    ));
     if walk_frames > 0 {
         set.insert(
             SequenceKind::Walk,
@@ -512,6 +516,48 @@ mod tests {
             Some(176),
             "the ring starts at WalkFrames * 8 whatever else the layout holds"
         );
+    }
+
+    /// The firing image is StartFiringFrame + FiringFrames * bucket +
+    /// counter / 2 with no bound (`0x0073C65B..0x0073C672`). Under Ares a
+    /// water type (`UnitClass_DrawSHP_ChangeType1`) draws with the actual
+    /// type's counter, so one with fewer firing frames, or none, steps past
+    /// its own block.
+    #[test]
+    fn a_firing_counter_past_the_block_still_draws() {
+        let image = |set: &SequenceSet| {
+            crate::sim::animation::resolve_shp_vehicle_body_frame(set, 2, 0, 3, -1, false, true)
+        };
+        // Walk 0..7, the forced stand 8..15, fire 16..23.
+        assert_eq!(
+            image(&build_test(&make_art_entry(Some(1), Some(1)))),
+            Some(16 + 2 + 1)
+        );
+        // No firing block: StartFiringFrame is StartStandFrame, the walk start.
+        assert_eq!(image(&build_test(&make_art_entry(Some(1), None))), Some(1));
+    }
+
+    /// A still body whose Foot occupation enable (`+0x6B6`) is clear draws
+    /// its bare facing bucket, not its Stand image (`0x0073C6D5..0x0073C6DD`).
+    #[test]
+    fn a_still_body_off_its_occupation_draws_the_bare_bucket() {
+        let mut set = build_test(&make_art_entry(Some(2), None));
+        // A nonzero IdleRate walks first (`0x0073C69D..0x0073C6AB`).
+        set.set_shp_vehicle_cadence(FootBodyCadence {
+            walk_rate: 3,
+            idle_rate: 0,
+        });
+        let image = |occupation| {
+            crate::sim::animation::resolve_shp_vehicle_body_frame(
+                &set, 3, 0, -1, -1, false, occupation,
+            )
+        };
+        assert_eq!(
+            image(true),
+            Some(6),
+            "Stand: StartWalkFrame + WalkFrames * bucket"
+        );
+        assert_eq!(image(false), Some(3));
     }
 
     fn make_art_entry(walk: Option<u16>, firing: Option<u16>) -> ArtEntry {

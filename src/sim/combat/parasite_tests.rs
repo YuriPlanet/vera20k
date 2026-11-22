@@ -600,6 +600,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
         actor.unit_firing_counter.get(),
         actor.unit_death_counter.get(),
         crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+        actor.foot_occupation_enabled(),
     );
     // Original Unit741340 -> Bullet4666E0 -> Attach62A980 -> Exit62A4A0
     // retains +6C0=7 through limbo. Draw73C62B..73C725 selects the fire
@@ -636,6 +637,7 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
             counter,
             -1,
             crate::sim::movement::motion_query::is_moving(actor) == Some(true),
+            actor.foot_occupation_enabled(),
         )
         .unwrap();
         assert_eq!((56..88).contains(&image), counter >= 0);

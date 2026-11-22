@@ -1230,6 +1230,7 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
             -1,
             -1,
             input["is_moving"].as_bool().unwrap(),
+            true,
         )
         .unwrap();
         assert_eq!(

@@ -711,8 +711,9 @@ pub(super) fn build_world_instances(
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
     let mut object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
     let mut fogged_objects = instances::build_fogged_instances(state);
-    // Bit_Blit seeds a raw frame from its rect clipped to the view
-    // (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`), which ends this far down.
+    // Bit_Blit seeds a raw frame, and a Unit composite, from its rect clipped
+    // to the view (`native_z::Z_GRADIENT_RAW_FRAME_FLAG`,
+    // `native_z::unit_composite`), which ends this far down.
     let view_height = crate::app::input::camera::tactical_view_height(state);
     for instance in object_layers
         .iter_mut()
@@ -720,7 +721,9 @@ pub(super) fn build_world_instances(
         .chain(&mut fogged_objects.instances)
         .chain(&mut cell_bodies)
     {
-        if instance.z_gradient & crate::render::native_z::Z_GRADIENT_RAW_FRAME_FLAG != 0 {
+        if instance.z_gradient & crate::render::native_z::Z_GRADIENT_RAW_FRAME_FLAG != 0
+            || crate::render::native_z::unit_composite(instance.z_gradient)
+        {
             instance.draw_state.fx_params[3] = view_height;
         }
     }

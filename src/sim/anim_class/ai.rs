@@ -90,18 +90,14 @@ impl Simulation {
 
         // Ares `AnimClass_Update_AlphaLight` (hook `0x00423B0B`,
         // `Ares.dll 100476C0`) moves a glow before the flaming-guy test; a
-        // flaming guy's moves in the ObjectClass::AI below.
+        // flaming guy's moves at the head of its ObjectClass::AI
+        // (`anim_flaming_guy_ai`).
         if rules.ares() && !config.is_flaming_guy {
             self.update_alpha_shape(id, ObjectKind::Anim, rules);
         }
         //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
         if config.is_flaming_guy {
             self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);
-            // `ObjectClass::AI` (`0x00423B1E`) under Ares'
-            // `ObjectClass_Update_AlphaLight` (`0x005F3E70`, `10047730`).
-            if rules.ares() {
-                self.update_alpha_shape(id, ObjectKind::Anim, rules);
-            }
             let Some(reread) = self.anim(id).map(AnimGates::of) else {
                 return Ok(false);
             };

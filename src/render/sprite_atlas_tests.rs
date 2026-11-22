@@ -1038,6 +1038,7 @@ fn a_counting_shp_unit_draws_death_frames_the_atlas_holds() {
             -1,
             death,
             moving,
+            true,
         )
     };
     assert_eq!(frame(3, false), Some(41));

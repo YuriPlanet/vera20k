@@ -133,59 +133,19 @@ fn vs_main(
 
 
 fn native_candidate(in: VertexOutput) -> i32 {
-    var rect_top: f32 = in.rect_top_height.x;
-    var height: i32 = max(i32(round(in.rect_top_height.y)), 1);
-    var gradient: u32 = in.z_gradient & 0xFFu;
-    var z_adjust: i32 = i32(round(in.z_adjust));
-    // Unit final composite 0x73B140: full-width upper h-16 then bottom 16,
-    // seeded independently by Standard_SHP_blitter. A shared rectangle across
-    // hull/turret/barrel makes their depth decision identical at every pixel.
-    // Retain full quads/UVs so both regions sample the same source pixel grid.
-    if ((in.z_gradient & 0x400u) != 0u) {
-        rect_top = round(rect_top);
-        if (height > 16) {
-            let boundary: f32 = rect_top + f32(height - 16);
-            if (in.world_pos.y < boundary) {
-                height = height - 16;
-                gradient = 0u;
-                z_adjust = z_adjust - 5;
-            } else {
-                rect_top = boundary;
-                height = 16;
-                gradient = 2u;
-            }
-        }
+    // fx_params.w is this voxel body's tactical clip height in world pixels,
+    // supplied from the actual scissor. Zero retains the whole viewport for
+    // offscreen callers. Do not bake the sidebar/footer size into this
+    // shader or infer it from atlas storage padding.
+    let view_top: f32 = camera.camera_pos.y + camera.native_z_origin_y;
+    let candidate: vec2i = unit_composite_candidate(in.rect_top_height, in.world_pos.y,
+        in.z_gradient, in.z_adjust,
+        view_rows(view_top, in.fx_params.w, camera.screen_size.y / camera.zoom),
+        native_z_origin_row(view_top, camera.native_z_pan));
+    if (candidate.y == 0) {
+        discard;
     }
-    // Every voxel body blit (0x1000, split or not) is a Bit_Blit, which clips
-    // its rectangle to the tactical view before seeding (0x00437461, then
-    // 0x004374BB..0x004375A7). Its bottom-seeded walk follows the clipped bottom.
-    if ((in.z_gradient & 0x1400u) != 0u) {
-        rect_top = round(rect_top);
-        // fx_params.w is this voxel body's tactical clip height in world
-        // pixels, supplied from the actual scissor. Zero retains the whole
-        // viewport for offscreen callers. Do not bake the sidebar/footer size
-        // into this shader or infer it from atlas storage padding.
-        let view: vec2i = view_rows(camera.camera_pos.y + camera.native_z_origin_y,
-            in.fx_params.w, camera.screen_size.y / camera.zoom);
-        let region_top: f32 = rect_top;
-        let region_bottom: f32 = rect_top + f32(height);
-        let bottom: f32 = min(region_bottom, f32(view.y));
-        rect_top = max(rect_top, f32(view.x));
-        height = i32(bottom - rect_top);
-        // Only actual tactical clip intersections cut coverage; the full quad
-        // and existing row clamp own natural edges. Re-testing those edges
-        // against interpolated coordinates can discard a boundary source row.
-        if (height <= 0
-            || (rect_top > region_top && in.world_pos.y < rect_top)
-            || (bottom < region_bottom && in.world_pos.y >= bottom)) {
-            discard;
-        }
-    }
-    let screen_top: i32 = i32(round(rect_top))
-        - native_z_origin_row(camera.camera_pos.y + camera.native_z_origin_y, camera.native_z_pan);
-    let row: i32 = clamp(i32(floor(in.world_pos.y - rect_top)), 0, height - 1);
-    let z: i32 = native_row_z(gradient, screen_top, height, z_adjust, row);
-    return z;
+    return candidate.x;
 }
 
 // PackedSpriteGpu keeps this shared prefix up to apply_fx; source-palette
