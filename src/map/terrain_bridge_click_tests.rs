@@ -202,6 +202,37 @@ fn complete_bridge_inverse_matches_original_executable() {
 }
 
 #[test]
+fn shifted_bridge_deck_wins_over_its_approach_at_the_deck_center() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    let mut terrain = test_grid(24, 24, |x, y| {
+        let mut cell = test_flat_cell(x, y);
+        cell.level = match (x, y) {
+            (10, 10) => 9,
+            (11, 10) => 10,
+            _ => 0,
+        };
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new((10, 10), 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    let anchor = terrain.native_cell_identity((10, 10));
+    terrain.set_authored_high_bridge_deck(anchor, 10);
+    let result = screen_to_cell_tactical_inverse(
+        0.0,
+        180.0,
+        TacticalInverseContext {
+            cells: Some(&terrain),
+            viewport_offset_x: 0.0,
+            viewport_offset_y: 0.0,
+        },
+    );
+    assert_eq!(result, TacticalInverseResult::Cell { rx: 10.0, ry: 10.0 });
+}
+
+#[test]
 fn nonbridge_inverse_quantizes_one_pixel_before_every_decision() {
     // Fractional input is VERA's zoom extension, not a claim of native zoom.
     // Integer expected cells below are explicit flat/elevated cell interiors.

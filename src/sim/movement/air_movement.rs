@@ -381,9 +381,11 @@ pub(crate) fn update_fly_height(
 ) -> super::fly_height::HeightOutput {
     let xy = super::ground_pose::position_world_xy(&entity.position);
     let ground_z = super::ground_pose::ground_surface_z_at(xy, false, terrain, None).unwrap_or(0);
-    let structural_bridge = terrain.is_some_and(|grid| {
-        let cell = grid.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
-        grid.native_cell_flags(cell) & 0x100 != 0
+    let bridge_deck_z = terrain.and_then(|grid| {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(grid);
+        let cell = cells.lookup_world(xy[0], xy[1]);
+        (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+            .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground_z))
     });
     let object =
         rules_context.and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
@@ -406,7 +408,7 @@ pub(crate) fn update_fly_height(
             world_z,
             ground_z,
             on_bridge,
-            structural_bridge,
+            bridge_deck_z,
             health: entity.health.current(),
             has_passenger,
             is_dropship: object.is_some_and(|o| o.is_dropship),

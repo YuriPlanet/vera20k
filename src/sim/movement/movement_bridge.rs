@@ -181,6 +181,29 @@ pub(super) fn compute_bridge_transition(
     BridgeTransition::NoChange
 }
 
+/// The flag update shared by actual cell crossings and a fresh track's grade
+/// comparison, before the admitted step writes its new OnBridge state.
+pub(super) fn cell_transition_bridge_update(
+    src: &crate::sim::pathfinding::PathCell,
+    dst: &crate::sim::pathfinding::PathCell,
+    corrected_deck: Option<i16>,
+) -> BridgeStateUpdate {
+    let transition = match corrected_deck {
+        // Extend the native4B1807/75C154 exact entry comparison to the
+        // bridge span, rather than using the depressed lane as the bridge base.
+        Some(deck) if !src.has_structural_bridge() && src.signed_level() == deck => {
+            BridgeTransition::Enter
+        }
+        Some(_) => BridgeTransition::NoChange,
+        None => compute_bridge_transition(src, dst),
+    };
+    match transition {
+        BridgeTransition::Enter => BridgeStateUpdate::Set,
+        BridgeTransition::Exit => BridgeStateUpdate::Clear,
+        BridgeTransition::NoChange => BridgeStateUpdate::Unchanged,
+    }
+}
+
 /// Apply the on_bridge cell-flag predicate at a cell-boundary crossing.
 ///
 /// Reads src and dst PathCells and computes the BridgeStateUpdate using
@@ -214,20 +237,7 @@ pub(super) fn resolve_cell_transition_bridge_state(
     // separate is the native split, and it is why Z is recomputed here from the
     // post-transition flag rather than carried out of the transition arm.
     let corrected_deck = terrain.and_then(|terrain| terrain.corrected_high_bridge_deck_level(dst));
-    let transition = match corrected_deck {
-        // Extend the native4B1807/75C154 exact entry comparison to the
-        // bridge span, rather than using the depressed lane as the bridge base.
-        Some(deck) if !src_cell.has_structural_bridge() && src_cell.signed_level() == deck => {
-            BridgeTransition::Enter
-        }
-        Some(_) => BridgeTransition::NoChange,
-        None => compute_bridge_transition(src_cell, dst_cell),
-    };
-    let update = match transition {
-        BridgeTransition::Enter => BridgeStateUpdate::Set,
-        BridgeTransition::Exit => BridgeStateUpdate::Clear,
-        BridgeTransition::NoChange => BridgeStateUpdate::Unchanged,
-    };
+    let update = cell_transition_bridge_update(src_cell, dst_cell, corrected_deck);
     let on_bridge_after = projected_on_bridge(on_bridge_before, update);
 
     // `ObjectClass::SetHeight` 0x005F5FA0:

@@ -736,10 +736,9 @@ impl Simulation {
 
     /// The Infantry `INoticeSink` answer to the Jumpjet crash impact
     /// (`0x00522A60` -> `0x00522AF7..0x00522BA1`, notice `0x117C`), for a
-    /// `Crashable=` type: SetHeight (vtable `+0x1CC`) to the bridge deck on a
-    /// high-bridge cell (`[0x00A8F234]`, 416) and to 0 elsewhere, then a
-    /// forced AirDeathFinish (`0x00522B9B`). The infantryman stays: its
-    /// sequencer UnInits it when AirDeathFinish has played.
+    /// `Crashable=` type: settle onto the bridge deck or ground, then force
+    /// AirDeathFinish (`0x00522B9B`). The infantryman stays until the sequencer
+    /// UnInits it after playing AirDeathFinish.
     pub(crate) fn infantry_crash_impact(
         &mut self,
         id: u64,
@@ -763,23 +762,31 @@ impl Simulation {
         // GetCoords (`0x00522B24`), its truncated cell (`0x00522B29..0x00522B4F`)
         // and that cell's flags through Map[cell] (`0x00522B62`).
         let [x, y] = crate::sim::movement::ground_pose::object_center_xy(actor);
-        let high_bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell = terrain.native_cell_identity((
-                crate::util::lepton::lepton_to_cell_packed(x),
-                crate::util::lepton::lepton_to_cell_packed(y),
-            ));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        self.set_object_height(
-            id,
-            if high_bridge {
+        let (high_bridge, deck_z) =
+            self.resolved_terrain
+                .as_ref()
+                .map_or((false, None), |terrain| {
+                    let cell = terrain.native_cell_identity((
+                        crate::util::lepton::lepton_to_cell_packed(x),
+                        crate::util::lepton::lepton_to_cell_packed(y),
+                    ));
+                    (
+                        terrain.native_cell_flags(cell) & 0x100 != 0,
+                        super::ground_pose::corrected_deck_z(terrain, cell),
+                    )
+                });
+        if let Some(z) = deck_z {
+            // SetHeight at 0x00522B7D uses a relative lift. A fixed deck is
+            // absolute and an ordinary crash may still have OnBridge clear.
+            self.set_object_z(id, z, rules, Some(rules.overlay_registry()), effects);
+        } else {
+            let height = if high_bridge {
                 crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
             } else {
                 0
-            },
-            rules,
-            effects,
-        );
+            };
+            self.set_object_height(id, height, rules, effects);
+        }
         if let Err(cause) = self.infantry_do_action(id, DO_AIR_DEATH_FINISH, true, rules, effects) {
             log::debug!("infantry {id} AirDeathFinish: {cause}");
         }

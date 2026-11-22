@@ -107,6 +107,7 @@ impl CellReader for LiveCells<'_> {
             tile: terrain.native_cell_tile_index(cell),
             overlay: overlay.filter(|value| *value != 0xff).map_or(-1, i32::from),
             level: terrain.native_cell_ground_fields(cell).0,
+            fixed_deck_z: crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell),
         }
     }
 

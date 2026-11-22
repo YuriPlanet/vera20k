@@ -2380,7 +2380,7 @@ fn reaches_from_nearby_cell(
         return false;
     };
     let target = object_get_coords(candidate, ctx.terrain);
-    let distance_squared = cell_ref_target_coord(&cell)
+    let distance_squared = cell_ref_target_coord(ctx.terrain, &cell)
         .distance_from_squared(ProjectileCoord::new(target.x, target.y, target.z));
     let range = f64::from(weapon.range_leptons);
     distance_squared <= range * range

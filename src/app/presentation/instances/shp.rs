@@ -1153,7 +1153,18 @@ fn infantry_air_shadow_piece(
         let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         let cell = cells.lookup_world(x, y);
         let flags = cells.flags(cell);
-        if flags & BRIDGE_FLAG_STRUCTURAL != 0 && height >= BRIDGE_DECK_HEIGHT_LEPTONS {
+        let deck_lift = if let Some(deck) =
+            crate::sim::movement::ground_pose::corrected_deck_z(cells.terrain(), cell)
+        {
+            if entity.on_bridge() {
+                0
+            } else {
+                deck.wrapping_sub(entity.place.world_z_leptons_off_map.wrapping_sub(height))
+            }
+        } else {
+            BRIDGE_DECK_HEIGHT_LEPTONS
+        };
+        if flags & BRIDGE_FLAG_STRUCTURAL != 0 && height >= deck_lift {
             let direction = if flags & BRIDGE_FLAG_DIRECTION_ZERO != 0 {
                 0
             } else {
@@ -1163,7 +1174,7 @@ fn infantry_air_shadow_piece(
             let (cx, cy) = cells.coord(cell);
             let neighbour = cells.lookup((cx.wrapping_add(dx as i16), cy.wrapping_add(dy as i16)));
             if cells.flags(neighbour) & BRIDGE_FLAG_STRUCTURAL != 0 {
-                height = height.wrapping_sub(BRIDGE_DECK_HEIGHT_LEPTONS);
+                height = height.wrapping_sub(deck_lift);
             }
         }
     }

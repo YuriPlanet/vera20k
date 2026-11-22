@@ -36,7 +36,7 @@ struct BulletGeometry {
 fn geometry(
     coord: ProjectileCoord,
     ground_z: i32,
-    structural: bool,
+    structural_deck_z: Option<i32>,
     on_bridge: bool,
     shadow: bool,
 ) -> BulletGeometry {
@@ -45,16 +45,16 @@ fn geometry(
         point: [x, y],
         z_adjust: (-30i32).wrapping_sub(adjust_for_z_standard(coord.z)),
     };
-    let mut height = coord.z.wrapping_sub(ground_z).wrapping_sub(if on_bridge {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+    let deck = structural_deck_z
+        .unwrap_or_else(|| ground_z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS));
+    let height_surface = if on_bridge || structural_deck_z.is_some() && coord.z >= deck {
+        deck
     } else {
-        0
-    });
-    let mut surface_z = ground_z;
-    if !on_bridge && structural && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
-        height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        surface_z = surface_z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+        ground_z
+    };
+    let height = coord.z.wrapping_sub(height_surface);
+    // Bullet468090 keeps the floor for the shadow Z argument on its OnBridge arm.
+    let surface_z = if on_bridge { ground_z } else { height_surface };
     let shadow = (shadow && height > 0).then(|| BulletPieceGeometry {
         point: [x, y + adjust_for_z_standard(height) as f32],
         z_adjust: (-10i32).wrapping_sub(adjust_for_z_standard(surface_z)),
@@ -338,11 +338,11 @@ pub(crate) fn projectile_draw_instance_for_frame(
     }
     let frame = crate::sim::projectile::projectile_shp_frame(projectile, kind, logic_frame, ares);
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
-    let (ground_z, structural) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
+    let (ground_z, deck_z) = super::foot_depth::floor_probe(terrain, position.x, position.y)?;
     let geometry = geometry(
         position,
         ground_z,
-        structural,
+        deck_z,
         projectile.on_bridge(),
         kind.shadow,
     );
@@ -435,7 +435,7 @@ mod tests {
         let actual = geometry(
             ProjectileCoord::new(2688, 5248, 1040),
             624,
-            true,
+            Some(1040),
             false,
             true,
         );

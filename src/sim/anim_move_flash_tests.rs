@@ -107,6 +107,28 @@ fn a_bridge_cell_raises_the_move_flash_to_the_deck() {
 }
 
 #[test]
+fn a_move_flash_over_a_dip_uses_the_retained_deck() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    let Some((mut sim, rules)) = retail_arena(ScenarioGameMode::Skirmish) else {
+        return;
+    };
+    set_cell(&mut sim, (12, 8), 6, 0);
+    set_cell(&mut sim, (12, 9), 0, 0);
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((12, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+    let flashes = flash(&mut sim, &rules, (12, 9));
+    let [(_, ring, _)] = flashes.as_slice() else {
+        panic!("one move flash expected");
+    };
+    assert_eq!(ring.z, 1040);
+}
+
+#[test]
 fn network_modes_keep_the_move_flash_off_the_synchronized_anims() {
     for (mode, spawns) in [
         (ScenarioGameMode::Campaign, true),

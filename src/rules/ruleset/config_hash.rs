@@ -23,9 +23,8 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
-        // Distinguish replay and save rules identities across the switch
-        // from a recomputed deck byte to a retained signed span height.
-        b"independent-high-bridge-deck-v2".hash(&mut hasher);
+        // Eager and authored loads recover the same deck, including wooden rims.
+        b"independent-high-bridge-deck-v6".hash(&mut hasher);
         // A previous scenario's list survives RulesClass's Type reset even
         // when the incoming source text omits AIHateDelays.
         if !self.general.ai_hate_delays.is_empty() {

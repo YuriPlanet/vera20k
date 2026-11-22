@@ -3540,6 +3540,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             300,
             &rules,
             sim.resolved_terrain.as_ref().unwrap(),
+            sim.path_grid.as_deref(),
             &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
             (20, 10),
             false,

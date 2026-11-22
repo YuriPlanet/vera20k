@@ -350,7 +350,7 @@ fn ground_height_in_cell(
 
 /// Surface Z in leptons for a caller that already knows its layer. Keep the
 /// Map578080 lookup and its Dummy identity even on a corrected bridge.
-pub(crate) fn query_surface_z(
+pub fn query_surface_z(
     cells: &NativeCellQuery<'_>,
     point: DriveCoord,
     on_bridge: bool,
@@ -404,9 +404,12 @@ pub(crate) fn terrain_projection_differs(cells: &NativeCellQuery<'_>, [x, y]: [i
         i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
         i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
     );
-    crate::sim::find_nearby_cell::project_world_coordinate_with_lookup(x, y, |cx, cy| {
-        cells.projection_view(cx, cy)
-    }) != cell
+    crate::sim::find_nearby_cell::project_world_coordinate_with_terrain(
+        x,
+        y,
+        Some(cells.terrain()),
+        |cx, cy| cells.projection_view(cx, cy),
+    ) != cell
 }
 
 /// The terrain exit that the Event IDLE (`0x004C752A..0x004C7577`) and
@@ -927,10 +930,8 @@ fn corrected_deck_z_at_xy(
     corrected_deck_z(terrain, NativeCellIdentity::Real(index))
 }
 
-pub(crate) fn corrected_deck_z(
-    terrain: &ResolvedTerrainGrid,
-    cell: NativeCellIdentity,
-) -> Option<i32> {
+/// Retained live high-bridge Z for a caller that already resolved its Cell.
+pub fn corrected_deck_z(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> Option<i32> {
     terrain
         .corrected_high_bridge_deck_at(cell)
         .map(|level| i32::from(level) * GROUND_LEVEL_HEIGHT_LEPTONS)

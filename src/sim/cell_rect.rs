@@ -23,6 +23,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 
 // Fixed cell indexing is map-owned (map::cell_index, F05); sim re-exports
 // so runtime consumers keep their paths.
@@ -327,15 +328,24 @@ pub(crate) fn check_cell_passability(
             (listed(MovementLayer::Ground), listed(MovementLayer::Bridge))
         }
     };
+    let base_level = i16::from(cell.signed_level());
+    let has_bridge =
+        cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+    let requested_level = args.level.filter(|&level| level != -1);
+    let fixed_deck_level = if has_bridge && requested_level.is_some() {
+        canonical.and_then(|coord| map.terrain?.corrected_high_bridge_deck_level(coord))
+    } else {
+        None
+    };
     evaluate_is_clear_to_move(IsClearToMoveRequest {
         speed_type: args.speed_type,
         movement_zone: args.movement_zone,
         requested_zone,
         actual_zone,
-        base_level: i16::from(cell.signed_level()),
-        has_bridge: cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
-            != 0,
-        requested_level: args.level.filter(|&level| level != -1),
+        base_level,
+        has_bridge,
+        fixed_deck_level,
+        requested_level,
         is_bridge: args.is_bridge,
         ground_occupation_bits,
         deck_occupation_bits,
@@ -401,6 +411,8 @@ struct IsClearToMoveRequest {
     base_level: i16,
     /// Native `CellClass::Flags & 0x100` bridge gate.
     has_bridge: bool,
+    /// A live authored deck, if this cell belongs to one.
+    fixed_deck_level: Option<i16>,
     /// `None` corresponds to native level `-1` (select bridge occupation on a bridge cell).
     requested_level: Option<i16>,
     is_bridge: bool,
@@ -429,16 +441,24 @@ fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult
         return IsClearToMoveResult::ZoneMismatch;
     }
 
+    let deck_level = input.fixed_deck_level.unwrap_or_else(|| {
+        input
+            .base_level
+            .saturating_add(BRIDGE_DECK_HEIGHT_LEVELS as i16)
+    });
     let selected_layer = match input.requested_level {
+        // Native 4834A0 tests the ground first. A fixed deck can coincide
+        // with the ground; a request for that deck must still see its list.
+        Some(level) if input.has_bridge && input.fixed_deck_level == Some(level) => {
+            MovementLayer::Bridge
+        }
         Some(level) if level == input.base_level => {
             if input.has_bridge && !input.is_bridge {
                 return IsClearToMoveResult::LevelMismatch;
             }
             MovementLayer::Ground
         }
-        Some(level) if input.has_bridge && level == input.base_level.saturating_add(4) => {
-            MovementLayer::Bridge
-        }
+        Some(level) if input.has_bridge && level == deck_level => MovementLayer::Bridge,
         Some(_) => return IsClearToMoveResult::LevelMismatch,
         None if input.has_bridge => MovementLayer::Bridge,
         None => MovementLayer::Ground,
@@ -1346,6 +1366,7 @@ mod tests {
             actual_zone: 7,
             base_level: 2,
             has_bridge: false,
+            fixed_deck_level: None,
             requested_level: Some(2),
             is_bridge: false,
             ground_occupation_bits: 0,
@@ -1425,6 +1446,55 @@ mod tests {
             IsClearToMoveResult::Occupied {
                 remaining_bits: 0x40
             }
+        );
+    }
+
+    #[test]
+    fn explicit_fixed_deck_level_selects_deck_occupation() {
+        use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+        let cell = terrain.native_cell_identity((3, 3));
+        terrain.write_native_cell_flags(cell, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.write_native_cell_level(cell, 8);
+        terrain.set_authored_high_bridge_deck(cell, 10);
+        let mut listed = OccupancyGrid::new();
+        listed.add(
+            3,
+            3,
+            1,
+            MovementLayer::Bridge,
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        let map = CellPassabilityMap {
+            terrain: Some(&terrain),
+            overlays: None,
+            zones: None,
+            native_cells: None,
+            raw_occupation: None,
+            listed_occupancy: Some(&listed),
+        };
+        let mut args = mover(SpeedType::Track, MovementZone::Normal);
+        let cell = canonical_cell_ref(&terrain, cell);
+        args.level = Some(10);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::Occupied {
+                remaining_bits: 0x40
+            }
+        );
+        args.level = Some(8);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::Clear {
+                selected_layer: MovementLayer::Ground
+            }
+        );
+        args.level = Some(12);
+        assert_eq!(
+            check_cell_passability(&cell, args, &map),
+            IsClearToMoveResult::LevelMismatch
         );
     }
 

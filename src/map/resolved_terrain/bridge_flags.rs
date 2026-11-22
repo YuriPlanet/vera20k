@@ -192,13 +192,115 @@ pub(super) fn refresh_runtime_bridge_projection(
 }
 
 impl ResolvedTerrainGrid {
-    /// Compatibility fix for the ground + 4 rule (ObjectClass::SetHeight,
-    /// 0x005F5FA0 and AStar node height, 0x0042A460). The live span supplies
-    /// the height where depressed terrain would otherwise lower the deck.
-    /// Stock slope and height behavior still applies on level and raised lanes.
-    pub(crate) fn corrected_high_bridge_deck_level(&self, coord: (u16, u16)) -> Option<i16> {
+    /// Both authored load paths recover one deck for the full run. Stock
+    /// Mark (0x005FD36D..0x005FD55D) sees only one anchor. Use the lower of
+    /// the identified approaches, falling back to the end anchors only when
+    /// neither approach can be identified.
+    pub(crate) fn recover_authored_high_bridge_decks(
+        &self,
+        anchors: impl IntoIterator<Item = ((u16, u16), (BridgeStampFamily, u8))>,
+        admits: impl Fn((u16, u16)) -> bool,
+    ) -> std::collections::BTreeMap<(u16, u16), i16> {
+        use std::collections::BTreeMap;
+        let terrain_cell = |(x, y)| {
+            if x >= self.width || y >= self.height || !admits((x, y)) {
+                return None;
+            }
+            let index = self.native_fixed_cell_index(x as i16, y as i16)?;
+            self.cells.get(index)
+        };
+        let anchors = anchors
+            .into_iter()
+            .filter_map(|(coord, stamp)| Some((coord, (stamp, terrain_cell(coord)?))))
+            .collect::<BTreeMap<_, _>>();
+        let mut decks = BTreeMap::new();
+        let stock_deck = |level: u8| {
+            i16::from(level as i8) + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+        };
+        let concrete = self.high_bridge_rim_tiles.filter(|rim| rim.base >= 0);
+        let wood = &self.wood_bridge_rim_tiles;
+        for (&(x, y), &(stamp, first)) in &anchors {
+            // A north/south setter stamps across an east/west body run.
+            let horizontal = stamp.1 == 0;
+            let direction = if horizontal { 2 } else { 4 };
+            let at = |along| if horizontal { (along, y) } else { (x, along) };
+            let start = if horizontal { x } else { y };
+            let run_cell = |along| {
+                let &(key, cell) = anchors.get(&at(along))?;
+                (key == stamp).then_some(cell)
+            };
+            if start.checked_sub(1).and_then(run_cell).is_some() {
+                continue;
+            }
+            let (mut end, mut last) = (start, first);
+            while let Some(cell) = end.checked_add(1).and_then(run_cell) {
+                end += 1;
+                last = cell;
+            }
+
+            // Concrete follows the theater keys (0x00576770, 0x00576200).
+            // A wooden rim uses its own pristine template, even if the map
+            // gives the corresponding span a concrete body overlay.
+            let start_deck = if let Some(approach) =
+                start.checked_sub(1).and_then(|p| terrain_cell(at(p)))
+                && (wood.is_start(first, approach, direction)
+                    || concrete.is_some_and(|rim| {
+                        approach.final_tile_index == first.final_tile_index
+                            && rim.start_direction(first.final_tile_index, first.final_sub_tile)
+                                == Some(direction)
+                    })) {
+                Some(i16::from(approach.level as i8))
+            } else {
+                None
+            };
+            let end_deck = if let Some(approach) =
+                end.checked_add(1).and_then(|p| terrain_cell(at(p)))
+                && (wood.is_end(approach, direction)
+                    || concrete.is_some_and(|rim| {
+                        rim.is_end(
+                            approach.final_tile_index,
+                            approach.final_sub_tile,
+                            direction,
+                        )
+                    })) {
+                Some(i16::from(approach.level as i8))
+            } else {
+                None
+            };
+            let deck = match (start_deck, end_deck) {
+                (Some(start), Some(end)) => start.min(end),
+                (Some(deck), None) | (None, Some(deck)) => deck,
+                (None, None) => stock_deck(first.level).min(stock_deck(last.level)),
+            };
+            for along in start..=end {
+                decks.insert(at(along), deck);
+            }
+        }
+        decks
+    }
+
+    /// The live high-bridge deck, shared by an anchor and the lanes it stamped.
+    /// This replaces the local ground + 4 result for ObjectClass::SetHeight
+    /// (0x005F5FA0), AStar node height (0x0042A460), and other surface consumers.
+    pub fn corrected_high_bridge_deck_level(&self, coord: (u16, u16)) -> Option<i16> {
         let index = self.native_fixed_cell_index(coord.0 as i16, coord.1 as i16)?;
         self.corrected_high_bridge_deck_at(NativeCellIdentity::Real(index))
+    }
+
+    pub fn corrected_high_bridge_base_level(&self, coord: (u16, u16)) -> Option<u8> {
+        let deck = self.corrected_high_bridge_deck_level(coord)?;
+        Some((deck - crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16) as u8)
+    }
+
+    pub(crate) fn set_authored_high_bridge_deck(&mut self, anchor: NativeCellIdentity, deck: i16) {
+        if let NativeCellIdentity::Real(index) = anchor
+            && let Some(cell) = self.cells.get_mut(index)
+        {
+            cell.bridge_facts.fixed_deck_level = Some(deck);
+            if let Some(base) = cell.retained_high_bridge_base_level() {
+                self.level_span.widen(base);
+            }
+        }
     }
 
     pub(crate) fn corrected_high_bridge_deck_at(&self, cell: NativeCellIdentity) -> Option<i16> {
@@ -221,11 +323,9 @@ impl ResolvedTerrainGrid {
             return None;
         }
         let deck = facts.fixed_deck_level?;
-        let lift = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16;
         // A saved value must be representable by the authored signed cell level.
-        i8::try_from(deck.checked_sub(lift)?).ok()?;
-        let local_deck = i16::from(cell.level as i8) + lift;
-        (deck > local_deck).then_some(deck)
+        anchor.retained_high_bridge_base_level()?;
+        Some(deck)
     }
 
     /// Give every fixture deck the CellClass bit0x100 a loaded deck carries.
@@ -432,7 +532,7 @@ mod tests {
     use crate::util::save_codec;
 
     #[test]
-    fn raised_high_bridge_lane_keeps_its_local_projection() {
+    fn a_raised_lane_keeps_the_same_deck_as_its_anchor() {
         let mut terrain = test_grid(16, 16, |rx, ry| ResolvedTerrainCell {
             level: if (rx, ry) == (8, 9) { 5 } else { 4 },
             ..test_flat_cell(rx, ry)
@@ -442,7 +542,8 @@ mod tests {
             BridgeStampFamily::Nesw,
         );
         let lane = terrain.native_cell_identity((8, 9));
-        assert_eq!(terrain.corrected_high_bridge_deck_at(lane), None);
+        assert_eq!(terrain.corrected_high_bridge_deck_at(lane), Some(8));
+        assert_eq!(terrain.corrected_high_bridge_deck_level((8, 8)), Some(8));
     }
 
     #[test]

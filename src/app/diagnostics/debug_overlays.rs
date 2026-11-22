@@ -190,10 +190,15 @@ pub(crate) fn build_heightmap_overlay_instances(
 
     for cell in terrain.cells() {
         let (rx, ry, z) = (cell.rx, cell.ry, cell.level);
-        // Bridge cells: render at deck height so the overlay aligns with the bridge surface.
-        let deck = cell.high_bridge_deck_level();
-        let render_z = deck.unwrap_or(z);
-        let (sx, sy) = terrain::iso_to_screen(rx, ry, render_z);
+        let deck = terrain
+            .corrected_high_bridge_deck_level((rx, ry))
+            .or_else(|| {
+                cell.high_bridge_deck_level()
+                    .map(|deck| i16::from(deck as i8))
+            });
+        let render_z = deck.unwrap_or_else(|| i16::from(z as i8));
+        let (sx, zero_y) = terrain::iso_to_screen(rx, ry, 0);
+        let sy = zero_y - f32::from(render_z) * terrain::HEIGHT_STEP;
         if !in_view(sx, sy, TILE_WIDTH, TILE_HEIGHT, cam_x, cam_y, sw, sh, 60.0) {
             continue;
         }
