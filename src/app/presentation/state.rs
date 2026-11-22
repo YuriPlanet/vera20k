@@ -263,6 +263,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) layout_edit: Option<crate::app::input::layout_edit::LayoutEditState>,
     /// The buttons and texts the local side's layout adds.
     pub(crate) added_parts: std::sync::Arc<[crate::ui::added_parts::AddedPart]>,
+    /// Their drawing trees, brought to `added_parts` as each frame draws.
+    pub(crate) added_part_huds: crate::app::presentation::layout_parts::PartsHuds,
     /// The row each grid of build pictures the layout adds is scrolled to,
     /// by the grid's place in `added_parts`.
     pub(crate) added_grid_scroll: Vec<usize>,

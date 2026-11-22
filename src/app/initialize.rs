@@ -1143,6 +1143,7 @@ impl App {
                     player_layout_text: Vec::new(),
                     layout_edit: None,
                     added_parts: Default::default(),
+                    added_part_huds: Default::default(),
                     added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),

@@ -1123,27 +1123,20 @@ fn upload_to_gpu(
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        let (boxes, texts) = crate::app::presentation::layout_parts::instances(
-            state,
-            crate::ui::added_parts::Holder::Field,
+        let placed = crate::app::presentation::layout_parts::placed(state);
+        let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
+        layout_parts.draw(
+            &placed,
             crate::render::sidebar_text::native_radar_outline_color(theme),
             [
                 state.match_state.input.camera_x,
                 state.match_state.input.camera_y,
             ],
+            &state.renderer.bit_font,
         );
-        super_timer_fill.extend(boxes);
-        super_timer_text.extend(texts);
+        super_timer_fill.extend_from_slice(layout_parts.boxes());
+        super_timer_text.extend_from_slice(layout_parts.texts());
     }
-    // Their pictures come from the sidebar's atlas and zoom with the frame.
-    let layout_field_art = crate::app::presentation::layout_parts::pictures(
-        state,
-        crate::ui::added_parts::Holder::Field,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-    );
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
@@ -1252,7 +1245,16 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
-    pool.upload("layout_field_art", &layout_field_art);
+    // The parts' pictures come from the sidebar's atlas and zoom with the frame.
+    pool.upload(
+        "layout_field_art",
+        state
+            .match_state
+            .match_presentation
+            .added_part_huds
+            .field
+            .pictures(),
+    );
     pool.upload("super_timer_fill", &super_timer_fill);
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);
