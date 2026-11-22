@@ -258,7 +258,8 @@ module (merge timers into one function).
     enum parameters; a match notice when a map sets `Wasm.Tags`; event names for the
     4.4 and 4.5 kinds.
   - Hash and checksum: module memory is digested per 64 KiB page and each page
-    re-digested on frames where `page ≡ frame (mod 15)` (plus grown pages); the hash
+    re-digested with XXH32 on frames where `page ≡ frame (mod 15)` (a new page
+    counts at once, with digest 0 until its turn); the hash
     and checksum read the digests (RFC 4/15). Digests are saved.
 
 - The `Seldom` size ceiling in `object_turn_lookup_tests.rs` is 832 bytes (was 824):
@@ -336,7 +337,8 @@ modules, external modders, freeze), and the later items (`Launch`,
   `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
   (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
   survivors and starting objects; garrisons and non-departure cargo removal raise no
-  passenger events; type-bound timers and polls scan every object; `Timer` with only
+  passenger events; type-bound timers scan every object when due, and type-bound
+  polls walk the IDs, reading only the due phase's types; `Timer` with only
   weapon/projectile bindings never fires.
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
   cannot lift CanBuild's own refusal and also asks Neutral/Special; `CommandAllowed`

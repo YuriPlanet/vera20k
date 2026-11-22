@@ -253,9 +253,8 @@ struct SavedSlot {
     frame_budget: u64,
     #[serde(default)]
     orders: Vec<orders::PendingOrder>,
-    /// Saved so a loaded game hashes what the running one does; a save
-    /// from before the rotation has none, and its pages are digested at
-    /// restore.
+    /// Saved so a loaded game hashes what the running one does. Without
+    /// any, each page's is 0 until its turn, as for a new page.
     #[serde(default)]
     digests: PageDigests,
 }
@@ -267,21 +266,23 @@ const fn default_frame_budget() -> u64 {
 /// Frames for the digest rotation to visit every page (RFC 15.1, item 7).
 const DIGEST_ROTATION: usize = 15;
 
-/// One 32-bit FNV-1a digest per 64 KiB page of a module's memory, as far as
+/// One XXH32 digest per 64 KiB page of a module's memory, as far as
 /// it has grown (`memory.size`), for the state hash and the multiplayer
 /// checksum (RFC 15.1, item 7). [`PageDigests::refresh`] runs once a frame
 /// at the end of the module phase: it digests the pages whose index is the
-/// frame modulo 15, and any page grown since; the other pages keep their
-/// digest. A page is digested at least every 15 frames, so a divergence in
-/// module memory shows within 15 frames, and no frame digests more than a
-/// fifteenth of the memory plus its growth. Every machine refreshes the same
-/// pages on the same frames, so the digests agree wherever the memory does.
+/// frame modulo 15; the others keep their digest, and a new page's is 0
+/// until its turn. The page count is in the digests' length, so growth shows
+/// at once. A divergence that lasts until its page's turn shows within 15
+/// frames, and no frame digests more than a fifteenth of the memory, also
+/// when it grows. Every machine refreshes the same pages on the same frames,
+/// so the digests agree wherever the memory does.
 /// A derived cache of the memory, saved with it (`SavedSlot::digests`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct PageDigests(Vec<u32>);
 
 impl PageDigests {
     /// Every page of `memory` digested now.
+    #[cfg(test)]
     fn of(memory: &[u8]) -> Self {
         Self(
             memory
@@ -293,15 +294,12 @@ impl PageDigests {
 
     /// Digests this frame's share of `memory` (see the type).
     fn refresh(&mut self, memory: &[u8], frame: u32) {
-        let pages: Vec<&[u8]> = memory.chunks(vera20k_wasm_ext::PAGE_BYTES).collect();
-        let known = self.0.len().min(pages.len());
+        let pages = memory.chunks(vera20k_wasm_ext::PAGE_BYTES);
         self.0.resize(pages.len(), 0);
+        let due = self.0.iter_mut().zip(pages);
         let phase = frame as usize % DIGEST_ROTATION;
-        let due = (phase..known)
-            .step_by(DIGEST_ROTATION)
-            .chain(known..pages.len());
-        for index in due {
-            self.0[index] = page_digest(pages[index]);
+        for (digest, page) in due.skip(phase).step_by(DIGEST_ROTATION) {
+            *digest = page_digest(page);
         }
     }
 
@@ -311,8 +309,58 @@ impl PageDigests {
     }
 }
 
+/// XXH32 with seed 0, which reads the page by little-endian words (RFC
+/// 15.1, item 7; <https://github.com/Cyan4973/xxHash/blob/dev/doc/xxhash_spec.md>).
 fn page_digest(page: &[u8]) -> u32 {
-    fnv1a(page.iter().copied())
+    const P: [u32; 5] = [
+        0x9E37_79B1,
+        0x85EB_CA77,
+        0xC2B2_AE3D,
+        0x27D4_EB2F,
+        0x1656_67B1,
+    ];
+    let word = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+    let round = |lane: u32, bytes: &[u8]| {
+        lane.wrapping_add(word(bytes).wrapping_mul(P[1]))
+            .rotate_left(13)
+            .wrapping_mul(P[0])
+    };
+    let mut stripes = page.chunks_exact(16);
+    let mut h = if page.len() < 16 {
+        P[4]
+    } else {
+        let mut lanes = [P[0].wrapping_add(P[1]), P[1], 0, 0u32.wrapping_sub(P[0])];
+        for stripe in &mut stripes {
+            lanes = [
+                round(lanes[0], &stripe[..4]),
+                round(lanes[1], &stripe[4..8]),
+                round(lanes[2], &stripe[8..12]),
+                round(lanes[3], &stripe[12..]),
+            ];
+        }
+        lanes[0]
+            .rotate_left(1)
+            .wrapping_add(lanes[1].rotate_left(7))
+            .wrapping_add(lanes[2].rotate_left(12))
+            .wrapping_add(lanes[3].rotate_left(18))
+    };
+    h = h.wrapping_add(page.len() as u32);
+    let mut words = stripes.remainder().chunks_exact(4);
+    for bytes in &mut words {
+        h = h
+            .wrapping_add(word(bytes).wrapping_mul(P[2]))
+            .rotate_left(17)
+            .wrapping_mul(P[3]);
+    }
+    for &byte in words.remainder() {
+        h = h
+            .wrapping_add(u32::from(byte).wrapping_mul(P[4]))
+            .rotate_left(11)
+            .wrapping_mul(P[0]);
+    }
+    h = (h ^ (h >> 15)).wrapping_mul(P[1]);
+    h = (h ^ (h >> 13)).wrapping_mul(P[2]);
+    h ^ (h >> 16)
 }
 
 /// The loaded simulation modules, in run order, and the modifiers and
@@ -1679,7 +1727,7 @@ impl Simulation {
                 decide_ops_used: 0,
                 defeat_ops_used: 0,
                 orders: Vec::new(),
-                // Digested in full at the first module phase.
+                // Each page is digested when its turn comes.
                 digests: PageDigests::default(),
             },
         );
@@ -1774,11 +1822,6 @@ impl Simulation {
         for saved in std::mem::take(&mut self.ext_modules.pending) {
             let module = SimModule::restore(&saved.bytes, saved.source.limits(), &saved.state)
                 .map_err(|e| format!("{:?} module: {e}", saved.source))?;
-            let digests = if saved.digests.0.is_empty() {
-                PageDigests::of(module.memory())
-            } else {
-                saved.digests
-            };
             self.ext_modules.slots.push(Slot {
                 source: saved.source,
                 module,
@@ -1792,7 +1835,9 @@ impl Simulation {
                 decide_ops_used: 0,
                 defeat_ops_used: 0,
                 orders: saved.orders,
-                digests,
+                // As saved, also none before the first module phase: what
+                // the running game has.
+                digests: saved.digests,
             });
         }
         self.ext_modules.declare_vars();
