@@ -466,6 +466,7 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 | 不支持的特性（reference types、SIMD 等） | `.cargo/config.toml` 丢了或被改了，从示例里重新复制一份 |
 | 导入了 `env` / `wasi_*` | 用了标准库或某个需要系统功能的库。加上 `#![no_std]`，换用不依赖系统的库 |
 | 有 `start` 段 | 不要用会生成 start 函数的写法，启动代码放进 `init!` |
+| `zero byte expected` | 用了 `core::fmt`（`write!`、`format_args!`、`{:?}`）。预编译的 `core` 里这部分代码带着游戏不接受的指令编码。数字转文字请自己写，可以参考示例里的 `Line` |
 
 **对局开不起来**
 
@@ -520,3 +521,7 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
   | `actions-demo` | 各种动作 |
   | `orders-rules` | 改规则、给电脑方下指令 |
   | `decide-damage` | 可决定事件 |
+  | `veteran-fury` | 试玩 mod：击杀悬赏、老兵晋升、残血爆发、敌军定时进攻、存款利息 |
+  | `siege-doctrine` | 试玩 mod：加载时改规则，四种可决定事件（生产、排队、命令、判负） |
+  | `meteor-storm` | 试玩 mod：地格搜索与属性、计时触发器、弹头与动画、随机数、任务倒计时 |
+  | `trigger-lab` | 试玩 mod：出生、开火、载员事件，四种轮询，即时动作、一次性、启用/禁用触发器、批量读 |

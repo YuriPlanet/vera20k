@@ -246,6 +246,42 @@ fn a_rust_built_module_runs() {
     );
 }
 
+/// Smoke-runs the playtest mods (`sdk/examples/veteran-fury`,
+/// `siege-doctrine`, `meteor-storm`, `trigger-lab`) when
+/// `VERA20K_TEST_PLAYTEST_WASM` lists their modules, `:`-separated: each
+/// plays 2000 frames of a Battle against one computer house and must still
+/// be running. Prints each module's log (`--nocapture`).
+#[test]
+fn playtest_modules_keep_running() {
+    let Some(paths) = std::env::var_os("VERA20K_TEST_PLAYTEST_WASM") else {
+        return;
+    };
+    for path in std::env::split_paths(&paths) {
+        let Some(mut scene) = scenario_with_computer() else { return };
+        let bytes = std::fs::read(&path).expect("module file reads");
+        scene
+            .runtime
+            .simulation
+            .install_ext_module(&scene.runtime.resources.rules, ModuleSource::Mod, &bytes)
+            .expect("module installs");
+        for _ in 0..2000 {
+            scene.tick();
+        }
+        let status = scene.sim().ext_modules().status();
+        let log = scene.runtime.simulation.ext_modules_mut().take_log();
+        eprintln!("== {}", path.display());
+        for line in &log {
+            eprintln!("   {line}");
+        }
+        assert_eq!(status[0].1, None, "{} stopped; log {log:?}", path.display());
+        assert!(
+            !log.iter().any(|l| l.contains("refused")),
+            "{}: {log:?}",
+            path.display()
+        );
+    }
+}
+
 /// Spawns a Grizzly for the first computer house beside its base.
 /// Returns (house index, tank, its cell).
 fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {

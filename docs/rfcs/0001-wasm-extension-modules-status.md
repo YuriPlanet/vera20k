@@ -302,7 +302,9 @@ modules, external modders, freeze), and the later items (`Launch`,
   not remove a type's own `Cloakable=`. Timed conversions are in the state hash, not
   the MP checksum.
 - Properties not read: `Team`/`Tag` values (no references), `GameMode`, `Name`,
-  `Buildable`, `Points`, the `v1?` object properties; `lookup(Armor)`,
+  `Buildable`, `Points`, the house's `IsCivilian` (answers `Unsupported`, so a clause
+  on it matches nothing; found by `sdk/examples/veteran-fury`), the `v1?` object
+  properties; `lookup(Armor)`,
   `lookup(Sound)`; `Passable` ignores objects and overlays; `PropertyPoll` reads
   without a viewpoint.
 - `Health` writes of 0 or less answer `Refused`; an `Ammo` write restarts a running
@@ -328,7 +330,10 @@ export CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine
 python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # Build each sdk/examples/* with `cargo build --release`, then point the
 # VERA20K_TEST_*_WASM variables (RULES, MODIFIER, TRIGGERS, ACTIONS, ORDERS, DECIDE)
-# at the .wasm files.
+# at the .wasm files. VERA20K_TEST_PLAYTEST_WASM takes the four playtest mods
+# (veteran-fury, siege-doctrine, meteor-storm, trigger-lab), `:`-separated, and
+# plays 2000 frames with each (playtest_modules_keep_running, --nocapture prints
+# their logs).
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 VERA20K_TEST_..._WASM=... \
   python3 -m tools.cargo_run -- test -p vera20k-core --lib -- sim::ext_modules:: sim::trigger_runtime::
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 python3 -m tools.cargo_run -- \
