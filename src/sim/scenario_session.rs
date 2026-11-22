@@ -1205,6 +1205,14 @@ impl ScenarioSession {
         self.map_height
     }
 
+    /// `[Map] Size` width plus height past the original engine's 512 limit, so
+    /// only VERA's map extension reads it ([docs/map-format.md]).
+    ///
+    /// [docs/map-format.md]: ../../docs/map-format.md
+    pub const fn map_exceeds_original_size(&self) -> bool {
+        self.map_width as u32 + self.map_height as u32 > 512
+    }
+
     pub const fn mp_start_waypoints(&self) -> &BTreeMap<u32, (u16, u16)> {
         &self.mp_start_waypoints
     }
