@@ -480,11 +480,15 @@ impl Simulation {
         if self.session.computer_slot_has_team() {
             return;
         }
-        // VERA: in a match only AI play there is no human for the computers
-        // to turn on together (`Simulation::network_ai_alone`); Can_Ally
-        // refuses only an alliance that leaves no enemy, so two of three
-        // left would gang up on the third.
-        if self.network_ai_alone() {
+        // VERA: when no human plays there is no human for the computers to
+        // turn on together (`Simulation::no_participating_human`), and an
+        // offline match whose only human watches is one of these: its observer
+        // House is kept alive while it holds nothing, so retail's ruling would
+        // ally every computer against that empty House and leave them with no
+        // enemy among themselves. They stay free-for-all and play the match
+        // out. Can_Ally refuses only an alliance that leaves no enemy, so two
+        // of three left would gang up on the third.
+        if self.no_participating_human() {
             return;
         }
         // Each bracket's walks visit only the maps that may change.

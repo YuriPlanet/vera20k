@@ -810,7 +810,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .reset(state.platform.frame_pacer.total_render_deferrals());
     state.match_state.input.queued_order_mode = render::OrderMode::Move;
     state.match_state.match_audio.reset_for_new_match();
-    state.match_state.sandbox_full_visibility = result.scenario.sandbox_full_visibility;
+    // A classic Observer House shows the observer's sidebar and the whole map
+    // (docs/Networking.md "Watching"), as a watcher on the observer's view does.
+    let observer_whole_map = crate::app::match_runtime::watching::whole_map(state);
+    state.match_state.sandbox_full_visibility =
+        result.scenario.sandbox_full_visibility || observer_whole_map;
+    if observer_whole_map {
+        // The observer's radar opens with the whole map; no House update
+        // reports an Observer House's radar.
+        crate::app::presentation::building_anim::set_local_tactical_radar(state, true);
+    }
 
     // `Start_Scenario @ 0x00683AB0` after `Read_Scenario`: `[Basic] Theme`
     // resolves through `From_Name` (`0x004758F0`); -1 -> `Stop(fade=1)` of the
@@ -902,7 +911,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 Ok(effects) => initial_replay_effects = effects,
                 Err(error) => {
                     log::error!("Replay startup failed: {error:#}");
-                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                    let message = if matches!(
+                        startup,
+                        crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }
+                    ) {
                         crate::i18n::tr("VERA:CampaignReplayUnavailable")
                     } else {
                         format!("Replay startup failed: {error:#}")

@@ -480,8 +480,14 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             crate::app::persistence::options::persist_options_profile(state);
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }
-        // A held key: `input::keyboard::in_game_key_edge` tracks it.
-        HotkeyCommand::FormationLine => {}
+        // A held key: `input::keyboard::in_game_key_edge` tracks it. An
+        // Observer House forms no lines, so retail's Follow keeps F there and
+        // the camera latches onto the selected object as a player's does.
+        HotkeyCommand::FormationLine => {
+            if crate::app::match_runtime::watching::local_observer(state) {
+                crate::app::input::camera::toggle_follow_target(state);
+            }
+        }
         HotkeyCommand::FormationLock => {
             crate::app::input::context_order::toggle_formation_lock(state);
         }

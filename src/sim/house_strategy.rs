@@ -20,6 +20,8 @@
 //!    all distances are zero and the first house in HouseClass::Array that is
 //!    not the house, not passive and not defeated takes one anger point,
 //!    ally or not. The anger rescan ([`update_anger_nodes`]) picks the enemy.
+//!    VERA skips an observer's House there: an offline match keeps it alive
+//!    while it holds nothing, and native's defeated test would have dropped it.
 //!    Its own per-house timer (`+0x5640`/`+0x5648`) starts from
 //!    `AIHateDelays[difficulty]` during non-campaign Post_Map_Init
 //!    (`0x00686A12..0x00686A2B`); Strategy never restarts it.
@@ -282,6 +284,7 @@ fn pick_enemy(
     }
     let first = houses.order().iter().copied().find(|&peer| {
         peer != owner
+            && !session.is_observer_house(peer)
             && houses
                 .get(&peer)
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
@@ -298,6 +301,7 @@ fn pick_enemy(
                 .copied()
                 .filter(|&peer| {
                     peer != owner
+                        && !session.is_observer_house(peer)
                         && houses
                             .get(&peer)
                             .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())

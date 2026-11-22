@@ -17,9 +17,31 @@ pub(crate) fn active(state: &AppState) -> bool {
     state.match_state.session.local_connection_watches() && state.match_state.live_network.is_some()
 }
 
-/// Whether this game watches and sees the whole map: on the observer's
-/// sidebar. On a player's view it sees what that player sees.
+/// Whether the local House is the classic Observer House (direct LAN, classic
+/// WOL, Skirmish). Its game shows the observer's sidebar and sees the whole
+/// map, as docs/Networking.md "Watching" describes. A relay watcher holds no
+/// House of its own; [`whole_map`] answers for it.
+pub(crate) fn local_observer(state: &AppState) -> bool {
+    let Some(runtime) = state.match_state.sim_runtime.runtime() else {
+        return false;
+    };
+    let simulation = &runtime.simulation;
+    let Some(local) = crate::app::match_runtime::state::scenario_local_owner(simulation)
+        .and_then(|owner| simulation.interner().get(owner))
+    else {
+        return false;
+    };
+    simulation.session().is_observer_house(local)
+}
+
+/// Whether this game sees the whole map: a classic Observer House (direct
+/// LAN, classic WOL, Skirmish) always does, and does a watcher on the
+/// observer's sidebar. On a player's view a watcher sees what that player
+/// sees (docs/Networking.md "Watching").
 pub(crate) fn whole_map(state: &AppState) -> bool {
+    if local_observer(state) {
+        return true;
+    }
     active(state)
         && state
             .match_state

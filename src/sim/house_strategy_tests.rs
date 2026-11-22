@@ -262,6 +262,38 @@ fn an_ai_never_picks_a_defeated_observer_for_its_enemy() {
     assert_eq!(sim.houses[&ai].enemy_house(), Some(player));
 }
 
+/// An observer's House is a live, empty House an offline match keeps for its
+/// viewer, so the enemy search must skip it the way it skips a defeated one;
+/// otherwise every computer names the spectator and never fights the others.
+#[test]
+fn an_ai_never_picks_a_live_observer_for_its_enemy() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let (mut sim, names) = houses(true, 3);
+    let (observer, ai, player) = (names[0], names[1], names[2]);
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![observer],
+    );
+    for owner in [ai, player] {
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_base_center_for_test(Some((10, 10)));
+    }
+    sim.session.set_binary_frame_for_test(100);
+    pick_enemy(
+        &sim.interner,
+        &sim.session,
+        &sim.house_alliances,
+        &mut sim.houses,
+        ai,
+        rules.ares_form(),
+        false,
+    );
+    assert_eq!(sim.houses[&ai].enemy_house(), Some(player));
+    assert!(sim.houses[&observer].grudge_scores().is_empty());
+}
+
 #[test]
 fn the_strategy_timer_and_its_gates_match_native() {
     let rules = rules();

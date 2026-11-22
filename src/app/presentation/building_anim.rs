@@ -450,8 +450,14 @@ fn radar_availability_sound(
         })
 }
 
-/// Whether the local player's House has the tactical radar.
+/// Whether the local player's House has the tactical radar. A whole-map view
+/// (an Observer House, or a watcher on its sidebar) always does: the observer
+/// sees the whole map on the battlefield and the radar (docs/Networking.md
+/// "Watching"), and no House update reports it.
 pub(crate) fn local_has_radar(state: &AppState) -> bool {
+    if crate::app::match_runtime::watching::whole_map(state) {
+        return true;
+    }
     match (
         state
             .match_state

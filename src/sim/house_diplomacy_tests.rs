@@ -123,6 +123,36 @@ fn ai_nearest_enemy_keeps_the_computers_from_banding_against_the_human() {
     assert!(sim.houses[&ids[1]].grudge_scores().is_empty());
 }
 
+/// An offline Skirmish whose only human watches keeps the observer's House
+/// alive (an empty defeating one would end the match), so retail's
+/// `Computer_Paranoid @ 0x00501640` would ally every computer against it and
+/// leave them with no enemy to fight. VERA leaves such a match free-for-all.
+#[test]
+fn observer_only_matches_leave_the_computers_free_for_all() {
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("Observer", "Americans", true),
+            ("Computer1", "Russians", false),
+            ("Computer2", "Russians", false),
+        ],
+    );
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![ids[0]],
+    );
+    paranoid(&mut sim, &rules);
+
+    assert!(sim.no_participating_human());
+    assert_eq!(allies(&sim, "Computer1"), set(&[]));
+    assert_eq!(allies(&sim, "Computer2"), set(&[]));
+    for computer in &ids[1..] {
+        assert!(sim.houses[computer].grudge_scores().is_empty());
+        assert_eq!(sim.houses[computer].enemy_house(), None);
+    }
+}
+
 /// The gate (`0x00501640..0x00501675`): the mode's vt+4 (Cooperative only)
 /// or Rules `AlliesAllowed=`, and no computer slot with a team, which
 /// `Create_Houses` records (`0x006881F5..0x00688209`).

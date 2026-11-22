@@ -115,13 +115,15 @@ pub(crate) fn in_game_key_edge(
                 edge.state,
                 edge.repeat,
             );
-        // VERA formation line: its key is held, not run.
+        // VERA formation line: its key is held, not run. An Observer House
+        // forms no lines; its F is retail Follow (`dispatch`).
         if edge.state.is_pressed()
             && !consumed
             && !locked
             && !paused_at_event
             && resolution
                 == hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::FormationLine)
+            && !crate::app::match_runtime::watching::local_observer(state)
         {
             state
                 .match_state

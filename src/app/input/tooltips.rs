@@ -214,6 +214,7 @@ fn tactical_cell_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
     localize: impl FnOnce(&str) -> String,
+    whole_map: bool,
 ) -> Option<String> {
     let point = crate::map::terrain::screen_to_plane_leptons(world.0, world.1);
     if cursor_coordinates {
@@ -221,7 +222,9 @@ fn tactical_cell_tip_text(
     }
     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
     let cell = cells.lookup_world(point.x, point.y);
-    if crate::sim::vision::cell_ground_mapped(fog, terrain, viewer, cell) {
+    // A whole-map view (an Observer House, or a watcher on its sidebar) has no
+    // unexplored ground, so only a picked object's name shows.
+    if whole_map || crate::sim::vision::cell_ground_mapped(fog, terrain, viewer, cell) {
         None
     } else {
         Some(localize(TIP_LABEL_SHADOW))
@@ -239,7 +242,16 @@ fn tactical_world_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
 ) -> String {
-    tactical_world_tip_text_for_viewer(view, rules, csf, world, cursor_coordinates, None, None)
+    tactical_world_tip_text_for_viewer(
+        view,
+        rules,
+        csf,
+        world,
+        cursor_coordinates,
+        None,
+        None,
+        false,
+    )
 }
 
 fn tactical_world_tip_text_for_viewer(
@@ -250,6 +262,7 @@ fn tactical_world_tip_text_for_viewer(
     cursor_coordinates: bool,
     translucent_viewer: Option<crate::sim::intern::InternedId>,
     frame: Option<&crate::app::presentation::frame::PresentationFrame>,
+    full_visibility: bool,
 ) -> String {
     let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
     else {
@@ -265,6 +278,7 @@ fn tactical_world_tip_text_for_viewer(
             csf.map(|csf| csf.text(key).into_owned())
                 .unwrap_or_default()
         },
+        full_visibility,
     ) {
         return text;
     }
@@ -281,14 +295,18 @@ fn tactical_world_tip_text_for_viewer(
             &own_order
         }
     };
+    // A whole-map view picks through no fog: every object on screen may be
+    // named, as the observer sees it drawn.
+    let fog = (!full_visibility).then_some(view.fog());
     let picked = crate::app::input::entity_pick::pick_entity_at_point(
         crate::app::input::entity_pick::PresentedWorld {
             sim,
             rules: Some(rules),
             translucent_viewer,
+            frame,
         },
         order.iter().map(|(_, id)| id),
-        Some(view.fog()),
+        fog,
         Some(view.interner().resolve(viewer)),
         world.0,
         world.1,
@@ -535,6 +553,7 @@ fn tactical_tip_at_cursor(state: &AppState, view: crate::sim::runtime::SimView<'
         input.cursor_coordinates,
         translucent_viewer,
         state.match_state.sim_runtime.frame(),
+        state.match_state.sandbox_full_visibility,
     )
 }
 
@@ -1777,16 +1796,22 @@ mod tests {
         let mut fog = FogState::new(32, 32);
         let point = (0.0, 615.0); // Native plane(5120,5120,0), receiver20,20.
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned, false),
             Some("TXT_SHADOW".to_owned())
+        );
+        // A whole-map view reports no unexplored ground: empty cells show
+        // nothing and the picker names whatever object is under the cursor.
+        assert_eq!(
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned, true),
+            None
         );
         fog.set_ground_bits_for_test(viewer, 20, 20, 8);
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned, false),
             None
         );
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, other, point, false, str::to_owned),
+            tactical_cell_tip_text(&fog, &terrain, other, point, false, str::to_owned, false),
             Some("TXT_SHADOW".to_owned())
         );
         // Gap6FB3B8 clears the same native bit8 that Display4AE5D0 reads.
@@ -1799,21 +1824,33 @@ mod tests {
         );
         assert!(!fog.is_cell_revealed(viewer, 20, 20));
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
+            tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned, false),
             Some("TXT_SHADOW".to_owned())
         );
         // The production Display text owner must use its plane XYZ for the
         // coordinate branch too, despite real level6 below this cursor.
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, viewer, point, true, |_| panic!(
-                "CursorCheat precedes localized shroud text"
-            )),
+            tactical_cell_tip_text(
+                &fog,
+                &terrain,
+                viewer,
+                point,
+                true,
+                |_| panic!("CursorCheat precedes localized shroud text"),
+                false
+            ),
             Some("(20,20)".to_owned())
         );
         assert_eq!(
-            tactical_cell_tip_text(&fog, &terrain, viewer, (-2006.0, 15.0), true, |_| panic!(
-                "CursorCheat precedes localized shroud text"
-            )),
+            tactical_cell_tip_text(
+                &fog,
+                &terrain,
+                viewer,
+                (-2006.0, 15.0),
+                true,
+                |_| panic!("CursorCheat precedes localized shroud text"),
+                false
+            ),
             Some("(-33,33)".to_owned())
         );
         let before_dummy = terrain.shared_cell_dummy().snapshot();
@@ -1824,7 +1861,8 @@ mod tests {
                 viewer,
                 (-20_000.0, -20_000.0),
                 false,
-                str::to_owned
+                str::to_owned,
+                false
             ),
             Some("TXT_SHADOW".to_owned())
         );

@@ -252,6 +252,7 @@ pub(crate) fn try_queue_context_order(
                         sim,
                         rules: Some(&resources.rules),
                         translucent_viewer,
+                        frame: None,
                     },
                     world_x,
                     world_y,
