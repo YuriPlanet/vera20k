@@ -342,11 +342,23 @@ impl MixArchive {
         self.get_by_id(mix_hash(name))
     }
 
+    /// Index of the first entry carrying `id`, in the archive's own order.
+    ///
+    /// `entries` is sorted by id with a stable sort, so members sharing an id
+    /// keep the order the index listed them. `binary_search_by_key` returns an
+    /// arbitrary member of that run, while `MixFileSystem__Resolve_First` @
+    /// `0x005B4430` scans head to tail and keeps the first, so every lookup
+    /// goes through this one rule.
+    fn first_entry_index(&self, id: i32) -> Option<usize> {
+        let index = self.entries.partition_point(|entry| entry.id < id);
+        (self.entries.get(index)?.id == id).then_some(index)
+    }
+
     /// Look up a file by its pre-computed hash ID.
     ///
     /// Uses binary search on the sorted index for O(log n) lookup.
     pub fn get_by_id(&self, id: i32) -> Option<&[u8]> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
+        let index: usize = self.first_entry_index(id)?;
         let entry: &MixEntry = &self.entries[index];
         let data = self.data.as_slice();
 
@@ -363,20 +375,20 @@ impl MixArchive {
 
     /// Whether the index lists `id`, readable or not.
     pub fn contains_id(&self, id: i32) -> bool {
-        self.entries.binary_search_by_key(&id, |e| e.id).is_ok()
+        self.first_entry_index(id).is_some()
     }
 
     /// [`Self::get_by_id`] as a share of the archive storage.
     pub fn get_shared_by_id(&self, id: i32) -> Option<SharedBytes> {
-        let index: usize = self.entries.binary_search_by_key(&id, |e| e.id).ok()?;
+        let index: usize = self.first_entry_index(id)?;
         self.entry_view(&self.entries[index]).map(SharedBytes)
     }
 
     /// Parse a child MIX archive directly from an entry without copying its bytes.
     pub fn nested_archive_by_id(&self, id: i32) -> Result<Option<Self>, AssetError> {
-        let index: usize = match self.entries.binary_search_by_key(&id, |e| e.id) {
-            Ok(index) => index,
-            Err(_) => return Ok(None),
+        let index: usize = match self.first_entry_index(id) {
+            Some(index) => index,
+            None => return Ok(None),
         };
         let Some(data) = self.entry_view(&self.entries[index]) else {
             return Ok(None);
@@ -671,5 +683,41 @@ impl MixArchive {
             return None;
         }
         self.data.subrange(start, end)
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_repeated_id_resolves_to_the_first_entry_in_archive_order() {
+        // The archive listed one id four times; `from_data`'s stable sort keeps
+        // that order inside the id's run, and 5B4430 keeps the first of the run
+        // rather than whichever member a binary search lands on.
+        let body = b"aabbccdd".to_vec();
+        let mut entries = vec![MixEntry {
+            id: 7,
+            offset: 6,
+            size: 2,
+        }];
+        entries.extend((0..4).map(|index| MixEntry {
+            id: 42,
+            offset: index * 2,
+            size: 2,
+        }));
+        entries.sort_by_key(|entry| entry.id);
+        let archive = MixArchive {
+            entries,
+            body_offset: 0,
+            body_size: 8,
+            flags: 0,
+            data: MixData::from_owned(body),
+            container_path: None,
+        };
+        assert_eq!(archive.get_by_id(42), Some(b"aa".as_slice()));
+        assert_eq!(archive.get_by_id(7), Some(b"dd".as_slice()));
+        assert!(archive.contains_id(42));
+        assert!(!archive.contains_id(43));
     }
 }
