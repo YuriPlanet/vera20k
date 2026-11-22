@@ -7,6 +7,7 @@
 //! misaligns clicks by the scale factor.
 
 use crate::app::AppState;
+use crate::app::shell_wol::WolPage;
 use crate::ui::main_menu_shell::{MainMenuShellLayout, compute_layout, compute_responsive_layout};
 use crate::ui::shell::menu_page::{self, MenuPageLayout, MenuPageSpec};
 use crate::ui::skirmish_shell::{
@@ -35,27 +36,46 @@ pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
     !shell_scale_for_screen(size).is_retail()
 }
 
-/// How much a menu's software cursor grows: with a fitted menu's art, by the
-/// same factor, and half that in VERA's online lobby and its rooms, whose
-/// text is smaller. An active-game shell draws its cursor in the match
-/// frame, which the match zoom scales instead.
+/// The fitted shell sets the cursor scale. VERA's visible online lobby and
+/// rooms use a compact cursor. In-game shell cursors follow the match zoom.
 pub(crate) fn menu_cursor_scale(state: &AppState) -> f32 {
     if state.frontend.screen == crate::ui::game_screen::GameScreen::InGame {
         return 1.0;
     }
-    let fitted = if fills_window(state) {
-        let (width, height) = shell_screen_size(state);
-        crate::ui::shell::geom::ShellScale::from_screen(width as i32, height as i32).factor()
-    } else {
-        1.0
-    };
+    let fitted = shell_scale_for_screen(shell_screen_size(state)).factor();
+    if crate::app::input::precedence::modal_page(state).is_some() {
+        return fitted;
+    }
+
     let route = state.frontend.shell_route;
-    let vera_online = (route.wol_lobby() && crate::app::shell_wol::lobby::modern_lobby(state))
-        || (route.network_setup() && {
-            let dialog = crate::app::shell_network_setup::dialog(state);
-            dialog.wol() && dialog.modern
-        });
-    if vera_online { fitted * 0.5 } else { fitted }
+    if route.wol_lobby()
+        && let Some(visit) = state.frontend.wol.as_ref()
+    {
+        // The visit keeps the lobby route while a separate page or dialog owns the screen.
+        let visible = visit
+            .lobby()
+            .is_some_and(|lobby| lobby.ui.is_modern() && lobby.shown && !lobby.covered);
+        let dialog = visit.message().is_some()
+            || visit.wait_box().is_some_and(|wait| wait.shown)
+            || crate::app::shell_wol::page::page_dialog(state).is_some()
+            || crate::app::shell_wol::page::page_received(state).is_some();
+        return wol_lobby_cursor_scale(fitted, &visit.page, visible, dialog);
+    }
+    if route.network_setup() {
+        let dialog = crate::app::shell_network_setup::dialog(state);
+        if dialog.wol() && dialog.modern {
+            return fitted * 0.5;
+        }
+    }
+    fitted
+}
+
+fn wol_lobby_cursor_scale(fitted: f32, page: &WolPage, visible: bool, dialog: bool) -> f32 {
+    if matches!(page, WolPage::Lobby) && visible && !dialog {
+        fitted * 0.5
+    } else {
+        fitted
+    }
 }
 
 /// Main menu dialog `0xE2`.
@@ -313,6 +333,34 @@ pub(crate) fn keyboard_layout(
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
     use super::window_takes_fitted_shell;
+
+    #[test]
+    fn only_the_visible_online_lobby_uses_the_compact_cursor() {
+        use super::{WolPage, shell_scale_for_screen, wol_lobby_cursor_scale};
+        use crate::app::shell_wol::options::WolOptionsPage;
+        use crate::ui::wol_options::WolOptionsState;
+
+        let options = WolPage::Options(Box::new(WolOptionsPage {
+            ui: WolOptionsState::open(&Default::default(), Default::default()),
+            sound: None,
+        }));
+        for (size, full, compact) in [((800, 600), 1.0, 0.5), ((1200, 900), 1.5, 0.75)] {
+            let fitted = shell_scale_for_screen(size).factor();
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, true, false),
+                compact
+            );
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, true, true),
+                full
+            );
+            assert_eq!(
+                wol_lobby_cursor_scale(fitted, &WolPage::Lobby, false, false),
+                full
+            );
+            assert_eq!(wol_lobby_cursor_scale(fitted, &options, true, false), full);
+        }
+    }
 
     #[test]
     fn exit_message_box_follows_fitted_menu_and_keeps_button_hits() {
