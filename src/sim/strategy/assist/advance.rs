@@ -612,6 +612,42 @@ pub(super) fn advance(
         .min_by_key(|at| cell_distance(*at, target_cell))
         .unwrap_or(target_cell);
     let left_behind = |unit: &Unit| cell_distance(unit.cell, tip) > STAGGER_BEHIND;
+
+        if std::env::var("AUTOPLAY_TRACE_SKIP").is_ok() && tick % 600 == 0 {
+            let mut deployed = 0;
+            let mut attacking = 0;
+            let mut walking = 0;
+            let mut far = 0;
+            let mut other = 0;
+            for unit in &fighters {
+                let attack = unit.mission == MissionId::from_known(MissionType::Attack)
+                    && obs.attack_target(unit.entity_id).is_some();
+                let move_ = unit.mission == MissionId::from_known(MissionType::Move);
+                if obs.is_deployed(unit.entity_id) {
+                    deployed += 1;
+                } else if attack {
+                    attacking += 1;
+                } else if move_ && (obs.destination(unit.entity_id).is_some() || !left_behind(unit)) {
+                    walking += 1;
+                } else if move_ {
+                    far += 1;
+                } else {
+                    other += 1;
+                }
+            }
+            log::info!(
+                "skip trace: tick={} fighters={} deployed={} attacking={} walking={} far={} other={} target={:?} at {:?}",
+                tick,
+                fighters.len(),
+                deployed,
+                attacking,
+                walking,
+                far,
+                other,
+                target_id,
+                target_cell,
+            );
+        }
     let mut issued = 0;
     let mut refused = 0;
     for unit in &fighters {
@@ -728,6 +764,7 @@ pub(super) fn advance(
         // meets -- so the fist keeps moving instead of standing.
         let shootable = engagement == crate::sim::control::observation::Engage::Ready
             && obs.is_hostile(target_id);
+
         let (kind, goal) = if shootable {
             (super::tracked::TrackedKind::Attack, attack)
         } else {

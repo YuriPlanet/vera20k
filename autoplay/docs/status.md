@@ -358,6 +358,41 @@ Refinery(1)、**Weapons**、Aircraft、Radar、Tech、Repair、Refinery(3)，也
 （7375 -> 4932）。这份账已经记在 `plan.rs` 的注释里："the lab's own Prerequisite=GAWEAP,RADAR,GACNST"。
 教训：build order 是刀刃上的平衡，经济优先不是免费的。
 
+
+### 让打不到的目标改用无格子 Goal::Attack（本轮否决，掉两局）
+
+诊断（seed 4242，tick 35400，`AUTOPLAY_TRACE_SKIP`）：83 个可列编单位里 77 个
+`other`（既不在攻击、也不在移动、也没部署），全军停在 (188-190, 141-150)。
+`AUTOPLAY_TRACE_REFUSE` 给出原因：
+
+```
+refuse probe: unit=13465 at (190, 150) target=4117 at (202, 160)
+              d2=244 hostile=true engage=true hurt=true reach=false
+```
+
+目标单元在 (202,160)，距 16-23 格，可以打、能打穿，但**走不到那一格**
+（movement zone 不连通：墙/水/悬崖）。整局 328 次拒绝，最后剩一根建筑拆不掉。
+
+试过的改法：`shootable` 从「在射程内且敌对」改成「敌对且（在射程内 **或** 走不到目标格）」，
+走不到就下无格子的 `Goal::Attack`（`admits` 只要求 is_hostile + can_engage + can_hurt，
+三者都真），让引擎自己的 hunt 把单位带到能打到的地方。
+
+六局（target/autoplay-results/reach-attack.jsonl）：
+
+| seed | 基线 14cdef80d | 无格子 Attack |
+| 24301 | won 27425 enemy=2 | timeout enemy=62 own=143 inc=9196 |
+| 19 | timeout enemy=13 | timeout enemy=52 own=123 |
+| 10 | won 33824 | **lost 13615** own=18 army=4 |
+| 7 | timeout enemy=37 | timeout enemy=48 |
+| 4242 | timeout enemy=1 | timeout enemy=37 own=102 |
+| 31337 | timeout enemy=48 | **lost 11886** own=14 |
+
+否决：两局直接崩盘（10 在 13615 输、31337 在 11886 输），两个参考胜局全丢。
+原因清楚：无格子攻击让**每个**打不到目标格的单元都横穿地图去接一个永远接不上的目标，
+部队变成一条更长的散兵线，家门口被反打。这正是用户抱怨的「一个个散着去打」的放大版。
+结论：目标是「走不到但打得着」时，停在原地反而损失更小；要改得先把**全军同时**接敌
+（编队/梯次）做出来，而不是逐个放开。已回退，六局逐字回到基线。
+
 ### 试过并且更差的（不要重试）
 
 - **把 `Item::Refinery` 加进 `yard_reserve`**（想让第二个精炼厂也能存钱买到）：
