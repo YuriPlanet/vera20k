@@ -102,7 +102,9 @@ Supported extensions:
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [SHP vehicle art](../src/app/presentation/instances/shp.rs): `Facings=` above 8
   (body buckets and the turret block), the `WaterImage=` type's frames and turret, and
-  the shadow drawn before a turreted body (`Ext/Techno/Hooks.Art.cpp`)
+  the shadow drawn before a turreted body (`Ext/Techno/Hooks.Art.cpp`). A weapon's
+  `Anim=` list of 8 or more picks its muzzle anim by facing the same way
+  ([fire_coord.rs](../src/sim/combat/fire_coord.rs))
 - [Moving Alpha Lights](../src/sim/world/alpha_shape.rs): `AlphaImage=` glows follow
   their Technos, Terrain, Bullets and Anims, go while the object is cloaked, deactivated,
   unpowered or under ground, and draw a Techno's facing frame

@@ -533,20 +533,8 @@ pub fn shp_vehicle_facing_slot(facings: i32, facing: u16, disguised: bool, ares:
             0
         };
     }
-    let Some(log2) = u32::try_from(facings)
-        .ok()
-        .and_then(|count| count.checked_ilog2())
-        .filter(|&log2| log2 >= 3)
-    else {
-        return 0;
-    };
-    let raw = u32::from(facing) + 0x2000;
-    let slot = if log2 >= 16 {
-        raw
-    } else {
-        (((raw >> (15 - log2)) + 1) >> 1) & ((1 << log2) - 1)
-    };
-    slot as i32
+    let count = u32::try_from(facings).unwrap_or(0);
+    crate::util::direction_tables::ares_facing_bucket(count, facing) as i32
 }
 
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and
