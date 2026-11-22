@@ -1,12 +1,11 @@
 //! Choose Map `0x6B` state (proc `0x005E6920`): the game-type list `0x6EB`,
 //! the map list `0x553` and the three buttons.
 //!
-//! Both lists are the shell list subclass `0x00618D40` (`ui::shell::list`):
-//! a press on a row selects it and plays GenericClick (`0x0061AA5A`), a
-//! press below the last row is ignored, the scrollbar captures and repeats,
-//! and no key or wheel case exists (`0x00618D40..0x0061C600`).
-
-use crate::util::time::{Duration, Instant};
+//! Both lists are the shell list subclass `0x00618D40` as `vera20k-gui`
+//! lists ([`super::super::choose_map_page`]): a press on a row selects it and
+//! plays GenericClick (`0x0061AA5A`), a press below the last row is ignored,
+//! the scrollbar captures and repeats, and no key or wheel case exists
+//! (`0x00618D40..0x0061C600`). This state keeps what the lists show.
 
 use crate::map::rmg::saved_seeds::SavedSeed;
 use crate::map::skirmish_scenarios::{
@@ -14,8 +13,9 @@ use crate::map::skirmish_scenarios::{
     upsert_random_map_sentinel,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
-use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::shell::static_reveal::DialogStatics;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 use super::super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 
@@ -59,18 +59,6 @@ impl SkirmishModeSelection {
 pub struct ChooseMapSelection {
     pub mode: SkirmishModeSelection,
     pub record_index: Option<usize>,
-}
-
-/// What a press on the chooser's lists did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChooseMapListPress {
-    /// Not on either list.
-    Missed,
-    /// On a scrollbar or below the last row: no sound.
-    Consumed,
-    /// On a row: the list plays GenericClick. `rebuilt` when a game-type
-    /// click rebuilt the map list.
-    RowClicked { rebuilt: bool },
 }
 
 /// The buttons of Use Map's two-button box: OK (or Download) and Cancel.
@@ -118,15 +106,37 @@ pub enum ChooseMapPromptAnswer {
     Wait,
 }
 
-/// Use Map's two-button box over the chooser.
+/// Use Map's two-button box over the chooser. Its buttons are the shared
+/// box's widgets ([`Self::shell_box`]), which keep the press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChooseMapPrompt {
     pub selection: ChooseMapSelection,
-    pub pressed: Option<ChooseMapPromptButton>,
     pub kind: ChooseMapPromptKind,
 }
 
 impl ChooseMapPrompt {
+    /// The box as it paints and takes the pointer: the two-button message
+    /// box `0x120` with `body` over OK (`ok`'s caption) and Cancel, OK
+    /// greyed while a download runs.
+    pub fn shell_box(&self, body: String, ok: String, cancel: String) -> ShellBox {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0x120), body)
+            .button(OK, ok)
+            .button(CANCEL, cancel)
+            .disabled(OK, !self.button_enabled(ChooseMapPromptButton::Ok))
+    }
+
+    /// The button Enter answers with: Cancel on the eject question
+    /// (`0x005D370D`); VERA's boxes take it as OK, as the room's
+    /// missing-map offer does (a running download's greyed OK takes none).
+    pub fn default_button(&self) -> u16 {
+        use crate::ui::shell::modal::control::{CANCEL, OK};
+        match self.kind {
+            ChooseMapPromptKind::EjectAi => CANCEL,
+            _ => OK,
+        }
+    }
+
     /// Whether a button takes presses: Download waits while one runs.
     pub fn button_enabled(&self, button: ChooseMapPromptButton) -> bool {
         button == ChooseMapPromptButton::Cancel || self.kind != ChooseMapPromptKind::Downloading
@@ -232,11 +242,9 @@ pub struct ChooseMapModalState {
     /// (`[0xAC0EC8]`), which a rebuilt list reselects.
     reselect_name: String,
     pub highlighted_filtered_index: Option<usize>,
+    /// The lists' first rows; their scrollbars move them.
     pub mode_top_index: usize,
     pub map_top_index: usize,
-    pub mode_scroll: ListScrollInteraction,
-    pub map_scroll: ListScrollInteraction,
-    pub pressed_button: Option<ChooseMapModalButton>,
     /// Heading `0x694` and status line `0x695`, alive while `0x105` hides
     /// the chooser. A child writes the status help from its own mouse moves;
     /// `0x6B` has no dialog hit test that clears it, so it keeps the last
@@ -244,21 +252,14 @@ pub struct ChooseMapModalState {
     pub(crate) statics: DialogStatics,
     /// Use Map's two-button box while it shows.
     pub message_box: Option<ChooseMapPrompt>,
+    /// The map Use Map accepted, kept here while `0x6B` slides out so a
+    /// catalog change in the meantime (a kept online map replacing its row,
+    /// `map_library`) can remap its record index.
+    pub use_selection: Option<ChooseMapSelection>,
     /// Create Random Map hides the chooser (`0x005E6A0B`) until the
     /// random-map run returns. It then shows again (`0x005E6B51`) unless its
     /// Use Map closes it; it stays hidden while that Use Map's eject box asks.
     hidden: bool,
-    /// The list window and time/point of the last press on list rows, for
-    /// Windows' double-click test.
-    last_list: Option<ChooseMapList>,
-    last_press: Option<(Instant, i32, i32)>,
-}
-
-/// One of the two list windows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChooseMapList {
-    Mode,
-    Map,
 }
 
 /// Native chooser admission depends on its caller: offline requires mode
@@ -359,14 +360,10 @@ impl ChooseMapModalState {
             highlighted_filtered_index: None,
             mode_top_index: 0,
             map_top_index: 0,
-            mode_scroll: ListScrollInteraction::default(),
-            map_scroll: ListScrollInteraction::default(),
-            pressed_button: None,
             statics: DialogStatics::default(),
             message_box: None,
+            use_selection: None,
             hidden: false,
-            last_list: None,
-            last_press: None,
         };
         state.build_map_list(modes, records);
         // The fill selects only the current scenario; when the list lacks it
@@ -579,7 +576,6 @@ impl ChooseMapModalState {
             self.filtered_record_indices.clear();
             self.filter_saved_seeds();
             self.random_maps_allowed = self.random_maps_game_mode(modes).is_some();
-            self.map_scroll.cancel();
             return;
         }
         if is_own_row(self.selected_mode.id) {
@@ -619,7 +615,6 @@ impl ChooseMapModalState {
             }
             (self.filtered_record_indices, self.row_modes) = rows.into_iter().unzip();
             self.random_maps_allowed = false;
-            self.map_scroll.cancel();
             return;
         }
         let mode = self.selected_mode.resolve(modes);
@@ -631,7 +626,6 @@ impl ChooseMapModalState {
             .filter(|index| !records[*index].is_online() && self.matches_search(&records[*index]))
             .collect();
         self.random_maps_allowed = mode.is_some_and(|mode| mode.random_maps_allowed);
-        self.map_scroll.cancel();
     }
 
     /// `LB_SETTOPINDEX(selection)`, clamped by the list.
@@ -693,20 +687,6 @@ impl ChooseMapModalState {
         if self.row_labels.is_none() {
             self.rebuild_keeping_highlight(modes, records, layout);
         }
-    }
-
-    /// VERA: append committed text from the chooser's keyboard or input
-    /// method, ignoring control characters before rebuilding the list.
-    pub fn append_search_text(
-        &mut self,
-        text: &str,
-        modes: &[SkirmishGameMode],
-        records: &[SkirmishScenarioRecord],
-        layout: &ChooseMapModalLayout,
-    ) {
-        let mut search = self.search.clone();
-        search.extend(text.chars().filter(|ch| !ch.is_control()));
-        self.set_search(search, modes, records, layout);
     }
 
     /// VERA: star or unstar the highlighted map. Returns its
@@ -815,133 +795,37 @@ impl ChooseMapModalState {
         }
     }
 
-    /// Whether a press is the second click of a double-click on one list's
-    /// rows. Windows then sends `WM_LBUTTONDBLCLK`, which the list subclass
-    /// only forwards as `LBN_DBLCLK` (`0x0061A904..0x0061A945`; `0x6B`
-    /// ignores it): no selection, no sound. A press anywhere else, or on the
-    /// other list, starts a new sequence.
-    pub fn is_double_click(
+    /// A press on game-type row `row` (`0x0061A948`). A row whose index
+    /// equals the last one clicked (`[0x8316FC]`, which lives across chooser
+    /// visits and starts at -1) moves the cursor without rebuilding the map
+    /// list (`0x005E6BB7`). VERA rebuilds if the mode selection changes to or
+    /// from an explicit catalog entry, since the remembered row can outlive
+    /// the map list built for that entry. Online Maps and Favorites always
+    /// rebuild their lists. Returns whether it rebuilt.
+    pub fn click_mode_row(
         &mut self,
-        layout: &ChooseMapModalLayout,
-        (x, y): (i32, i32),
-        now: Instant,
-        limits: (Duration, i32, i32),
-    ) -> bool {
-        let list = if self.mode_geometry(layout).content.contains(x, y) {
-            ChooseMapList::Mode
-        } else if self.map_geometry(layout).content.contains(x, y) {
-            ChooseMapList::Map
-        } else {
-            self.last_press = None;
-            return false;
-        };
-        if self.last_list != Some(list) {
-            self.last_list = Some(list);
-            self.last_press = None;
-        }
-        crate::ui::shell::list::is_double_click(&mut self.last_press, now, x, y, limits)
-    }
-
-    /// A press on the lists (`0x0061A948`): scrollbar capture, or a row. A
-    /// game-type row whose index equals the last one clicked (`[0x8316FC]`,
-    /// which lives across chooser visits and starts at -1) moves the cursor
-    /// without rebuilding the map list (`0x005E6BB7`). VERA rebuilds if the
-    /// mode selection changes to or from an explicit catalog entry, since the
-    /// remembered row can outlive the map list built for that entry. Online
-    /// Maps and Favorites always rebuild their lists.
-    pub fn mouse_down(
-        &mut self,
+        row: usize,
         layout: &ChooseMapModalLayout,
         modes: &[SkirmishGameMode],
         records: &[SkirmishScenarioRecord],
         last_mode_row: &mut Option<usize>,
-        (x, y): (i32, i32),
-        now: Instant,
-    ) -> ChooseMapListPress {
-        let mode_geometry = self.mode_geometry(layout);
-        if let Some(part) = mode_geometry.scroll_part_at(x, y) {
-            self.mode_scroll
-                .press(part, mode_geometry, &mut self.mode_top_index, y, now);
-            return ChooseMapListPress::Consumed;
-        }
-        let map_geometry = self.map_geometry(layout);
-        if let Some(part) = map_geometry.scroll_part_at(x, y) {
-            self.map_scroll
-                .press(part, map_geometry, &mut self.map_top_index, y, now);
-            return ChooseMapListPress::Consumed;
-        }
-        if mode_geometry.outer.contains(x, y) {
-            let count = self.mode_rows.len();
-            let Some(row) = mode_geometry.row_at(count, self.mode_top_index, x, y) else {
-                return ChooseMapListPress::Consumed;
-            };
-            let mode = self.mode_rows[row];
-            let changes_catalog_entry = self.selected_mode != mode
-                && (self.selected_mode.catalog_index.is_some() || mode.catalog_index.is_some());
-            if *last_mode_row == Some(row)
-                && !is_own_row(self.selected_mode.id)
-                && !is_own_row(mode.id)
-                && !changes_catalog_entry
-            {
-                self.selected_mode = mode;
-                return ChooseMapListPress::RowClicked { rebuilt: false };
-            }
-            *last_mode_row = Some(row);
-            self.select_mode(mode, modes, records, layout);
-            return ChooseMapListPress::RowClicked { rebuilt: true };
-        }
-        if map_geometry.outer.contains(x, y) {
-            let count = self.map_row_count();
-            let Some(row) = map_geometry.row_at(count, self.map_top_index, x, y) else {
-                return ChooseMapListPress::Consumed;
-            };
-            self.highlighted_filtered_index = Some(row);
-            return ChooseMapListPress::RowClicked { rebuilt: false };
-        }
-        ChooseMapListPress::Missed
-    }
-
-    /// Pointer motion: a captured thumb follows it.
-    pub fn mouse_move(&mut self, layout: &ChooseMapModalLayout, x: i32, y: i32) {
-        let geometry = self.mode_geometry(layout);
-        self.mode_scroll
-            .pointer_moved(geometry, &mut self.mode_top_index, x, y);
-        let geometry = self.map_geometry(layout);
-        self.map_scroll
-            .pointer_moved(geometry, &mut self.map_top_index, x, y);
-    }
-
-    /// The button release ends any scrollbar capture.
-    pub fn mouse_up(&mut self) {
-        self.mode_scroll.cancel();
-        self.map_scroll.cancel();
-    }
-
-    /// Arrow auto-repeat; returns whether a list moved.
-    pub fn poll_scroll(
-        &mut self,
-        layout: &ChooseMapModalLayout,
-        x: i32,
-        y: i32,
-        now: Instant,
     ) -> bool {
-        let geometry = self.mode_geometry(layout);
-        let mode = self
-            .mode_scroll
-            .poll(geometry, &mut self.mode_top_index, x, y, now);
-        let geometry = self.map_geometry(layout);
-        let map = self
-            .map_scroll
-            .poll(geometry, &mut self.map_top_index, x, y, now);
-        mode || map
-    }
-
-    /// The earlier of the two lists' repeat deadlines.
-    pub fn scroll_deadline(&self) -> Option<Instant> {
-        match (self.mode_scroll.repeat_at(), self.map_scroll.repeat_at()) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
+        let Some(&mode) = self.mode_rows.get(row) else {
+            return false;
+        };
+        let changes_catalog_entry = self.selected_mode != mode
+            && (self.selected_mode.catalog_index.is_some() || mode.catalog_index.is_some());
+        if *last_mode_row == Some(row)
+            && !is_own_row(self.selected_mode.id)
+            && !is_own_row(mode.id)
+            && !changes_catalog_entry
+        {
+            self.selected_mode = mode;
+            return false;
         }
+        *last_mode_row = Some(row);
+        self.select_mode(mode, modes, records, layout);
+        true
     }
 
     pub fn accept_selection(&self) -> Option<ChooseMapSelection> {
@@ -983,28 +867,6 @@ impl ChooseMapModalState {
         }
     }
 
-    /// Arm an enabled owner-draw button. Disabled controls consume the hit but
-    /// never acquire pressed state, which also keeps their click sound silent.
-    pub fn press_button(&mut self, button: ChooseMapModalButton) -> bool {
-        let enabled = self.button_enabled(button);
-        self.pressed_button = enabled.then_some(button);
-        enabled
-    }
-
-    /// Release the captured button, rechecking admission so a stale press can
-    /// never dispatch after the selected mode has disabled that command.
-    pub fn release_button(
-        &mut self,
-        released_button: Option<ChooseMapModalButton>,
-    ) -> (bool, Option<ChooseMapModalButton>) {
-        let Some(pressed_button) = self.pressed_button.take() else {
-            return (false, None);
-        };
-        let should_fire =
-            Some(pressed_button) == released_button && self.button_enabled(pressed_button);
-        (true, should_fire.then_some(pressed_button))
-    }
-
     pub const fn cancel_selection(&self) -> ChooseMapSelection {
         self.saved_selection
     }
@@ -1043,7 +905,6 @@ impl ChooseMapModalState {
                 mode: self.selected_mode,
                 record_index: None,
             },
-            pressed: None,
             kind: ChooseMapPromptKind::RandomMapFailed,
         });
     }
@@ -1081,8 +942,73 @@ impl ChooseMapModalState {
 mod tests {
     use super::*;
     use crate::skirmish_modes::stock_skirmish_modes;
+    use crate::ui::shell::page::PageCue;
+    use crate::ui::skirmish_shell::choose_map_page::{self, ChooserInput};
     use crate::ui::skirmish_shell::compute_choose_map_modal_layout;
-    use std::time::Duration;
+    use crate::ui::skirmish_shell::page::Pointer;
+    use crate::util::time::{Duration, Instant};
+
+    // The chooser's widgets driven as the app drives them, one shell
+    // controller per test thread.
+    thread_local! {
+        static UI: std::cell::RefCell<crate::ui::shell::controller::DialogController> =
+            Default::default();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn drive(
+        modal: &mut ChooseMapModalState,
+        layout: &ChooseMapModalLayout,
+        lists: (&[SkirmishGameMode], &[SkirmishScenarioRecord]),
+        last: &mut Option<usize>,
+        at: Pointer,
+        (x, y): (i32, i32),
+    ) -> ChooserInput {
+        UI.with_borrow_mut(|ui| choose_map_page::pointer(ui, modal, layout, lists, last, at, x, y))
+    }
+
+    /// What a press on the chooser's lists did.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ChooseMapListPress {
+        Missed,
+        Consumed,
+        RowClicked { rebuilt: bool },
+    }
+
+    /// A press that starts a new click sequence (a press off the dialog
+    /// first ends any double-click pairing).
+    fn mouse_down(
+        modal: &mut ChooseMapModalState,
+        layout: &ChooseMapModalLayout,
+        modes: &[SkirmishGameMode],
+        records: &[SkirmishScenarioRecord],
+        last: &mut Option<usize>,
+        point: (i32, i32),
+        _now: Instant,
+    ) -> ChooseMapListPress {
+        drive(
+            modal,
+            layout,
+            (modes, records),
+            last,
+            Pointer::Down,
+            (-1, -1),
+        );
+        drive(modal, layout, (modes, records), last, Pointer::Up, (-1, -1));
+        let input = drive(modal, layout, (modes, records), last, Pointer::Down, point);
+        let on_list = [layout.mode_list, layout.map_list]
+            .iter()
+            .any(|list| list_surface(*list).contains(point.0, point.1));
+        if input.cues.contains(&PageCue::ListClick) {
+            ChooseMapListPress::RowClicked {
+                rebuilt: input.rebuilt,
+            }
+        } else if on_list {
+            ChooseMapListPress::Consumed
+        } else {
+            ChooseMapListPress::Missed
+        }
+    }
 
     fn record(name: &str) -> SkirmishScenarioRecord {
         let mut record = SkirmishScenarioRecord::concrete_from_ini(
@@ -1108,13 +1034,25 @@ mod tests {
             &[],
             &layout,
         );
-        let random = ChooseMapModalButton::CreateRandomMap0x583;
-        assert!(!modal.press_button(random));
-        assert_eq!(modal.release_button(Some(random)), (false, None));
+        let random = layout.rect(0x583);
+        let random = (random.x + 2, random.y + 2);
+        let at = |modal: &mut ChooseMapModalState, pointer| {
+            drive(modal, &layout, (&modes, &[]), &mut None, pointer, random)
+        };
+        assert!(
+            !at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
+        assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         assert!(modal.select_mode(1, &modes, &[], &layout));
-        assert!(modal.press_button(random));
+        assert!(
+            at(&mut modal, Pointer::Down)
+                .cues
+                .contains(&PageCue::Button)
+        );
         assert!(modal.select_mode(9, &modes, &[], &layout));
-        assert_eq!(modal.release_button(Some(random)), (true, None));
+        assert_eq!(at(&mut modal, Pointer::Up).activated, None);
         let mut records = Vec::new();
         assert_eq!(
             modal.create_random_map(&mut records, &modes, "Disallowed", 4, &layout),
@@ -1210,7 +1148,8 @@ mod tests {
         let second_mode_point = (second_mode.x + 2, second_mode.y + 2);
         let mut last_mode_row = None;
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &maps,
@@ -1236,7 +1175,8 @@ mod tests {
             [0],
             "cancel keeps Battle Map"
         );
-        modal.mouse_down(
+        mouse_down(
+            &mut modal,
             &layout,
             &modes,
             &maps,
@@ -1474,7 +1414,8 @@ mod tests {
         let at = modal.mode_geometry(&layout).row(row);
         let mut last = Some(row);
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &all,
@@ -1505,7 +1446,7 @@ mod tests {
     }
 
     #[test]
-    fn committed_unicode_search_text_appends_and_filters_map_names() {
+    fn the_search_edit_takes_typed_text_and_backspace_and_filters_map_names() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
         let all = vec![record("雪地遭遇战"), record("沙漠遭遇战")];
@@ -1517,12 +1458,24 @@ mod tests {
             &all,
             &layout,
         );
-        modal.set_search("雪".into(), &modes, &all, &layout);
-
-        modal.append_search_text("\u{0001}地", &modes, &all, &layout);
-
+        let input = |modal: &mut ChooseMapModalState, event| {
+            UI.with_borrow_mut(|ui| {
+                choose_map_page::search_input(ui, modal, &layout, (&modes, &all), event)
+            })
+        };
+        use vera20k_gui::{InputEvent, Key};
+        input(&mut modal, InputEvent::Text("雪".into()));
+        input(&mut modal, InputEvent::Text("地".into()));
         assert_eq!(modal.search, "雪地");
         assert_eq!(modal.filtered_record_indices, [0]);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search, "雪");
+        // The search keeps its first 32 characters; Backspace then takes the
+        // 32nd.
+        input(&mut modal, InputEvent::Text("x".repeat(40)));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS);
+        input(&mut modal, InputEvent::Key(Key::Backspace));
+        assert_eq!(modal.search.chars().count(), SEARCH_MAX_CHARS - 1);
     }
 
     #[test]
@@ -1557,31 +1510,34 @@ mod tests {
             &[],
             &layout,
         );
-        let limits = (Duration::from_millis(500), 4, 4);
-        let now = Instant::now();
         let mode_row = modal.mode_geometry(&layout).row(0);
         let map_row = modal.map_geometry(&layout).row(0);
         let mode_point = (mode_row.x + 2, mode_row.y + 2);
         let map_point = (map_row.x + 2, map_row.y + 2);
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
-        assert!(modal.is_double_click(
-            &layout,
-            mode_point,
-            now + Duration::from_millis(100),
-            limits
-        ));
+        // Presses follow each other well within the double-click time.
+        let mut is_double_click = |point| {
+            drive(
+                &mut modal,
+                &layout,
+                (&modes, &[]),
+                &mut None,
+                Pointer::Down,
+                point,
+            )
+            .double_click
+        };
+        assert!(!is_double_click(mode_point));
+        assert!(is_double_click(mode_point));
         // The other list starts a new sequence.
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
-        assert!(!modal.is_double_click(&layout, map_point, now, limits));
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
+        assert!(!is_double_click(mode_point));
+        assert!(!is_double_click(map_point));
+        assert!(!is_double_click(mode_point));
         // A press off the lists breaks the sequence.
-        assert!(!modal.is_double_click(
-            &layout,
-            (layout.use_map_button.x + 2, layout.use_map_button.y + 2),
-            now,
-            limits
-        ));
-        assert!(!modal.is_double_click(&layout, mode_point, now, limits));
+        assert!(!is_double_click((
+            layout.rect(0x6C5).x + 2,
+            layout.rect(0x6C5).y + 2
+        )));
+        assert!(!is_double_click(mode_point));
     }
 
     #[test]
@@ -1603,13 +1559,22 @@ mod tests {
         let geometry = modal.map_geometry(&layout);
         let row = geometry.row(2);
         assert_eq!(
-            modal.mouse_down(&layout, &modes, &[], &mut last, (row.x + 2, row.y + 2), now),
+            mouse_down(
+                &mut modal,
+                &layout,
+                &modes,
+                &[],
+                &mut last,
+                (row.x + 2, row.y + 2),
+                now
+            ),
             ChooseMapListPress::RowClicked { rebuilt: false }
         );
         assert_eq!(modal.highlighted_filtered_index, Some(2));
         let bar = geometry.scrollbar.expect("30 rows overflow 18");
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1621,15 +1586,21 @@ mod tests {
         );
         assert_eq!(modal.map_top_index, 1);
         // The arrow repeats after 500 ms while held.
-        assert!(modal.poll_scroll(
-            &layout,
-            bar.x + 3,
-            bar.y + bar.h - 3,
-            now + Duration::from_millis(500)
-        ));
+        std::thread::sleep(Duration::from_millis(510));
+        let poll = |modal: &mut ChooseMapModalState| {
+            UI.with_borrow_mut(|ui| choose_map_page::poll(ui, modal, &layout))
+        };
+        assert!(poll(&mut modal).0);
         assert_eq!(modal.map_top_index, 2);
-        modal.mouse_up();
-        assert_eq!(modal.scroll_deadline(), None);
+        drive(
+            &mut modal,
+            &layout,
+            (&modes, &[]),
+            &mut last,
+            Pointer::Up,
+            (bar.x + 3, bar.y + bar.h - 3),
+        );
+        assert_eq!(poll(&mut modal).1, None);
     }
 
     #[test]
@@ -1664,7 +1635,8 @@ mod tests {
         let now = Instant::now();
         let mut last = None;
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1676,7 +1648,8 @@ mod tests {
         );
         assert_eq!(last, Some(1));
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1696,7 +1669,8 @@ mod tests {
             &layout,
         );
         assert_eq!(
-            modal.mouse_down(
+            mouse_down(
+                &mut modal,
                 &layout,
                 &modes,
                 &[],
@@ -1740,7 +1714,7 @@ mod tests {
         // VERA: the map rows start 20 px lower, under the search box.
         assert_eq!(maps.row(0), RectPx::new(339, 148, 195, 19));
         assert_eq!(maps.scrollbar.map(|bar| bar.x), Some(534));
-        let lines = crate::ui::shell::list::list_frame_lines(layout.mode_list);
+        let lines = vera20k_gui::shell::list::list_frame_lines(layout.mode_list);
         let left = lines.iter().map(|(r, _)| r.x).min();
         let right = lines.iter().map(|(r, _)| r.x + r.w - 1).max();
         let top = lines.iter().map(|(r, _)| r.y).min();

@@ -5,7 +5,7 @@ use super::WolLobby;
 use crate::app::AppState;
 use crate::ui::wol_lobby::*;
 
-use super::{cooperative_campaign, csf, lobby};
+use super::{cooperative_campaign, lobby};
 
 /// The status help of what the pointer is over: the table's key, or a
 /// list's `0x4E9` answer (`0x00780E30` for a game, `0x00781090` for a user).
@@ -13,31 +13,29 @@ pub(crate) fn status_help(state: &AppState) -> String {
     let Some(lobby) = lobby(state) else {
         return String::new();
     };
-    if let Some(popup) = lobby.ui.popup.as_ref() {
-        return match popup.kind {
-            WolPopupKind::Create(_) => popup.buttons.hovered.and_then(create_tooltip_key),
-            WolPopupKind::Password(_) => None,
-        }
-        .map(|key| csf(state, key))
-        .unwrap_or_default();
+    let ui = &lobby.ui;
+    if let Some(popup) = ui.popup.as_ref() {
+        return (popup.create.is_some().then(|| ui.hovered()).flatten())
+            .and_then(create_tooltip_key)
+            .map(|key| state.csf_text(key))
+            .unwrap_or_default();
     }
     if let Some(help) = super::player_card::status_help(state) {
         return help;
     }
-    let ui = &lobby.ui;
-    match ui.buttons.hovered {
-        Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
+    // VERA: a list's row under the pointer gives its own help, also as the
+    // list refills under a resting pointer.
+    let (x, y) = state.match_state.input.cursor_px();
+    let row = |list| ui.row_at(list, x, y);
+    match ui.hovered() {
+        Some(GAMES) => match row(GAMES).and_then(|row| ui.game_rows.get(row)) {
             Some(row) if ui.is_modern() => modern_game_help(state, lobby, row).unwrap_or_default(),
             Some(row) => game_help(state, row),
-            _ => csf(state, "STT:LobbyListGames"),
+            _ => state.csf_text("STT:LobbyListGames"),
         },
-        Some(VIEW) if ui.is_modern() => csf(state, ui.view_help_key()),
-        Some(PLAYERS) => match ui
-            .player_list
-            .hot_row
-            .and_then(|row| ui.player_rows.get(row))
-        {
-            None => csf(state, "STT:LobbyListUsers"),
+        Some(VIEW) if ui.is_modern() => state.csf_text(ui.view_help_key()),
+        Some(PLAYERS) => match row(PLAYERS).and_then(|row| ui.player_rows.get(row)) {
+            None => state.csf_text("STT:LobbyListUsers"),
             Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {
                 let member = lobby.members.iter().find(|member| member.name == row.name);
@@ -45,7 +43,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
             }
         },
         Some(control) => tooltip_key(control, ui.page_spec())
-            .map(|key| csf(state, key))
+            .map(|key| state.csf_text(key))
             .unwrap_or_default(),
         None => String::new(),
     }
@@ -75,7 +73,7 @@ fn modern_game_help(state: &AppState, lobby: &WolLobby, row: &WolGameRow) -> Opt
                     .multiplayer_shell_runtime
                     .cooperative_campaign_name(campaign)
             })
-            .map(|key| csf(state, key));
+            .map(|key| state.csf_text(key));
         (
             room.summary.as_ref(),
             crate::i18n::tr_fill(
@@ -143,11 +141,11 @@ pub(crate) fn player_badge(state: &AppState, name: &str) -> Option<&'static str>
 /// and VERA's online room: the name, then the badge's name and the season's
 /// rank and OS as the player card shows them, or Unranked.
 pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<String> {
-    let badge = csf(state, badge_name_key(badge)?);
+    let badge = state.csf_text(badge_name_key(badge)?);
     let ladder = &state.frontend.wol_lobby_globals.ladder;
     Some(match ladder.get(&name.to_ascii_lowercase()) {
         Some(record) => crate::i18n::fill(
-            &csf(state, "VERA:PlayerHelp"),
+            &state.csf_text("VERA:PlayerHelp"),
             &[
                 ("name", &name),
                 ("badge", &badge),
@@ -156,7 +154,7 @@ pub(crate) fn badge_help(state: &AppState, name: &str, badge: &str) -> Option<St
             ],
         ),
         None => crate::i18n::fill(
-            &csf(state, "VERA:PlayerHelpUnranked"),
+            &state.csf_text("VERA:PlayerHelpUnranked"),
             &[("name", &name), ("badge", &badge)],
         ),
     })
@@ -179,11 +177,11 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
     let mut help = format!("{name} : ");
     match state.frontend.wol_lobby_globals.ladder.get(&key) {
         Some(record) => {
-            help.push_str(&csf(state, "TXT_RANK"));
+            help.push_str(&state.csf_text("TXT_RANK"));
             help.push(' ');
             help.push_str(&record.rank.to_string());
         }
-        None => help.push_str(&csf(state, "TXT_UNRANKED")),
+        None => help.push_str(&state.csf_text("TXT_UNRANKED")),
     }
     if let Some(member) = member {
         let clan = if member.clan_name.is_empty() {
@@ -211,7 +209,7 @@ pub(in crate::app::shell_wol) fn locale_name(state: &AppState, name: &str) -> Op
         .locales
         .get(&name.to_ascii_lowercase())
         .filter(|locale| **locale != 0)?;
-    Some(csf(state, &format!("WOL:Locale{locale:02}")))
+    Some(state.csf_text(&format!("WOL:Locale{locale:02}")))
 }
 
 /// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the
@@ -222,10 +220,7 @@ pub(super) fn scenario_description(state: &AppState, scenario: &str) -> String {
     use crate::util::native_string::crt_strcmpi;
     use std::cmp::Ordering;
     if crt_strcmpi(scenario, crate::map::skirmish_scenarios::RANDMAP_SED) == Ordering::Equal {
-        return csf(
-            state,
-            crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY,
-        );
+        return state.csf_text(crate::app::shell_random_map::RANDOM_MAP_DESCRIPTION_KEY);
     }
     state
         .frontend
@@ -250,10 +245,10 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
         .take(10)
         .collect();
     let ping = if row.ping == -1 {
-        csf(state, "TXT_UNKNOWN_PING")
+        state.csf_text("TXT_UNKNOWN_PING")
     } else {
         crate::assets::csf_file::format_csf(
-            &csf(state, "MSG:PingInfo"),
+            &state.csf_text("MSG:PingInfo"),
             &[crate::assets::csf_file::CsfArg::Int(i64::from(row.ping))],
         )
     };

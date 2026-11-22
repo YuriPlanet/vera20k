@@ -2,22 +2,25 @@
 //! lookup, the owner-draw button label clip, the software cursor sprite and
 //! one RGB565-presented composition pass.
 
-use std::borrow::Cow;
-
 use crate::app::AppState;
 use crate::render::batch::{BatchTexture, SpriteInstance};
 use crate::render::shell_surface_present::SurfaceEffects;
 use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
 
-/// CSF text for `key`; the key itself when no string table is loaded (a
-/// missing label resolves to the CSF's `MISSING:'key'` text).
-pub(crate) fn resolve_csf<'a>(state: &'a AppState, key: &'a str) -> Cow<'a, str> {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or(Cow::Borrowed(key), |csf| csf.text(key))
+impl AppState {
+    /// [`Self::csf_label`] with the key itself standing in while no table is
+    /// loaded (a missing label resolves to the CSF's `MISSING:'key'` text).
+    pub(crate) fn csf_text(&self, key: &str) -> String {
+        self.csf_label(key, key)
+    }
+
+    /// A label in the language in use ([`crate::i18n::label`]): VERA's own
+    /// (`VERA:`) come from its language files, the game's from the loaded
+    /// table, and `fallback` stands in while none is loaded.
+    pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
+        crate::i18n::label(self.process_assets.csf.as_ref(), key, fallback)
+    }
 }
 
 /// Native owner-draw button label clip: unpressed `(x, y+1, w-2, h-1)`,
@@ -280,6 +283,58 @@ fn encode_composition(
             presenter.encode_present_with_effects(&gpu.queue, encoder, destination, effects)
         }
         None => presenter.encode_present(encoder, destination),
+    }
+}
+
+/// Sprite batches drawn in order over a black clear onto `view` through the
+/// passthrough pipeline at the window's pixel camera, with no shell surface:
+/// the status card and the startup splash, which must draw without the
+/// shell's chrome or the app state.
+pub(crate) fn encode_sprite_pass(
+    gpu: &crate::render::gpu::GpuContext,
+    batch: &crate::render::batch::BatchRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    targets: (&wgpu::TextureView, &wgpu::TextureView),
+    label: &str,
+    draws: &[TexturedDraw<'_>],
+) {
+    let (width, height) = (gpu.config.width as f32, gpu.config.height as f32);
+    let flat = crate::render::batch::DepthAxis::NONE;
+    batch.update_camera(gpu, width, height, 0.0, 0.0, 1.0, flat);
+    let buffers: Vec<_> = draws
+        .iter()
+        .map(|draw| batch.create_instance_buffer(gpu, &draw.instances))
+        .collect();
+    let (view, depth) = targets;
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        // The passthrough pipeline declares Depth32Float even though it
+        // compares Always and does not write depth.
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view: depth,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: wgpu::StoreOp::Store,
+            }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    for (draw, buffer) in draws.iter().zip(&buffers) {
+        if let Some((buffer, count)) = buffer {
+            batch.draw_with_buffer_passthrough(&mut pass, draw.texture, buffer, *count);
+        }
     }
 }
 

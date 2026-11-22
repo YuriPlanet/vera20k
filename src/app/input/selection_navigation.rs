@@ -539,14 +539,11 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         entity_navigation_category(sim, rules, *id, kind)
             .is_some_and(|category| category != result.category)
     });
-    let label = localized(
-        state,
-        if mixed {
-            "MSG:Mixed"
-        } else {
-            category_key(kind, result.category)
-        },
-    );
+    let label = state.csf_text(if mixed {
+        "MSG:Mixed"
+    } else {
+        category_key(kind, result.category)
+    });
     // Native731E29 sums each object's Cost_Of for its own house
     // (`0x00731E2B..0x00731E42`).
     let worth = selected
@@ -563,9 +560,9 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
         selected.len(),
         worth,
         &label,
-        &localized(state, "MSG:NavEmpty"),
-        &localized(state, "MSG:NoUnitsSel"),
-        &localized(state, "MSG:UnitsWorth"),
+        &state.csf_text("MSG:NavEmpty"),
+        &state.csf_text("MSG:NoUnitsSel"),
+        &state.csf_text("MSG:UnitsWorth"),
     );
     crate::app::input::messages::post_selection_navigation_text(state, &text);
     let input = &mut state.match_state.input;
@@ -575,14 +572,6 @@ pub(super) fn execute_category_navigation(state: &mut AppState, kind: CategoryNa
     input
         .type_select
         .finish_category_navigation(kind, result.has_candidates);
-}
-
-fn localized(state: &AppState, key: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned())
 }
 
 fn navigation_feedback(

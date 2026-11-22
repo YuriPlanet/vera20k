@@ -96,7 +96,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     if !(dialog.wol() && !dialog.host) {
                         App::leave_shell_dialog(
                             state,
-                            shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                            crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(
+                                dialog,
+                            ),
+                            crate::app::shell_network_setup::commit_back,
                         );
                     }
                 }
@@ -114,7 +117,8 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::NetworkSetupChooseMap(dialog),
+                    crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                    crate::app::shell_network_setup::open_choose_map,
                 );
             }
             Ok(())
@@ -139,12 +143,14 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
+                crate::app::input::multiplayer_setup::drop_pointer(state, true);
             }
             Ok(())
         }
-        SetupAction::OpenBox(open) => {
+        SetupAction::GameOptions(open) => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, true);
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                ui.show_box(open);
+                ui.show_game_options(open);
             }
             Ok(())
         }
@@ -153,10 +159,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::MapOffer { download } => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, false);
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
             };
-            ui.cancel_pointer();
             if download {
                 if let Some(offer) = ui.map_offer.as_mut() {
                     offer.downloading = true;
@@ -166,7 +172,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 ui.map_offer = None;
                 apply_action(state, SetupAction::Back);
             }
-            state.platform.window.request_redraw();
             Ok(())
         }
         SetupAction::Page => {
@@ -196,7 +201,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     if let Err(error) = result {
         log::warn!("network setup command refused: {error:#}");
     }
-    state.platform.window.request_redraw();
 }
 
 pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {

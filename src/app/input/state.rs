@@ -535,12 +535,12 @@ impl MatchInputState {
             self.last_selection_click = None;
             return false;
         }
-        crate::ui::shell::list::is_double_click(
+        vera20k_gui::shell::list::is_double_click(
             &mut self.last_selection_click,
             now,
             point.0,
             point.1,
-            crate::ui::shell::saved_file_input::host_double_click_limits(),
+            crate::ui::shell::controller::host_double_click_limits(),
         )
     }
 

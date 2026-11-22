@@ -6,18 +6,21 @@
 //! The model owns the transcript and Cancel; the runner, its stage machine
 //! and what Cancel does belong to the app's WOL owner.
 
-use crate::ui::lan_shell::{LanChatLine, LanListState};
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-pub(crate) const DIALOG: DialogId = DialogId(0x0117);
+use crate::ui::lan_shell::LanChatLine;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
+
+pub(crate) const DIALOG: DialogResourceId = DialogResourceId(0x0117);
 pub(crate) const CANCEL: u16 = 0x05C0;
 pub(crate) const TRANSCRIPT: u16 = 0x053F;
+/// The "Match Status" caption (template static `0xFFFF`).
+pub(crate) const CAPTION: u16 = 0xFF00;
 
 /// RT_DIALOG `0x117`: no stacked buttons, Cancel on the bottom row. Help
 /// keys from the executed `0x006040B0`; Cancel's `WOL:WDTMatchBack`
@@ -26,13 +29,7 @@ pub(crate) const PAGE: MenuPageSpec = MenuPageSpec {
     dialog: DIALOG,
     title_key: "GUI:Matching",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: CANCEL,
-        dlu_top: 257,
-        csf_key: "GUI:Cancel",
-        tooltip_key: "STT:WOLMatchCancel",
-        result: None,
-    },
+    back: MenuPageButtonSpec::new(CANCEL, 257, "GUI:Cancel", "STT:WOLMatchCancel"),
 };
 
 /// The caption over the transcript (a left static, `0x50020000`).
@@ -42,21 +39,35 @@ pub(crate) const MATCH_STATUS_KEY: &str = "GUI:MatchStatus";
 pub(crate) const DOT_ROW_LIMIT: usize = 0x24;
 
 /// Status help of `0x117`'s children (executed `0x006040B0`).
+#[cfg(all(test, tests_ui))]
 pub(crate) fn tooltip_key(control: u16) -> Option<&'static str> {
     match control {
         CANCEL => Some(PAGE.back.tooltip_key),
-        TRANSCRIPT => Some("STT:WOLMatchOutput"),
+        TRANSCRIPT => Some(TRANSCRIPT_HELP),
         _ => None,
     }
 }
 
-/// Dialog `0x117` while it exists: the transcript's rows and Cancel.
+const TRANSCRIPT_HELP: &str = "STT:WOLMatchOutput";
+
+/// `0x117`'s widgets: Cancel and the transcript (`LBS_NOSEL`: a row press
+/// selects nothing it shows, and plays nothing).
+pub(crate) fn spec() -> NodeSpec {
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(&PAGE))
+        .child(
+            NodeSpec::new(NodeKind::List)
+                .id(TRANSCRIPT.into())
+                .tooltip(TRANSCRIPT_HELP)
+                .with(Prop::RowCount, Value::Int(0)),
+        )
+}
+
+/// Dialog `0x117` while it exists: the transcript's rows (its scroll is the
+/// list widget's).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolQuickMatchPage {
     pub(crate) lines: Vec<LanChatLine>,
-    pub(crate) list: LanListState,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
 }
 
 impl WolQuickMatchPage {
@@ -82,70 +93,18 @@ impl WolQuickMatchPage {
 #[derive(Debug, Clone)]
 pub(crate) struct WolQuickMatchLayout {
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    pub(crate) caption: RectPx,
-    pub(crate) transcript: RectPx,
+    pub(crate) rects: RectTable,
 }
 
 impl WolQuickMatchLayout {
-    pub(crate) fn new(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::RETAIL)
+    pub(crate) fn new(width: i32, height: i32, scale: ShellScale) -> Self {
+        let (page, rects) = layout_data::menu_page(&PAGE, "0x117", scale, width, height);
+        Self { page, rects }
     }
 
-    pub(crate) fn responsive(width: i32, height: i32) -> Self {
-        Self::build(width, height, ShellScale::from_screen(width, height))
-    }
-
-    fn build(width: i32, height: i32, scale: ShellScale) -> Self {
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(&PAGE, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(&PAGE, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
-        // Heading 0x694 is 106x11 DLU, centred by 0x0060B1D0 where the
-        // family's sits and one row taller.
-        let heading = dlu_rect(426, 4, 106, 11);
-        let narrow = |mut title: RectPx| {
-            let w = heading.w + 1;
-            title.x += (title.w - w) / 2;
-            title.w = w;
-            title.h = heading.h + 1;
-            title
-        };
-        let title = narrow(
-            menu_page::compute_layout(&PAGE, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title,
-        );
-        if scale.is_retail() {
-            page.title = narrow(page.title);
-        } else {
-            page.title = scale.scale_rect(title);
-        }
-        let px = |[x, y, w, h]: [i32; 4]| scale.scale_rect(child_window(x, y, w, h));
-        Self {
-            page,
-            status_help,
-            caption: px([7, 9, 146, 13]),
-            transcript: px([22, 26, 377, 297]),
-        }
-    }
-
-    /// The child under `(x, y)` with input or help.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
-        }
-        self.transcript.contains(x, y).then_some(TRANSCRIPT)
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -167,16 +126,20 @@ mod tests {
         let mut checked = 0;
         for (size, case) in corpus["layouts"]["0x117"]["sizes"].as_object().unwrap() {
             let (width, height) = size.split_once('x').unwrap();
-            let layout = WolQuickMatchLayout::new(width.parse().unwrap(), height.parse().unwrap());
+            let layout = WolQuickMatchLayout::new(
+                width.parse().unwrap(),
+                height.parse().unwrap(),
+                crate::ui::shell::geom::RETAIL_SCALE,
+            );
             for (control, child) in case["controls"].as_object().unwrap() {
                 let actual = match control.as_str() {
                     "0x71C" => layout.page.warning_monitor,
                     "0x694" => layout.page.title,
-                    "0x695" => layout.status_help,
-                    "0x53F" => layout.transcript,
+                    "0x695" => layout.page.status_help,
+                    "0x53F" => layout.rect_of(TRANSCRIPT).unwrap(),
                     "0xFFFF" => {
                         assert_eq!(child["caption"].as_str(), Some(MATCH_STATUS_KEY));
-                        layout.caption
+                        layout.rect_of(CAPTION).unwrap()
                     }
                     "0x5C0" => layout.page.button_rect(CANCEL).unwrap(),
                     other => panic!("{size} {other}"),
