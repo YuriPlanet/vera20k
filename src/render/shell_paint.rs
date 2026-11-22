@@ -22,14 +22,14 @@ use crate::render::chrome_atlas::ChromeAtlasEntry;
 use crate::render::main_menu_shell_chrome::{
     ListScrollArt, MainMenuShellChromeAtlas, MainMenuShellChromeEntry,
 };
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
-use crate::ui::shell::geom::{RectPx, RightPanelRects, ShellScale};
+use crate::ui::shell::geom::{RectPx, RightPanelRects, ShellAlign, ShellScale};
+use crate::ui::shell::slide::{ColumnDraw, PanelArt, panel_art_origin};
 use vera20k_gui::shell::list::{
     ListScrollPart, grip_tiles, scrollbar_arrow_origins, scrollbar_interior,
 };
-use crate::ui::shell::slide::{ColumnDraw, PanelArt, panel_art_origin};
 
 /// Parent background sits behind the movie in the Z stack. Greater depth =
 /// farther back, so this must exceed `MOVIE_DEPTH`. 0xE2-only (the main-menu

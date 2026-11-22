@@ -5,8 +5,8 @@
 
 use crate::app::AppState;
 use crate::app::input::abort::{DIALOG, current_abort_layout};
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::abort::AbortButton;
+use crate::ui::shell::geom::ShellAlign;
 
 pub(crate) fn render_abort_shell(
     state: &mut AppState,

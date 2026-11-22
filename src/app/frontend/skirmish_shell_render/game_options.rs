@@ -10,7 +10,8 @@ use super::wol_lobby::POPUP_DEPTHS;
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::skirmish_shell::game_options::{GameOptionsControl, GameOptionsLayout, sync};
 
 /// The open box's art and controls, then its text, over the page: the

@@ -86,7 +86,7 @@ pub(crate) fn render_saved_game_loading(
             .into(),
         rect: layout.body,
         rgb: SHELL_LABEL_TEXT_RGB,
-        align: crate::render::shell_text::ShellAlign::NONE,
+        align: crate::ui::shell::geom::ShellAlign::NONE,
         path_a_reveal: None,
     }];
     // A zoomed match's text is drawn in the window (`window_ui`).

@@ -10,10 +10,10 @@ use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB}
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::util::time::Instant;
 
 /// Whether box button `id` shows pushed (612B70).

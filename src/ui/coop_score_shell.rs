@@ -12,10 +12,10 @@
 //! The app supplies resolved texts and a per-frame view of the round, which
 //! `MatchSession` owns; this leaf keeps only the dialog's interaction.
 
-use crate::render::shell_text::ShellAlign;
 use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};

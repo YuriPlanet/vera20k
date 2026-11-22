@@ -7,8 +7,8 @@ use super::in_game_shell::{self, InGamePaint};
 use super::launcher_options;
 use crate::app::AppState;
 use crate::assets::csf_file::CsfFile;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::pause_menu::{
     InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuTemplate,
 };

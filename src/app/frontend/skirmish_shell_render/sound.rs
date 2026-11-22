@@ -5,8 +5,8 @@ use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH};
 use crate::app::AppState;
 use crate::app::input::dialog_page;
 use crate::app::input::sound::DIALOG;
-use crate::render::{shell_paint, shell_text::ShellAlign};
-use crate::ui::shell::geom::RectPx;
+use crate::render::shell_paint;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::shell::sound::{SoundButton, SoundControl, SoundLayout, SoundSlider};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 

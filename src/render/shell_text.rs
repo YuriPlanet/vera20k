@@ -12,38 +12,7 @@
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit, LineSpan, TextRaster};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::shell::geom::{RIGHT_PANEL_FACE_W, RectPx};
-
-/// Alignment flag set for `draw_in_rect_scaled`.
-/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center, 0x08 = panel face.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct ShellAlign(pub u8);
-
-impl ShellAlign {
-    pub const NONE: ShellAlign = ShellAlign(0);
-    pub const H_CENTER: ShellAlign = ShellAlign(0x01);
-    pub const H_RIGHT: ShellAlign = ShellAlign(0x02);
-    pub const V_CENTER: ShellAlign = ShellAlign(0x04);
-    /// VERA's own: the rect is wider than the right-panel art it labels, an
-    /// SDBTNANM button's red face or the title window atop the column, so the
-    /// text must also fit [`RIGHT_PANEL_FACE_W`] on one line to stay on it.
-    pub const PANEL_FACE: ShellAlign = ShellAlign(0x08);
-    /// An SDBTNANM button's caption, centred on its face.
-    pub const BUTTON_CAPTION: ShellAlign = ShellAlign(0x01 | 0x04 | 0x08);
-    /// The right panel's title, centred in its window.
-    pub const PANEL_TITLE: ShellAlign = ShellAlign(0x01 | 0x08);
-
-    pub fn contains(self, flag: ShellAlign) -> bool {
-        (self.0 & flag.0) != 0
-    }
-}
-
-impl std::ops::BitOr for ShellAlign {
-    type Output = Self;
-    fn bitor(self, rhs: Self) -> Self {
-        ShellAlign(self.0 | rhs.0)
-    }
-}
+use crate::ui::shell::geom::{RIGHT_PANEL_FACE_W, RectPx, ShellAlign};
 
 /// Pixel-coordinate scissor rect. Apply via `wgpu::RenderPass::set_scissor_rect`.
 #[derive(Copy, Clone, Debug, Default)]
