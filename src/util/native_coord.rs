@@ -43,3 +43,24 @@ pub(crate) fn squared_xy_distance(from: [i32; 2], to: [i32; 2], ares: bool) -> i
         dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx))
     }
 }
+
+/// [`squared_xy_distance`] as nearest-candidate pickers compare it. A map the
+/// original reads (`[Map] Size` width plus height up to 512) keeps the native
+/// 32-bit result, sign-extended, with its Ares clamp. VERA's size extension
+/// reaches 1024: near a 300x300 map's corner, a 230-cell separation on both
+/// axes makes `(230·256)² * 2` pass `3 * 2³¹`, so the wrapped sum is negative
+/// and a far candidate reads as nearer. Those VERA-only maps compare the true
+/// 64-bit square instead.
+pub(crate) fn squared_xy_distance_for_map(
+    from: [i32; 2],
+    to: [i32; 2],
+    ares: bool,
+    vera_only_map: bool,
+) -> i64 {
+    if !vera_only_map {
+        return i64::from(squared_xy_distance(from, to, ares));
+    }
+    let dx = i64::from(from[0]) - i64::from(to[0]);
+    let dy = i64::from(from[1]) - i64::from(to[1]);
+    dx * dx + dy * dy
+}
