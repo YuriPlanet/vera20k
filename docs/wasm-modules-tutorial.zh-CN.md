@@ -5,6 +5,7 @@
 - 写给谁：会改 `rulesmd.ini`、想做 INI 做不到的玩法的 modder。用过一点编程语言就够了，Rust 只用到最基础的部分。
 - 参考资料：功能清单见[模块指南](wasm-modules.md)；完整设计见 [RFC 0001](rfcs/0001-wasm-extension-modules.md)；每个函数、事件、动作、属性的编号与含义见[附录](rfcs/0001-wasm-extension-modules-api.md)。
 - 预览版提醒：接口还在 `0.x` 预览阶段，名字和编号在正式版前可能会变。游戏会在模块需要更新的接口时直接告诉你。
+- 想用 TypeScript？见 [TypeScript 版教程](wasm-modules-tutorial-ts.zh-CN.md)（SDK 尚未实现，教程用于提前评审 API）。
 
 ## 目录
 

@@ -209,6 +209,8 @@ difference shows within 15 frames.
 
 - [Tutorial (Chinese)](wasm-modules-tutorial.zh-CN.md): a first module step by
   step, from installing Rust to a working bounty mod in a skirmish.
+- [Tutorial, TypeScript (Chinese)](wasm-modules-tutorial-ts.zh-CN.md): the same
+  tutorial for the planned TypeScript SDK, written ahead of the SDK to review its API.
 - [RFC 0001](rfcs/0001-wasm-extension-modules.md): the design, in particular
   sections 2 (mods and maps), 3 (loading and errors), 6 (triggers, actions,
   properties, variables, decisions, orders) and 15 (performance).
