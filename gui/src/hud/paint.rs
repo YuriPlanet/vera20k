@@ -57,7 +57,8 @@ impl Hud {
     /// `Background`; its picture (`Image`, `Button`), filled part (`Bar`) or
     /// host area (`External`); its `Text`, or without one its `Label`
     /// (`Text`, `Button`, `Dialog`). What is empty or wholly outside its
-    /// clip or the viewport is left out, so text needs a rect with a size.
+    /// clip or the viewport is left out, so text needs a rect with a size,
+    /// and so is a fill of alpha 0.
     pub fn paint<'a>(&'a self, out: &mut Vec<PaintCmd<'a>>) {
         let viewport = self.layout.viewport();
         let hovered = self.hovered();
@@ -73,7 +74,7 @@ impl Hud {
             };
             let mut push = |op| out.push(PaintCmd { node: id, clip, op });
 
-            if let Some(color) = color_prop(node, Prop::Background) {
+            if let Some(color) = color_prop(node, Prop::Background).filter(has_alpha) {
                 push(PaintOp::Fill { rect, color });
             }
             match node.kind {
@@ -91,8 +92,8 @@ impl Hud {
                     let percent = i64::from(node.int_prop(Prop::Fill, 0).clamp(0, 100));
                     let w = (i64::from(rect.w) * percent / 100) as i32;
                     let filled = Rect::new(rect.x, rect.y, w, rect.h);
-                    if shows(filled, area) {
-                        let color = color_prop(node, Prop::Color).unwrap_or(WHITE);
+                    let color = color_prop(node, Prop::Color).unwrap_or(WHITE);
+                    if shows(filled, area) && has_alpha(&color) {
                         push(PaintOp::Fill {
                             rect: filled,
                             color,
@@ -129,6 +130,10 @@ impl Hud {
 fn shows(rect: Rect, area: Rect) -> bool {
     let seen = intersect(rect, area);
     seen.w > 0 && seen.h > 0
+}
+
+fn has_alpha(color: &Rgba) -> bool {
+    color.3 > 0
 }
 
 fn color_prop(node: &Node, prop: Prop) -> Option<Rgba> {
@@ -187,7 +192,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hud::{Layer, Origin};
+    use crate::gui::MouseButton;
+    use crate::hud::{Layer, Origin, Pointer};
 
     const VIEW: Rect = Rect::new(0, 0, 100, 100);
     const BOX: Rect = Rect::new(10, 10, 40, 20);
@@ -342,6 +348,57 @@ mod tests {
             }
             assert_eq!(ops, expected, "{percent}");
         }
+    }
+
+    #[test]
+    fn a_fill_of_alpha_zero_is_left_out() {
+        let mut hud = hud();
+        let bar = root(&mut hud, NodeKind::Bar, BOX);
+        hud.set(bar, Prop::Fill, Value::Int(50)).unwrap();
+        color(&mut hud, bar, Prop::Background, Rgba(1, 2, 3, 0));
+        color(&mut hud, bar, Prop::Color, Rgba(1, 2, 3, 0));
+        assert!(painted(&mut hud).is_empty());
+    }
+
+    #[test]
+    fn a_held_button_paints_pressed() {
+        let mut hud = hud();
+        let id = root(&mut hud, NodeKind::Button, BOX);
+        text(&mut hud, id, Prop::Art, "plate");
+        hud.layout(VIEW);
+        hud.input(Pointer::Down {
+            x: 20,
+            y: 20,
+            button: MouseButton::Left,
+        });
+        let pressed = PaintOp::Image {
+            rect: BOX,
+            art: "plate",
+            state: ButtonState::Pressed,
+        };
+        assert_eq!(painted(&mut hud)[0].op, pressed);
+    }
+
+    #[test]
+    fn culling_cuts_the_clip_to_the_viewport() {
+        let mut hud = hud();
+        let window = root(&mut hud, NodeKind::Panel, Rect::new(50, 50, 200, 200));
+        hud.set(window, Prop::Clip, Value::Bool(true)).unwrap();
+        // Within the clip, beyond the viewport.
+        child(
+            &mut hud,
+            window,
+            NodeKind::External,
+            Rect::new(120, 60, 5, 5),
+        );
+        let shown = child(
+            &mut hud,
+            window,
+            NodeKind::External,
+            Rect::new(90, 90, 20, 20),
+        );
+        let nodes: Vec<NodeId> = painted(&mut hud).iter().map(|cmd| cmd.node).collect();
+        assert_eq!(nodes, [shown]);
     }
 
     #[test]

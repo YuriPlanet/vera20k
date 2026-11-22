@@ -7,8 +7,9 @@
 //!
 //! The HUD is no security boundary. Such a bridge keeps its own handle table,
 //! checks [`Hud::origin`] (and [`world::World::template_origin`]) before a
-//! change, undoes its changes to others' items, and numbers the enums for its
-//! wire. Events may name a node removed since they were queued.
+//! change, undoes its changes to others' items, expects [`Hud::remove_origin`]
+//! to take others' nodes beneath its own, and numbers the enums for its wire.
+//! Events may name a node removed since they were queued.
 //!
 //! A frame: [`Hud::layout`], [`Hud::input`] against that layout,
 //! [`Hud::drain_events`], the host's changes, [`Hud::layout`], [`Hud::paint`].
@@ -29,8 +30,9 @@ pub use input::{ClickOrder, HoverOrder, HudEvent, InputPolicy, Pointer, Response
 pub use layout::Hold;
 pub use paint::{ButtonState, PaintCmd, PaintOp, batches};
 
-/// Empties `buffer` for the next frame and keeps its allocation, free of what
-/// the last frame's commands borrowed.
+/// Empties `buffer` for the next frame, free of what the last frame's
+/// commands borrowed. It keeps the allocation only where `A` and `B` have
+/// one layout, as when they differ in lifetimes alone.
 pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
     buffer.clear();
     // An empty same-layout vector collects in place.
@@ -66,6 +68,22 @@ pub enum Origin {
     External(u16),
 }
 
+/// What others than the host share of a limit: a quarter, rounded up, is
+/// the host's alone.
+fn others_share(limit: usize) -> usize {
+    limit - limit.div_ceil(4)
+}
+
+impl Origin {
+    fn share(self, limit: usize) -> usize {
+        if self == Origin::Host {
+            limit
+        } else {
+            others_share(limit)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Meta {
     pub origin: Origin,
@@ -96,8 +114,9 @@ impl Hud {
         }
     }
 
-    /// Changes whenever a node changes; with [`world::World::revision`] it
-    /// tells the host whether a still picture needs a redraw.
+    /// Changes whenever a node changes or the hovered or pressed one does;
+    /// with [`world::World::revision`] it tells the host whether a still
+    /// picture needs a redraw.
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -135,8 +154,7 @@ impl Hud {
         if layer.host_only() {
             return Err(Refused::Denied);
         }
-        let max = self.tree.max_nodes();
-        if self.tree.live_count() >= max - max / 4 {
+        if self.tree.live_count() >= others_share(self.tree.max_nodes()) {
             return Err(Refused::Limit);
         }
         Ok(())
@@ -151,14 +169,24 @@ impl Hud {
         Ok(())
     }
 
-    /// Geometry takes effect at the next [`Self::layout`].
+    /// Geometry takes effect at the next [`Self::layout`]. A `Command` has at
+    /// most [`world::MAX_TEXT_BYTES`].
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
         if self.tree.get(id, prop)? == Some(&value) {
             return Ok(());
         }
+        // Every queued click holds a copy.
+        if let (Prop::Command, Value::Text(text)) = (prop, &value)
+            && text.len() > world::MAX_TEXT_BYTES
+        {
+            return Err(Refused::Limit);
+        }
         self.tree.set(id, prop, value)?;
         self.revision += 1;
-        if matches!(prop, Prop::Visible | Prop::Enabled) {
+        if matches!(
+            prop,
+            Prop::Visible | Prop::Enabled | Prop::Clickable | Prop::Hoverable
+        ) {
             self.forget_inactive();
         }
         Ok(())
@@ -192,15 +220,18 @@ impl Hud {
     }
 
     /// Removes all that `origin` made: its nodes with their subtrees, its
-    /// templates and its draw lists.
+    /// templates and its draw lists. What others made beneath its nodes goes
+    /// too, so their handles to it become `Stale`.
     pub fn remove_origin(&mut self, origin: Origin) {
-        let made: Vec<NodeId> = self.meta.iter().filter(|(_, m)| m.origin == origin).map(|(id, _)| *id).collect();
-        let mut changed = false;
-        for id in made {
-            // An earlier removal may have taken it with a parent's subtree.
-            changed |= self.tree.remove(id).is_ok();
-        }
-        if changed {
+        // In paint order, not the map's, so the ids given out next are the same in every run.
+        let mut made = Vec::new();
+        self.visit(|id| {
+            if self.meta.get(&id).is_some_and(|m| m.origin == origin) {
+                made.push(id);
+            }
+        });
+        if !made.is_empty() {
+            self.tree.remove_all(&made);
             let tree = &self.tree;
             self.meta.retain(|id, _| tree.node(*id).is_ok());
             for roots in &mut self.roots {
@@ -252,9 +283,12 @@ impl Hud {
         }
     }
 
-    /// The rect from the last [`Self::layout`]; none while hidden or removed.
+    /// The rect from the last [`Self::layout`]; none while hidden or removed,
+    /// also if only since then.
     pub fn rect(&self, id: NodeId) -> Option<Rect> {
-        self.tree.node(id).ok()?;
+        if !self.tree.effective(id, Prop::Visible) {
+            return None;
+        }
         self.layout.placed(id).map(|p| p.rect)
     }
 }
