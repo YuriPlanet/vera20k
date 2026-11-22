@@ -244,6 +244,29 @@ fn an_anims_glow_outlives_it_in_stock_but_not_under_ares() {
     }
 }
 
+/// Unlimbo refuses 0,0,0 before its glow block (`0x005F4ECD`), so a Particle
+/// made there casts none.
+#[test]
+fn nothing_made_at_the_origin_casts_a_glow() {
+    use crate::sim::particles::Particle;
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=SPARK\n[SPARK]\nAlphaImage=GLOW\n",
+    ))
+    .unwrap();
+    rules.supply_alpha_image_for_test(
+        "GLOW",
+        AlphaImage::for_test([61, 31], [0, 0, 1, 1], vec![254]),
+    );
+    let mut sim = Simulation::with_seed(5);
+    for coord in [glam::IVec3::ZERO, glam::IVec3::new(1152, 1152, 0)] {
+        let type_id = crate::rules::particle_type::ParticleTypeId(0);
+        let mut particle = Particle::test_fixture(type_id, coord);
+        particle.set_stable_id_for_test(sim.substrate.allocate_stable_id());
+        sim.unlimbo_particle_alpha_shape(&particle, &rules);
+    }
+    assert_eq!(glows(&sim, &rules), [([-30, 135], "GLOW")]);
+}
+
 /// Deleting a system at once runs each particle's destructor, whose expiry
 /// (`0x0062D9C8`) disables the particle's glow for PurgeDisabled. Stock rules.
 #[test]

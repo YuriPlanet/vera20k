@@ -130,6 +130,12 @@ impl AlphaShapes {
 
     /// Remove `object`'s shape: only Ares does, and its map holds at most
     /// one per object.
+    ///
+    /// A linear scan, as Ares' vector erase is. Many withheld glowing
+    /// Technos, or many updates behind many glows that never move
+    /// (Particles, ParticleSystems, VoxelAnims), cost their product per
+    /// frame. Retail data has one glow type (`TSTLAMP`); an index from
+    /// object to shape would remove the cost for glow-heavy mods.
     fn take(&mut self, object: u64) -> Option<AlphaShape> {
         let index = self
             .shapes
@@ -304,6 +310,11 @@ impl Simulation {
         source: AlphaSource<'_>,
         rules: &RuleSet,
     ) {
+        // Unlimbo refuses 0,0,0 before its glow block (`0x005F4ECD`), for
+        // every kind.
+        if source.coord == [0, 0, 0] {
+            return;
+        }
         let Some(image) = rules.alpha_image(source.image) else {
             return;
         };
@@ -450,10 +461,11 @@ impl Simulation {
     /// ([`AlphaImage::facing_frame`]).
     ///
     /// So under Ares an `InvisibleInGame=yes` building the player does not
-    /// own (a `TSTLAMP` lamp) draws no glow: BuildingType ReadINI
-    /// (`0x00460E09`) sets its Invisible byte (`+0xC9A`), and
-    /// `TechnoClass::VisualCharacter @ 0x00703860` answers Hidden for an
-    /// Invisible type unless `+0x41A` (owned by the player) is set.
+    /// own draws no glow: BuildingType ReadINI (`0x00460E09`) sets its
+    /// Invisible byte (`+0xC9A`), and `TechnoClass::VisualCharacter @
+    /// 0x00703860` answers Hidden for an Invisible type unless `+0x41A`
+    /// (owned by the player) is set. No retail type has both: the one retail
+    /// AlphaImage, `[TSTLAMP]`'s `ALPHATST`, is on a visible lamp.
     ///
     /// [`AlphaImage::facing_frame`]: crate::rules::alpha_image_assets::AlphaImage::facing_frame
     pub fn alpha_shape_draws<'a>(

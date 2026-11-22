@@ -390,15 +390,13 @@ impl Simulation {
         );
         self.substrate.particle_systems.insert(sys);
         self.reveal_particle_system(stable_id);
-        // Unlimbo refuses 0,0,0 before its glow block (`0x005F4ECD`), even
-        // where VERA reveals the system (`reveal_particle_system`).
-        if coords != IVec3::ZERO {
-            self.unlimbo_alpha_shape(
-                stable_id,
-                crate::sim::world::ObjectKind::ParticleSystem,
-                rules,
-            );
-        }
+        // A system at 0,0,0 gets no glow even where VERA reveals it
+        // (`unlimbo_alpha_shape`).
+        self.unlimbo_alpha_shape(
+            stable_id,
+            crate::sim::world::ObjectKind::ParticleSystem,
+            rules,
+        );
         Some(stable_id)
     }
 
