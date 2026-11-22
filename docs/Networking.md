@@ -1166,6 +1166,9 @@ command stream above is an intentional adaptation.
   online name may be 24 characters, so VERA writes the first 19 bytes of a longer
   name and receivers match a sender by that same prefix (together with its
   endpoint, as before). LAN names are at most 19 and travel unchanged.
+  A match chat line shows under the name and colour the room admitted for the
+  endpoint it came from, so a longer online name arrives whole and no player
+  can speak as another; only a sender outside the roster shows the packet's own.
   A LAN name is the saved player name's bytes: gamemd copies them into each packet
   (`5DC6A6`) and shows them one byte to a character (`735120`), so every player,
   the sender too, sees the same name, and a name beyond ASCII shows as its bytes.
