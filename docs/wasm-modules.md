@@ -219,8 +219,9 @@ difference shows within 15 frames.
 - [Development status](rfcs/0001-wasm-extension-modules-status.md): what this build
   implements so far.
 - `sdk/examples/` in the source: `minimal-rules`, `modifier-vars`, `panic-triggers`,
-  `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`, and
-  four playtest mods whose features do not overlap:
+  `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`, a
+  small game (`muster-field`, below), and four playtest mods whose features do not
+  overlap:
   - `veteran-fury`: kill and damage events, object and global variables, modifiers,
     money, healing and created units, orders for computer houses.
   - `siege-doctrine`: rules edits in `on_rules` and the four decisions
@@ -230,3 +231,12 @@ difference shows within 15 frames.
   - `trigger-lab`: `Birth`, `Fire` on a weapon, `PassengerAdded`, the money, power,
     variable and distance polls, immediate actions, `once`, enabling and disabling
     triggers, house variables and `get_many`.
+
+  `muster-field` is a whole round of an auto-battler without interface code: hire
+  units by ordering them out of a row, merge three of a kind, then watch one battle
+  fight itself. It shows two patterns. Player orders become input through
+  `CommandAllowed`: the handler may not write, so it refuses the order and queues it
+  in module memory for the next `on_frame`. A human house's units are ordered with
+  `SetMission`, which works for every house (`House::order` takes computer houses
+  only), and a module's own `SetMission` does not ask its own `CommandAllowed`.
+  It needs one human player, a computer opponent and Bases on.
