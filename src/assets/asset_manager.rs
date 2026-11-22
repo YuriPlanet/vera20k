@@ -703,6 +703,13 @@ impl AssetManager {
         self.mod_dir.as_deref()
     }
 
+    /// Read an installation archive hidden by a selected mod's same-named
+    /// file, for callers that need an unmodified reference.
+    pub(super) fn shadowed_install_archive(&self, name: &str) -> Option<MixArchive> {
+        let installed = self.loose_asset(name)?.installation_copy.as_ref()?;
+        MixArchive::load(&installed.path).ok()
+    }
+
     /// Whether this game is an Ares game (`rules::ares_switch`): the player's
     /// Ares setting is On, or, set to Auto, the selected mod mounted Ares's
     /// `ares.mix`, its own copy or the installation's. With no mod selected,

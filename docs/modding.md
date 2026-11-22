@@ -150,6 +150,31 @@ check a mod's terms before you use it here. VERA20k doesn't support such mods.
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
 
+#### Menu button names
+
+The game's standard menu buttons follow the player's interface language. When
+your mod renames a button in its CSF, players keep seeing your name as they
+switch languages. For a full replacement `ra2md.csf` (or `ra2.csf` in RA2
+mode), VERA compares each menu entry with the installed game table in the same
+language. If that reference is unavailable, it keeps the replacement's names.
+The game installation's own loose CSF supplies the baseline when it takes
+precedence over the language archives. Put a replacement CSF in the selected
+mod folder to identify it as the mod's text.
+
+To translate your mod's names, add a UTF-8 file such as
+`Resources/vera20k.en.ini` inside your mod (up to 1 MiB per language). Use
+the menu keys in the [English language file](../src/i18n/vera20k.en.ini).
+A mod that calls Skirmish “前線演習” in its CSF can give it an English name.
+
+```ini
+[Strings]
+GUI:Skirmish=Frontline Exercise
+```
+
+Selecting English displays “Frontline Exercise”. In a language for which
+the mod supplies no translation, the same button keeps “前線演習”. One line
+is enough. Other standard buttons still use the player's language.
+
 #### Mods distributed in parts
 
 In the desktop game, put the downloads for one mod inside one `Mods` folder

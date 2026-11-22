@@ -41,8 +41,7 @@ impl AppState {
     /// Re-resolve the loaded string table and the map titles after a new
     /// language, the String Keys box or its hotkey changed what labels answer.
     pub(crate) fn refresh_string_key_labels(&mut self) {
-        if let Some(csf) = self.process_assets.csf.as_mut() {
-            crate::i18n::apply(csf);
+        if let Some(csf) = self.process_assets.refresh_csf_language() {
             crate::map::scenario_sources::relabel_records(
                 &mut self.frontend.scenario_catalog.records_mut(),
                 csf,

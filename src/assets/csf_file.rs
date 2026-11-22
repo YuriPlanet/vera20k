@@ -21,6 +21,7 @@
 
 use std::borrow::Cow;
 
+use crate::assets::asset_manager::AssetManager;
 use crate::assets::error::AssetError;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_string::with_ascii_uppercase;
@@ -52,9 +53,8 @@ pub struct CsfFile {
     // A malformed body can therefore leave a registered label with a null value.
     entries: CsfEntries,
     /// VERA's localization layer (the client's `i18n`), lookup-only:
-    /// `len`/`entries` still describe the loaded files. The player's language
-    /// answers ahead of the table, so it can translate the game's own labels;
-    /// English answers only labels neither has.
+    /// `len`/`entries` still describe the loaded files. The client installs
+    /// translations here after considering the winning CSF record's origin.
     overrides: LookupMap<String, CsfText>,
     fallbacks: LookupMap<String, CsfText>,
 }
@@ -75,6 +75,9 @@ struct CsfText {
     value: String,
     raw: String,
     stored_key: String,
+    /// A supplemental CSF supplied this record, or a mod's replacement base
+    /// table gave it a different caption from the installation.
+    mod_text: bool,
 }
 
 impl CsfFile {
@@ -178,21 +181,46 @@ impl CsfFile {
 
     pub fn load_active<'a>(
         ares: bool,
-        mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
+        lookup: impl FnMut(&str) -> Option<&'a [u8]>,
     ) -> Result<(Self, Vec<String>), AssetError> {
-        let csf_name = Self::active_csf_name();
+        Self::load_tables(Self::active_csf_name(), ares, lookup, |_, bytes| {
+            Self::from_bytes(bytes)
+        })
+    }
+
+    /// Track menu renames in each base file before RA2 adopts missing YR
+    /// labels and before an admitted Ares supplement can replace either.
+    pub fn load_for_interface(assets: &AssetManager) -> Result<(Self, Vec<String>), AssetError> {
+        Self::load_tables(
+            Self::active_csf_name(),
+            assets.ships_ares(),
+            |name| assets.get_ref(name),
+            |name, bytes| {
+                let mut table = Self::from_bytes(bytes)?;
+                table.identify_mod_text(assets, name, bytes);
+                Ok(table)
+            },
+        )
+    }
+
+    fn load_tables<'a>(
+        csf_name: &str,
+        ares: bool,
+        mut lookup: impl FnMut(&str) -> Option<&'a [u8]>,
+        parse_base: impl Fn(&str, &'a [u8]) -> Result<Self, AssetError>,
+    ) -> Result<(Self, Vec<String>), AssetError> {
         let bytes = lookup(csf_name).ok_or_else(|| AssetError::AssetNotFound {
             name: csf_name.to_string(),
         })?;
-        let mut table = Self::from_bytes(bytes)?;
+        let mut table = parse_base(csf_name, bytes)?;
         let mut admitted = Vec::new();
         // `-ra2` reads the original ra2.csf. The YR table is installed beside
         // it and carries labels the base table does not (e.g. UI strings added
         // for the expansion). Adopt those as fallbacks: a label ra2.csf has
         // keeps its original value, missing ones answer from ra2md.csf.
-        if crate::util::ra2_launch::enabled()
+        if csf_name == "ra2.csf"
             && let Some(md_bytes) = lookup("ra2md.csf")
-            && let Ok(md_table) = Self::from_bytes(md_bytes)
+            && let Ok(md_table) = parse_base("ra2md.csf", md_bytes)
         {
             // Absorb missing labels into the base table itself, not into the
             // localization fallbacks: `i18n::apply` clears those right after
@@ -290,10 +318,11 @@ impl CsfFile {
             labels[slot].1 = None;
             let mut position = start;
             for index in 0..pairs {
-                let Ok((value, next)) = parse_value(data, position, &key) else {
+                let Ok((mut value, next)) = parse_value(data, position, &key) else {
                     break 'records;
                 };
                 if index == 0 {
+                    value.mod_text = true;
                     labels[slot].1 = Some(value);
                 }
                 position = next;
@@ -302,6 +331,70 @@ impl CsfFile {
         }
         ares_sort_labels(labels);
         true
+    }
+
+    /// Preserve a mod's changes to a replacement base CSF. An installation's own
+    /// loose CSF is just as valid a translation source as its language MIX.
+    /// Compare visible text to the installation copy in the same language;
+    /// without such a copy, the mod's captions are authoritative.
+    fn identify_mod_text(&mut self, assets: &AssetManager, csf_name: &str, active: &[u8]) {
+        if !assets.mod_selected() {
+            return;
+        }
+        let installed = assets.base_asset_candidates(csf_name, usize::MAX).next();
+        const LANGUAGE_ARCHIVES: [&str; 2] = ["langmd.mix", "language.mix"];
+        // A localized installation can ship a loose translation with the
+        // same language ID as its English archive. If the installation won
+        // the lookup, the selected mod did not rename these entries.
+        if installed.is_some_and(|(bytes, _)| std::ptr::eq(bytes, active)) {
+            return;
+        }
+        let same_language = |bytes: &[u8]| {
+            Self::from_bytes(bytes)
+                .ok()
+                .filter(|csf| csf.language == self.language)
+        };
+        // The mod might have edited the loose translation or the table from
+        // the MIX. Both can carry the same language ID on localized installs.
+        let loose_reference = installed
+            .filter(|(_, source)| source.starts_with("loose:"))
+            .and_then(|(bytes, _)| same_language(bytes));
+        let archives = LANGUAGE_ARCHIVES.into_iter().filter_map(|name| {
+            if let Some(archive) = assets.shadowed_install_archive(name) {
+                return same_language(archive.get_by_name(csf_name)?);
+            }
+            let (bytes, _) = assets
+                .base_asset_candidates(csf_name, usize::MAX)
+                .find(|(_, source)| source.eq_ignore_ascii_case(name))?;
+            same_language(bytes)
+        });
+        let references: Vec<_> = loose_reference.into_iter().chain(archives).collect();
+        if let CsfEntries::Raw(entries) = &mut self.entries {
+            for (key, value) in entries {
+                if let Some(text) = value {
+                    text.mod_text = !references
+                        .iter()
+                        .any(|stock| stock.get(key) == Some(text.value.as_str()));
+                }
+            }
+        }
+    }
+
+    /// The native winner for this key across the base and admitted supplements,
+    /// independent of language overrides installed during previous frames.
+    pub fn is_mod_text(&self, key: &str) -> bool {
+        with_ascii_uppercase(key, |key| {
+            self.loaded_text(key).is_some_and(|value| value.mod_text)
+        })
+    }
+
+    fn loaded_text(&self, upper_key: &str) -> Option<&CsfText> {
+        match &self.entries {
+            CsfEntries::Raw(entries) => entries.get(upper_key).and_then(Option::as_ref),
+            CsfEntries::Ares(labels) => {
+                native_label_search(labels, upper_key).and_then(|slot| labels[slot].1.as_ref())
+            }
+        }
     }
 
     /// Look up a string by label name (case-insensitive). With Ares, a
@@ -355,15 +448,9 @@ impl CsfFile {
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
         // The UI looks labels up every frame: fold the key on the stack.
         with_ascii_uppercase(key, |key| {
-            let loaded = match &self.entries {
-                CsfEntries::Raw(entries) => entries.get(key).and_then(Option::as_ref),
-                CsfEntries::Ares(labels) => {
-                    native_label_search(labels, key).and_then(|slot| labels[slot].1.as_ref())
-                }
-            };
             self.overrides
                 .get(key)
-                .or(loaded)
+                .or_else(|| self.loaded_text(key))
                 .or_else(|| self.fallbacks.get(key))
         })
     }
@@ -422,6 +509,7 @@ fn localized(key: &str, value: &str) -> CsfText {
         value: value.to_owned(),
         raw: value.to_owned(),
         stored_key: key.to_ascii_uppercase(),
+        mod_text: false,
     }
 }
 
@@ -562,6 +650,7 @@ fn parse_label_entry(data: &[u8], offset: usize) -> Result<(String, CsfText, usi
         value: String::new(),
         raw: String::new(),
         stored_key: label_name.clone(),
+        mod_text: false,
     };
     for _ in 0..pair_count {
         let (parsed, next) = parse_value(data, pos, &label_name)?;
@@ -632,6 +721,7 @@ fn decode_csf_string(encoded: &[u8], stored_key: &str) -> CsfText {
         value: String::from_utf16_lossy(&normalize_whitespace(&u16_values)),
         raw: String::from_utf16_lossy(&u16_values),
         stored_key: stored_key.to_owned(),
+        mod_text: false,
     }
 }
 
@@ -728,15 +818,23 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
 )]
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
+    CsfFile::from_bytes(&test_csf_bytes(entries)).unwrap()
+}
+
+/// Bytes for CSF fixtures loaded through the game's archive stack.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_csf_bytes(entries: &[(&str, &str)]) -> Vec<u8> {
     assert!(!entries.is_empty());
     let mut data = build_test_csf(entries[0].0, entries[0].1);
-    let count = u32::try_from(entries.len()).unwrap().to_le_bytes();
+    let count = u32::try_from(entries.len())
+        .expect("fixture label count fits the CSF header")
+        .to_le_bytes();
     data[8..12].copy_from_slice(&count);
     data[12..16].copy_from_slice(&count);
     for &(key, value) in &entries[1..] {
         data.extend_from_slice(&build_test_csf(key, value)[24..]);
     }
-    CsfFile::from_bytes(&data).unwrap()
+    data
 }
 
 #[cfg(all(test, tests_assets))]

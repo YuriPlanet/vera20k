@@ -138,9 +138,15 @@ is explained at the top of [`mod.rs`](mod.rs).
 
 ## Other text
 
-- **The original game's text**, such as unit names and missions, comes from the player's
+- **Menu buttons** use the original game's keys in each language file. Keep each
+  key in the English file translated, including separate keys with the same caption
+  (for example, `GUI:OK` and `TXT_OK`). The Simplified Chinese and Traditional
+  Chinese (Taiwan) files are `vera20k.zh-CN.ini` and `vera20k.zh-TW.ini`.
+  A mod can keep its own button names and supply
+  [translations of them](../../docs/modding.md#menu-button-names).
+- **Other original game text**, such as unit names and missions, comes from the player's
   game files. A language file can replace it using the game's own labels, such as
-  `NAME:MTNK=` or `GUI:Ok=`, as the Vietnamese file does. Ask on Discord for the list of
+  `NAME:MTNK=` or `NAME:HARV=`, as the Vietnamese file does. Ask on Discord for the list of
   labels, and keep any `%s` or `%d` in that text.
 - **The README and project page** are `README.<code>.md` and `docs/<code>/index.md`.
 - **The website** (vera20k.org) isn't in this repository. Ask on Discord.
