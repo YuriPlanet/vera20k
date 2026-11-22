@@ -46,6 +46,19 @@ pub struct ClientMode {
 }
 
 impl ClientInstall {
+    /// The game a portable client folder says it is, its `[Settings]
+    /// LocalGame`. None for any other folder.
+    pub fn local_game(root: &Path) -> Result<Option<String>, String> {
+        let root = canonical(root)?;
+        let Some(definitions) = resolve_file(&root, "Resources/ClientDefinitions.ini")? else {
+            return Ok(None);
+        };
+        let definitions = ClientIni::read(&definitions)?;
+        Ok(definitions
+            .value("Settings", "LocalGame")
+            .map(str::to_owned))
+    }
+
     /// None means this is not a portable client folder. An invalid catalog or
     /// escaping path is an error; unsupported option-bearing rows are omitted.
     pub fn read(root: &Path) -> Result<Option<Self>, String> {

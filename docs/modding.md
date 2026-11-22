@@ -57,6 +57,8 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new behaviour with a script or plugin. VERA20k has neither, so that means changing
   its code.
 - Play without the original game.
+- Play a mod whose authors don't allow it in other engines. VERA20k refuses it and
+  starts the original game.
 
 ## Where things go
 
@@ -250,8 +252,8 @@ The folder name is only the choice saved by the menu. Its loading rules come fro
 
 An extracted CnCNet client folder can go straight into `Mods`. Put the folder
 containing `Resources/ClientDefinitions.ini` and the game archives there, then
-choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
-complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+choose it as above. VERA uses its `MPMapsPath` catalog. A client whose files
+use other names declares them in `mod.ini`; VERA doesn't guess them. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
 VERA also uses the client theme's `splashScreen.png` and skirmish lobby
 background when present. It reads the configured `BackgroundTexture` from
@@ -262,7 +264,7 @@ This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,
 random maps, campaigns specific to the client, and multiplayer through the
 imported catalog are outside this path. An explicit loading section in
-`mod.ini` takes precedence over discovery.
+`mod.ini` takes precedence over the client folder's files.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:
