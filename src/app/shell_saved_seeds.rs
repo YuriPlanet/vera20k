@@ -255,6 +255,7 @@ impl App {
     fn apply_saved_seed_outcome(state: &mut AppState, outcome: SavedSeedOutcome) {
         match outcome {
             SavedSeedOutcome::Close => Self::close_saved_seed_browser(state),
+            SavedSeedOutcome::Convert(_) => {}
             SavedSeedOutcome::Load(file_name) => {
                 Self::load_random_map_seed(state, &file_name, false)
             }
