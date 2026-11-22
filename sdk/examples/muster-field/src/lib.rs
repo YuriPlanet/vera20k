@@ -11,8 +11,10 @@
 //!   fee. A row that was hired out refills free.
 //! - Champion: three hired units of a type merge into one elite unit with
 //!   2.5x firepower and 3x armor, at full health.
-//! - Battle: press Scatter on a hired unit, or wait for the mission timer.
-//!   Both sides then fight by themselves until one is gone or time is up.
+//! - Battle: press Scatter on a hired unit. The muster has no time limit: it
+//!   waits for the player, and frames measure no time to think at unlimited
+//!   game speed. Both sides then fight by themselves until one is gone or the
+//!   battle's time is up.
 //!
 //! What it shows of the API: `CommandAllowed` as player input (the handler
 //! may not write, so it queues the order in module memory and `on_frame`
@@ -21,6 +23,7 @@
 //! `Defeat` veto while both houses have nothing on the field.
 //!
 //! It is made for one human player against computer opponents, with Bases on.
+//! What it tells the player is in Simplified Chinese.
 //! Build it with `cargo build --release`, rename the `.wasm` to `rules.wasm`
 //! and put it in a mod folder (docs/wasm-modules.md).
 #![no_std]
@@ -42,22 +45,22 @@ struct Mercenary {
 const POOL: [Mercenary; 4] = [
     Mercenary {
         id: "E1",
-        name: "Rifleman",
+        name: "美国大兵",
         price: 200,
     },
     Mercenary {
         id: "GGI",
-        name: "Rocketeer guard",
+        name: "重装大兵",
         price: 340,
     },
     Mercenary {
         id: "HTK",
-        name: "Flak track",
+        name: "防空履带车",
         price: 460,
     },
     Mercenary {
         id: "MTNK",
-        name: "Light tank",
+        name: "灰熊坦克",
         price: 680,
     },
 ];
@@ -74,8 +77,7 @@ const SQUAD: usize = 10;
 const SPACING: i32 = 3;
 /// Cells from the camp to the raiders.
 const FIELD: i32 = 14;
-/// Phase lengths in mission timer seconds (15 frames each).
-const MUSTER_SECONDS: i32 = 300;
+/// The battle's length in mission timer seconds (15 frames each).
 const BATTLE_SECONDS: i32 = 240;
 
 const WAITING: i32 = 0;
@@ -248,7 +250,7 @@ fn fill_row() {
             hold.store(held.map_or(NO_HANDLE, |modifier| modifier.0), Relaxed);
         }
     }
-    let mut line = Line::new().text("For hire:");
+    let mut line = Line::new().text("待雇佣：");
     for slot in ROW.iter().filter(|slot| !slot.is_empty()) {
         let offer = &POOL[slot.kind()];
         line = line
@@ -271,7 +273,7 @@ fn empty_row() {
 
 fn redraw() {
     if credits() < i64::from(REDRAW) {
-        log("Not enough credits to redraw.");
+        log("资金不足，无法刷新。");
         return;
     }
     if Action::add_money(House(PLAYER.load(Relaxed)), -REDRAW).is_ok() {
@@ -282,21 +284,21 @@ fn redraw() {
 
 fn hire(at: usize, to: Cell) {
     if in_row(to) {
-        log("Send a mercenary out of the row to hire it.");
+        log("把佣兵移到货位外面才算雇佣。");
         return;
     }
     let unit = ROW[at].unit();
     let kind = ROW[at].kind();
     let offer = &POOL[kind];
     let Some(free) = HIRED.iter().position(Slot::is_empty) else {
-        log("The company is full: dismiss someone first.");
+        log("队伍已满，请先遣散一名佣兵。");
         return;
     };
     if credits() < i64::from(offer.price) {
         Line::new()
-            .text("Not enough credits: ")
+            .text("资金不足：")
             .text(offer.name)
-            .text(" costs ")
+            .text("需要 ")
             .num(i64::from(offer.price))
             .log();
         return;
@@ -312,9 +314,9 @@ fn hire(at: usize, to: Cell) {
     CHAMPION[free].store(0, Relaxed);
     let _ = Action::set_mission(unit, Mission::Move, to);
     Line::new()
-        .text("Hired: ")
+        .text("已雇佣：")
         .text(offer.name)
-        .text(". Credits left: ")
+        .text("，剩余资金 ")
         .num(credits())
         .log();
     merge(free);
@@ -340,9 +342,9 @@ fn dismiss(at: usize) {
     CHAMPION[at].store(0, Relaxed);
     let _ = Action::add_money(House(PLAYER.load(Relaxed)), refund);
     Line::new()
-        .text("Dismissed: ")
+        .text("已遣散：")
         .text(offer.name)
-        .text(", +")
+        .text("，退回 ")
         .num(i64::from(refund))
         .log();
 }
@@ -379,9 +381,15 @@ fn merge(newest: usize) {
         let _ = Action::heal(unit, strength as i32);
     }
     Line::new()
-        .text("Three of a kind! Champion: ")
+        .text("三合一！晋升精英：")
         .text(POOL[kind].name)
         .log();
+}
+
+/// With nobody hired and less money than the cheapest price, no order can
+/// start the battle any more.
+fn is_broke() -> bool {
+    HIRED.iter().all(Slot::is_empty) && POOL.iter().all(|offer| credits() < i64::from(offer.price))
 }
 
 // ------------------------------------------------------------------ Phases
@@ -391,13 +399,13 @@ fn start() {
     for offer in &POOL {
         match TypeRef::techno_type(offer.id) {
             Ok(ty) => trigger = trigger.bind(ty),
-            Err(_) => return log("Muster Field: a mercenary type is missing from the rules"),
+            Err(_) => return log("佣兵点兵场：规则里缺少佣兵所用的单位类型。"),
         }
     }
     if trigger.decide_sync(ON_COMMAND).is_err()
         || Trigger::on(Event::DEFEAT).decide_sync(ON_DEFEAT).is_err()
     {
-        log("Muster Field: a trigger was refused");
+        log("佣兵点兵场：触发器创建失败。");
     }
 }
 
@@ -417,7 +425,7 @@ fn open_camp() {
         .page(&mut humans, 0);
     let Ok((1, _)) = found else {
         PHASE.store(OVER, Relaxed);
-        return log("Muster Field is for one human player.");
+        return log("佣兵点兵场只支持一名玩家。");
     };
     let player = House(humans[0]);
     let camp = get(Techno(Find::objects().owned_by(player).first()), Prop::Cell);
@@ -438,7 +446,7 @@ fn open_camp() {
     }
     let (Ok(camp), false) = (camp, enemy.0 == NO_HANDLE) else {
         PHASE.store(OVER, Relaxed);
-        return log("Muster Field needs a computer opponent and Bases switched on.");
+        return log("佣兵点兵场需要一个电脑对手，并打开“基地”选项。");
     };
     PLAYER.store(player.0, Relaxed);
     ENEMY.store(enemy.0, Relaxed);
@@ -447,10 +455,9 @@ fn open_camp() {
     clear_forces(player);
     let _ = Action::add_money(player, (PURSE - credits()) as i32);
     let _ = Action::reveal_all();
-    log("Muster Field: order a mercenary out of the row to hire it, back into the row to dismiss.");
-    log("Stop (S) on a mercenary redraws for 60. Scatter (X) on a hired unit starts the battle.");
+    log("佣兵点兵场：把佣兵移出货位即雇佣，移回货位即遣散。");
+    log("选中待雇佣兵按 S 刷新（60），选中已雇佣兵按 X 开战。");
     fill_row();
-    count_down(MUSTER_SECONDS);
 }
 
 fn start_battle() {
@@ -458,7 +465,7 @@ fn start_battle() {
     empty_row();
     let hired = HIRED.iter().filter(|slot| !slot.is_empty()).count();
     if hired == 0 {
-        return finish(Outcome::Lose, "Nobody was hired. The camp is lost.");
+        return finish(Outcome::Lose, "没有雇佣任何人，营地失守。");
     }
     let enemy = House(ENEMY.load(Relaxed));
     let front = front();
@@ -474,15 +481,15 @@ fn start_battle() {
         }
     }
     if raiders == 0 {
-        return finish(Outcome::Win, "The raiders found no way to the camp.");
+        return finish(Outcome::Win, "袭击者找不到进攻营地的路，你赢了！");
     }
     count_down(BATTLE_SECONDS);
     Line::new()
-        .text("Battle: ")
+        .text("开战！我方 ")
         .num(hired as i64)
-        .text(" hired against ")
+        .text(" 人，敌方 ")
         .num(raiders)
-        .text(" raiders. Hands off!")
+        .text(" 人，战斗将自动进行。")
         .log();
     engage(&HIRED, &RAID);
     engage(&RAID, &HIRED);
@@ -555,11 +562,11 @@ fn fight() {
     let ours = survivors(&HIRED);
     let theirs = survivors(&RAID);
     if ours == 0 {
-        finish(Outcome::Lose, "The company fell. The camp is lost.");
+        finish(Outcome::Lose, "队伍全军覆没，营地失守。");
     } else if theirs == 0 {
-        finish(Outcome::Win, "The raiders are beaten. The camp is yours!");
+        finish(Outcome::Win, "击退了袭击者，营地守住了！");
     } else if frame() >= DEADLINE.load(Relaxed) {
-        finish(Outcome::Lose, "Time is up and the raiders still stand.");
+        finish(Outcome::Lose, "时间耗尽，未能击退袭击者。");
     } else {
         engage(&HIRED, &RAID);
         engage(&RAID, &HIRED);
@@ -586,8 +593,8 @@ fn tick() {
         WAITING if now >= 2 => open_camp(),
         MUSTER => {
             read_orders();
-            if PHASE.load(Relaxed) == MUSTER && now >= DEADLINE.load(Relaxed) {
-                start_battle();
+            if PHASE.load(Relaxed) == MUSTER && is_broke() {
+                finish(Outcome::Lose, "资金耗尽，已无人可雇，营地失守。");
             }
         }
         BATTLE if now % 15 == 0 => fight(),
@@ -653,23 +660,25 @@ fn create_near(spot: Cell, ty: TypeRef, house: House) -> Option<Techno> {
 /// A log line built without an allocator (`core::fmt` would pull in code
 /// the engine refuses).
 struct Line {
-    buf: [u8; 160],
+    buf: [u8; 240],
     len: usize,
 }
 
 impl Line {
     fn new() -> Self {
         Self {
-            buf: [0; 160],
+            buf: [0; 240],
             len: 0,
         }
     }
 
     fn text(mut self, text: &str) -> Self {
-        for &byte in text.as_bytes() {
-            if self.len == self.buf.len() {
-                break;
-            }
+        // Cut between characters: a line that is not UTF-8 is not shown.
+        let mut end = text.len().min(self.buf.len() - self.len);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        for &byte in &text.as_bytes()[..end] {
             self.buf[self.len] = byte;
             self.len += 1;
         }

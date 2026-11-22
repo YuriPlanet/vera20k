@@ -350,6 +350,11 @@ fn muster_field_plays_a_round_from_player_orders() {
 
     let row = units(&scene);
     assert_eq!(row.len(), 3, "only the row is left of the starting forces");
+    // At unlimited game speed these frames pass in seconds.
+    for _ in 0..4700 {
+        scene.tick();
+    }
+    assert_eq!(units(&scene), row, "the muster waits for the player");
     assert_eq!(credits(&scene, player), 2400);
     let camp = row[1].1;
     let line = (camp.0, camp.1 + 5);
@@ -404,7 +409,7 @@ fn muster_field_plays_a_round_from_player_orders() {
         hired.push(offered);
     }
     let mut log = scene.runtime.simulation.ext_modules_mut().take_log();
-    assert!(log.iter().any(|l| l.contains("Champion")), "{log:?}");
+    assert!(log.iter().any(|l| l.contains("晋升精英")), "{log:?}");
 
     let survivor = *hired.last().expect("someone was hired");
     send(
@@ -414,7 +419,7 @@ fn muster_field_plays_a_round_from_player_orders() {
         },
     );
     log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
-    assert!(log.iter().any(|l| l.starts_with("Battle:")), "{log:?}");
+    assert!(log.iter().any(|l| l.starts_with("开战")), "{log:?}");
     for _ in 0..3700 {
         scene.tick();
         let lines = scene.runtime.simulation.ext_modules_mut().take_log();
@@ -426,7 +431,7 @@ fn muster_field_plays_a_round_from_player_orders() {
     assert_eq!(scene.sim().ext_modules().status()[0].1, None, "{log:?}");
     let last = log.last().expect("the module spoke");
     // Nine hires and a champion beat the one wave, with nobody at the controls.
-    assert!(last.contains("raiders are beaten"), "{log:?}");
+    assert!(last.contains("击退了袭击者"), "{log:?}");
     eprintln!("{}", log.join("\n"));
 }
 

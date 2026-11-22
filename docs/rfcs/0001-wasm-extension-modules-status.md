@@ -327,7 +327,8 @@ modules, external modders, freeze), and the later items (`Launch`,
 
 ## Residuals
 
-- The stopped-module notice is English only.
+- The stopped-module notice is translated (`VERA:ModuleStopped`), but the fault
+  reason inside it is English only.
 - Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
   `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
   `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
