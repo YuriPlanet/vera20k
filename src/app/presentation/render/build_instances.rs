@@ -1501,29 +1501,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let mut chrome = view
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
-    // The pictures of the buttons the side's layout adds to the sidebar draw
-    // over its own pictures, from the same atlas.
-    chrome.extend(crate::app::presentation::layout_parts::pictures(
-        state,
-        crate::ui::added_parts::Holder::Side,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-    ));
-    // The observer's strip draws over the strip's tiles from the same atlas.
-    if let Some(v) = view {
-        chrome.extend(
-            crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
-        );
-    }
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
         .map(|_| build_command_bar_instances(state))
         .unwrap_or_default();
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
     let chrome_atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
-    let smooth_chrome = chrome_atlas.is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
     let smooth_command_bar =
         chrome_atlas.is_some_and(|atlas| atlas.retarget_to_smooth(&mut command_bar));
 
@@ -1621,17 +1604,29 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // The buttons and texts the side's layout adds to the sidebar. A
     // button's box rides the white lane of the cameo's hover outline: over
     // the chrome and the cameos, under the text.
-    let (layout_boxes, layout_texts) = crate::app::presentation::layout_parts::instances(
-        state,
-        crate::ui::added_parts::Holder::Side,
+    let placed = crate::app::presentation::layout_parts::placed(state);
+    let layout_parts = &mut state.match_state.match_presentation.added_part_huds.side;
+    layout_parts.draw(
+        &placed,
         ready_tint,
         [
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
+        &state.renderer.bit_font,
     );
-    text_layers.status.extend(layout_texts);
+    text_layers.status.extend_from_slice(layout_parts.texts());
+    // Their pictures draw over the sidebar's own, from the same atlas.
+    chrome.extend_from_slice(layout_parts.pictures());
     state.renderer.bit_font.set_raster(frame_raster);
+    // The observer's strip draws over the strip's tiles from the same atlas.
+    if let Some(v) = current_sidebar_view(state) {
+        chrome.extend(
+            crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
+        );
+    }
+    let smooth_chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+        .is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
@@ -1666,7 +1661,14 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         cameo: cameo_layers.cameo,
         cameo_hover: {
             let mut hover = cameo_layers.hover;
-            hover.extend(layout_boxes);
+            hover.extend_from_slice(
+                state
+                    .match_state
+                    .match_presentation
+                    .added_part_huds
+                    .side
+                    .boxes(),
+            );
             hover
         },
         unavailable: cameo_layers.unavailable,

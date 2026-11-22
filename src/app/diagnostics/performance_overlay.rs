@@ -426,6 +426,8 @@ impl PerformanceOverlay {
                 let texture = match material {
                     Material::Solid => &self.white,
                     Material::Glyphs => font.atlas(),
+                    // The panel has no pictures.
+                    Material::Pictures => continue,
                 };
                 batch.draw_passthrough_range_bound(
                     &mut pass,

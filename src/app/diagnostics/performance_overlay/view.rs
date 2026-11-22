@@ -2,8 +2,6 @@
 //! frame and change only where a part does. At a match zoom a part falls
 //! between whole pixels, so each also keeps its exact place.
 
-use std::collections::HashMap;
-
 use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
 
@@ -21,7 +19,6 @@ pub(super) struct PanelView {
     /// The boxes and bars lie under all the text, so each takes one draw.
     solids: Slots,
     texts: Slots,
-    draws: HashMap<NodeId, NodeDraw>,
     /// Window pixels per font pixel of the parts since [`Self::begin`].
     scale: f32,
     /// The revision of the last layout.
@@ -37,7 +34,6 @@ impl PanelView {
             hud,
             solids,
             texts,
-            draws: HashMap::new(),
             scale: 1.0,
             laid_out: None,
         }
@@ -49,16 +45,14 @@ impl PanelView {
         self.texts.used = 0;
     }
 
-    pub(super) fn solid(&mut self, at: [f32; 2], size: [f32; 2], [r, g, b]: [u8; 3]) {
-        if let Some(node) = self.solids.next(&mut self.hud, whole(at, size)) {
-            let color = Value::Rgba(Rgba(r, g, b, 255));
-            let _ = self.hud.set(node, Prop::Background, color);
-            let draw = NodeDraw {
-                exact: Some((at, size)),
-                ..Default::default()
-            };
-            self.draws.insert(node, draw);
-        }
+    pub(super) fn solid(&mut self, at: [f32; 2], size: [f32; 2], rgb: [u8; 3]) {
+        let draw = NodeDraw {
+            position: Some(at),
+            size: Some(size),
+            ..Default::default()
+        };
+        self.solids
+            .show(&mut self.hud, whole(at, size), rgb, "", draw);
     }
 
     pub(super) fn text(
@@ -66,21 +60,17 @@ impl PanelView {
         at: [f32; 2],
         size: [f32; 2],
         text: &str,
-        [r, g, b]: [u8; 3],
+        rgb: [u8; 3],
         fit: Fit,
     ) {
-        if let Some(node) = self.texts.next(&mut self.hud, whole(at, size)) {
-            let _ = self.hud.set(node, Prop::Text, Value::Text(text.to_owned()));
-            let _ = self
-                .hud
-                .set(node, Prop::Color, Value::Rgba(Rgba(r, g, b, 255)));
-            let draw = NodeDraw {
-                exact: Some((at, size)),
-                text_scale: Some(self.scale),
-                fit,
-            };
-            self.draws.insert(node, draw);
-        }
+        let draw = NodeDraw {
+            position: Some(at),
+            text_scale: Some(self.scale),
+            fit,
+            ..Default::default()
+        };
+        self.texts
+            .show(&mut self.hud, whole(at, size), rgb, text, draw);
     }
 
     /// Hide what the parts since [`Self::begin`] did not use.
@@ -99,8 +89,13 @@ impl PanelView {
             origin: [0.0; 2],
             scale: 1.0,
         };
+        // The paint list names the shown nodes in slot order.
+        let mut shown = self.solids.shown().iter().chain(self.texts.shown());
         out.build(&self.hud, space, font, |node| {
-            self.draws.get(&node).copied().unwrap_or_default()
+            shown
+                .find(|slot| slot.node == node)
+                .map(|slot| slot.draw)
+                .unwrap_or_default()
         });
     }
 }
@@ -120,8 +115,18 @@ fn whole([x, y]: [f32; 2], [w, h]: [f32; 2]) -> Rect {
 struct Slots {
     root: Option<NodeId>,
     kind: NodeKind,
-    nodes: Vec<NodeId>,
+    slots: Vec<Slot>,
     used: usize,
+}
+
+/// A node and what it was last set to, so that a still part costs a compare.
+struct Slot {
+    node: NodeId,
+    visible: bool,
+    rect: Option<Rect>,
+    rgb: Option<[u8; 3]>,
+    text: String,
+    draw: NodeDraw,
 }
 
 impl Slots {
@@ -131,27 +136,64 @@ impl Slots {
                 .create_root(Layer::Field, Origin::Host, NodeKind::Panel)
                 .ok(),
             kind,
-            nodes: Vec::new(),
+            slots: Vec::new(),
             used: 0,
         }
     }
 
-    /// The next node, shown at `rect`; none past the node limit.
-    fn next(&mut self, hud: &mut Hud, rect: Rect) -> Option<NodeId> {
-        if self.used == self.nodes.len() {
-            let node = hud.create(self.kind, self.root?, Origin::Host).ok()?;
-            self.nodes.push(node);
+    /// Show a part in the next node; none past the node limit.
+    fn show(&mut self, hud: &mut Hud, rect: Rect, rgb: [u8; 3], text: &str, draw: NodeDraw) {
+        if self.used == self.slots.len() {
+            let Some(root) = self.root else { return };
+            let Ok(node) = hud.create(self.kind, root, Origin::Host) else {
+                return;
+            };
+            self.slots.push(Slot {
+                node,
+                visible: true,
+                rect: None,
+                rgb: None,
+                text: String::new(),
+                draw,
+            });
         }
-        let node = self.nodes[self.used];
+        let slot = &mut self.slots[self.used];
         self.used += 1;
-        let _ = hud.set(node, Prop::Visible, Value::Bool(true));
-        let _ = hud.set(node, Prop::Rect, Value::Rect(rect));
-        Some(node)
+        slot.draw = draw;
+        let node = slot.node;
+        if !slot.visible {
+            slot.visible = true;
+            let _ = hud.set(node, Prop::Visible, Value::Bool(true));
+        }
+        if slot.rect != Some(rect) {
+            slot.rect = Some(rect);
+            let _ = hud.set(node, Prop::Rect, Value::Rect(rect));
+        }
+        if slot.rgb != Some(rgb) {
+            slot.rgb = Some(rgb);
+            let prop = match self.kind {
+                NodeKind::Text => Prop::Color,
+                _ => Prop::Background,
+            };
+            let [r, g, b] = rgb;
+            let _ = hud.set(node, prop, Value::Rgba(Rgba(r, g, b, 255)));
+        }
+        if slot.text != text {
+            text.clone_into(&mut slot.text);
+            let _ = hud.set(node, Prop::Text, Value::Text(text.to_owned()));
+        }
     }
 
-    fn hide_rest(&self, hud: &mut Hud) {
-        for &node in &self.nodes[self.used..] {
-            let _ = hud.set(node, Prop::Visible, Value::Bool(false));
+    fn shown(&self) -> &[Slot] {
+        &self.slots[..self.used]
+    }
+
+    fn hide_rest(&mut self, hud: &mut Hud) {
+        for slot in &mut self.slots[self.used..] {
+            if slot.visible {
+                slot.visible = false;
+                let _ = hud.set(slot.node, Prop::Visible, Value::Bool(false));
+            }
         }
     }
 }

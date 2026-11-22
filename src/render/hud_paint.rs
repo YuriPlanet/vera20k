@@ -1,8 +1,8 @@
 //! Turns a [`vera20k_gui::hud::Hud`]'s paint list into sprite instances and
 //! the runs that draw them in the list's order.
 //!
-//! It draws fills and text, what its users have. Pictures and host areas
-//! come with the first HUD that shows one, and so do the world commands.
+//! It draws fills, pictures and text, what its users have. Host areas come
+//! with the first HUD that shows one, and so do the world commands.
 
 use std::ops::Range;
 
@@ -20,6 +20,8 @@ pub(crate) enum Material {
     Solid,
     /// The font's atlas.
     Glyphs,
+    /// The atlas the host's pictures are in.
+    Pictures,
 }
 
 /// Where a HUD's pixels land on the target.
@@ -46,9 +48,23 @@ pub(crate) struct NodeDraw {
     pub(crate) fit: Fit,
     /// Target pixels per font pixel, where not the [`HudSpace`]'s scale.
     pub(crate) text_scale: Option<f32>,
-    /// The node's position and size on the target, where they fall between
-    /// the HUD's whole pixels; otherwise its rect's through the [`HudSpace`].
-    pub(crate) exact: Option<([f32; 2], [f32; 2])>,
+    /// The node's top left on the target, where it falls between the HUD's
+    /// whole pixels; otherwise its rect's through the [`HudSpace`].
+    pub(crate) position: Option<[f32; 2]>,
+    /// A fill's size on the target, where a rect cannot hold it: between
+    /// whole pixels, empty or negative.
+    pub(crate) size: Option<[f32; 2]>,
+    /// What the node's `Art` shows.
+    pub(crate) picture: Option<Picture>,
+}
+
+/// A part of the host's picture atlas, drawn at its own size from its node's
+/// top left.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Picture {
+    pub(crate) uv_origin: [f32; 2],
+    pub(crate) uv_size: [f32; 2],
+    pub(crate) pixel_size: [f32; 2],
 }
 
 /// One HUD's instances, with buffers kept from frame to frame.
@@ -67,7 +83,7 @@ impl HudPaint {
         hud: &Hud,
         space: HudSpace,
         font: &BitFont,
-        draw: impl Fn(NodeId) -> NodeDraw,
+        mut draw: impl FnMut(NodeId) -> NodeDraw,
     ) {
         self.instances.clear();
         self.runs.clear();
@@ -78,16 +94,29 @@ impl HudPaint {
             let node = draw(command.node);
             let material = match command.op {
                 PaintOp::Fill { rect, color } => {
-                    self.instances.push(fill(rect, color, space, node.exact));
+                    self.instances.push(fill(rect, color, space, node));
                     Material::Solid
+                }
+                PaintOp::Image { rect, .. } => {
+                    let Some(picture) = node.picture else {
+                        continue;
+                    };
+                    self.instances.push(SpriteInstance {
+                        position: node.position.unwrap_or_else(|| space.point(rect.x, rect.y)),
+                        size: picture.pixel_size.map(|length| length * space.scale),
+                        uv_origin: picture.uv_origin,
+                        uv_size: picture.uv_size,
+                        tint: [1.0; 3],
+                        alpha: 1.0,
+                        ..Default::default()
+                    });
+                    Material::Pictures
                 }
                 PaintOp::Text {
                     rect, key, color, ..
                 } => {
                     let (rgb, alpha) = tint(color.unwrap_or(Rgba(255, 255, 255, 255)));
-                    let [x, y] = node
-                        .exact
-                        .map_or_else(|| space.point(rect.x, rect.y), |(at, _)| at);
+                    let [x, y] = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
                     let scale = node.text_scale.unwrap_or(space.scale);
                     let glyphs = font.fitted(node.fit, |font| {
                         font.build_text(key, x, y, scale, 0.0, rgb, [0.0; 2])
@@ -99,7 +128,7 @@ impl HudPaint {
                         }));
                     Material::Glyphs
                 }
-                PaintOp::Image { .. } | PaintOp::External { .. } => continue,
+                PaintOp::External { .. } => continue,
             };
             if let Some(clip) = command.clip {
                 clip_from(&mut self.instances, start, clip, space);
@@ -118,6 +147,15 @@ impl HudPaint {
         &self.runs
     }
 
+    /// The instances of one material, bottom to top, for a host that draws
+    /// each material in a lane of its own.
+    pub(crate) fn lane(&self, material: Material) -> impl Iterator<Item = &SpriteInstance> {
+        self.runs()
+            .iter()
+            .filter(move |(of, _)| *of == material)
+            .flat_map(move |(_, run)| &self.instances()[run.start as usize..run.end as usize])
+    }
+
     fn extend_runs(&mut self, material: Material, added: Range<u32>) {
         if added.is_empty() {
             return;
@@ -129,18 +167,12 @@ impl HudPaint {
     }
 }
 
-fn fill(
-    rect: Rect,
-    color: Rgba,
-    space: HudSpace,
-    exact: Option<([f32; 2], [f32; 2])>,
-) -> SpriteInstance {
+fn fill(rect: Rect, color: Rgba, space: HudSpace, node: NodeDraw) -> SpriteInstance {
     let (tint, alpha) = tint(color);
-    // A bar's fill is narrower than its node, so `exact` is for whole fills.
-    let (position, size) = exact.unwrap_or_else(|| {
-        let size = [rect.w as f32 * space.scale, rect.h as f32 * space.scale];
-        (space.point(rect.x, rect.y), size)
-    });
+    let position = node.position.unwrap_or_else(|| space.point(rect.x, rect.y));
+    let size = node
+        .size
+        .unwrap_or_else(|| [rect.w as f32 * space.scale, rect.h as f32 * space.scale]);
     SpriteInstance {
         position,
         size,
