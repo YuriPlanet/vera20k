@@ -32,6 +32,10 @@ const WATCH_SILENCE_S: u64 = 30;
 /// this many seconds: the client's minute of Leave resends, and the second
 /// `now` rounds off.
 const WATCH_LEAVE_S: u64 = (LEAVE_ATTEMPTS as u64 * LEAVE_INTERVAL_MS).div_ceil(1000) + 1;
+/// The same for a watcher the relay dropped, which nothing tells: its game
+/// keeps the route until it has heard nothing for `ABSENT_MS` and 15 s more
+/// (`RELAY_ABSENT_TICKS`, src/net/udp.rs), and may start its Leave until then.
+const WATCH_DROPPED_LEAVE_S: u64 = (ABSENT_MS + 15_000) / 1000 + WATCH_LEAVE_S;
 /// A room notes its stream's end this often, and keeps enough of these
 /// marks for the longest delay: a delayed watcher's stream grows by this
 /// much at a time.
@@ -225,14 +229,22 @@ fn spend(
     true
 }
 
-/// Drops `room`'s watchers whose ticket expired, who fell silent, or whose
-/// match the relay no longer holds; `prune` then releases their sessions.
-pub(crate) fn prune_watchers(room: &mut Room, now: u64) {
+/// Takes out of `room` the watchers whose ticket expired, who fell silent,
+/// or whose match the relay no longer holds, each as `prune` parks its
+/// session for Leave: `(session, ticket, key, until)`.
+pub(crate) fn drop_watchers(
+    room: &mut Room,
+    now: u64,
+) -> impl Iterator<Item = (u32, Ticket, SecretKey, u64)> + '_ {
     let held = room.ordering.is_some();
-    room.watchers.retain(|watcher| {
-        held && watcher.ticket.expires > now
-            && now.saturating_sub(watcher.last_seen) <= WATCH_SILENCE_S
-    });
+    let until = now.saturating_add(WATCH_DROPPED_LEAVE_S);
+    room.watchers
+        .extract_if(.., move |watcher| {
+            !held
+                || watcher.ticket.expires <= now
+                || now.saturating_sub(watcher.last_seen) > WATCH_SILENCE_S
+        })
+        .map(move |watcher| (watcher.session, watcher.ticket, watcher.key, until))
 }
 
 #[derive(Clone, Copy)]
@@ -391,7 +403,7 @@ impl RelayServer {
     /// or renews its hop: a newer ticket gets a new session and keeps the
     /// old hop's agreement and budgets. The client moves to the new session
     /// on its READY, so a watcher that quits before then leaves from the
-    /// old one, which is parked for that Leave (`park_watcher`).
+    /// old one, which is parked for that Leave.
     fn watch_confirm(
         &mut self,
         source: SocketAddrV4,
@@ -489,7 +501,8 @@ impl RelayServer {
             (None, None) => unreachable!("a new watcher gets a session"),
         };
         if let Some(old) = retired {
-            self.park_watcher(&old, now);
+            let until = now.saturating_add(WATCH_LEAVE_S);
+            self.park_session(old.session, old.ticket, old.key, until);
         }
         self.watching.outgoing.charge(now, cost);
         Ok(vec![reply])
@@ -528,7 +541,8 @@ impl RelayServer {
                 .position(|watcher| watcher.session == message.session)
         {
             let watcher = room.watchers.swap_remove(index);
-            self.park_watcher(&watcher, now);
+            let until = now.saturating_add(WATCH_LEAVE_S);
+            self.park_session(watcher.session, watcher.ticket, watcher.key, until);
         }
         Ok(vec![ForwardDatagram {
             endpoint: source,
@@ -540,18 +554,6 @@ impl RelayServer {
                 &[],
             ),
         }])
-    }
-
-    /// Keeps the session of a watcher its Leave or renewal ended for that
-    /// Leave and its resends, `WATCH_LEAVE_S`; `prune` then releases it.
-    fn park_watcher(&mut self, watcher: &Watcher, now: u64) {
-        if let Some(slot) = self.sessions.get_mut(&watcher.session) {
-            slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
-                ticket: watcher.ticket,
-                key: watcher.key.clone(),
-                until: now.saturating_add(WATCH_LEAVE_S),
-            }));
-        }
     }
 
     /// A datagram `session_incoming` authenticated on a watcher's live
@@ -1023,20 +1025,33 @@ mod tests {
         .unwrap();
         let key = *derive_packet_key(&server.key, &ticket).expose_for_https();
         let mut renewal = watching.renewal(&ticket, key, [0; 32]).unwrap();
-        let from = endpoint(&watching);
-        let mut bytes = Vec::new();
-        renewal.probe(&mut bytes).unwrap();
-        let challenge = server
-            .process_at(from, &bytes, unix(3000), 3000)
-            .unwrap()
-            .remove(0);
-        let ServerEvent::Challenge(cookie) = renewal.receive(&challenge.bytes).unwrap() else {
-            panic!("challenge");
-        };
-        renewal.confirm(cookie, &mut bytes).unwrap();
-        // The relay takes the renewal; its READY is lost.
-        server.process_at(from, &bytes, unix(3000), 3000).unwrap();
+        // The relay takes the renewal; `watching` never sees its READY.
+        connect(&mut server, &mut renewal, 3000);
         leave(&mut server, &mut watching, 3000);
+    }
+
+    /// Nothing tells a watcher the relay dropped (here for silence): its
+    /// Leave is answered for as long as its game may still send one.
+    #[test]
+    fn a_dropped_watchers_leave_is_answered_until_its_game_gives_up() {
+        let directory = TestDirectory::new();
+        let (mut server, _first, _second) = running_match(&directory, 3000);
+        let mut watching = watcher(&server, ROOM, 41, 0);
+        connect(&mut server, &mut watching, 3000);
+        watch_ready(&mut server, &mut watching, [7; 32], 3000);
+        let dropped_ms = 3000 + (WATCH_SILENCE_S + 1) * 1000;
+        server.prune(unix(dropped_ms));
+        assert!(server.rooms[&ROOM].watchers.is_empty());
+        let gone_ms = dropped_ms + WATCH_DROPPED_LEAVE_S * 1000;
+        leave(&mut server, &mut watching, gone_ms - 1000);
+        let mut bytes = Vec::new();
+        watching.leave_ordering_at(gone_ms, &mut bytes).unwrap();
+        assert_eq!(
+            server
+                .process_at(endpoint(&watching), &bytes, unix(gone_ms), gone_ms)
+                .err(),
+            Some(RelayError::Unregistered)
+        );
     }
 
     /// A lobby may grant a watch before the relay has started and journaled

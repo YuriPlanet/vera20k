@@ -2947,7 +2947,7 @@ impl RelayServer {
                 }
             }
             room.ordering = None;
-            if room.peers.is_empty() {
+            if room.vacant() {
                 self.rooms.remove(&id);
             }
         }

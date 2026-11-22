@@ -553,7 +553,9 @@ seconds, the client's minute of resends, then it is released. Each Leave, resend
 included, is answered with LEAVE_ACK echoing its sequence, as a player's is, and
 spends the watcher's own handshake budget. A watcher whose ticket expires, who
 is silent for 30 seconds, or whose match the relay no longer holds loses its hop
-and its session at once.
+without being told, and its session takes only Leave for 677 seconds: its game
+keeps a route that hears nothing for up to 615 seconds, and may start its minute
+of Leave resends until then.
 
 The delay holds in every reply. Once a second the room notes its stream's end
 (frame, next record, active sources), keeping 86,402 such marks (24 bytes each,
