@@ -334,8 +334,22 @@ impl Simulation {
     /// Particle62BB0E calls ObjectUnlimbo5F4EC0; GetLayer62D770 returns
     /// AIR (3), so Display4A9720 reaches the existing append owner5519B0.
     /// A particle is owned by its system and never joins global Logic.
-    pub(crate) fn reveal_particle(substrate: &mut ObjectSubstrate, stable_id: u64) {
-        Self::submit_object_display(substrate, stable_id, DisplayLayer::AIR);
+    pub(crate) fn reveal_particle(
+        &mut self,
+        particle: &crate::sim::particles::Particle,
+        rules: &RuleSet,
+    ) {
+        let id = particle.stable_id();
+        Self::submit_object_display(&mut self.substrate, id, DisplayLayer::AIR);
+        // ObjectUnlimbo (5F4ECD..5F4EEF) refuses the empty coordinate.
+        // Particle VT+48 -> Object::GetCoords (5F65A0) returns its Location,
+        // including the constructor's ground clamp (62B8B1..62B8D2).
+        let coord = particle.coords();
+        if coord != glam::IVec3::ZERO {
+            let name = &rules.particle_type(particle.type_id()).alpha_image;
+            self.alpha_shapes
+                .construct(id, name, rules, || coord.to_array());
+        }
     }
 
     /// Spark62ED2C (and the other System AI cleanup callers) invokes the

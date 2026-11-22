@@ -426,6 +426,9 @@ pub(super) fn mission_counter_step(
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
     sim.substrate.entities.count_mission_ai_visit(id);
+    // MissionClass::AI (0x005B3067) calls ObjectClass::AI before the
+    // locomotor's Process (FootClass::AI 0x004DA877).
+    sim.visit_techno_alpha_shape(id, rules);
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
     sim.object_ai_sounds(id, rules, &mut ctx.effects);

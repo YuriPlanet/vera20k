@@ -699,6 +699,7 @@ impl Simulation {
         // shared admission seam, before an app can publish the candidate.
         self.validate_restored_trigger_runtime(rules.ares_form())
             .map_err(|reason| SnapshotRestoreError::InvalidTriggerRuntime { reason })?;
+        self.restore_missing_projectile_alpha_shapes(rules);
         Ok(SnapshotMapRestoreOutput {
             occupied_overlays,
             native_tiberium_stats,

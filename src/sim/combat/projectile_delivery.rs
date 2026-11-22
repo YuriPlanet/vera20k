@@ -408,7 +408,7 @@ fn admit_bullet(
         rules,
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
-    world.admit_projectile(bullet_id, spawn);
+    world.admit_typed_projectile(bullet_id, spawn, projectile_type, rules);
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,

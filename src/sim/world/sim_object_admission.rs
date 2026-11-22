@@ -3,10 +3,11 @@
 //! object walk, and debris voxel admission.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
-use crate::sim::projectile::ProjectileStore;
+use crate::sim::projectile::{ProjectileCoord, ProjectileSpawn, ProjectileStore};
 
 use super::LifecycleOutput;
 #[cfg(any(test, feature = "test-support"))]
@@ -68,10 +69,17 @@ impl Simulation {
         id
     }
 
-    pub fn admit_projectile(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn admit_projectile(&mut self, stable_id: u64, spawn: ProjectileSpawn) -> u64 {
+        self.admit_typed_projectile(stable_id, spawn, None, RuleSet::empty_for_test())
+    }
+
+    pub(crate) fn admit_typed_projectile(
         &mut self,
         stable_id: u64,
-        spawn: crate::sim::projectile::ProjectileSpawn,
+        spawn: ProjectileSpawn,
+        kind: Option<&ProjectileType>,
+        rules: &RuleSet,
     ) -> u64 {
         let location = crate::sim::projectile::bullet_unlimbo_coord(
             self.resolved_terrain.as_ref(),
@@ -80,13 +88,74 @@ impl Simulation {
         );
         self.projectiles
             .spawn_at(stable_id, self.session.binary_frame(), spawn, location);
-        let registered = self.register_projectile(stable_id, spawn.flat);
-        debug_assert!(registered);
+        self.finish_projectile_unlimbo(stable_id, spawn.flat, location, kind, rules);
         if let Some(style) = spawn.line_trail {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::LineTrailConstructed { stable_id, style });
         }
         stable_id
+    }
+
+    /// BulletClass::Fire (0x00468684) enters ObjectClass::Unlimbo. Its
+    /// AlphaShape block follows Logic registration and takes Bullet's
+    /// GetCoords (0x005F65A0), before Fire's Inviso placement on the target.
+    fn finish_projectile_unlimbo(
+        &mut self,
+        id: u64,
+        flat: bool,
+        location: ProjectileCoord,
+        kind: Option<&ProjectileType>,
+        rules: &RuleSet,
+    ) {
+        let registered = self.register_projectile(id, flat);
+        debug_assert!(registered);
+        if registered && let Some(kind) = kind.filter(|kind| !kind.alpha_image.is_empty())
+            // ObjectClass::Unlimbo (0x005F4ECD) rejects Empty before
+            // BulletType's floor adjustment can turn its z into 1.
+            && self.projectiles.get(id).is_some_and(|bullet| {
+                bullet.launch_origin() != ProjectileCoord::new(0, 0, 0)
+            })
+        {
+            self.alpha_shapes
+                .construct(id, &kind.alpha_image, rules, || {
+                    [location.x, location.y, location.z]
+                });
+        }
+    }
+
+    /// TechnoClass::Fire (0x006FF825..0x006FF86C) Limboes, Constructs and
+    /// Fires the parasite's bullet again from the original firing coordinate.
+    pub(crate) fn refire_parasite_projectile(&mut self, id: u64, firer: u64, rules: &RuleSet) {
+        let Some(projectile) = self.projectiles.get(id) else {
+            return;
+        };
+        let origin = projectile.launch_origin();
+        let kind = projectile
+            .payload()
+            .projectile_type()
+            .and_then(|id| self.interner.projectile_type(id, rules));
+        let flat = self.substrate.display.layer_of(id)
+            == Some(super::display_layers::DisplayLayer::SURFACE);
+        if !self.unregister_non_entity_object(id) {
+            return;
+        }
+        // ObjectClass::Limbo (0x005F4D61) disables the first Fire's shape.
+        self.alpha_shapes.pointer_expired(id);
+        self.projectiles.set_owner(id, firer);
+        Self::construct_bullet_scheme(
+            &self.interner,
+            &self.substrate,
+            &self.houses,
+            &mut self.projectiles,
+            id,
+            rules,
+        );
+        let location = crate::sim::projectile::bullet_unlimbo_coord(
+            self.resolved_terrain.as_ref(),
+            &self.effective_shared_cell_dummy(),
+            origin,
+        );
+        self.finish_projectile_unlimbo(id, flat, location, kind, rules);
     }
 
     /// `BulletClass::Construct @ 0x004664C0`, `0x00466519..0x0046653B`: a
@@ -165,13 +234,13 @@ impl Simulation {
     ) {
         for projectile in spawns {
             let stable_id = self.substrate.allocate_stable_id();
-            let inviso = projectile
+            let kind = projectile
                 .payload
                 .projectile_type()
-                .and_then(|id| self.interner.projectile_type(id, rules))
-                .is_some_and(|kind| kind.inviso);
+                .and_then(|id| self.interner.projectile_type(id, rules));
+            let inviso = kind.is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
-            self.admit_projectile(stable_id, projectile);
+            self.admit_typed_projectile(stable_id, projectile, kind, rules);
             Self::construct_bullet_scheme(
                 &self.interner,
                 &self.substrate,

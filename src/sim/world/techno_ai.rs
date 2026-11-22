@@ -411,9 +411,34 @@ impl Simulation {
         ctx: &mut ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
+        let bullet = self.projectiles.get(id).expect("live Bullet");
+        let projectile_type = bullet
+            .payload()
+            .projectile_type()
+            .and_then(|type_id| self.interner.projectile_type(type_id, rules));
+        // BulletClass::AI (0x004666F2) calls ObjectClass::AI before waiting,
+        // moving or detonating. Ares hooks its entry at 0x005F3E70 and
+        // refreshes the glow on odd frames (Ares.dll 0x1000A187).
+        if rules.ares()
+            && self.session.binary_frame() & 1 != 0
+            && let Some(kind) = projectile_type.filter(|kind| !kind.alpha_image.is_empty())
+            && bullet.in_logic_vector()
+            && bullet.launch_origin() != crate::sim::projectile::ProjectileCoord::new(0, 0, 0)
+        {
+            let coords = || {
+                let p = bullet.position();
+                [p.x, p.y, p.z]
+            };
+            // Older saves had no shape for a fired Bullet. Ares constructs
+            // at this visit even without a previous shape (0x1000A1CF).
+            if !self.alpha_shapes.contains(id) {
+                self.alpha_shapes
+                    .construct(id, &kind.alpha_image, rules, coords);
+            }
+            self.alpha_shapes.update_at(id, rules, coords);
+        }
         // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
         if rules.ares()
-            && let Some(bullet) = self.projectiles.get(id)
             && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
             && self
                 .interner
@@ -440,11 +465,6 @@ impl Simulation {
         // Bullet466826..4668B8 constructs at the old Location after its
         // visual update, before target/floor queries or flight. Registering
         // an Anim here also preserves the live Logic cursor on impact.
-        let projectile_type = self
-            .projectiles
-            .get(id)
-            .and_then(|projectile| projectile.payload().projectile_type())
-            .and_then(|type_id| self.interner.projectile_type(type_id, rules));
         let trailer = projectile_type.and_then(|kind| {
             self.projectiles
                 .trailer(&head, kind, self.session.binary_frame())

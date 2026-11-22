@@ -1254,21 +1254,7 @@ impl Simulation {
         // flag FireAt copied (`0x006FF0B0`): Limbo `0x005F4D30`, Fire and
         // Unlimbo's own body never write `+0x8C`.
         if parasite && let Some(bullet) = bullet {
-            let flat = self.substrate.display.layer_of(bullet)
-                == Some(crate::sim::world::display_layers::DisplayLayer::SURFACE);
-            if self.unregister_non_entity_object(bullet) {
-                self.projectiles.set_owner(bullet, firer);
-                Self::construct_bullet_scheme(
-                    &self.interner,
-                    &self.substrate,
-                    &self.houses,
-                    &mut self.projectiles,
-                    bullet,
-                    rules,
-                );
-                let registered = self.register_projectile(bullet, flat);
-                debug_assert!(registered);
-            }
+            self.refire_parasite_projectile(bullet, firer, rules);
         }
     }
 

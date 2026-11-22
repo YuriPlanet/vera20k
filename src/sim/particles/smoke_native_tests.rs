@@ -93,7 +93,7 @@ fn declared_particle(sim: &mut Simulation, rules: &RuleSet, before: &Value) -> P
     [p.drift_x, p.drift_y, p.drift_z] = drift;
     p.marked_for_deletion = before["marked"].as_bool().unwrap();
     p.state_ai_advance = rules.particle_type(p.type_id).state_ai_advance;
-    Simulation::reveal_particle(&mut sim.substrate, p.stable_id());
+    sim.reveal_particle(&p, rules);
     p
 }
 
@@ -112,7 +112,7 @@ fn original_smoke_constructors_preserve_signed_delta_then_lifetime_rng() {
             id,
             coords(&case["particle"]["coords"]),
             IVec3::ZERO,
-            rules.particle_type(id),
+            &rules,
             &mut sim,
         );
         assert_particle(&p, &case["particle"]);

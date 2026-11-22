@@ -907,7 +907,10 @@ mod tests {
             .particle_systems
             .retain_detached_particle(detached);
         for id in [child_id, detached_id] {
-            Simulation::reveal_particle(&mut sim.substrate, id);
+            sim.submit_object_display_for_test(
+                id,
+                crate::sim::world::display_layers::DisplayLayer::AIR,
+            );
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "particles", 0);
         let rng = sim.scenario_rng.clone();
@@ -950,7 +953,10 @@ mod tests {
         sim.substrate
             .particle_systems
             .retain_detached_particle(particle);
-        Simulation::reveal_particle(&mut sim.substrate, id);
+        sim.submit_object_display_for_test(
+            id,
+            crate::sim::world::display_layers::DisplayLayer::AIR,
+        );
 
         let output = sim
             .advance_app_frame(

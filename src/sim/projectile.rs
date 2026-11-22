@@ -2866,9 +2866,17 @@ pub(crate) fn projectile_ground_z(
 pub(crate) fn bullet_unlimbo_coord(
     terrain: Option<&ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
-    mut origin: ProjectileCoord,
+    origin: ProjectileCoord,
 ) -> ProjectileCoord {
     let floor = projectile_ground_z(terrain, shared_cell_dummy, origin);
+    bullet_unlimbo_coord_at_floor(origin, floor)
+}
+
+/// BulletType virtual +6C (0x0046C4F0) after the caller obtained its floor.
+pub(crate) fn bullet_unlimbo_coord_at_floor(
+    mut origin: ProjectileCoord,
+    floor: i32,
+) -> ProjectileCoord {
     if origin.z <= floor {
         origin.z = floor.wrapping_add(1);
     }

@@ -492,12 +492,11 @@ pub(crate) fn render_game(
                 .is_some_and(|house| house.is_defeated()),
         };
         let rules = &rt.resources.rules;
-        shroud_buf.set_alpha_shapes(view.simulation().alpha_shapes().filter_map(
-            |(origin, image)| {
-                Some(crate::render::shroud_buffer::AlphaShapeDraw {
-                    origin,
-                    image: rules.alpha_image(image)?.clone(),
-                })
+        shroud_buf.set_alpha_shapes(view.simulation().alpha_shape_draw_frames(rules).map(
+            |(origin, image, frame)| crate::render::shroud_buffer::AlphaShapeDraw {
+                origin,
+                image: image.clone(),
+                frame,
             },
         ));
         shroud_buf.rebuild_if_needed(
@@ -1099,7 +1098,8 @@ fn upload_to_gpu(
     let (outcome_shape, outcome_text) = verdict
         .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))
         .unwrap_or_default();
-    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat

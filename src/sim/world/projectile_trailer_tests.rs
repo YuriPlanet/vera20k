@@ -202,6 +202,90 @@ fn only_bubble(sim: &Simulation) -> u64 {
     ids[0]
 }
 
+#[test]
+fn a_fired_projectile_glows_at_launch_and_ares_tracks_its_preflight_position() {
+    use crate::rules::alpha_image_assets::AlphaImage;
+    use crate::sim::combat::{FiredBullet, admit_fired_bullet};
+
+    for ares in [false, true] {
+        let _mode = crate::rules::ares_switch::read_ares_way(ares);
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\n\
+             [GUN]\nProjectile=SHOT\nWarhead=WH\n[SHOT]\nROT=0\nAlphaImage=GLOW\n[WH]\n",
+        ))
+        .unwrap();
+        assert_eq!(rules.ares(), ares);
+        rules.supply_alpha_image_for_test(
+            "GLOW",
+            AlphaImage::for_test([8, 6], [0, 0, 1, 1], vec![254]),
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        let payload = ProjectilePayload::new(
+            0,
+            sim.interner.intern("WH"),
+            Some(sim.interner.intern("SHOT")),
+            false,
+        );
+        let origin = ProjectileCoord::new(3000, 3000, 800);
+        let target = ProjectileTarget::Cell { rx: 24, ry: 12 };
+        let shot = FiredBullet::launched(
+            &sim,
+            &rules,
+            10,
+            0,
+            target,
+            payload,
+            128,
+            origin,
+            ProjectileVelocity::new(128, 0, 0),
+        )
+        .unwrap();
+        let id = sim.substrate.allocate_stable_id();
+        admit_fired_bullet(&mut sim, &rules, rules.weapon("GUN").unwrap(), id, shot);
+        let screen = |p: ProjectileCoord| {
+            let (x, y) = crate::util::lepton::absolute_leptons_to_screen(p.x, p.y, p.z);
+            ([x as i32 - 4, y as i32 - 3], "GLOW")
+        };
+        assert_eq!(sim.alpha_shapes().collect::<Vec<_>>(), [screen(origin)]);
+        let mut expected = screen(origin);
+        for frame in [2, 3, 4] {
+            let before = sim.projectiles.get(id).unwrap().position();
+            if ares && frame == 3 {
+                assert_ne!(screen(before), screen(origin));
+                expected = screen(before);
+            }
+            sim.session.set_binary_frame_for_test(frame);
+            sim.object_ai_visit_one_with_effects(id, &rules, &mut ObjectAiCtx::default());
+            assert_eq!(sim.alpha_shapes().collect::<Vec<_>>(), [expected]);
+        }
+        // Earlier saves retained the fired Bullet and its FireCoord, but had
+        // no AlphaShape for it.
+        sim.alpha_shapes = Default::default();
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+        let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "older-shot", 0);
+        let mut sim = crate::sim::snapshot::GameSnapshot::load(&saved)
+            .unwrap()
+            .restore_checkpoint_map_for_test(
+                &rules,
+                rules.overlay_registry(),
+                terrain,
+                Default::default(),
+            )
+            .unwrap();
+        if ares {
+            assert_eq!(sim.alpha_shapes().count(), 0);
+            expected = screen(sim.projectiles.get(id).unwrap().position());
+            sim.session.set_binary_frame_for_test(5);
+            sim.object_ai_visit_one_with_effects(id, &rules, &mut ObjectAiCtx::default());
+        }
+        assert_eq!(sim.alpha_shapes().collect::<Vec<_>>(), [expected]);
+        sim.retire_non_entity_object(id, super::UninitContext::new(&rules));
+        sim.advance_tick(&[], Some(&rules), None, None, 33);
+        assert_eq!(sim.alpha_shapes().count(), 0);
+    }
+}
+
 /// Authored Scalable+Trailer combination through the real Unit FireAt
 /// receiver. Original Unit741439 enrolls each returned Bullet; InitScalable
 /// 46B280 updates this retained type's cadence at the eighth live member.
