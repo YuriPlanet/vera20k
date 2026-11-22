@@ -5,6 +5,8 @@
 //! turns those into API values, each through [`copied`] or [`owned`], so the
 //! compiler proves that nothing borrowed or uncopyable is passed.
 
+// The runner takes `--lib` tests only, so this lives in the crate; it names
+// nothing but the public API, through the crate's external name.
 use vera20k_gui::hud::world::{
     Amount, Anchor, ArtId, Band, Condition, Element, ListId, ObjectView, Shape, SourceId,
     StatusTemplate, TemplateId, WorldCmd, WorldOp,
@@ -689,72 +691,23 @@ fn the_system_layer_is_closed_to_the_client() {
     };
     assert_eq!(client.call(&mut hud, root), Err(Refused::Denied));
 
-    let parent = client.ask(
-        &mut hud,
-        Call::Find {
-            name: "HostStop".to_owned(),
-        },
-    );
-    let child = Call::Child {
-        parent,
-        kind: NodeKind::Button,
+    let find = Call::Find {
+        name: "HostStop".to_owned(),
     };
-    assert_eq!(client.call(&mut hud, child), Err(Refused::Denied));
+    assert_eq!(client.call(&mut hud, find), Err(Refused::NotFound));
+    let child = hud.create(NodeKind::Button, screen, CLIENT);
+    assert_eq!(child, Err(Refused::Denied));
     assert!(hud.tree().children(screen).unwrap().is_empty());
 }
 
 #[test]
-fn a_client_modal_neither_traps_escape_nor_covers_the_system_layer() {
+fn a_client_cannot_make_or_enter_a_modal() {
     let mut hud = new_hud();
-    let mut client = Client::new(CLIENT);
-    let modal = client.ask(
-        &mut hud,
-        Call::Root {
-            layer: Layer::Modal,
-            kind: NodeKind::Panel,
-        },
-    );
-    client.place(&mut hud, modal, [0, 0, 800, 600]);
-    client.set_flag(&mut hud, modal, Prop::BlocksPointer);
-    hud.layout(VIEWPORT);
-    assert!(
-        !hud.input(Pointer::Escape).consumed,
-        "Escape must still reach the host"
-    );
-
-    // Nor may a dismissable one keep Escape for itself.
-    client.set_flag(&mut hud, modal, Prop::Dismissable);
-    hud.layout(VIEWPORT);
-    assert!(
-        !hud.input(Pointer::Escape).consumed,
-        "a client's dismissal must not consume Escape"
-    );
-    let dismissed = HudEvent::Dismiss {
-        node: client.node(modal).unwrap(),
-    };
-    assert_eq!(hud.drain_events(), [dismissed]);
-
-    // And it gives way to the host's System screen.
-    let screen = host_panel(&mut hud, Layer::System, "HostStop", [0, 0, 300, 200]);
-    hud.set(screen, Prop::Dismissable, Value::Bool(true))
-        .unwrap();
-    let resume = hud.create(NodeKind::Button, screen, Origin::Host).unwrap();
-    hud.set(resume, Prop::Width, Value::Int(80)).unwrap();
-    hud.set(resume, Prop::Height, Value::Int(20)).unwrap();
-    hud.layout(VIEWPORT);
-
-    assert!(hud.input(Pointer::Escape).consumed);
-    assert_eq!(hud.drain_events(), [HudEvent::Dismiss { node: screen }]);
-
-    assert_eq!(tap(&mut hud, (10, 10), MouseButton::Left), (true, true));
-    let events = hud.drain_events();
-    let click = HudEvent::Click {
-        node: resume,
-        button: MouseButton::Left,
-        command: None,
-    };
-    assert!(events.contains(&click), "{events:?}");
-    assert!(client.clicks(&hud, &events).is_empty());
+    let made = hud.create_root(Layer::Modal, CLIENT, NodeKind::Panel);
+    assert_eq!(made, Err(Refused::Denied));
+    let host = host_panel(&mut hud, Layer::Modal, "HostQuestion", [0, 0, 100, 100]);
+    let child = hud.create(NodeKind::Button, host, CLIENT);
+    assert_eq!(child, Err(Refused::Denied));
 }
 
 #[test]

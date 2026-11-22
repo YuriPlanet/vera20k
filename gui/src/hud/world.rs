@@ -213,6 +213,12 @@ impl<T> Default for Store<T> {
 
 impl<T> Store<T> {
     fn add(&mut self, origin: Origin, item: T, limit: usize) -> Result<u64, Refused> {
+        // A quarter of each limit is the host's alone.
+        let limit = if origin == Origin::Host {
+            limit
+        } else {
+            limit - limit / 4
+        };
         if self.rows.len() >= limit {
             return Err(Refused::Limit);
         }
@@ -288,6 +294,14 @@ pub struct World {
 }
 
 impl World {
+    pub fn template_origin(&self, id: TemplateId) -> Result<Origin, Refused> {
+        Ok(self.templates.rows[self.templates.index(id.0)?].origin)
+    }
+
+    pub fn list_origin(&self, id: ListId) -> Result<Origin, Refused> {
+        Ok(self.lists.rows[self.lists.index(id.0)?].origin)
+    }
+
     /// Changes whenever a template or list changes.
     pub fn revision(&self) -> u64 {
         self.revision
@@ -645,6 +659,25 @@ fn placed(shape: &Shape, point: (i32, i32)) -> WorldOp<'_> {
             color,
         },
     }
+}
+
+/// Runs of neighbouring commands one draw call can take (`material` names
+/// the host's texture or pipeline). Order is never changed.
+pub fn batches<'c, 'a: 'c, M: PartialEq + 'c>(
+    cmds: &'c [WorldCmd<'a>],
+    material: impl Fn(&WorldOp<'a>) -> M + 'c,
+) -> impl Iterator<Item = std::ops::Range<usize>> + 'c {
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        let kind = material(&cmds.get(start)?.op);
+        let more = cmds[start + 1..]
+            .iter()
+            .take_while(|cmd| material(&cmd.op) == kind)
+            .count();
+        let run = start..start + 1 + more;
+        start = run.end;
+        Some(run)
+    })
 }
 
 #[cfg(test)]
@@ -1517,7 +1550,7 @@ mod tests {
         );
         assert_eq!(world.revision(), revision);
         world.remove_template(first).unwrap();
-        world.add_template(Origin::Player, named("t")).unwrap();
+        world.add_template(Origin::Host, named("t")).unwrap();
     }
 
     #[test]
@@ -1539,7 +1572,7 @@ mod tests {
         assert_eq!(world.revision(), revision);
         world.remove_list(first).unwrap();
         world
-            .add_list(Origin::Player, Anchor::Object(0), vec![])
+            .add_list(Origin::Host, Anchor::Object(0), vec![])
             .unwrap();
     }
 

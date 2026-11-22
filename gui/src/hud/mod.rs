@@ -5,9 +5,16 @@
 //! strings and colours. No callbacks are kept and no GPU type appears, so a
 //! bridge (a script or a sandboxed module) can forward the calls unchanged.
 //!
+//! The HUD is no security boundary. Such a bridge keeps its own handle table,
+//! checks [`Hud::origin`] (and [`world::World::template_origin`]) before a
+//! change, undoes its changes to others' items, and numbers the enums for its
+//! wire. Events may name a node removed since they were queued.
+//!
 //! A frame: [`Hud::layout`], [`Hud::input`] against that layout,
 //! [`Hud::drain_events`], the host's changes, [`Hud::layout`], [`Hud::paint`].
 
+#[cfg(test)]
+mod contract_tests;
 mod input;
 mod layout;
 mod paint;
@@ -22,6 +29,14 @@ pub use input::{ClickOrder, HoverOrder, HudEvent, InputPolicy, Pointer, Response
 pub use layout::Hold;
 pub use paint::{ButtonState, PaintCmd, PaintOp, batches};
 
+/// Empties `buffer` for the next frame and keeps its allocation, free of what
+/// the last frame's commands borrowed.
+pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
+    buffer.clear();
+    // An empty same-layout vector collects in place.
+    buffer.into_iter().filter_map(|_| None).collect()
+}
+
 /// Bottom to top. A visible node in `Modal` blocks every layer beneath it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Layer {
@@ -29,11 +44,16 @@ pub enum Layer {
     Panels,
     Overlay,
     Modal,
-    /// The host's own emergency screens; no other origin may enter it.
+    /// The host's own emergency screens.
     System,
 }
 
 impl Layer {
+    /// `Modal` and `System` take the whole pointer, so only the host enters them.
+    pub fn host_only(self) -> bool {
+        self >= Layer::Modal
+    }
+
     pub const ALL: [Layer; 5] = [Layer::Field, Layer::Panels, Layer::Overlay, Layer::Modal, Layer::System];
 }
 
@@ -88,9 +108,7 @@ impl Hud {
 
     /// A top-level node, above the layer's earlier ones.
     pub fn create_root(&mut self, layer: Layer, origin: Origin, kind: NodeKind) -> Result<NodeId, Refused> {
-        if layer == Layer::System && origin != Origin::Host {
-            return Err(Refused::Denied);
-        }
+        self.admit(layer, origin)?;
         let id = self.tree.create(kind, None)?;
         self.meta.insert(id, Meta { origin, layer });
         self.roots[layer as usize].push(id);
@@ -102,13 +120,35 @@ impl Hud {
     pub fn create(&mut self, kind: NodeKind, parent: NodeId, origin: Origin) -> Result<NodeId, Refused> {
         self.tree.node(parent)?;
         let layer = self.meta.get(&parent).ok_or(Refused::NotFound)?.layer;
-        if layer == Layer::System && origin != Origin::Host {
-            return Err(Refused::Denied);
-        }
+        self.admit(layer, origin)?;
         let id = self.tree.create(kind, Some(parent))?;
         self.meta.insert(id, Meta { origin, layer });
         self.revision += 1;
         Ok(id)
+    }
+
+    /// Others than the host get three quarters of the node limit between them.
+    fn admit(&self, layer: Layer, origin: Origin) -> Result<(), Refused> {
+        if origin == Origin::Host {
+            return Ok(());
+        }
+        if layer.host_only() {
+            return Err(Refused::Denied);
+        }
+        let max = self.tree.max_nodes();
+        if self.tree.live_count() >= max - max / 4 {
+            return Err(Refused::Limit);
+        }
+        Ok(())
+    }
+
+    /// Back to the prop's default.
+    pub fn clear(&mut self, id: NodeId, prop: Prop) -> Result<(), Refused> {
+        if self.tree.clear(id, prop)? {
+            self.revision += 1;
+            self.forget_inactive();
+        }
+        Ok(())
     }
 
     /// Geometry takes effect at the next [`Self::layout`].
@@ -174,7 +214,8 @@ impl Hud {
 
     /// The node named `name` (ASCII case aside): `from`'s own first, then
     /// the host's, the layout's, the player's and the rest; the first in
-    /// paint order among one origin's.
+    /// paint order among one origin's. Only the host finds what is in a
+    /// host-only layer.
     pub fn find(&self, from: Origin, name: &str) -> Option<NodeId> {
         let mut best: Option<(bool, Origin, NodeId)> = None;
         self.visit(|id| {
@@ -183,6 +224,9 @@ impl Hud {
                 return;
             }
             let Some(meta) = self.meta.get(&id) else { return };
+            if meta.layer.host_only() && from != Origin::Host {
+                return;
+            }
             let foreign = meta.origin != from;
             if best.is_none_or(|(f, o, _)| (foreign, meta.origin) < (f, o)) {
                 best = Some((foreign, meta.origin, id));

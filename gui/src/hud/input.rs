@@ -312,7 +312,9 @@ impl Hud {
     fn pointer_down(&mut self, x: i32, y: i32, button: MouseButton) -> bool {
         let hit = self.hit(x, y);
         let dismissed = self.dismissed_by_press(x, y, &hit);
-        let press = if dismissed.is_some() {
+        // An external popup takes only the world's press, never the HUD's.
+        let eaten = dismissed.is_some_and(|id| !self.is_external(id) || !hit.blocks_world());
+        let press = if eaten {
             Press::Hud {
                 node: None,
                 fired: false,
@@ -371,13 +373,26 @@ impl Hud {
     }
 
     fn escape(&mut self) -> bool {
-        let Some((_, node)) = self.dismissable(self.modal_open()) else {
+        let modal = self.modal_open();
+        let Some((_, node)) = self.dismissable(modal, true) else {
             return false;
         };
         self.input.push(HudEvent::Dismiss { node });
+        if !self.is_external(node) {
+            return true;
+        }
+        // An external popup hears of it and hides nothing beneath it.
+        let Some((_, beneath)) = self.dismissable(modal, false) else {
+            return false;
+        };
+        self.input.push(HudEvent::Dismiss { node: beneath });
+        true
+    }
+
+    fn is_external(&self, node: NodeId) -> bool {
         self.meta
             .get(&node)
-            .is_some_and(|meta| !matches!(meta.origin, Origin::External(_)))
+            .is_some_and(|meta| matches!(meta.origin, Origin::External(_)))
     }
 
     fn track(&mut self, hit: &Hit) {
@@ -497,7 +512,7 @@ impl Hud {
 
     /// The topmost visible `Dismissable` node and its place in the layout.
     /// With a modal open, none beneath the modal layer.
-    fn dismissable(&self, modal: bool) -> Option<(usize, NodeId)> {
+    fn dismissable(&self, modal: bool, external: bool) -> Option<(usize, NodeId)> {
         let lowest = if modal { Layer::Modal } else { Layer::Field };
         self.layout
             .nodes()
@@ -508,6 +523,7 @@ impl Hud {
                 let id = placed.id;
                 let node = self.tree.node(id).ok()?;
                 let found = node.bool_prop(Prop::Dismissable, false)
+                    && (external || !self.is_external(id))
                     && self.meta.get(&id)?.layer >= lowest
                     && self.tree.effective(id, Prop::Visible);
                 found.then_some((at, id))
@@ -515,7 +531,7 @@ impl Hud {
     }
 
     fn dismissed_by_press(&self, x: i32, y: i32, hit: &Hit) -> Option<NodeId> {
-        let (at, id) = self.dismissable(hit.modal)?;
+        let (at, id) = self.dismissable(hit.modal, true)?;
         let layer = self.meta.get(&id)?.layer;
         if hit.layer.is_some_and(|top| top > layer) || self.subtree_covers(at, id, x, y) {
             return None;

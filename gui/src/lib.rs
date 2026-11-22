@@ -4,6 +4,12 @@
 //! tree, input routing, the dialog stack and widget state. The host reads the
 //! laid-out tree and paints it with its own renderer.
 
+#[cfg(test)]
+extern crate self as vera20k_gui;
+
+#[cfg(test)]
+mod external_client_tests;
+
 pub mod gui;
 pub mod hud;
 pub mod node;

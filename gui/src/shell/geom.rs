@@ -22,15 +22,19 @@ impl RectPx {
 
     pub const fn translate(self, dx: i32, dy: i32) -> Self {
         Self {
-            x: self.x + dx,
-            y: self.y + dy,
+            x: self.x.saturating_add(dx),
+            y: self.y.saturating_add(dy),
             w: self.w,
             h: self.h,
         }
     }
 
     pub fn contains(self, x: i32, y: i32) -> bool {
-        x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
+        // Widened: the far edge of a rect at the end of i32 is past it.
+        x >= self.x
+            && y >= self.y
+            && i64::from(x) < i64::from(self.x) + i64::from(self.w)
+            && i64::from(y) < i64::from(self.y) + i64::from(self.h)
     }
 }
 

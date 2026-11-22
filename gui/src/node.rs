@@ -467,7 +467,10 @@ impl Tree {
         Tree { slots: Vec::new(), free: Vec::new(), live: 0, max_nodes }
     }
 
-    #[cfg(test)]
+    pub(crate) fn max_nodes(&self) -> usize {
+        self.max_nodes
+    }
+
     pub fn live_count(&self) -> usize {
         self.live
     }
@@ -530,6 +533,11 @@ impl Tree {
         }
         node.props.insert(prop, value);
         Ok(())
+    }
+
+    /// Back to the prop's default; whether it was set.
+    pub fn clear(&mut self, id: NodeId, prop: Prop) -> Result<bool, Refused> {
+        Ok(self.node_mut(id)?.props.remove(&prop).is_some())
     }
 
     pub fn get(&self, id: NodeId, prop: Prop) -> Result<Option<&Value>, Refused> {
