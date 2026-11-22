@@ -1735,8 +1735,7 @@ pub struct SuperWeaponView {
     /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
     /// it adds the cameo when `SW.ShowCameo` holds and skips it when
     /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
-    /// true without Ares; Mental Omega's Iron Guard is such a hidden
-    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// true without Ares. Residual: Ares's spy-infiltration grant adds the
     /// cameo without this test (`0x100123C7`); VERA hides the type on every
     /// grant path.
     pub ares_show_cameo: bool,
