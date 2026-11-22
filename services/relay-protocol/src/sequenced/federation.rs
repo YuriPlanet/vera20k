@@ -1899,10 +1899,10 @@ mod tests {
                 }]
             ));
             let mut bytes = Vec::new();
-            let current = game.clients[relay].ordering.as_ref().unwrap();
-            let (certificate, agreement) = (current.certificate.clone(), current.agreement);
+            let cert = certificate(&game.relays[relay].key, 3, 2000);
+            let agreement = game.clients[relay].ordering.as_ref().unwrap().agreement;
             game.clients[relay]
-                .configure_ordering(&certificate, agreement, &mut bytes)
+                .configure_ordering(&cert, agreement, &mut bytes)
                 .unwrap();
             assert!(matches!(
                 events(
