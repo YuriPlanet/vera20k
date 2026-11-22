@@ -10,7 +10,7 @@ use crate::sim::components::DriveCoord;
 use crate::sim::movement::{ground_pose::query_ground_height, locomotor::MovementLayer};
 use crate::sim::object_fall::ObjectFallState;
 use crate::sim::occupancy::RawCellKey;
-use crate::sim::world::Simulation;
+use crate::sim::world::{ObjectKind, Simulation};
 use crate::util::direction::direction_delta;
 use crate::util::direction_tables::{dir_from_facing16, facing16_between};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
@@ -289,6 +289,14 @@ impl Simulation {
         }
         if retire {
             self.destroy_anim(id, rules);
+        }
+
+        // `ObjectClass::AI` (`0x00423B1E`) opens with Ares'
+        // `ObjectClass_Update_AlphaLight` (hook `0x005F3E70`,
+        // `Ares.dll 10047730`): the glow moves to the runner's spot before the
+        // fall below, and before any splash it spawns.
+        if rules.ares() {
+            self.update_alpha_shape(id, ObjectKind::Anim, rules);
         }
 
         // ObjectAI5F3F11..5F413A. Anim's PerCell callback is the base no-op;

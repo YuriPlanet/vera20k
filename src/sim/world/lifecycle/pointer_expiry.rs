@@ -1004,6 +1004,9 @@ impl Simulation {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
         }
+        // Only an Ares Anim shape joins these listeners
+        // (`AlphaShapeClass_CTOR_Anims`); it touches no other listener's state.
+        self.alpha_shapes.anim_pointer_expired(expired_id);
         // VERA-only: each callback below clears only its own entity's fields
         // that name the Anim (`GameEntity::held_anims`) and draws nothing, so
         // visiting just the entities the anim-holder index finds, ascending,

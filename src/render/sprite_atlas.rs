@@ -1223,8 +1223,9 @@ fn entity_pairs<'a>(
 /// alone adds the scenario-start crate CellAnim remaps
 /// (`startup_crate_anim_remap_keys`), whose AnimObjects do not exist yet.
 pub(crate) struct EntityAtlasCoverage<'r> {
-    /// Deploy targets, pre-loaded in every house colour.
-    pub(crate) extra_buildings: Vec<&'r str>,
+    /// Deploy targets and Ares SHP water images, pre-loaded in every house
+    /// colour.
+    pub(crate) extra_types: Vec<&'r str>,
     /// Live AnimClass palette variants.
     pub(crate) anim_remap_keys: HashSet<AnimRemapKey>,
     /// Terrain tile animations, drawn from the theater ISO palette.
@@ -1239,8 +1240,10 @@ impl<'r> EntityAtlasCoverage<'r> {
         rules: Option<&'r RuleSet>,
         house_colors: &HouseColorMap,
     ) -> Self {
+        let mut extra_types = deployable_building_types(rules);
+        extra_types.extend(ares_shp_water_image_types(rules));
         Self {
-            extra_buildings: deployable_building_types(rules),
+            extra_types,
             anim_remap_keys: collect_anim_remap_base_keys(sim, house_colors),
             cell_drawer_type_ids: sim
                 .resolved_terrain()
@@ -1277,6 +1280,29 @@ pub(crate) fn deployable_building_types(rules: Option<&RuleSet>) -> Vec<&str> {
                 .any(|r| r.eq_ignore_ascii_case(&target_obj.id))
         {
             result.push(&target_obj.id);
+        }
+    }
+    result
+}
+
+/// SHP VehicleTypes another type names as its `WaterImage=` in a game Ares
+/// plays. `UnitClass_DrawSHP_WaterType` (hook `0x0073C5FC`) draws one the
+/// moment its owner enters water, so the atlas loads it before any object of
+/// that type exists; a voxel water image has no SHP to load.
+pub(crate) fn ares_shp_water_image_types(rules: Option<&RuleSet>) -> Vec<&str> {
+    let Some(rules) = rules.filter(|rules| rules.ares()) else {
+        return Vec::new();
+    };
+    let mut result: Vec<&str> = Vec::new();
+    for object in rules.all_objects() {
+        if let Some(water) = object.water_image().and_then(|name| rules.object(name))
+            && !rules
+                .art()
+                .resolve_metadata_entry(&water.id, &water.image)
+                .is_some_and(|art| art.voxel)
+            && !result.iter().any(|id| id.eq_ignore_ascii_case(&water.id))
+        {
+            result.push(&water.id);
         }
     }
     result
@@ -1912,11 +1938,21 @@ fn insert_object_keys(
                 }
             }
             // A `Turret=yes` SHP Unit draws its turret from the same SHP:
-            // thirty-two frames from `WalkFrames * 8`. The draw picks one from
-            // the turret heading, so all of them stay resident.
+            // thirty-two frames from `WalkFrames * 8`, or with Ares from
+            // `WalkFrames * Facings` (`UnitClass_DrawSHP_FacingsB`). The draw
+            // picks one from the turret heading, so all of them stay resident.
             if let Some(turret) = seq_set.and_then(|set| set.shp_vehicle_turret()) {
-                for slot in 0..turret.facings {
-                    insert(turret.start_frame.saturating_add(slot));
+                let start = match rules.filter(|rules| rules.ares()) {
+                    Some(rules) => rules
+                        .object(type_str)
+                        .and_then(|object| rules.unit_shp_read_state_of(object))
+                        .and_then(|art| art.ares_turret_start_frame()),
+                    None => Some(turret.start_frame),
+                };
+                if let Some(start) = start {
+                    for slot in 0..crate::rules::art_data::SHP_TURRET_FACING_FRAMES {
+                        insert(start.saturating_add(slot));
+                    }
                 }
             }
         }
@@ -1994,20 +2030,20 @@ fn insert_new_object_keys(
         .collect();
     let mut sources = HashMap::new();
     let mut frame_sets: HashMap<&str, Vec<u16>> = HashMap::new();
+    let water_images = ares_shp_water_image_types(rules);
     for (type_str, color_idx) in new_objects {
         let category = categories
             .get(type_str.as_str())
             .copied()
             .unwrap_or_else(|| {
-                if rules
+                use crate::rules::object_type::ObjectCategory;
+                match rules
                     .and_then(|rules| rules.object(type_str))
-                    .is_some_and(|object| {
-                        object.category == crate::rules::object_type::ObjectCategory::Infantry
-                    })
+                    .map(|object| object.category)
                 {
-                    EntityCategory::Infantry
-                } else {
-                    EntityCategory::Structure
+                    Some(ObjectCategory::Infantry) => EntityCategory::Infantry,
+                    Some(ObjectCategory::Vehicle) => EntityCategory::Unit,
+                    _ => EntityCategory::Structure,
                 }
             });
         let infantry_frames = if category == EntityCategory::Infantry {
@@ -2103,6 +2139,27 @@ fn insert_new_object_keys(
                     }
                 }
                 let shadow_start = raw_count / 2;
+                // An Ares water image is drawn with its owner's facing count
+                // and turret block (`UnitClass_DrawSHP_ChangeType1`,
+                // `FacingsA`/`FacingsB`), which its own blocks need not
+                // match: keep its whole body half resident.
+                if category == EntityCategory::Unit
+                    && water_images
+                        .iter()
+                        .any(|water| water.eq_ignore_ascii_case(type_str))
+                {
+                    for frame in 0..shadow_start {
+                        let key = ShpSpriteKey {
+                            palette_context: ShpPaletteContext::Legacy,
+                            type_id: type_str.as_str().into(),
+                            facing: 0,
+                            frame,
+                            house_color: *color_idx,
+                        };
+                        needed.insert(key.clone());
+                        body_keys.push(key);
+                    }
+                }
                 // Techno7064C2..7064CD adds half the physical SHP count
                 // to the selected body frame. Infantry51958A calls this same
                 // Techno draw; retain its companions too, including nonempty

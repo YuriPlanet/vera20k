@@ -996,7 +996,15 @@ fn barrel_voxel_coordinate(
 /// (`+0x82`), the weapon's `OpenToppedAnim=` (`+0x118`) plays instead
 /// (`0x006FF32F..0x006FF347`); stock gives it to PsychicJab and Virusgun.
 ///
-/// RESIDUAL: the eight-way pick takes its facing from vt+0x308
+/// Under Ares, 3.0 `TechnoClass_Fire_Facings` (hook `0x006FF2D1`, Ares.dll
+/// `0x10047CF0`, resuming at `0x006FF31B`) replaces the facing pick: a list of
+/// eight or more anims picks entry [`ares_facing_bucket`] of the fire facing
+/// (nothing when that is past the end, which only a list of 65,536 can
+/// reach); a shorter non-empty list picks its first entry. The occupant and open-topped steps still follow.
+///
+/// [`ares_facing_bucket`]: crate::util::direction_tables::ares_facing_bucket
+///
+/// RESIDUAL: the facing pick takes its facing from vt+0x308
 /// (`0x006FF2E5`), which for an aircraft is its SecondaryFacing (`+0x3A0`,
 /// `0x0041A570`); `aim_facing16` carries an aircraft's body facing. No retail
 /// aircraft weapon has `Anim=`.
@@ -1005,19 +1013,25 @@ pub(crate) fn muzzle_anim_name(
     aim_facing16: u16,
     occupied_fire: bool,
     in_open_transport: bool,
+    ares: bool,
 ) -> Option<&str> {
+    use crate::util::direction_tables::{ares_facing_bucket, muzzle_anim_index_8way};
     let picked = if occupied_fire {
         weapon.occupant_anim.as_deref()
     } else {
-        match weapon.anim.len() {
-            0 => None,
-            8 => {
-                let index =
-                    crate::util::direction_tables::quantize::muzzle_anim_index_8way(aim_facing16);
-                weapon.anim.get(usize::from(index)).map(String::as_str)
-            }
-            _ => weapon.anim.first().map(String::as_str),
-        }
+        let count = weapon.anim.len();
+        let index = if ares {
+            usize::try_from(ares_facing_bucket(
+                u32::try_from(count).unwrap_or(u32::MAX),
+                aim_facing16,
+            ))
+            .unwrap_or(usize::MAX)
+        } else if count == 8 {
+            usize::from(muzzle_anim_index_8way(aim_facing16))
+        } else {
+            0
+        };
+        weapon.anim.get(index).map(String::as_str)
     };
     picked.or_else(|| {
         in_open_transport
@@ -1572,33 +1586,74 @@ mod tests {
         let eight = rules.weapon("M60").unwrap();
         // `(dir8 + 1) & 7`: facing north picks entry 1, and the last octant
         // wraps to entry 0.
-        assert_eq!(muzzle_anim_name(eight, 0x0000, false, false), Some("F1"));
-        assert_eq!(muzzle_anim_name(eight, 0x4000, false, false), Some("F3"));
-        assert_eq!(muzzle_anim_name(eight, 0xE000, false, false), Some("F0"));
+        assert_eq!(
+            muzzle_anim_name(eight, 0x0000, false, false, false),
+            Some("F1")
+        );
+        assert_eq!(
+            muzzle_anim_name(eight, 0x4000, false, false, false),
+            Some("F3")
+        );
+        assert_eq!(
+            muzzle_anim_name(eight, 0xE000, false, false, false),
+            Some("F0")
+        );
         // An occupied building's shot takes `OccupantAnim=` instead.
         assert_eq!(
-            muzzle_anim_name(eight, 0x4000, true, false),
+            muzzle_anim_name(eight, 0x4000, true, false, false),
             Some("UCFLASH")
         );
         // Any other list length: the first entry, whatever the facing.
         let one = rules.weapon("ONE").unwrap();
-        assert_eq!(muzzle_anim_name(one, 0x4000, false, false), Some("GUNFIRE"));
-        // `OccupantAnim=` replaces the pick even when it is absent.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false), None);
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false),
+            muzzle_anim_name(one, 0x4000, false, false, false),
+            Some("GUNFIRE")
+        );
+        // `OccupantAnim=` replaces the pick even when it is absent.
+        assert_eq!(muzzle_anim_name(one, 0x4000, true, false, false), None);
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, false, false),
             None
         );
         // From an open-topped transport, `OpenToppedAnim=` fills only an
         // empty pick.
         let jab = rules.weapon("JAB").unwrap();
-        assert_eq!(muzzle_anim_name(jab, 0, false, true), Some("GUNFIRE"));
-        assert_eq!(muzzle_anim_name(jab, 0, false, false), None);
-        assert_eq!(muzzle_anim_name(eight, 0x4000, false, true), Some("F3"));
         assert_eq!(
-            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true),
+            muzzle_anim_name(jab, 0, false, true, false),
+            Some("GUNFIRE")
+        );
+        assert_eq!(muzzle_anim_name(jab, 0, false, false, false), None);
+        assert_eq!(
+            muzzle_anim_name(eight, 0x4000, false, true, false),
+            Some("F3")
+        );
+        assert_eq!(
+            muzzle_anim_name(rules.weapon("BARE").unwrap(), 0, false, true, false),
             None
         );
+    }
+
+    #[test]
+    fn ares_picks_a_muzzle_anim_from_any_list_of_eight_or_more() {
+        let mut weapon = rules().weapon("M60").unwrap().clone();
+        weapon.anim = (0..16).map(|i| format!("A{i}")).collect();
+        // `TechnoClass_Fire_Facings` (Ares.dll `0x10047CF0`): sixteen anims
+        // take the sixteen-way bucket of `facing + 0x2000`; stock takes the
+        // first entry.
+        fn pick(
+            weapon: &crate::rules::weapon_type::WeaponType,
+            facing: u16,
+            ares: bool,
+        ) -> Option<&str> {
+            muzzle_anim_name(weapon, facing, false, false, ares)
+        }
+        assert_eq!(pick(&weapon, 0x0000, true), Some("A2"));
+        assert_eq!(pick(&weapon, 0xF000, true), Some("A1"));
+        assert_eq!(pick(&weapon, 0x0000, false), Some("A0"));
+        // Nine anims bucket eight ways.
+        weapon.anim.truncate(9);
+        assert_eq!(pick(&weapon, 0x4000, true), Some("A3"));
+        assert_eq!(pick(&weapon, 0x4000, false), Some("A0"));
     }
 
     #[test]
