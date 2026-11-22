@@ -175,10 +175,6 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
 - `UnitsUnsellable`: the unit sale on a depot
   ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - The `HunterSeeker*` defaults: [ares-hunter-seeker.md](ares-hunter-seeker.md).
-- `StartInMultiplayerUnitCost` unset: Ares' own average also takes the
-  HouseType `StartInMultiplayer.Types`, which VERA does not read; HouseType
-  `StartInMultiplayer.WithConst` (`1001F0B0`, hook `0x5D7048`, a starting
-  construction yard) is read and not consumed.
 
 ## Hook table
 
