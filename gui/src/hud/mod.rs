@@ -30,8 +30,9 @@ pub use input::{ClickOrder, HoverOrder, HudEvent, InputPolicy, Pointer, Response
 pub use layout::Hold;
 pub use paint::{ButtonState, PaintCmd, PaintOp, batches};
 
-/// Empties `buffer` for the next frame and keeps its allocation, free of what
-/// the last frame's commands borrowed.
+/// Empties `buffer` for the next frame, free of what the last frame's
+/// commands borrowed. It keeps its allocation where `A` and `B` have one
+/// layout, as a command type has whatever it borrows.
 pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
     buffer.clear();
     // An empty same-layout vector collects in place.
@@ -279,9 +280,12 @@ impl Hud {
         }
     }
 
-    /// The rect from the last [`Self::layout`]; none while hidden or removed.
+    /// The rect from the last [`Self::layout`]; none while hidden or removed,
+    /// also if only since then.
     pub fn rect(&self, id: NodeId) -> Option<Rect> {
-        self.tree.node(id).ok()?;
+        if !self.tree.effective(id, Prop::Visible) {
+            return None;
+        }
         self.layout.placed(id).map(|p| p.rect)
     }
 }

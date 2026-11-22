@@ -86,16 +86,102 @@ fn an_external_popup_does_not_eat_a_press_on_the_hud() {
 }
 
 #[test]
-fn a_client_finds_no_system_or_modal_node() {
-    let mut hud = hud();
+fn only_the_host_enters_and_finds_in_the_host_only_layers() {
     for layer in [Layer::Modal, Layer::System] {
-        let id = hud
-            .create_root(layer, Origin::Host, NodeKind::Panel)
-            .unwrap();
-        hud.set(id, Prop::Name, Value::Text("Stop".into())).unwrap();
+        for origin in [Origin::Host, Origin::Layout, Origin::Player, CLIENT] {
+            let host = origin == Origin::Host;
+            let mut hud = hud();
+            let id = hud
+                .create_root(layer, Origin::Host, NodeKind::Panel)
+                .unwrap();
+            hud.set(id, Prop::Name, Value::Text("Stop".into())).unwrap();
+            let found = hud.find(origin, "Stop");
+            assert_eq!(found, host.then_some(id), "{layer:?} {origin:?}");
+            let made = [
+                hud.create_root(layer, origin, NodeKind::Panel),
+                hud.create(NodeKind::Text, id, origin),
+            ];
+            for made in made {
+                if host {
+                    assert!(made.is_ok(), "{layer:?}");
+                } else {
+                    assert_eq!(made, Err(Refused::Denied), "{layer:?} {origin:?}");
+                }
+            }
+        }
     }
-    assert_eq!(hud.find(CLIENT, "Stop"), None);
-    assert!(hud.find(Origin::Host, "Stop").is_some());
+}
+
+#[test]
+fn find_follows_the_origin_precedence() {
+    let mut hud = hud();
+    let named = |hud: &mut Hud, origin| {
+        let id = hud
+            .create_root(Layer::Panels, origin, NodeKind::Panel)
+            .unwrap();
+        hud.set(id, Prop::Name, Value::Text("Dock".into())).unwrap();
+        id
+    };
+    let order = [
+        Origin::External(9),
+        Origin::External(2),
+        Origin::Player,
+        Origin::Layout,
+        Origin::Host,
+    ];
+    let ids = order.map(|origin| named(&mut hud, origin));
+    named(&mut hud, Origin::Host);
+    for (origin, id) in order.into_iter().zip(ids) {
+        assert_eq!(hud.find(origin, "dOCK"), Some(id), "{origin:?}");
+    }
+    let outsider = Origin::External(5);
+    assert_eq!(hud.find(outsider, "dock"), Some(ids[4]));
+    hud.remove_origin(Origin::Host);
+    for id in [ids[3], ids[2], ids[1], ids[0]] {
+        assert_eq!(hud.find(outsider, "dock"), Some(id));
+        hud.remove(id).unwrap();
+    }
+}
+
+#[test]
+fn each_change_moves_the_revision_and_an_equal_set_does_not() {
+    let mut hud = hud();
+    let mut last = hud.revision();
+    let mut moved = |hud: &Hud| std::mem::replace(&mut last, hud.revision()) != hud.revision();
+
+    let root = hud
+        .create_root(Layer::Panels, CLIENT, NodeKind::Panel)
+        .unwrap();
+    assert!(moved(&hud), "create_root");
+    let child = hud.create(NodeKind::Text, root, CLIENT).unwrap();
+    assert!(moved(&hud), "create");
+    hud.set(child, Prop::X, Value::Int(4)).unwrap();
+    assert!(moved(&hud), "set");
+    hud.set(child, Prop::X, Value::Int(4)).unwrap();
+    assert!(!moved(&hud), "an equal set");
+    hud.clear(child, Prop::X).unwrap();
+    assert!(moved(&hud), "clear");
+    hud.clear(child, Prop::X).unwrap();
+    assert!(!moved(&hud), "nothing to clear");
+    hud.remove(child).unwrap();
+    assert!(moved(&hud), "remove");
+    hud.remove_origin(CLIENT);
+    assert!(moved(&hud), "remove_origin");
+    hud.remove_origin(CLIENT);
+    assert!(!moved(&hud), "nothing of that origin");
+}
+
+#[test]
+fn a_node_hidden_since_the_layout_has_no_rect() {
+    let mut hud = hud();
+    let panel = hud
+        .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
+        .unwrap();
+    let child = hud.create(NodeKind::Text, panel, Origin::Host).unwrap();
+    hud.layout(Rect::new(0, 0, 300, 300));
+    assert!(hud.rect(child).is_some());
+    hud.set(panel, Prop::Visible, Value::Bool(false)).unwrap();
+    assert_eq!(hud.rect(child), None);
 }
 
 #[test]
