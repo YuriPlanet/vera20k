@@ -134,7 +134,8 @@ impl Member {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Options {
-    /// Authored recipe negotiated by a campaign-capable lobby. The older
+    /// Authored campaign room record, sent only to a lobby that offers
+    /// `campaign_rooms` (docs/lobby-protocol.md, HostOptions). The older
     /// fields carry only the lobby's participant/control and map proofs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub campaign: Option<crate::app::shell_network_setup::campaign_room::CampaignRoom>,

@@ -363,7 +363,9 @@ nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
 v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client
 appends it unchanged to every CONFIRM; the first relay coordinates the start.
 The lobby federates a match only when every human's sign-in request carried the
-header `Vera-Relay-Federation: 1`, which clients send once they forward the roster.
+header `Vera-Relay-Federation: 1`, which desktop games send since they forward the
+roster. Browser games do not ([sign-in headers](#sign-in-headers)), so a match with a
+browser player stays on one relay.
 
 The relay room uses the fresh `match_id`, including for rematches. The server sends
 `game_started` only after all current participants agree to revision, version,
@@ -740,7 +742,8 @@ not know.
 - `Vera-Quick-Match: 1` ([Quick Match](#quick-match)), `Vera-Host-Handover: 1` (host
   handover), `Vera-Watch-AI: 1` ([Watching](#watching)) and `Vera-Relay-Federation: 1`
   (a RelayGrant's `federation`): what it can do. A browser game sends every header but
-  this last one, since its gateway reaches one fixed relay.
+  this last one, which its gateway would not forward either (`FORWARDED_HEADERS` in
+  `tools/wasm/gateway/server.mjs`).
 
 Two games compare their builds when both name one, else their versions. They are on
 another version when both name what they compare and it differs: they could never start
@@ -804,8 +807,11 @@ watcher's game then takes the first observer's seat), one human only when its
 certificate carries VO2C flags bit 1; with watching on, in a
 room without a password, on a relay that lets watchers in and on the caller's version
 (as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
-and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
-splits players by squad, comes from the host's map seed or from a campaign. `name`
+and stock co-op missions are never listed: a watcher's game cannot yet rebuild a start
+that splits players by squad, comes from the host's map seed or from a stock co-op
+campaign. A lobby that offers `campaign_rooms` may list an authored campaign match: its
+`watch_started` options keep the `campaign` record, which the watcher's game checks
+against its own installed series. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
 began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans
 (none where only AI play);
