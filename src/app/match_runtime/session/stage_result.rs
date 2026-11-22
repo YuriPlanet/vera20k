@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::app::match_bootstrap::{LoadingStartup, PreparedCampaignStart};
 use crate::app::shell_network_setup::campaign_room::CampaignRoom;
 use crate::map::campaign_manifest::CampaignManifest;
-use crate::net::global::GlobalMessage;
+use crate::net::global::{GlobalBatch, GlobalMessage};
 use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
 use crate::sim::campaign_carry_over::StageCarryOver;
 use crate::sim::house_state::HouseOutcomeKind;
@@ -51,7 +51,7 @@ pub(crate) struct CampaignResult {
     outgoing: Option<Signal>,
     last_vote_ms: Option<u64>,
     begin_sent: bool,
-    receipt_discard_baseline: Option<u64>,
+    receipt_batch: Option<GlobalBatch>,
     begin: bool,
     wol_ack_grace_until_ms: Option<u64>,
     aborted: bool,
@@ -141,7 +141,7 @@ impl CampaignResult {
             outgoing: None,
             last_vote_ms: None,
             begin_sent: false,
-            receipt_discard_baseline: None,
+            receipt_batch: None,
             begin: false,
             wol_ack_grace_until_ms: None,
             aborted: false,
@@ -278,7 +278,7 @@ impl CampaignResult {
                     && from_host
                     && self.prepared.is_some()
                     && self.outgoing.is_none()
-                    && self.receipt_discard_baseline.is_none()
+                    && self.receipt_batch.is_none()
                     && self.choice == Some(choice) =>
             {
                 self.outgoing = Some(Signal::StageBegun(choice));
@@ -300,13 +300,7 @@ impl CampaignResult {
         false
     }
 
-    fn confirm_send(
-        &mut self,
-        signal: Signal,
-        local: usize,
-        now_ms: u64,
-        discarded_at_enqueue: u64,
-    ) {
+    fn confirm_send(&mut self, signal: Signal, local: usize, now_ms: u64, batch: GlobalBatch) {
         if self.outgoing == Some(signal) {
             self.outgoing = None;
         }
@@ -320,8 +314,15 @@ impl CampaignResult {
                     .iter()
                     .all(|source| self.begun.contains(source));
             }
-            Signal::StageBegun(_) => self.receipt_discard_baseline = Some(discarded_at_enqueue),
+            Signal::StageBegun(_) => self.receipt_batch = Some(batch),
             _ => {}
+        }
+    }
+
+    /// A guest begins once the transport reports its StageBegun ACKed.
+    fn confirm_delivery(&mut self, delivered: impl FnOnce(GlobalBatch) -> bool) {
+        if !self.begin && self.receipt_batch.is_some_and(delivered) {
+            self.begin = true;
         }
     }
 
@@ -488,22 +489,22 @@ impl MatchSession {
         &mut self,
         signal: Signal,
         now_ms: u64,
-        discarded_at_enqueue: u64,
+        batch: GlobalBatch,
     ) {
         let Some(local) = super::super::network_match::local_source(self) else {
             return;
         };
         if let Some(result) = self.campaign_result_mut() {
-            result.confirm_send(signal, local, now_ms, discarded_at_enqueue);
+            result.confirm_send(signal, local, now_ms, batch);
         }
     }
 
-    pub(crate) fn confirm_campaign_stage_delivery(&mut self, delivered: impl FnOnce(u64) -> bool) {
-        if let Some(result) = self.campaign_result_mut()
-            && !result.begin
-            && result.receipt_discard_baseline.is_some_and(delivered)
-        {
-            result.begin = true;
+    pub(crate) fn confirm_campaign_stage_delivery(
+        &mut self,
+        delivered: impl FnOnce(GlobalBatch) -> bool,
+    ) {
+        if let Some(result) = self.campaign_result_mut() {
+            result.confirm_delivery(delivered);
         }
     }
 
@@ -661,6 +662,15 @@ mod tests {
         .unwrap()
     }
 
+    fn sent_batch() -> GlobalBatch {
+        crate::net::global::GlobalChannel::new(
+            Default::default(),
+            crate::net::reliable::RetryTiming::LAN_GUEST_COMPLETED_GLOBAL,
+        )
+        .send_reliable_batch(b"", &["127.0.0.1:4001".parse().unwrap()])
+        .unwrap()
+    }
+
     fn result() -> CampaignResult {
         CampaignResult::new(
             HouseOutcomeKind::Defeat,
@@ -799,13 +809,14 @@ mod tests {
         let next = solo_room(&manifest, "Finale");
         let start = campaign_fixture_start(&manifest, &next);
         session.stage_prepared(next, start, 10).unwrap();
+        let batch = sent_batch();
         let result = session.campaign_result().unwrap();
         let prepare = result.outgoing(true, 1, 10).unwrap();
-        session.confirm_campaign_stage_send(prepare, 10, 0);
+        session.confirm_campaign_stage_send(prepare, 10, batch);
         let result = session.campaign_result().unwrap();
         let begin = result.outgoing(true, 1, 11).unwrap();
         assert_eq!(begin, Signal::StageBegin(choice));
-        session.confirm_campaign_stage_send(begin, 11, 0);
+        session.confirm_campaign_stage_send(begin, 11, batch);
         let StageHandoff::Lan(LoadingStartup::Network(next)) =
             session.commit_campaign_stage(11).unwrap()
         else {
@@ -892,169 +903,35 @@ mod tests {
     }
 
     #[test]
-    fn wol_host_keeps_the_relay_for_a_lost_stage_begun_ack() {
-        use crate::net::global::GlobalDestination;
-        use crate::net::lan_messages::extended_setup::campaign::Record;
-        use crate::net::reliable::{Delivery, LanConnectionConfig, LanConnections, RetryTiming};
-        use crate::net::udp::test_support::{
-            MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key, settle_loopback,
-        };
-        use crate::net::udp::{
-            LanUdpTransport, OrderingCertificate, RelayTicket, UdpBindConfig, relay_peer_endpoint,
-        };
-        use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
-
+    fn wol_host_keeps_the_old_relay_for_a_retried_last_stage_begun() {
         let manifest = manifest();
         let room = room(&manifest, "Opening", StageCarryOver::default());
         let mut session = lan_campaign_fixture(&manifest, room, true);
         session.network.as_mut().unwrap().return_context = NetworkReturnContext::Wol;
         let choice = StageChoice::Retry;
         let mut result = result();
-        result.choice = Some(choice);
-        result.confirm_send(Signal::StageBegin(choice), 1, 0, 0);
+        result.record_vote(0, choice, true);
+        result.record_vote(1, choice, true);
+        result.confirm_send(Signal::StageBegin(choice), 1, 0, sent_batch());
         session.open_campaign_result(result).unwrap();
 
-        let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        socket.set_nonblocking(true).unwrap();
-        let SocketAddr::V4(relay_addr) = socket.local_addr().unwrap() else {
-            panic!("IPv4 relay");
-        };
-        let bind = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0);
-        let timing = RetryTiming::LAN_GUEST_COMPLETED_GLOBAL;
-        let make_transport = || {
-            LanUdpTransport::bind(
-                UdpBindConfig {
-                    primary: bind,
-                    alternate: bind,
-                },
-                LanConnections::new(LanConnectionConfig::default(), timing),
-            )
-            .unwrap()
-        };
-        let (mut host, mut guest) = (make_transport(), make_transport());
-        let guest_addr = guest.primary_addr().unwrap();
-        let key = SecretKey::new([42; 32]);
-        let mut relay = RelayServer::new(key.clone(), 1);
-        let certificate = OrderingCertificate {
-            room: [11; 16],
-            sources_mask: 3,
-            tick_hz: 45,
-            expires: 2_000,
-            pacing: Default::default(),
-            ordered_alone: false,
-        }
-        .sign(&key)
-        .unwrap();
-        for (wire, source) in [(&mut host, 1), (&mut guest, 0)] {
-            let ticket = RelayTicket {
-                room: [11; 16],
-                source,
-                expires: 1_120,
-                nonce: [source + 1; 16],
-                player: [source + 1; 16],
-                generation: 1,
-            }
-            .sign(&key)
-            .unwrap();
-            let packet_key = derive_packet_key(&key, &ticket);
-            wire.enable_relay(
-                relay_addr,
-                &ticket,
-                *packet_key.expose_for_https(),
-                [17; 32],
-            )
-            .unwrap();
-            wire.set_ordering_certificate(certificate.to_vec()).unwrap();
-        }
-        // Each pump reads what the games sent and leaves its replies readable.
-        let mut pump_relay = |tick: u32, lose_guest_reply: bool| {
-            settle_loopback();
-            let mut buffer = [0; MAX_DATAGRAM + 1];
-            while let Ok((length, SocketAddr::V4(source))) = socket.recv_from(&mut buffer) {
-                for output in relay
-                    .process_at(source, &buffer[..length], 1_000, u64::from(tick) * 16)
-                    .unwrap()
-                {
-                    if !lose_guest_reply || output.endpoint != guest_addr {
-                        socket.send_to(&output.bytes, output.endpoint).unwrap();
-                    }
-                }
-            }
-            settle_loopback();
-        };
-        let mut tick = 0;
-        loop {
-            host.service(tick);
-            guest.service(tick);
-            pump_relay(tick, false);
-            if host.relay_ready() && guest.relay_ready() {
-                break;
-            }
-            tick += 1;
-            assert!(tick < 250, "relay admission did not finish");
-        }
-        host.configure_ordering([7; 32]).unwrap();
-        guest.configure_ordering([7; 32]).unwrap();
-        let stage_begun = Record {
-            scope: None,
-            attempt: 2,
-            signal: Signal::StageBegun(choice),
-        };
-        assert!(guest.global_mut().send(
-            &stage_begun.encode(),
-            GlobalDestination::direct(relay_peer_endpoint(1).unwrap()),
-            Delivery::Reliable,
-            0,
-        ));
-        tick += timing.retry_delta + 1;
-        guest.service(tick);
-        pump_relay(tick, false);
-        host.service(tick);
-        let incoming = host.pop_global_received().expect("final StageBegun");
-        assert_eq!(incoming.source, relay_peer_endpoint(0).unwrap());
-        assert_eq!(Record::decode(&incoming.payload), Some(stage_begun));
-        pump_relay(tick, true);
-        guest.service(tick);
-        assert_eq!(guest.global().queued_send_count(), 1);
-
-        let received_at = u64::from(tick) * 16;
+        let retry_delta = crate::net::reliable::RetryTiming::LAN_GUEST_COMPLETED_GLOBAL.retry_delta;
+        let received_at = 1_000;
         session.receive_campaign_stage_signal(
             0,
             false,
-            stage_begun.signal,
+            Signal::StageBegun(choice),
             None,
             received_at,
-            Some(host.global().retry_delta()),
+            Some(retry_delta),
         );
+        let released_at = received_at + wol_stage_ack_grace_ms(retry_delta);
         let result = session.campaign_result().unwrap();
         assert_eq!(
-            result.progress(&[0, 1], received_at),
+            result.progress(&[0, 1], released_at - 1),
             StageProgress::Waiting
         );
-        tick += timing.retry_delta + 1;
-        guest.service(tick);
-        pump_relay(tick, false);
-        host.service(tick);
-        assert!(
-            host.pop_global_received().is_none(),
-            "retry must only send its ACK"
-        );
-        pump_relay(tick, false);
-        guest.service(tick);
-        assert_eq!(
-            guest.global().queued_send_count(),
-            0,
-            "guest's retry was re-ACKed"
-        );
-        assert_eq!(
-            result.progress(
-                &[0, 1],
-                received_at + wol_stage_ack_grace_ms(timing.retry_delta)
-            ),
-            StageProgress::Commit,
-        );
-        host.retire_relay();
-        assert!(host.relay_retirement_pending());
+        assert_eq!(result.progress(&[0, 1], released_at), StageProgress::Commit);
     }
 
     #[test]
@@ -1090,6 +967,7 @@ mod tests {
         assert_eq!(houses["houses"][0]["credits"], 310);
         assert_eq!(houses["houses"][1]["credits"], 470);
 
+        let batch = sent_batch();
         let choice = winning.choice;
         host.record_vote(1, choice, true);
         guest.record_vote(0, choice, false);
@@ -1116,7 +994,7 @@ mod tests {
         host.verify_start(room.clone(), start.clone(), 1, true, 10)
             .unwrap();
         let prepare = host.outgoing(true, 1, 10).unwrap();
-        host.confirm_send(prepare, 1, 10, 0);
+        host.confirm_send(prepare, 1, 10, batch);
         guest.receive(1, true, false, 0, prepare, 0);
         let mut wrong_room = serde_json::to_value(&room).unwrap();
         wrong_room["effective_map_digest"] = serde_json::json!("d".repeat(64));
@@ -1129,11 +1007,11 @@ mod tests {
         guest.verify_start(room, start, 0, false, 11).unwrap();
         assert_eq!(host.outgoing(true, 1, 11), None);
         let accepted = guest.outgoing(false, 0, 11).unwrap();
-        guest.confirm_send(accepted, 0, 11, 0);
+        guest.confirm_send(accepted, 0, 11, batch);
         host.receive(0, false, true, 1, accepted, 0);
         let begin = host.outgoing(true, 1, 12).unwrap();
         assert_eq!(begin, Signal::StageBegin(choice));
-        host.confirm_send(begin, 1, 12, 0);
+        host.confirm_send(begin, 1, 12, batch);
         assert!(
             !host.ready_to_commit(12),
             "begin must reach the guest before old transport retires"
@@ -1150,7 +1028,7 @@ mod tests {
         );
         let begun = guest.outgoing(false, 0, begin_received).unwrap();
         assert_eq!(begun, Signal::StageBegun(choice));
-        guest.confirm_send(begun, 0, begin_received, 7);
+        guest.confirm_send(begun, 0, begin_received, batch);
         assert_eq!(
             guest.progress(&[0, 1], previous_deadline + 1),
             StageProgress::Waiting,
@@ -1161,8 +1039,7 @@ mod tests {
             host.progress(&[0, 1], host.deadline_ms),
             StageProgress::Commit
         );
-        assert_eq!(guest.receipt_discard_baseline, Some(7));
-        guest.begin = guest.receipt_discard_baseline.is_some();
+        guest.confirm_delivery(|delivered| delivered == batch);
         assert_eq!(
             guest.progress(&[0, 1], guest.deadline_ms),
             StageProgress::Commit

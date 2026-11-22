@@ -635,6 +635,38 @@ pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> S
         .unwrap_or_default()
 }
 
+/// The colour participant `source_index`'s chat and taunt packets carry, as
+/// shell item data; -2 without one.
+pub(crate) fn participant_color(session: &MatchSession, source_index: usize) -> i32 {
+    session
+        .network_setup()
+        .and_then(|launch| launch.humans.get(source_index))
+        .map_or(-2, |human| human.slot.color_shell_value())
+}
+
+/// The name and colour a received in-match chat packet `0x0C` shows. Native
+/// `0x0048D8DD` shows the packet's own. VERA shows the admitted participant
+/// at the sending endpoint under its roster name and colour, so an online
+/// name longer than the packet's 19 bytes arrives whole. Any other sender
+/// keeps the packet's. A relay match authenticates every source, so there no
+/// player speaks as another; on LAN or a direct spawn a sender at an unbound
+/// endpoint still can.
+pub(crate) fn chat_sender(
+    session: &MatchSession,
+    endpoint: std::net::SocketAddrV4,
+    packet_name: String,
+    packet_color: i32,
+) -> (String, i32) {
+    session
+        .network_endpoint_source(endpoint)
+        .map_or((packet_name, packet_color), |source| {
+            (
+                participant_name(session, source),
+                participant_color(session, source),
+            )
+        })
+}
+
 /// Participant `source`'s network "house" id: its constructed House's
 /// index. VERA shared control: while players share Houses, each sends as its
 /// own source instead.
