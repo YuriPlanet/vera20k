@@ -97,8 +97,9 @@ impl Hud {
         }
     }
 
-    /// Changes whenever a node changes; with [`world::World::revision`] it
-    /// tells the host whether a still picture needs a redraw.
+    /// Changes whenever a node changes or the hovered or pressed one does;
+    /// with [`world::World::revision`] it tells the host whether a still
+    /// picture needs a redraw.
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -152,14 +153,21 @@ impl Hud {
         Ok(())
     }
 
-    /// Geometry takes effect at the next [`Self::layout`].
+    /// Geometry takes effect at the next [`Self::layout`]. A `Command` has at
+    /// most [`world::MAX_TEXT_BYTES`].
     pub fn set(&mut self, id: NodeId, prop: Prop, value: Value) -> Result<(), Refused> {
         if self.tree.get(id, prop)? == Some(&value) {
             return Ok(());
         }
+        // Every queued click holds a copy.
+        if let (Prop::Command, Value::Text(text)) = (prop, &value)
+            && text.len() > world::MAX_TEXT_BYTES
+        {
+            return Err(Refused::Limit);
+        }
         self.tree.set(id, prop, value)?;
         self.revision += 1;
-        if matches!(prop, Prop::Visible | Prop::Enabled) {
+        if matches!(prop, Prop::Visible | Prop::Enabled | Prop::Clickable | Prop::Hoverable) {
             self.forget_inactive();
         }
         Ok(())

@@ -196,3 +196,28 @@ fn removing_an_origin_leaves_the_same_ids_to_give_out_in_every_run() {
     };
     assert_eq!(rebuilt(), rebuilt());
 }
+
+#[test]
+fn a_deep_tree_is_routed_and_removed() {
+    const DEPTH: usize = 50_000;
+    let rect = Rect::new(0, 0, 50, 50);
+    let mut hud = Hud::new(DEPTH, InputPolicy::default());
+    let top = placed(&mut hud, Layer::Panels, Origin::Host, rect, Prop::Hoverable);
+    let mut leaf = top;
+    for _ in 1..DEPTH {
+        leaf = hud.create(NodeKind::Panel, leaf, Origin::Host).unwrap();
+        hud.set(leaf, Prop::Rect, Value::Rect(rect)).unwrap();
+        hud.set(leaf, Prop::Hoverable, Value::Bool(true)).unwrap();
+    }
+    hud.layout(Rect::new(0, 0, 300, 300));
+    // Climbing to the root from each node would take billions of steps here.
+    let to = Pointer::Move { x: 10, y: 10 };
+    assert!(hud.input(to).consumed);
+    assert_eq!(hud.hovered(), Some(leaf));
+    hud.set(top, Prop::Visible, Value::Bool(false)).unwrap();
+    assert!(!hud.input(to).consumed);
+
+    hud.remove(top).unwrap();
+    assert_eq!(hud.tree().live_count(), 0);
+    assert_eq!(hud.origin(leaf), Err(Refused::Stale));
+}

@@ -28,7 +28,8 @@ pub const MAX_SEGMENTS: u16 = 64;
 pub const MAX_COMMANDS_PER_OBJECT: usize = 512;
 pub const MAX_LISTS: usize = 4096;
 pub const MAX_SHAPES_PER_LIST: usize = 128;
-/// UTF-8 bytes of a template's name or of one text shape's key.
+/// UTF-8 bytes of a template's name, of one text shape's key or of a node's
+/// `Command`.
 pub const MAX_TEXT_BYTES: usize = 256;
 
 /// A picture the host registered.

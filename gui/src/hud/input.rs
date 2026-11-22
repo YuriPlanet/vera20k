@@ -6,7 +6,8 @@
 //! clickable or hoverable one the [`HoverOrder`] picks, and the wheel to the
 //! hovered one, else to the blocker. So a node that only hovers lets a press
 //! through to a clickable node beneath it in its layer, never to a lower one.
-//! A disabled node takes its turn like any other and then does nothing.
+//! A disabled node takes its turn like any other and then does nothing. In
+//! `Field`, where all the candidates only hover, the event is the world's.
 //!
 //! A press belongs to whoever got it until its release. While the world holds
 //! one, no node hovers and moves are the world's, even if the HUD holds the
@@ -14,13 +15,12 @@
 //!
 //! Geometry comes from the last layout: a node shown since then takes no
 //! input and a modal one does not block yet. Visibility, enabling and the
-//! pointer props are read live.
-
-use std::collections::HashSet;
+//! pointer props are read live. Each layout looks again at what lies under
+//! the pointer's last position.
 
 use crate::Rect;
 use crate::gui::MouseButton;
-use crate::node::{NodeId, NodeKind, Prop};
+use crate::node::{Node, NodeId, NodeKind, Prop};
 
 use super::layout::Placed;
 use super::{Hud, Layer, Origin};
@@ -128,6 +128,8 @@ pub(crate) struct State {
     hover: Option<Hover>,
     /// What a press at the pointer would go to.
     over: Option<NodeId>,
+    /// Where the pointer last was; none once cancelled.
+    pointer: Option<(i32, i32)>,
 }
 
 impl State {
@@ -138,6 +140,7 @@ impl State {
             presses: [None; 2],
             hover: None,
             over: None,
+            pointer: None,
         }
     }
 
@@ -207,8 +210,12 @@ impl State {
         self.push(HudEvent::Wheel { node, lines });
     }
 
+    fn full(&self) -> bool {
+        self.events.len() >= MAX_EVENTS
+    }
+
     fn push(&mut self, event: HudEvent) {
-        if self.events.len() < MAX_EVENTS {
+        if !self.full() {
             self.events.push(event);
         }
     }
@@ -218,6 +225,8 @@ impl State {
 #[derive(Clone, Copy, Debug, Default)]
 struct Hit {
     modal: bool,
+    /// The candidates take the event from the world.
+    takes: bool,
     /// The layer that decides; none when no candidate is there.
     layer: Option<Layer>,
     click: Option<NodeId>,
@@ -227,7 +236,7 @@ struct Hit {
 
 impl Hit {
     fn blocks_world(&self) -> bool {
-        self.modal || self.layer.is_some()
+        self.modal || self.takes
     }
 }
 
@@ -239,6 +248,14 @@ fn contains(rect: Rect, x: i32, y: i32) -> bool {
     within(rect.x, rect.w, x) && within(rect.y, rect.h, y)
 }
 
+fn clickable(node: &Node) -> bool {
+    node.bool_prop(Prop::Clickable, node.kind == NodeKind::Button)
+}
+
+fn hoverable(node: &Node) -> bool {
+    node.bool_prop(Prop::Hoverable, false)
+}
+
 fn area(rect: Rect) -> i64 {
     i64::from(rect.w.max(0)) * i64::from(rect.h.max(0))
 }
@@ -246,8 +263,17 @@ fn area(rect: Rect) -> i64 {
 impl Hud {
     /// Routes one event over the last [`Self::layout`]; what it caused waits
     /// in [`Self::drain_events`]. `Cancel` is never consumed, and Escape only
-    /// by a dismissal of a node whose origin is not external.
+    /// under a modal or by a dismissal of a node whose origin is not external.
     pub fn input(&mut self, event: Pointer) -> Response {
+        self.layout.refresh_visible(&self.tree);
+        if let Pointer::Move { x, y }
+        | Pointer::Down { x, y, .. }
+        | Pointer::Up { x, y, .. }
+        | Pointer::Wheel { x, y, .. } = event
+        {
+            self.input.pointer = Some((x, y));
+        }
+        let before = self.highlight();
         let consumed = match event {
             Pointer::Move { x, y } => self.pointer_move(x, y),
             Pointer::Down { x, y, button } => self.pointer_down(x, y, button),
@@ -257,10 +283,12 @@ impl Hud {
             Pointer::Cancel => {
                 self.input.presses = [None; 2];
                 self.input.over = None;
+                self.input.pointer = None;
                 self.input.set_hover(None);
                 false
             }
         };
+        self.redraw_if_changed(before);
         Response { consumed }
     }
 
@@ -279,26 +307,58 @@ impl Hud {
 
     /// The left button went down on the enabled node and is still over it.
     pub fn shows_pressed(&self, id: NodeId) -> bool {
-        self.input.over == Some(id)
-            && matches!(
-                self.input.presses[MouseButton::Left as usize],
-                Some(Press::Hud { node: Some(node), .. }) if node == id
-            )
+        self.pressed() == Some(id)
     }
 
-    /// Drops hover of nodes now removed or hidden, and what a press would
-    /// activate if that is now disabled too. The press itself stays the
-    /// HUD's, so its release does not fall through to the world.
+    fn pressed(&self) -> Option<NodeId> {
+        match self.input.presses[MouseButton::Left as usize] {
+            Some(Press::Hud { node, .. }) => node.filter(|id| self.input.over == Some(*id)),
+            _ => None,
+        }
+    }
+
+    /// The hovered and the pressed node: what input changes in the picture.
+    fn highlight(&self) -> [Option<NodeId>; 2] {
+        [self.hovered(), self.pressed()]
+    }
+
+    fn redraw_if_changed(&mut self, before: [Option<NodeId>; 2]) {
+        if self.highlight() != before {
+            self.revision += 1;
+        }
+    }
+
+    /// After a layout: nodes may have moved or opened under a still pointer.
+    pub(super) fn retrack(&mut self) {
+        let Some((x, y)) = self.input.pointer else {
+            return;
+        };
+        let before = self.highlight();
+        let hit = self.hit(x, y);
+        self.track(&hit);
+        self.redraw_if_changed(before);
+    }
+
+    /// Drops hover and press targets now removed, hidden or no longer
+    /// hoverable or clickable, and press targets now disabled. The press
+    /// itself stays the HUD's, so its release does not fall through to the
+    /// world.
     pub(crate) fn forget_inactive(&mut self) {
+        self.layout.visibility_changed();
         let tree = &self.tree;
         let shown = |id: NodeId| tree.effective(id, Prop::Visible);
+        let clicks = |id: NodeId| shown(id) && tree.node(id).is_ok_and(clickable);
         for press in self.input.presses.iter_mut().flatten() {
             if let Press::Hud { node, .. } = press {
-                *node = node.filter(|id| shown(*id) && tree.effective(*id, Prop::Enabled));
+                *node = node.filter(|id| clicks(*id) && tree.effective(*id, Prop::Enabled));
             }
         }
-        self.input.over = self.input.over.filter(|id| shown(*id));
-        let hover = self.input.hover.filter(|hover| shown(hover.node));
+        self.input.over = self.input.over.filter(|id| clicks(*id));
+        let hover = self.input.hover.and_then(|Hover { node: id, .. }| {
+            let node = tree.node(id).ok().filter(|_| shown(id))?;
+            let reported = hoverable(node);
+            (reported || clickable(node)).then_some(Hover { node: id, reported })
+        });
         self.input.set_hover(hover);
     }
 
@@ -311,9 +371,14 @@ impl Hud {
 
     fn pointer_down(&mut self, x: i32, y: i32, button: MouseButton) -> bool {
         let hit = self.hit(x, y);
-        let dismissed = self.dismissed_by_press(x, y, &hit);
-        // An external popup takes only the world's press, never the HUD's.
-        let eaten = dismissed.is_some_and(|id| !self.is_external(id) || !hit.blocks_world());
+        let dismissed = self.dismissed_by_press(x, y, &hit, true);
+        // An external popup takes only the world's press, never the HUD's,
+        // and leaves the rule of the popup beneath it in force.
+        let beneath = self
+            .dismissed_by_press(x, y, &hit, false)
+            .filter(|id| Some(*id) != dismissed);
+        let eaten = beneath.is_some()
+            || dismissed.is_some_and(|id| !self.is_external(id) || !hit.blocks_world());
         let press = if eaten {
             Press::Hud {
                 node: None,
@@ -333,7 +398,7 @@ impl Hud {
         self.input.presses[button as usize] = Some(press);
         self.track(&hit);
 
-        if let Some(node) = dismissed {
+        for node in [dismissed, beneath].into_iter().flatten() {
             self.input.push(HudEvent::Dismiss { node });
         }
         if let Press::Hud {
@@ -375,7 +440,7 @@ impl Hud {
     fn escape(&mut self) -> bool {
         let modal = self.modal_open();
         let Some((_, node)) = self.dismissable(modal, true) else {
-            return false;
+            return modal;
         };
         self.input.push(HudEvent::Dismiss { node });
         if !self.is_external(node) {
@@ -406,6 +471,9 @@ impl Hud {
     }
 
     fn click(&mut self, node: NodeId, button: MouseButton) {
+        if self.input.full() {
+            return;
+        }
         let Ok(n) = self.tree.node(node) else { return };
         let command = n.text_prop(Prop::Command).map(str::to_owned);
         self.input.push(HudEvent::Click {
@@ -437,10 +505,10 @@ impl Hud {
             .filter_map(|placed| {
                 self.meta
                     .get(&placed.id)
-                    .map(|meta| (placed.id, meta.layer))
+                    .map(|meta| (placed.visible, meta.layer))
             })
             .take_while(|(_, layer)| *layer >= Layer::Modal)
-            .any(|(id, layer)| layer == Layer::Modal && self.tree.effective(id, Prop::Visible))
+            .any(|(visible, layer)| visible && layer == Layer::Modal)
     }
 
     fn hit(&self, x: i32, y: i32) -> Hit {
@@ -466,18 +534,18 @@ impl Hud {
             if meta.layer < lowest {
                 break;
             }
-            let clickable = node.bool_prop(Prop::Clickable, node.kind == NodeKind::Button);
-            let hoverable = node.bool_prop(Prop::Hoverable, false);
+            let (clicks, hovers) = (clickable(node), hoverable(node));
             let blocker = node.bool_prop(Prop::BlocksPointer, false);
-            if !(clickable || hoverable || blocker) || !self.tree.effective(id, Prop::Visible) {
+            if !(clicks || hovers || blocker) || !placed.visible {
                 continue;
             }
+            hit.takes |= clicks || blocker || meta.layer > Layer::Field;
             lowest = meta.layer;
             hit.layer = Some(meta.layer);
             front.get_or_insert(id);
 
             // The walk is front to back.
-            if clickable {
+            if clicks {
                 let takes = match self.input.policy.click {
                     ClickOrder::Topmost => hit.click.is_none(),
                     ClickOrder::FirstInTree => true,
@@ -486,7 +554,7 @@ impl Hud {
                     hit.click = Some(id);
                 }
             }
-            if clickable || hoverable {
+            if clicks || hovers {
                 let size = area(placed.rect);
                 let takes = match self.input.policy.hover {
                     HoverOrder::Topmost => hit.hover.is_none(),
@@ -495,7 +563,7 @@ impl Hud {
                 if takes {
                     hit.hover = Some(Hover {
                         node: id,
-                        reported: hoverable,
+                        reported: hovers,
                     });
                     hover_area = size;
                 }
@@ -506,7 +574,9 @@ impl Hud {
                 break;
             }
         }
-        hit.wheel = hit.hover.map(|hover| hover.node).or(front);
+        if hit.takes {
+            hit.wheel = hit.hover.map(|hover| hover.node).or(front);
+        }
         hit
     }
 
@@ -525,36 +595,28 @@ impl Hud {
                 let found = node.bool_prop(Prop::Dismissable, false)
                     && (external || !self.is_external(id))
                     && self.meta.get(&id)?.layer >= lowest
-                    && self.tree.effective(id, Prop::Visible);
+                    && placed.visible;
                 found.then_some((at, id))
             })
     }
 
-    fn dismissed_by_press(&self, x: i32, y: i32, hit: &Hit) -> Option<NodeId> {
-        let (at, id) = self.dismissable(hit.modal, true)?;
+    fn dismissed_by_press(&self, x: i32, y: i32, hit: &Hit, external: bool) -> Option<NodeId> {
+        let (at, id) = self.dismissable(hit.modal, external)?;
         let layer = self.meta.get(&id)?.layer;
-        if hit.layer.is_some_and(|top| top > layer) || self.subtree_covers(at, id, x, y) {
+        if hit.layer.is_some_and(|top| top > layer) || self.subtree_covers(at, x, y) {
             return None;
         }
         Some(id)
     }
 
-    /// Whether the point is on `root`, at `at` in the layout, or on any of
+    /// Whether the point is on the node at `root` in the layout or on any of
     /// its visible descendants, which follow it there without a gap.
-    fn subtree_covers(&self, at: usize, root: NodeId, x: i32, y: i32) -> bool {
-        let mut within = HashSet::from([root]);
-        for placed in self.layout.nodes().iter().skip(at) {
-            let id = placed.id;
-            let Ok(node) = self.tree.node(id) else {
-                continue;
-            };
-            if id != root {
-                if !node.parent.is_some_and(|parent| within.contains(&parent)) {
-                    return false;
-                }
-                within.insert(id);
+    fn subtree_covers(&self, root: usize, x: i32, y: i32) -> bool {
+        for (at, placed) in self.layout.nodes().iter().enumerate().skip(root) {
+            if at > root && self.layout.parent(at).is_none_or(|parent| parent < root) {
+                return false;
             }
-            if self.covers(placed, x, y) && self.tree.effective(id, Prop::Visible) {
+            if placed.visible && self.covers(placed, x, y) {
                 return true;
             }
         }
@@ -1264,13 +1326,146 @@ mod tests {
         turn_on(&mut hud, popup, Prop::Dismissable);
         let modal = root(&mut hud, Layer::Modal, NodeKind::Panel, (100, 100, 50, 50));
         lay_out(&mut hud);
-        assert!(!escape(&mut hud));
+        assert!(escape(&mut hud), "the modal keeps it from the world");
         assert!(down(&mut hud, 300, 300, LEFT));
         assert_eq!(hud.drain_events(), []);
 
         turn_on(&mut hud, modal, Prop::Dismissable);
         assert!(escape(&mut hud));
         assert_eq!(hud.drain_events(), [HudEvent::Dismiss { node: modal }]);
+    }
+
+    #[test]
+    fn an_external_popup_leaves_the_press_outside_a_host_one_dismissing() {
+        let mut hud = new_hud();
+        let host = blocker(&mut hud, Layer::Overlay, (0, 0, 50, 50));
+        turn_on(&mut hud, host, Prop::Dismissable);
+        let client = hud
+            .create_root(Layer::Overlay, Origin::External(3), NodeKind::Panel)
+            .unwrap();
+        place(&mut hud, client, (0, 0, 500, 400));
+        turn_on(&mut hud, client, Prop::BlocksPointer);
+        turn_on(&mut hud, client, Prop::Dismissable);
+        lay_out(&mut hud);
+        assert!(down(&mut hud, 300, 300, LEFT));
+        assert_eq!(hud.drain_events(), [HudEvent::Dismiss { node: host }]);
+        assert!(up(&mut hud, 300, 300, LEFT));
+
+        place(&mut hud, client, (100, 0, 50, 50));
+        lay_out(&mut hud);
+        assert!(down(&mut hud, 300, 300, LEFT));
+        let both = [client, host].map(|node| HudEvent::Dismiss { node });
+        assert_eq!(hud.drain_events(), both);
+    }
+
+    #[test]
+    fn a_change_of_hover_or_pressed_moves_the_revision() {
+        let mut hud = new_hud();
+        button(&mut hud, Layer::Panels, (0, 0, 50, 50));
+        lay_out(&mut hud);
+        let steps = [
+            (Pointer::Move { x: 90, y: 90 }, false),
+            (Pointer::Move { x: 10, y: 10 }, true),
+            (Pointer::Move { x: 20, y: 20 }, false),
+            (
+                Pointer::Down {
+                    x: 20,
+                    y: 20,
+                    button: LEFT,
+                },
+                true,
+            ),
+            (Pointer::Move { x: 90, y: 90 }, true),
+            (Pointer::Move { x: 20, y: 20 }, true),
+            (Pointer::Cancel, true),
+        ];
+        for (event, changes) in steps {
+            let before = hud.revision();
+            hud.input(event);
+            assert_eq!(hud.revision() != before, changes, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn a_layout_tracks_a_still_pointer_until_cancel() {
+        let mut hud = new_hud();
+        let node = button(&mut hud, Layer::Panels, (100, 0, 50, 50));
+        turn_on(&mut hud, node, Prop::Hoverable);
+        lay_out(&mut hud);
+        move_to(&mut hud, 10, 10);
+        place(&mut hud, node, (0, 0, 50, 50));
+        lay_out(&mut hud);
+        let hover = |entered| [HudEvent::Hover { node, entered }];
+        assert_eq!(hud.drain_events(), hover(true));
+        down(&mut hud, 10, 10, LEFT);
+        assert!(hud.shows_pressed(node));
+
+        let modal = blocker(&mut hud, Layer::Modal, (200, 200, 50, 50));
+        let before = hud.revision();
+        lay_out(&mut hud);
+        assert_ne!(hud.revision(), before);
+        assert!(!hud.shows_pressed(node));
+        assert_eq!(hud.drain_events(), hover(false));
+
+        hud.input(Pointer::Cancel);
+        turn_off(&mut hud, modal, Prop::Visible);
+        lay_out(&mut hud);
+        assert_eq!(hud.hovered(), None);
+    }
+
+    #[test]
+    fn a_field_node_that_only_hovers_passes_input_to_the_world() {
+        let mut hud = new_hud();
+        let node = root(&mut hud, Layer::Field, NodeKind::Image, (0, 0, 50, 50));
+        turn_on(&mut hud, node, Prop::Hoverable);
+        lay_out(&mut hud);
+        assert!(!move_to(&mut hud, 10, 10));
+        assert!(!wheel(&mut hud, 10, 10, 1));
+        assert_eq!(
+            hud.drain_events(),
+            [HudEvent::Hover {
+                node,
+                entered: true
+            }]
+        );
+        assert!(!down(&mut hud, 10, 10, LEFT));
+        assert!(!up(&mut hud, 10, 10, LEFT));
+        turn_on(&mut hud, node, Prop::BlocksPointer);
+        assert!(down(&mut hud, 10, 10, LEFT));
+    }
+
+    #[test]
+    fn no_longer_clickable_or_hoverable_drops_press_and_hover() {
+        let mut hud = new_hud();
+        let node = button(&mut hud, Layer::Panels, (0, 0, 50, 50));
+        turn_on(&mut hud, node, Prop::Hoverable);
+        lay_out(&mut hud);
+        down(&mut hud, 10, 10, LEFT);
+        hud.drain_events();
+
+        turn_off(&mut hud, node, Prop::Clickable);
+        assert!(!hud.shows_pressed(node));
+        assert_eq!(hud.hovered(), Some(node));
+        turn_off(&mut hud, node, Prop::Hoverable);
+        assert_eq!(hud.hovered(), None);
+        let left = HudEvent::Hover {
+            node,
+            entered: false,
+        };
+        assert_eq!(hud.drain_events(), [left]);
+        turn_on(&mut hud, node, Prop::Clickable);
+        assert!(up(&mut hud, 10, 10, LEFT));
+        assert_eq!(clicked(&mut hud), []);
+    }
+
+    #[test]
+    fn a_command_has_the_text_limit() {
+        let mut hud = new_hud();
+        let node = button(&mut hud, Layer::Panels, (0, 0, 50, 50));
+        let most = crate::hud::world::MAX_TEXT_BYTES;
+        let mut set = |len| hud.set(node, Prop::Command, Value::Text("c".repeat(len)));
+        assert_eq!(set(most), Ok(()));
+        assert_eq!(set(most + 1), Err(crate::node::Refused::Limit));
     }
 
     #[test]

@@ -45,6 +45,9 @@ pub(crate) struct Placed {
     pub clip: Option<Rect>,
     /// Enabled through every ancestor.
     pub enabled: bool,
+    /// Still visible through every ancestor, as of the last
+    /// [`Layout::refresh_visible`].
+    pub visible: bool,
 }
 
 /// The visible nodes in paint order.
@@ -53,8 +56,10 @@ pub(crate) struct Layout {
     nodes: Vec<Placed>,
     index: HashMap<NodeId, usize>,
     viewport: Rect,
-    /// Scratch, one for each of `nodes`.
+    /// One for each of `nodes`: scratch, but for the parent's position.
     steps: Vec<Step>,
+    /// A node may have been hidden, shown or removed since `visible` was read.
+    visibility_stale: bool,
     /// Scratch: nodes still to list, with their parent's position.
     pending: Vec<(NodeId, Option<usize>)>,
 }
@@ -68,6 +73,29 @@ impl Layout {
         self.index.get(&id).and_then(|i| self.nodes.get(*i))
     }
 
+    /// The position of the parent of the node at `at`.
+    pub fn parent(&self, at: usize) -> Option<usize> {
+        self.steps[at].parent
+    }
+
+    pub fn visibility_changed(&mut self) {
+        self.visibility_stale = true;
+    }
+
+    /// One pass, where asking each node would climb to its root.
+    pub fn refresh_visible(&mut self, tree: &Tree) {
+        if !std::mem::take(&mut self.visibility_stale) {
+            return;
+        }
+        for at in 0..self.nodes.len() {
+            let inherited = self.parent(at).is_none_or(|p| self.nodes[p].visible);
+            let own = tree
+                .node(self.nodes[at].id)
+                .is_ok_and(|node| node.bool_prop(Prop::Visible, true));
+            self.nodes[at].visible = inherited && own;
+        }
+    }
+
     /// The viewport of the last layout.
     pub fn viewport(&self) -> Rect {
         self.viewport
@@ -75,6 +103,7 @@ impl Layout {
 
     fn fill(&mut self, tree: &Tree, roots: &[Vec<NodeId>], viewport: Rect) {
         self.viewport = bounded(viewport);
+        self.visibility_stale = false;
         self.list(tree, roots);
         self.measure();
         self.place();
@@ -99,6 +128,7 @@ impl Layout {
                     rect: Rect::default(),
                     clip: None,
                     enabled: inherited && node.bool_prop(Prop::Enabled, true),
+                    visible: true,
                 });
                 self.index.insert(id, at);
                 self.steps.push(Step::read(node, parent));
@@ -309,8 +339,12 @@ impl Hud {
     /// as wide or high as the parent across the flow unless it says. A `Row`
     /// or `Column` without a size is as large as its visible flowing
     /// children: their sum and gaps along it, the largest across it.
+    ///
+    /// Then hover and pressed are found again at the pointer's last
+    /// position, so this may queue hover events and move [`Hud::revision`].
     pub fn layout(&mut self, viewport: Rect) {
         self.layout.fill(&self.tree, &self.roots, viewport);
+        self.retrack();
     }
 }
 
