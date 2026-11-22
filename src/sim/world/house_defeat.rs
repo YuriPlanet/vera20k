@@ -664,15 +664,23 @@ impl Simulation {
         )
     }
 
+    /// VERA: no House is a human's but an observer's. VERA's rooms start this
+    /// way while two or more AI play, and an offline Skirmish player can watch
+    /// a field of computers; gamemd's rooms never start one, and its observer
+    /// House holds nothing.
+    pub(crate) fn no_participating_human(&self) -> bool {
+        let observers = self.session.observer_houses();
+        !self.houses.order().iter().any(|owner| {
+            !observers.contains(owner)
+                && self.houses.get(owner).is_some_and(|house| house.is_human())
+        })
+    }
+
     /// VERA: a network match in which every human watches, as VERA's room
     /// starts while two or more AI play: no House is a human's but an
     /// observer's. gamemd's rooms never start one.
     pub(crate) fn network_ai_alone(&self) -> bool {
-        self.session.execution_topology().is_lockstep()
-            && !self.houses.order().iter().any(|owner| {
-                !self.session.is_observer_house(*owner)
-                    && self.houses.get(owner).is_some_and(|house| house.is_human())
-            })
+        self.session.execution_topology().is_lockstep() && self.no_participating_human()
     }
 
     /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile

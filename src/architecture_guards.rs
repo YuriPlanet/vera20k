@@ -649,21 +649,26 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/snapshot/simulation_restore.rs", 1),
+                // `no_participating_human` asks the whole room's list once, so
+                // a shared match decision never depends on one client's view.
+                ("sim/world/house_defeat.rs", 1),
             ],
         ),
         (
             "is_observer_house",
             &[
                 ("sim/scenario_session.rs", 1),
+                // The enemy search skips an observer's empty House (both its
+                // candidate scans); the room's list is the same on every peer.
+                ("sim/house_strategy.rs", 2),
                 ("sim/score.rs", 1),
                 // The same offline command refuses a local observer.
                 ("sim/skirmish_cheats.rs", 1),
                 // IsTimerVisible's observer case, as for `current_house`.
                 ("sim/superweapon/ares_presentation.rs", 1),
                 ("sim/superweapon/mod.rs", 1),
-                // The third is `network_ai_alone`: it asks of every House,
-                // and each peer holds the same observer list from the room.
-                ("sim/world/house_defeat.rs", 3),
+                // The offline observer's defeat exemption and its defeat sound.
+                ("sim/world/house_defeat.rs", 2),
             ],
         ),
         (
