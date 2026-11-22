@@ -829,9 +829,11 @@ fn route_houses(
     (recipients, false)
 }
 
-/// Receive `0x0048D8DD..0x0048D9B8`: the line under the packet's own sender
-/// name in its colour, then one more IncomingMessage (`0x0048D995`) on top
-/// of Add_Message's own. No mask, alliance or defeat filter applies.
+/// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's name in its
+/// colour, then one more IncomingMessage (`0x0048D995`) on top of
+/// Add_Message's own. No mask, alliance or defeat filter applies. Native
+/// takes both from the packet; VERA's caller takes an admitted sender's from
+/// the roster ([`chat_sender`](crate::app::match_runtime::network_match::chat_sender)).
 /// RESIDUAL: the `-MESSAGES` game-name hash filter (`[0xA8D60D]`, off by
 /// default) is not ported; the switch is accepted and ignored.
 pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {

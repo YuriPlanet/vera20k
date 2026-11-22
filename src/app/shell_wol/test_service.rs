@@ -382,6 +382,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
             motd: crate::i18n::tr(MOTD),
             lobby_visits: true,
+            campaign_rooms: false,
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,
