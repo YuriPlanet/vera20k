@@ -108,6 +108,15 @@ pub const FRAME_BUDGET: u64 = 200_000;
 /// Operations for each one-time call: `vera_init` and `on_scenario_start`.
 pub const ONCE_BUDGET: u64 = 5_000_000;
 
+/// Module log lines kept for `take_log`; older ones are dropped, so a
+/// chatty module cannot grow memory over a match.
+const LOG_KEPT: usize = 256;
+/// Module log lines shown to the players per frame; the rest go only to the
+/// log file.
+const MAX_SHOWN_LOG_LINES: u32 = 8;
+/// Characters of a shown log line.
+const SHOWN_LOG_CHARS: usize = 160;
+
 /// Variable IDs (RFC appendix "IDs"): Red Alert 2 locals 0..99, globals 100..149.
 const LOCAL_VARS: std::ops::Range<i32> = 0..100;
 const GLOBAL_VARS: std::ops::Range<i32> = 100..150;
@@ -276,8 +285,12 @@ pub struct ExtModules {
     /// [`Simulation::restore_ext_modules`]. Deserializing never compiles a
     /// module, so describing the save layout stays data-only.
     pending: Vec<SavedSlot>,
-    /// Log lines from modules, drained by the caller.
+    /// The latest [`LOG_KEPT`] log lines from modules (and why a module
+    /// stopped), oldest first; `take_log` drains them.
     log: Vec<String>,
+    /// (frame, lines shown) for [`MAX_SHOWN_LOG_LINES`]; not saved, it
+    /// only limits what the players see.
+    shown_log: (u32, u32),
     /// How deep the module trigger chain on the stack is and how many
     /// chained firings this frame ran ([`chains`]). Zero between frames;
     /// not saved.
@@ -377,6 +390,14 @@ impl ExtModules {
     /// How map modules may show interface under the selected mod.
     pub fn map_ui(&self) -> MapUi {
         self.map_ui
+    }
+
+    /// Keeps `line`, dropping the oldest past [`LOG_KEPT`].
+    fn keep_log(&mut self, line: String) {
+        if self.log.len() >= LOG_KEPT {
+            self.log.remove(0);
+        }
+        self.log.push(line);
     }
 
     pub fn take_log(&mut self) -> Vec<String> {
@@ -725,9 +746,24 @@ impl SimHost for Host<'_, '_> {
         self.rng.next_range_i32_inclusive(lo, hi)
     }
 
+    /// Appendix 1.1 `log`: a line in the in-game log. It goes to the game's
+    /// log file and, [`MAX_SHOWN_LOG_LINES`] per frame and cut to
+    /// [`SHOWN_LOG_CHARS`], to the players' message list.
     fn log(&mut self, line: &str) {
         log::info!(target: "ext_module", "{:?}: {line}", self.source);
-        self.sim.ext_modules.log.push(line.to_owned());
+        self.sim.ext_modules.keep_log(line.to_owned());
+        let frame = self.sim.session.binary_frame();
+        let shown = &mut self.sim.ext_modules.shown_log;
+        if shown.0 != frame {
+            *shown = (frame, 0);
+        }
+        if shown.1 < MAX_SHOWN_LOG_LINES {
+            shown.1 += 1;
+            let text = line.chars().take(SHOWN_LOG_CHARS).collect();
+            self.sim.publish_trigger_effects([
+                crate::sim::trigger_runtime::TriggerEffect::ExtModuleNotice { text },
+            ]);
+        }
     }
 
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
@@ -1623,7 +1659,7 @@ impl Simulation {
         self.ext_modules.log.extend(log);
         for text in notices {
             log::warn!(target: "ext_module", "{text}");
-            self.ext_modules.log.push(text.clone());
+            self.ext_modules.keep_log(text.clone());
             self.publish_trigger_effects([
                 crate::sim::trigger_runtime::TriggerEffect::ExtModuleNotice { text },
             ]);
@@ -1849,12 +1885,12 @@ impl Simulation {
             export.name()
         );
         log::warn!(target: "ext_module", "{reason}");
-        self.ext_modules.log.push(reason.clone());
         slot.disabled = Some(reason.clone());
         // Its queued orders, triggers and queued records go with it (RFC
         // section 3).
         slot.orders.clear();
         let source = slot.source;
+        self.ext_modules.keep_log(reason.clone());
         self.trigger_runtime
             .module_triggers_mut()
             .remove_source(source);
