@@ -1523,31 +1523,29 @@ impl UdpIo {
                 "invalid peer probe roster",
             ));
         }
-        if self.global.available_send_slots() < sources.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "global send queue is full",
-            ));
-        }
-        let mut probes = Vec::with_capacity(sources.len());
-        for &source in sources {
-            let endpoint = relay_peer_endpoint(source).map_err(relay_io_error)?;
-            let sequence = self.global.next_send_sequence();
-            let accepted = self.global.send(
-                &[],
-                GlobalDestination::direct(endpoint),
-                super::reliable::Delivery::Reliable,
-                0,
-            );
-            assert!(accepted, "reserved global probe slots must fit");
-            probes.push(PeerProbe {
-                source,
-                endpoint,
-                sequence,
-                elapsed: None,
-            });
-        }
-        route.peer_probes = Some(probes);
+        let endpoints = sources
+            .iter()
+            .map(|&source| relay_peer_endpoint(source).map_err(relay_io_error))
+            .collect::<io::Result<Vec<_>>>()?;
+        let batch = self
+            .global
+            .send_reliable_batch(&[], &endpoints)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::WouldBlock, "global send queue is full")
+            })?;
+        route.peer_probes = Some(
+            sources
+                .iter()
+                .zip(endpoints)
+                .zip(batch.sequences())
+                .map(|((&source, endpoint), sequence)| PeerProbe {
+                    source,
+                    endpoint,
+                    sequence,
+                    elapsed: None,
+                })
+                .collect(),
+        );
         Ok(())
     }
 

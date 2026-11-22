@@ -169,6 +169,13 @@ pub struct GlobalBatch {
     count: u32,
 }
 
+impl GlobalBatch {
+    /// The batch's wire sequences, in recipient order.
+    pub(super) fn sequences(self) -> impl Iterator<Item = u32> {
+        (0..self.count).map(move |offset| self.first.wrapping_add(offset))
+    }
+}
+
 /// One aggregate send queue/response history, with unknown-source receive
 /// admission. This object is carried from lobby through loading and gameplay.
 #[derive(Debug)]
@@ -360,10 +367,9 @@ impl GlobalChannel {
     /// Every send of the batch was ACKed. Other sends never count, and a
     /// discarded or cancelled one never reads delivered.
     pub fn batch_delivered(&self, batch: GlobalBatch) -> bool {
-        (0..batch.count).all(|offset| {
-            self.acknowledged
-                .contains(&batch.first.wrapping_add(offset))
-        })
+        batch
+            .sequences()
+            .all(|sequence| self.acknowledged.contains(&sequence))
     }
 
     /// Frame a one-shot control whose sender is about to reset its channel.
