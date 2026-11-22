@@ -934,15 +934,16 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   the same. Ratings, standings, past seasons and ranked games move to the new name; the
   rename drops every remembered sign-in, signs out whoever plays under the old name and
   mails the owner. An account renames at most once in 30 days: sooner returns 429
-  `rename_too_soon` with `retry_after`. Wrong passwords count toward the sign-in limits.
-  It also refuses with 400 `invalid_request` or `invalid_name`, 403 `wrong_password`,
-  404 `no_account`, 409 `match_active` as deletion does, 409 `same_name` for the
-  account's own name (a change of case only is allowed), and 409 `name_unavailable` for
-  a name that is reserved, held, an account's or being registered, or has a player
-  online, a match or ranked games under it. For 30 days the old name stays held for the
-  account: registering it returns 409 `name_unavailable`, `GET /v1/players/<old name>`
-  answers the account's profile under its new name, and deleting the account frees it.
-  A change of case only holds nothing.
+  `rename_too_soon` with `retry_after`. Wrong passwords count toward the sign-in limits,
+  which refuse a rename with 429 `account_locked` or `rate_limited` as they refuse a
+  sign-in. It also refuses with 400 `invalid_request` or `invalid_name`, 403
+  `wrong_password`, 404 `no_account`, 409 `match_active` as deletion does, 409
+  `same_name` for the account's own name (a change of case only is allowed), and 409
+  `name_unavailable` for a name that is reserved, held, an account's or being
+  registered, or has a player online, a match or ranked games under it. For 30 days the
+  old name stays held for the account: registering it returns 409 `name_unavailable`,
+  `GET /v1/players/<old name>` answers the account's profile under its new name, and
+  deleting the account frees it. A change of case only holds nothing.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
