@@ -473,6 +473,11 @@ impl Simulation {
                 if character != 0 || disguised {
                     return None;
                 }
+                // RESIDUAL: the frame picker (Ares.dll `0x100431A0`) reads Ares'
+                // own FacingClass::Current (`0x10009CC0`), which multiplies by
+                // the remaining time before dividing by the steps; gamemd's
+                // (`0x004C93D0`) divides first. Mid-turn the glow's frame can
+                // change a tick earlier or later.
                 draw.frame = rules.alpha_image(&shape.image).map_or(0, |image| {
                     image.facing_frame(techno.body_facing_current(frame))
                 });

@@ -831,6 +831,40 @@ pub(crate) fn shp_visitor<'a>(
             });
             let ares_unit = entity.category() == EntityCategory::Unit
                 && rules.is_some_and(crate::rules::ruleset::RuleSet::ares);
+            let depth_world = super::foot_depth::DepthWorld {
+                runtime: Some(runtime),
+                frame: Some(input.frame),
+            };
+            // The turret block's first frame when this Unit takes the turreted
+            // branch (`Turret=yes`, `+0xCA1`, gate `0x0073C725`). With Ares,
+            // `UnitClass_DrawSHP_DrawShadowEarlier` sends a Unit whose
+            // disguise shows (TechnoClass::IsClearlyVisibleTo(player)
+            // `0x0070EE30` false) to the no-turret branch (`0x0073CE0D`).
+            let turret_start = if entity.category() == EntityCategory::Unit
+                && !(ares_unit
+                    && DrawState::draws_disguise(entity, sim.session().binary_frame(), observer))
+            {
+                rules
+                    .and_then(|rules| {
+                        sim.interner().animation_sequence_in_category(
+                            entity.type_ref(),
+                            entity.category().into(),
+                            rules,
+                        )
+                    })
+                    .and_then(|actual| {
+                        ShpUnitLayout::of(
+                            actual,
+                            rules,
+                            Some(sim.interner()),
+                            entity,
+                            cells.as_ref(),
+                        )
+                        .turret_start_frame()
+                    })
+            } else {
+                None
+            };
             // Ares draws an admitted SHP Unit's shadow before its body; the
             // outer `Some` is the skip flag, set even when no frame draws.
             let ares_shadow = (ares_unit
@@ -838,10 +872,7 @@ pub(crate) fn shp_visitor<'a>(
             .then(|| {
                 ares_shp_unit_shadow_piece(
                     atlas,
-                    super::foot_depth::DepthWorld {
-                        runtime: Some(runtime),
-                        frame: Some(input.frame),
-                    },
+                    depth_world,
                     entity,
                     &body_key,
                     [sx, sy],
@@ -853,6 +884,17 @@ pub(crate) fn shp_visitor<'a>(
             let shadow = match entity.category() {
                 EntityCategory::Infantry => {
                     infantry_air_shadow_piece(atlas, entity, cells.as_ref(), [sx, sy], depth)
+                }
+                EntityCategory::Unit if !ares_unit && turret_start.is_some() => {
+                    stock_turreted_shp_shadow_piece(
+                        atlas,
+                        depth_world,
+                        entity,
+                        &body_key,
+                        [sx, sy],
+                        instance,
+                        parent.policy,
+                    )
                 }
                 _ => ares_shadow.flatten(),
             };
@@ -890,68 +932,58 @@ pub(crate) fn shp_visitor<'a>(
             }
             // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
             // turret from the same SHP after the body (`0x0073CD08`), at the
-            // body's draw point; no `TurretOffset` applies. Residual: the
-            // native turret branch draws body and turret with flags
-            // 0x2800/0x2820 and no -16 Z (unlike the no-turret branch used
-            // here), lifts the point 14 px when `+0x424` is set (`0x0073C753`)
-            // and draws a voxel barrel (`type+0xC0`) around the turret; none
-            // is ported. Retail ships no such unit; MO's `CYCL` does. With
-            // Ares, `UnitClass_DrawSHP_DrawShadowEarlier` sends a Unit whose
-            // disguise shows (TechnoClass::IsClearlyVisibleTo(player)
-            // `0x0070EE30` false) to the no-turret branch (`0x0073CE0D`).
-            if entity.category() == EntityCategory::Unit
-                && !(ares_unit
-                    && DrawState::draws_disguise(entity, sim.session().binary_frame(), observer))
-                && let Some(start_frame) = rules
-                    .and_then(|rules| {
-                        sim.interner().animation_sequence_in_category(
-                            entity.type_ref(),
-                            entity.category().into(),
-                            rules,
-                        )
-                    })
-                    .and_then(|actual| {
-                        ShpUnitLayout::of(
-                            actual,
-                            rules,
-                            Some(sim.interner()),
-                            entity,
-                            cells.as_ref(),
-                        )
-                        .turret_start_frame()
-                    })
-            {
+            // body's draw point; no `TurretOffset` applies. That draw goes
+            // through `TechnoClass_DrawSHP @ 0x00705E00` too, so the turret
+            // frame gets its own embedded shadow; Ares' skip flag was spent on
+            // the body. Residual: the native turret branch draws body and
+            // turret with flags 0x2800/0x2820 and no -16 Z (unlike the
+            // no-turret branch used here), lifts the point 14 px when `+0x424`
+            // is set (`0x0073C753`) and draws a voxel barrel (`type+0xC0`)
+            // around the turret; none is ported. Retail ships no such unit;
+            // MO's `CYCL` does.
+            if let Some(start_frame) = turret_start {
                 let turret_key = ShpSpriteKey {
                     frame: shp_turret_frame(start_frame, render_pose.turret),
                     ..body_key.clone()
                 };
                 if let Some(turret_entry) = atlas.get(&turret_key) {
+                    let turret_instance = SpriteInstance {
+                        position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
+                        size: turret_entry.pixel_size,
+                        uv_origin: turret_entry.uv_origin,
+                        uv_size: turret_entry.uv_size,
+                        source_palette: turret_entry.source_palette,
+                        depth,
+                        tint: body_tint,
+                        palette_light: palette_light.with_colour_word(
+                            if parent.policy.ors_colour_word(turret_entry.extended) {
+                                colour_word
+                            } else {
+                                0
+                            },
+                        ),
+                        alpha: 1.0,
+                        draw_state,
+                        z_adjust,
+                        z_gradient: z_gradient | native_z::shp_frame_flag(turret_entry.extended),
+                        zshape_origin,
+                    };
                     pieces.push(ObjectPieceInstance {
                         target: ObjectTexture::ShpPage(turret_entry.page as usize),
                         render_z: parent.policy.render_z,
-                        instance: SpriteInstance {
-                            position: [sx + turret_entry.offset_x, sy + turret_entry.offset_y],
-                            size: turret_entry.pixel_size,
-                            uv_origin: turret_entry.uv_origin,
-                            uv_size: turret_entry.uv_size,
-                            source_palette: turret_entry.source_palette,
-                            depth,
-                            tint: body_tint,
-                            palette_light: palette_light.with_colour_word(
-                                if parent.policy.ors_colour_word(turret_entry.extended) {
-                                    colour_word
-                                } else {
-                                    0
-                                },
-                            ),
-                            alpha: 1.0,
-                            draw_state,
-                            z_adjust,
-                            z_gradient: z_gradient
-                                | native_z::shp_frame_flag(turret_entry.extended),
-                            zshape_origin,
-                        },
+                        instance: turret_instance,
                     });
+                    pieces.extend(embedded_shp_shadow_piece(
+                        atlas,
+                        actual_type,
+                        entity,
+                        cells.as_ref(),
+                        &turret_key,
+                        turret_entry,
+                        turret_instance,
+                        draw_decision,
+                        parent.policy,
+                    ));
                 }
             }
             ground_objects.object(parent, pieces.drain(..));
@@ -1076,6 +1108,7 @@ pub(crate) fn shp_visitor<'a>(
 /// a TerrainType image. Unit/Infantry GetHeight5F5F40 must be zero
 /// (Infantry class15 dispatch705FA6..705FB2, shared70600C..70603F);
 /// the existing isolated query includes live ramp and OnBridge height.
+/// A Unit's visceroid type refuses it first (`0x00705FED..0x00706007`).
 fn embedded_shp_shadow_admitted(
     object: Option<&crate::rules::object_type::ObjectType>,
     entity: &crate::app::presentation::frame::ObjectRecord,
@@ -1084,6 +1117,8 @@ fn embedded_shp_shadow_admitted(
 ) -> bool {
     matches!(decision.native_visual_state, 0 | 1)
         && !object.is_some_and(|object| object.no_shadow)
+        && !(entity.category() == EntityCategory::Unit
+            && object.is_some_and(crate::rules::object_type::ObjectType::visceroid))
         && (!matches!(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry
@@ -1252,6 +1287,32 @@ fn ares_shp_unit_shadow_piece(
         atlas.object_shp_frame_count(&body_key.type_id)?,
         body_instance,
         [body_point[0], body_point[1] + point_y as f32],
+        super::foot_depth::unit_z_adjust_in(world, entity, true, None).wrapping_sub(2) as f32,
+        policy,
+    )
+}
+
+/// The shadow stock gamemd's turreted SHP Unit branch draws before the body
+/// (`0x0073C733..0x0073C7AC`): the body's shadow half at the body point, Z
+/// adjust `GetZAdjustment() - 2` (vt+0x2EC), flags `0x2E01`. Nothing gates it:
+/// it draws for a lifted, cloaking or `NoShadow=yes` Unit too. Ares replaces
+/// it ([`ares_shp_unit_shadow_piece`]). The carried 14-pixel lift
+/// (`0x0073C753`) is the embedded shadow's residual: no SHP cargo is drawn.
+fn stock_turreted_shp_shadow_piece(
+    atlas: &crate::render::sprite_atlas::SpriteAtlas,
+    world: super::foot_depth::DepthWorld<'_>,
+    entity: &crate::app::presentation::frame::ObjectRecord,
+    body_key: &ShpSpriteKey,
+    body_point: [f32; 2],
+    body_instance: SpriteInstance,
+    policy: BlitPolicy,
+) -> Option<ObjectPieceInstance> {
+    shp_shadow_half(
+        atlas,
+        body_key,
+        atlas.object_shp_frame_count(&body_key.type_id)?,
+        body_instance,
+        body_point,
         super::foot_depth::unit_z_adjust_in(world, entity, true, None).wrapping_sub(2) as f32,
         policy,
     )

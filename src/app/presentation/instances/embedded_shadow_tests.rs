@@ -237,3 +237,59 @@ fn unit_and_infantry_shadow_query_live_ground_and_bridge_height() {
         }
     }
 }
+
+/// Stock gamemd refuses a visceroid Unit's embedded shadow before the height
+/// test (`0x00705FED..0x00706007`), while the turreted branch's own shadow
+/// (`0x0073C733..0x0073C7AC`) has no gate: `NoShadow=yes` stops only the
+/// embedded one.
+#[test]
+fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
+    let (atlas, key, _) = atlas();
+    let decision = DrawDecision {
+        visible: true,
+        state: DrawState::default(),
+        native_visual_state: 0,
+    };
+    let entity =
+        GameEntity::test_default_of_category(1, "MGTK", "Americans", 2, 2, EntityCategory::Unit);
+    let rules_with = |keys: &str| {
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            &format!("[VehicleTypes]\n0=MGTK\n[MGTK]\n{keys}"),
+        ))
+        .unwrap()
+    };
+    for (keys, admitted) in [
+        ("", true),
+        ("SmallVisceroid=yes\n", false),
+        ("LargeVisceroid=yes\n", false),
+        ("NoShadow=yes\n", false),
+    ] {
+        let rules = rules_with(keys);
+        let record = ObjectRecord::of_test_in(&entity, None, &rules);
+        assert_eq!(
+            embedded_shp_shadow_admitted(rules.object("MGTK"), &record, None, decision),
+            admitted,
+            "{keys:?}"
+        );
+    }
+    let rules = rules_with("NoShadow=yes\n");
+    let piece = stock_turreted_shp_shadow_piece(
+        &atlas,
+        crate::app::presentation::instances::foot_depth::DepthWorld {
+            runtime: None,
+            frame: None,
+        },
+        &ObjectRecord::of_test_in(&entity, None, &rules),
+        &key,
+        [10.0, 20.0],
+        SpriteInstance::default(),
+        BlitPolicy::z_read(SpriteEncoding::Plain),
+    )
+    .expect("the turreted branch draws the body frame's shadow half");
+    assert_eq!(
+        piece.target,
+        ObjectTexture::SpriteAtlasEdit(1, crate::render::terrain_draw::TerrainPiece::Shadow)
+    );
+    assert_eq!(piece.instance.position, [10.0, 20.0]);
+    assert_eq!(piece.instance.z_adjust, -2.0);
+}
