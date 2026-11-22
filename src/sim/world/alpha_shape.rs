@@ -66,6 +66,7 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::movement::ground_pose;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct AlphaShape {
@@ -84,25 +85,57 @@ struct AlphaShape {
 }
 
 /// The shape vector, in construction order.
+///
+/// A deque, so that Ares' per-frame replacement stays linear: each odd
+/// frame's updates ([`Simulation::update_alpha_shape`]) find their shapes at
+/// the front, in the order the previous odd frame's updates appended them,
+/// where Ares' vector erase shifts every later shape. The order is the same.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct AlphaShapes {
-    shapes: Vec<AlphaShape>,
+    shapes: VecDeque<AlphaShape>,
 }
 
 impl AlphaShapes {
-    /// The ctor `0x00420960`: append the shape. With Ares
-    /// (`AlphaShapeClass_CTOR`), the object's earlier shape is destroyed
-    /// first, so an object has at most one and a new one goes to the end.
-    fn construct(&mut self, shape: AlphaShape, ares: bool) {
-        if ares {
-            self.delete(shape.object);
-        }
-        self.shapes.push(shape);
+    /// The ctor `0x00420960`: append a shape of `image` for `object`. With
+    /// Ares (`AlphaShapeClass_CTOR`), the object's earlier shape is
+    /// destroyed first, so an object has at most one and a new one goes to
+    /// the end.
+    fn construct(
+        &mut self,
+        object: u64,
+        origin: [i32; 2],
+        image: &str,
+        anim_listener: bool,
+        ares: bool,
+    ) {
+        let earlier = if ares { self.take(object) } else { None };
+        // The name string of an earlier shape of the same image is reused.
+        let image = earlier
+            .map(|shape| shape.image)
+            .filter(|earlier| earlier == image)
+            .unwrap_or_else(|| image.to_owned());
+        self.shapes.push_back(AlphaShape {
+            object,
+            origin,
+            image,
+            disabled: false,
+            anim_listener,
+        });
     }
 
-    /// Destroy `object`'s shape (Ares' map holds at most one).
+    /// Destroy `object`'s shape.
     fn delete(&mut self, object: u64) {
-        self.shapes.retain(|shape| shape.object != object);
+        self.take(object);
+    }
+
+    /// Remove `object`'s shape: only Ares does, and its map holds at most
+    /// one per object.
+    fn take(&mut self, object: u64) -> Option<AlphaShape> {
+        let index = self
+            .shapes
+            .iter()
+            .position(|shape| shape.object == object)?;
+        self.shapes.remove(index)
     }
 
     /// `AlphaShapeClass::PointerExpired @ 0x00420E70`.
@@ -277,13 +310,10 @@ impl Simulation {
         let [x, y] = Self::alpha_screen(source.coord);
         let [width, height] = image.canvas();
         self.alpha_shapes.construct(
-            AlphaShape {
-                object,
-                origin: [x - width / 2, y - height / 2],
-                image: source.image.to_owned(),
-                disabled: false,
-                anim_listener: rules.ares() && kind == ObjectKind::Anim,
-            },
+            object,
+            [x - width / 2, y - height / 2],
+            source.image,
+            rules.ares() && kind == ObjectKind::Anim,
             rules.ares(),
         );
     }
@@ -345,13 +375,10 @@ impl Simulation {
         let [x, y] = Self::alpha_screen(source.coord);
         let [width, height] = image.canvas();
         self.alpha_shapes.construct(
-            AlphaShape {
-                object,
-                origin: [x - (width + 1) / 2, y - (height + 1) / 2],
-                image: source.image.to_owned(),
-                disabled: false,
-                anim_listener: kind == ObjectKind::Anim,
-            },
+            object,
+            [x - (width + 1) / 2, y - (height + 1) / 2],
+            source.image,
+            kind == ObjectKind::Anim,
             true,
         );
     }
