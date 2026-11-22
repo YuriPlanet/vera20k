@@ -474,6 +474,14 @@ An older game can still fall silent in that window and be dropped before it
 starts.
 The relay and the packets are unchanged. A released game keeps sending for a
 crashed or frozen game, so it is never named.
+The keepalive is a PING every two seconds, which the relay answers with READY.
+An established connection that traded other packets both ways within those two
+seconds skips it: in a match the game's UPLINKs and the relay's pushes already
+keep each end hearing the other, and the relay treats every packet of a
+connection as it does a PING. The keepalive's own packets do not count, so a
+connection with nothing else to say pings every two seconds, and one that
+falls quiet within four. The relay and the packets are unchanged; a released
+game pings through its matches as well, and both kinds play in one room.
 After ten minutes of silence the relay removes the player
 through the same stream. A game that has had no answer from the relay for that
 long, and 15 seconds more, releases its relay route and sends it nothing more:

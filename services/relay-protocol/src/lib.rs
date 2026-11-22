@@ -471,7 +471,7 @@ impl ClientSession {
         )?;
         self.sent = sequence;
         if kind != HELLO {
-            self.hop_sent(self.sent);
+            self.hop_sent(self.sent, kind != PING);
         }
         Ok(())
     }
@@ -2106,6 +2106,38 @@ mod tests {
         let output = server.process_at(from, &bytes, 1040, 1_001_000).unwrap();
         assert_eq!(output.len(), 1);
         assert_eq!(output[0].endpoint, to);
+    }
+
+    #[test]
+    fn a_hop_is_busy_only_while_traffic_other_than_its_keepalive_goes_both_ways() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 1);
+        let mut hop = client(&key, 1, 0);
+        let mut peer = client(&key, 1, 1);
+        let a = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30001);
+        let b = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30002);
+        connect(&mut server, &mut hop, a);
+        connect(&mut server, &mut peer, b);
+        // A PING and the READY answering it are not traffic, or one
+        // keepalive exchange would stand in for the next.
+        let mut bytes = Vec::new();
+        hop.data_at(1, b"to the peer", 10, &mut bytes).unwrap();
+        hop.probe_at(20, &mut bytes).unwrap();
+        let ready = server.process(a, &bytes, 1000).unwrap().remove(0);
+        assert!(matches!(
+            hop.receive_at(&ready.bytes, 30),
+            Ok(ServerEvent::Ready)
+        ));
+        assert!(!hop.busy_both_ways(40), "only READY heard");
+        peer.data(0, b"to the hop", &mut bytes).unwrap();
+        let forwarded = server.process(b, &bytes, 1000).unwrap().remove(0);
+        hop.receive_at(&forwarded.bytes, 3_000).unwrap();
+        hop.probe_at(3_000, &mut bytes).unwrap();
+        assert!(!hop.busy_both_ways(3_001), "only a PING sent since 10 ms");
+        // Traffic both ways, until either has been quiet for the interval.
+        hop.data_at(1, b"to the peer", 3_001, &mut bytes).unwrap();
+        assert!(hop.busy_both_ways(4_999));
+        assert!(!hop.busy_both_ways(5_000), "nothing heard since 3000 ms");
     }
 
     #[test]
