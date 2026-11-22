@@ -1650,20 +1650,20 @@ mod tests {
         let m60 = rules.weapon("M60").unwrap();
 
         // Baseline: YR still honours the (possibly null) OccupantAnim override.
-        assert_eq!(muzzle_anim_name(one, 0x4000, true, false), None);
+        assert_eq!(muzzle_anim_name(one, 0x4000, true, false, false), None);
         assert_eq!(
-            muzzle_anim_name(m60, 0x4000, true, false),
+            muzzle_anim_name(m60, 0x4000, true, false, false),
             Some("UCFLASH")
         );
 
         crate::util::ra2_launch::set_override(true);
         assert_eq!(
-            muzzle_anim_name(one, 0x4000, true, false),
+            muzzle_anim_name(one, 0x4000, true, false, false),
             Some("GUNFIRE"),
             "RA2 has no OccupantAnim, so the weapon's Anim must play"
         );
         assert_eq!(
-            muzzle_anim_name(m60, 0x4000, true, false),
+            muzzle_anim_name(m60, 0x4000, true, false, false),
             Some("F3"),
             "RA2 keeps the ordinary facing-picked Anim ladder"
         );

@@ -61,7 +61,7 @@ pub(super) fn mission_repair(
     rules: &RuleSet,
     armory: u64,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     let Some(building) = sim.substrate.entities.get_mut(armory) else {
@@ -103,7 +103,7 @@ pub(super) fn mission_repair(
         rules,
         armory,
         DepartureRoute::Hospital,
-        |sim, trainee| {
+        |sim, trainee, effects| {
             if let Some(entity) = sim.substrate.entities.get_mut(trainee) {
                 entity.veterancy.set_elite();
             }

@@ -39,7 +39,7 @@ fn board_trainee(sim: &mut Simulation, rules: &RuleSet, armory: u64, trainee: u6
                 message,
                 RadioPayload::default(),
                 rules,
-                FrameEffects::empty()
+                &mut FrameEffects::empty()
             ),
             RadioResponse::Roger,
             "{message:?} must admit the trainee"
@@ -52,7 +52,7 @@ fn board_trainee(sim: &mut Simulation, rules: &RuleSet, armory: u64, trainee: u6
         armory,
         BoardingArm::InfantryBuilding,
         None,
-        FrameEffects::empty()
+        &mut FrameEffects::empty()
     ));
 }
 
@@ -65,7 +65,7 @@ fn run_trainee(sim: &mut Simulation, rules: &RuleSet, armory: u64) {
             rules,
             armory,
             None,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
         if sim
             .substrate

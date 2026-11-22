@@ -408,7 +408,7 @@ pub(crate) fn can_load(
             .capture_manager
             .as_ref()
             .is_some_and(|manager| manager.has_any())
-            || unit.mind_control.is_mind_controlled()
+            || unit.seldom.mind_control.is_mind_controlled()
             || crate::sim::docking::armory::promotions_remaining(building) <= 0;
         return CanLoad::Answer(if refused {
             RadioResponse::Negatory
