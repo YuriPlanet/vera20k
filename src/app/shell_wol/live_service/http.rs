@@ -343,6 +343,7 @@ pub(super) enum Response {
         sign_in_token: Option<String>,
         /// The lobby offers `visit_lobby`.
         lobby_visits: bool,
+        /// The lobby offers `campaign_rooms`.
         campaign_rooms: bool,
     },
     LoginFailed {

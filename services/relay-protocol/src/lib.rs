@@ -148,6 +148,14 @@ impl Ticket {
         Ok(ticket)
     }
 
+    /// The same player in the same match seat; a hop renewal keeps it.
+    fn same_identity(&self, other: &Self) -> bool {
+        self.room == other.room
+            && self.source == other.source
+            && self.player == other.player
+            && self.generation == other.generation
+    }
+
     /// Cloudflare and native test clients use this same fixed byte layout.
     /// The random nonce and room identifier must come from OS cryptography.
     pub fn sign(self, server_key: &SecretKey) -> Result<[u8; TICKET_LEN], RelayError> {
@@ -389,16 +397,12 @@ impl ClientSession {
         _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
         let mut next = Self::new(ticket, packet_key, [0; 32])?;
-        if next.ticket.room != self.ticket.room
-            || next.ticket.source != self.ticket.source
-            || next.ticket.player != self.ticket.player
-            || next.ticket.generation != self.ticket.generation
+        if !next.ticket.same_identity(&self.ticket)
             || next.ticket.nonce == self.ticket.nonce
             || next.ticket.expires <= self.ticket.expires
         {
             return Err(RelayError::Authentication);
         }
-        next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
         next.stream_transport = self.stream_transport;
         Ok(next)

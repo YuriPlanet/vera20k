@@ -629,14 +629,6 @@ impl LiveCommandSession {
         self.transport.send_terminal_global(payload, recipients)
     }
 
-    pub fn enqueue_reliable_globals(
-        &mut self,
-        payload: &[u8],
-        recipients: &[SocketAddrV4],
-    ) -> Option<u64> {
-        self.transport.enqueue_reliable_globals(payload, recipients)
-    }
-
     pub fn peers(&self) -> &[CommandPeerProgress] {
         self.exchange.peers()
     }
@@ -748,13 +740,6 @@ impl LiveCommandSession {
     /// Readers must project numeric counters, never Debug-format its errors.
     pub fn service_report(&self) -> Option<&UdpServiceReport> {
         self.last_service.as_ref()
-    }
-
-    /// The queue drained with no reliable global discard since this batch
-    /// entered it. The I/O worker observes both under the transport lock.
-    pub fn global_sends_delivered(&self, discarded_at_enqueue: u64) -> bool {
-        let observed = self.transport.global_observation();
-        observed.queued_sends == 0 && observed.discarded_global_sends == discarded_at_enqueue
     }
 
     pub fn awaiting_initial_barrier(&self) -> bool {

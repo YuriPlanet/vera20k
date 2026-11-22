@@ -46,7 +46,9 @@ pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant,
     decode_external_watch_grant, end_spawned_match, relay_ticket_is_watch,
 };
-pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
+pub(crate) use live_service::{
+    local_choices_agreed, online_cleanup_pending, online_match_id, relay_pass_lapsed,
+};
 pub(crate) use login::{
     account_form_layout, login_layout, status_key as login_status_key,
 };
@@ -250,6 +252,9 @@ pub(crate) struct WolVisit {
     /// VERA: the lobby lets a room's players visit the public lobby, as
     /// its sign-in answered (docs/lobby-protocol.md "Visiting the lobby").
     lobby_visits: bool,
+    /// VERA: the lobby takes Multiplayer Campaign rooms: its sign-in offered
+    /// `campaign_rooms` and it has refused no campaign room's options since.
+    lobby_campaign_rooms: bool,
     /// `![0xB77DC0]`: connected to a server. A WOLAPI creation
     /// (`0x00786485`) and a failed login clear it, a connect sets it, and a
     /// lost connection outside a match clears it.
@@ -316,6 +321,7 @@ impl WolVisit {
             problem_line: None,
             lobby_watches: None,
             lobby_visits: false,
+            lobby_campaign_rooms: false,
             connected: false,
             disconnected: false,
             relogin: None,
@@ -457,13 +463,17 @@ pub(crate) fn lobby_watches(state: &AppState) -> Option<bool> {
         .and_then(|visit| visit.lobby_watches)
 }
 
-/// VERA: whether the online lobby lets a room's players visit the public
-/// lobby, as its sign-in answered; a lobby from before it does not.
+/// VERA: whether the online lobby takes Multiplayer Campaign rooms.
 pub(crate) fn lobby_campaign_rooms(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().and_then(|visit| visit.live_service.as_ref())
-        .is_some_and(|service| service.campaign_rooms)
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.lobby_campaign_rooms)
 }
 
+/// VERA: whether the online lobby lets a room's players visit the public
+/// lobby, as its sign-in answered; a lobby from before it does not.
 pub(crate) fn lobby_visits(state: &AppState) -> bool {
     state
         .frontend

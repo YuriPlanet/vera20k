@@ -521,6 +521,52 @@ fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
         .unwrap();
 }
 
+/// The route keeps only a certificate its session admits: one for the
+/// ticket's room that names its source.
+#[test]
+fn a_relay_route_refuses_an_ordering_certificate_for_another_room() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let mut wire = transport();
+    wire.enable_relay(
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+        &ticket,
+        *derive_packet_key(&key, &ticket).expose_for_https(),
+        [29; 32],
+    )
+    .unwrap();
+    let certificate = |room| {
+        OrderingCertificate {
+            room,
+            sources_mask: 0b11,
+            tick_hz: 30,
+            expires: 2000,
+            pacing: Default::default(),
+            ordered_alone: false,
+        }
+        .sign(&key)
+        .unwrap()
+    };
+    assert!(
+        wire.set_ordering_certificate(certificate([28; 16]))
+            .is_err()
+    );
+    assert_eq!(wire.ordering_certificate(), None);
+    wire.set_ordering_certificate(certificate([27; 16]))
+        .unwrap();
+}
+
 /// `ordered_relay` once a second source's Ready has started its match and the
 /// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
 /// relay a heartbeat 250 ms later (spec §6.6). The relay has read nothing
@@ -1924,10 +1970,11 @@ fn acknowledge_campaign_delivery(
         attempt: 1,
         signal,
     };
-    let snapshot = live
-        .enqueue_reliable_globals(&record.encode(), &[peer.primary_addr().unwrap()])
+    let batch = live
+        .global_mut()
+        .send_reliable_batch(&record.encode(), &[peer.primary_addr().unwrap()])
         .unwrap();
-    assert!(!live.global_sends_delivered(snapshot));
+    assert!(!live.global().batch_delivered(batch));
     live.service_transport(now);
     malformed_after_receipt(&mut peer, now, 1);
     assert_eq!(
@@ -1943,7 +1990,7 @@ fn acknowledge_campaign_delivery(
         );
         std::thread::yield_now();
     }
-    assert!(live.global_sends_delivered(snapshot));
+    assert!(live.global().batch_delivered(batch));
 }
 
 #[test]
@@ -1983,7 +2030,8 @@ fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
         timeout: 1,
     });
     assert!(
-        live.enqueue_reliable_globals(b"no ACK", &[ipv4_addr(&absent).unwrap()])
+        live.global_mut()
+            .send_reliable_batch(b"no ACK", &[ipv4_addr(&absent).unwrap()])
             .is_some()
     );
     live.service_transport(1);
@@ -2002,6 +2050,29 @@ fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
 }
 
 #[test]
+fn a_later_unrelated_global_timeout_does_not_block_an_acknowledged_stage_receipt() {
+    use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+
+    let mut live = live_for_campaign_delivery(transport(), 1);
+    let absent = raw_peer();
+    live.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    // A chat to a peer that stops answering is in flight before the receipt
+    // and times out after the receipt is queued.
+    assert!(live.send_global(
+        b"no ACK",
+        true,
+        GlobalDestination::direct(ipv4_addr(&absent).unwrap())
+    ));
+    live.service_transport(1);
+    assert_eq!(live.global().queued_send_count(), 1);
+    acknowledge_campaign_delivery(&mut live, Signal::StageBegun(StageChoice::Retry), 3);
+}
+
+#[test]
 fn a_worker_discard_cannot_settle_a_terminal_global_send() {
     let mut wire = transport();
     let peer = raw_peer();
@@ -2013,8 +2084,9 @@ fn a_worker_discard_cannot_settle_a_terminal_global_send() {
         max_retries: u32::MAX,
         timeout: 1,
     });
-    let snapshot = wire
-        .enqueue_reliable_globals(b"terminal receipt", &[endpoint])
+    let batch = wire
+        .global_mut()
+        .send_reliable_batch(b"terminal receipt", &[endpoint])
         .unwrap();
     // The worker sends the receipt, then times it out before the app polls.
     wire.lock().background_pass(1, false);
@@ -2024,7 +2096,7 @@ fn a_worker_discard_cannot_settle_a_terminal_global_send() {
     assert_eq!(live.global().queued_send_count(), 0);
     assert!(live.service_report().is_none());
     assert!(
-        !live.global_sends_delivered(snapshot),
+        !live.global().batch_delivered(batch),
         "retry expiry is not an ACK"
     );
 }

@@ -579,15 +579,13 @@ pub enum OrderEvent {
     Unrecognized,
 }
 
-#[derive(Clone)]
 pub(super) struct SealedBatch {
     pub(super) id: u64,
     pub(super) opaque: Vec<u8>,
 }
 
-#[derive(Clone)]
 pub(super) struct ClientOrdering {
-    certificate: Vec<u8>,
+    certificate: OrderingCertificate,
     agreement: [u8; 32],
     // The four most recently sealed batches retain their exact bytes.
     // Accepted entries stay cached until a new batch needs the slot, so this
@@ -606,7 +604,7 @@ pub(super) struct ClientOrdering {
 
 impl ClientOrdering {
     /// A player's or a watcher's state for a match it has not yet ordered in.
-    fn new(certificate: Vec<u8>, agreement: [u8; 32], tick_hz: u16) -> Self {
+    fn new(certificate: OrderingCertificate, agreement: [u8; 32]) -> Self {
         Self {
             certificate,
             agreement,
@@ -615,7 +613,7 @@ impl ClientOrdering {
             accepted_through: 0,
             restoring: false,
             leave: None,
-            link: crate::link::ClientLink::new(tick_hz),
+            link: crate::link::ClientLink::new(certificate.tick_hz),
         }
     }
 
@@ -641,18 +639,15 @@ impl ClientSession {
     pub const ORDERING_SUBMISSION_WINDOW: usize = 4;
 
     /// Move the current stream cache at hop-lease promotion, after the old
-    /// route's last receive/submit. Candidate creation alone is only a snapshot.
+    /// route's last receive/submit. A renewal candidate holds no ordering
+    /// until this moves it.
     ///
     /// Also moves the path measurement (spec §4.7): `loss‰`, `srtt`, `base`
     /// and the uplink state carry over; this hop's `down` window, send log
     /// and loss cursor start empty. The next `poll_uplink` on this session
     /// sends an UPLINK at once, with PUSH and every unacknowledged batch.
     pub fn adopt_ordering_from(&mut self, previous: &mut Self) -> Result<(), RelayError> {
-        if self.ticket.room != previous.ticket.room
-            || self.ticket.source != previous.ticket.source
-            || self.ticket.player != previous.ticket.player
-            || self.ticket.generation != previous.ticket.generation
-        {
+        if !self.ticket.same_identity(&previous.ticket) {
             return Err(RelayError::Authentication);
         }
         self.ordering = previous.ordering.take();
@@ -677,6 +672,40 @@ impl ClientSession {
         }
     }
 
+    /// The lobby's ordering certificate, parsed, if it names this hop's room
+    /// and, for a player, its source. Only the relay checks its signature.
+    pub fn admit_certificate(&self, certificate: &[u8]) -> Result<OrderingCertificate, RelayError> {
+        let parsed = OrderingCertificate::parse(certificate)?;
+        if parsed.room != self.ticket.room
+            || (!self.is_watching() && parsed.sources_mask & (1 << self.ticket.source) == 0)
+        {
+            return Err(RelayError::Authentication);
+        }
+        Ok(parsed)
+    }
+
+    /// Starts this hop's ordering for the match `certificate` and `agreement`
+    /// name, or checks that a later Ready names the same one.
+    fn join_ordering(&mut self, certificate: &[u8], agreement: [u8; 32]) -> Result<(), RelayError> {
+        let parsed = self.admit_certificate(certificate)?;
+        match &self.ordering {
+            Some(current)
+                if current.certificate.same_match(&parsed) && current.agreement == agreement =>
+            {
+                Ok(())
+            }
+            Some(_) => Err(RelayError::Authentication),
+            None => {
+                self.ordering = Some(ClientOrdering::new(parsed, agreement));
+                #[cfg(any(test, feature = "test-support"))]
+                if self.measured_good {
+                    self.preset_uplink_measured_good();
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub(super) fn configure_ordering(
         &mut self,
         certificate: &[u8],
@@ -686,32 +715,12 @@ impl ClientSession {
         if !self.ready {
             return Err(RelayError::Unregistered);
         }
-        let parsed = OrderingCertificate::parse(certificate)?;
-        if parsed.room != self.ticket.room || parsed.sources_mask & (1 << self.ticket.source) == 0 {
+        if self.is_watching() {
             return Err(RelayError::Authentication);
         }
-        let certificate = certificate.to_vec();
-        if let Some(current) = &mut self.ordering {
-            let old = OrderingCertificate::parse(&current.certificate)?;
-            if !old.same_match(&parsed) || current.agreement != agreement {
-                return Err(RelayError::Authentication);
-            }
-            if parsed.expires > old.expires {
-                current.certificate = certificate.clone();
-            }
-        } else {
-            self.ordering = Some(ClientOrdering::new(
-                certificate.clone(),
-                agreement,
-                parsed.tick_hz,
-            ));
-            #[cfg(any(test, feature = "test-support"))]
-            if self.measured_good {
-                self.preset_uplink_measured_good();
-            }
-        }
+        self.join_ordering(certificate, agreement)?;
         let mut payload = vec![READY_REQUEST];
-        payload.extend_from_slice(&certificate);
+        payload.extend_from_slice(certificate);
         payload.extend_from_slice(&agreement);
         self.encode(CONTROL, &payload, out)
     }

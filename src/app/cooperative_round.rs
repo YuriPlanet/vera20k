@@ -26,6 +26,7 @@
 //! lobby as Quit does, and the pair goes on through Use Saved Campaign.
 
 use crate::app::frontend::skirmish_session::cooperative::CooperativeMissionRow;
+use crate::app::match_runtime::network_match::participant_name;
 use crate::app::match_runtime::session::{
     CooperativeRoundEvent, CooperativeRoundStep, MatchSession, SessionMode,
 };
@@ -584,7 +585,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
             .set_cooperative_difficulty(difficulty),
         CooperativeRoundStep::PeerLeft { source } => {
             // 0x005E2700(-1, GUI:PlayerLeftCoop, name).
-            let name = participant_name(state, source);
+            let name = participant_name(&state.match_state.session, source);
             let format = state.csf_text("GUI:PlayerLeftCoop");
             let text = crate::assets::csf_file::format_csf(
                 &format,
@@ -597,7 +598,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
             text,
             color,
         } => {
-            let name = participant_name(state, source);
+            let name = participant_name(&state.match_state.session, source);
             append_line(state, format!("{name}: {text}"), color);
         }
         CooperativeRoundStep::Exit(true) => begin_next_mission(state),
@@ -786,16 +787,6 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
         .filter(|index| *index != local)
         .collect();
     state.match_state.session.request_chat(recipients, text);
-}
-
-fn participant_name(state: &AppState, source: usize) -> String {
-    state
-        .match_state
-        .session
-        .network_setup()
-        .and_then(|launch| launch.humans.get(source))
-        .map(|human| human.name.clone())
-        .unwrap_or_default()
 }
 
 /// `0x005E2700` with a `COLORREF` (-1 the list's default) into BC6's list
