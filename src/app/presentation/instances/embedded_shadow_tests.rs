@@ -293,3 +293,123 @@ fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
     assert_eq!(piece.instance.position, [10.0, 20.0]);
     assert_eq!(piece.instance.z_adjust, -2.0);
 }
+
+/// The turreted SHP branch sets Unit `+0x6D3` (`0x0073C7F2`..`0x0073CDF9`),
+/// and `TechnoClass_DrawSHP` draws no embedded shadow for a Unit with it set
+/// (`0x00706151..0x00706163`). A stock turreted SHP Unit therefore draws one
+/// shadow, the branch's own (`0x0073C733`), under its body and turret.
+#[test]
+fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
+    use crate::app::presentation::frame::PresentationFrame;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::runtime::{SimResources, SimRuntime};
+
+    let art = IniFile::from_str("[TANK]\nVoxel=no\nWalkFrames=1\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nTurret=yes\nSpeed=4\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    assert!(!rules.ares());
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let id = sim
+        .spawn_object("TANK", "Americans", 10, 20, 0, &rules)
+        .unwrap();
+    let runtime = SimRuntime {
+        simulation: sim,
+        resources: SimResources::new(rules).into(),
+    };
+    let frame = PresentationFrame::capture(&runtime, &Default::default(), false);
+    let record = frame.object(id).unwrap();
+    assert!(!record.is_voxel());
+    // Eight body frames, the 32-frame turret ring from frame 8, then the
+    // shadow half.
+    let entry = ShpSpriteEntry {
+        uv_origin: [0.0; 2],
+        uv_size: [1.0; 2],
+        pixel_size: [2.0; 2],
+        offset_x: 0.0,
+        offset_y: 0.0,
+        canvas_rect: [0.0, 0.0, 2.0, 2.0],
+        extended: true,
+        page: 0,
+        source_palette: 1,
+    };
+    let mut atlas = SpriteAtlas::from_test_entries(
+        (0..80)
+            .map(|frame| {
+                (
+                    ShpSpriteKey {
+                        palette_context: ShpPaletteContext::Legacy,
+                        type_id: "TANK".into(),
+                        facing: 0,
+                        frame,
+                        house_color: HouseColorIndex(0),
+                    },
+                    ShpSpriteEntry {
+                        page: u8::from(frame >= 40),
+                        ..entry
+                    },
+                )
+            })
+            .collect(),
+    );
+    atlas.set_object_shp_frame_count_for_test("TANK", 80);
+    let [x, y] = record.pose.screen;
+    let camera = [x - 400.0, y - 300.0];
+    let colors =
+        crate::map::houses::HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(0))]);
+    let mut draws = crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
+    build_shp_instances_from_inputs(
+        &ShpInputs {
+            runtime: &runtime,
+            frame: &frame,
+            atlas: Some(&atlas),
+            overlay_atlas: None,
+            unit_atlas: None,
+            voxel_images: &Default::default(),
+            zshape_skips: &Default::default(),
+            depth_tested_images: None,
+            camera,
+            render_size: [800, 600],
+            zoom: 1.0,
+            building_viewport: crate::app::presentation::render::tactical_world_viewport(
+                camera,
+                [0, 0, 800, 600],
+                None,
+            ),
+            axis: crate::render::batch::DepthAxis {
+                origin_y: 0.0,
+                world_height: 10_000.0,
+            },
+            local_owner: Some("Americans"),
+            ignore_visibility: true,
+            lighting: &crate::map::lighting::CellLightGrid::new(),
+            house_colors: &colors,
+            building_zshape: None,
+        },
+        &mut draws,
+        frame.display_order(&runtime.simulation),
+    );
+    let draws = draws.into_owned();
+    let targets: Vec<_> = draws
+        .iter()
+        .filter(|draw| draw.parent.id == id)
+        .flat_map(|draw| &draw.pieces)
+        .map(|piece| piece.target)
+        .collect();
+    let shadow =
+        ObjectTexture::SpriteAtlasEdit(1, crate::render::terrain_draw::TerrainPiece::Shadow);
+    assert_eq!(
+        targets,
+        [shadow, ObjectTexture::ShpPage(0), ObjectTexture::ShpPage(0)],
+        "branch shadow, body, turret"
+    );
+}

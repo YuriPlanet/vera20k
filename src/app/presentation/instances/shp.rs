@@ -911,10 +911,15 @@ pub(crate) fn shp_visitor<'a>(
             // above remains before its body.
             // Native positive/NoShadow controls:
             // tools/procedural_drawing_oracle/infantry_embedded_shadow.json.
+            // The turreted branch sets Unit `+0x6D3` (`0x0073C7F2`) until it
+            // returns (`0x0073CDF9`), and Techno705E00 clears the embedded
+            // shadow of a Unit with it set (`0x00706151..0x00706163`): neither
+            // its body nor its turret draws one, in either game.
             if matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry
             ) && !skip_embedded_shadow
+                && turret_start.is_none()
                 && let Some(body_entry) = entry
                 && let Some(shadow) = embedded_shp_shadow_piece(
                     atlas,
@@ -933,9 +938,9 @@ pub(crate) fn shp_visitor<'a>(
             // A `Turret=yes` SHP Unit (`+0xCA1`, gate `0x0073C725`) draws its
             // turret from the same SHP after the body (`0x0073CD08`), at the
             // body's draw point; no `TurretOffset` applies. That draw goes
-            // through `TechnoClass_DrawSHP @ 0x00705E00` too, so the turret
-            // frame gets its own embedded shadow; Ares' skip flag was spent on
-            // the body. Residual: the native turret branch draws body and
+            // through `TechnoClass_DrawSHP @ 0x00705E00` too, whose `+0x6D3`
+            // gate draws no embedded shadow for it. Residual: the native
+            // turret branch draws body and
             // turret with flags 0x2800/0x2820 and no -16 Z (unlike the
             // no-turret branch used here), lifts the point 14 px when `+0x424`
             // is set (`0x0073C753`) and draws a voxel barrel (`type+0xC0`)
@@ -973,17 +978,6 @@ pub(crate) fn shp_visitor<'a>(
                         render_z: parent.policy.render_z,
                         instance: turret_instance,
                     });
-                    pieces.extend(embedded_shp_shadow_piece(
-                        atlas,
-                        actual_type,
-                        entity,
-                        cells.as_ref(),
-                        &turret_key,
-                        turret_entry,
-                        turret_instance,
-                        draw_decision,
-                        parent.policy,
-                    ));
                 }
             }
             ground_objects.object(parent, pieces.drain(..));
@@ -2655,7 +2649,7 @@ mod tests {
         use crate::rules::ruleset::RuleSet;
         use crate::sim::game_entity::GameEntity;
 
-        let entity = GameEntity::test_default_of_category(
+        let mut entity = GameEntity::test_default_of_category(
             1,
             "TANK",
             "Americans",
@@ -2664,6 +2658,7 @@ mod tests {
             EntityCategory::Unit,
         );
         let interner = crate::sim::intern::test_interner();
+        entity.body_facing = crate::sim::movement::FacingClass::new(0x1000, 0);
         let record = ObjectRecord::of_test(&entity);
         let art = IniFile::from_str("[TANK]\nVoxel=no\nFacings=16\nWalkFrames=4\n");
         let draw = |ares_key: &str| {
@@ -2684,7 +2679,7 @@ mod tests {
             );
             (
                 rules.ares(),
-                layout.body_frame(&record, 0x1000),
+                layout.body_frame(&record),
                 layout.turret_start_frame(),
             )
         };
