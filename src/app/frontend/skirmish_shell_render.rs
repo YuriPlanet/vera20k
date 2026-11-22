@@ -592,6 +592,7 @@ fn render_skirmish_shell_with_atlas(
             buttons,
             caret_of: Some(&caret_of),
             rows_of: Some(&menu_rows),
+            skirmish_lists: true,
             ..Default::default()
         };
         gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], style)
@@ -603,7 +604,7 @@ fn render_skirmish_shell_with_atlas(
         (Some(_), Some(seed_layout)) => shell.saved_seed_browser.as_ref().map(|browser| {
             let (key, fallback) = browser.mode.title_label();
             let title = state.csf_label(key, fallback);
-            saved_games::seed_browser_paint(state, seed_layout, browser, &title)
+            saved_games::seed_browser_paint(state, atlas, seed_layout, browser, &title)
         }),
         (Some(_), None) if leaving => None,
         (Some(choose_map_layout), None) => match setup_layout {
@@ -613,7 +614,7 @@ fn render_skirmish_shell_with_atlas(
         (None, _) => setups_layout.as_ref().zip(shell.setups_browser.as_ref()).map(
             |(setups_layout, browser)| {
                 let title = crate::i18n::tr("VERA:SetupsTitle");
-                saved_games::seed_browser_paint(state, setups_layout, browser, &title)
+                saved_games::seed_browser_paint(state, atlas, setups_layout, browser, &title)
             },
         ),
     };
@@ -631,10 +632,10 @@ fn render_skirmish_shell_with_atlas(
         if let Some(validation) = validation.as_ref() {
             let size = shell_box::render_size(state);
             let out = Some(&mut instances);
-            shell_box::push_skirmish_box(state, size, validation, validation_pressed, validation_look, out, None);
+            shell_box::push_skirmish_box(state, Some(atlas), size, validation, validation_pressed, validation_look, out, None);
         }
         if let Some(prompt) = message_box {
-            shell_box::push_choose_map_prompt(state, &prompt, Some(&mut instances), None);
+            shell_box::push_choose_map_prompt(state, Some(atlas), &prompt, Some(&mut instances), None);
         }
         instances
     } else {
@@ -704,12 +705,12 @@ fn render_skirmish_shell_with_atlas(
     };
     shell_draws.append(&mut dialog_paint.texts);
     if let Some(prompt) = message_box {
-        shell_box::push_choose_map_prompt(state, &prompt, None, Some(&mut shell_draws));
+        shell_box::push_choose_map_prompt(state, Some(atlas), &prompt, None, Some(&mut shell_draws));
     }
     if let Some(validation) = validation.as_ref() {
         let size = shell_box::render_size(state);
         let out = Some((&mut shell_draws, false));
-        shell_box::push_skirmish_box(state, size, validation, validation_pressed, validation_look, None, out);
+        shell_box::push_skirmish_box(state, Some(atlas), size, validation, validation_pressed, validation_look, None, out);
     }
     let marker_label_buffer = state
         .renderer

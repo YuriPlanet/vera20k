@@ -178,6 +178,8 @@ pub(super) struct SkirmishCapture {
     /// Once `0x102` settles, open VERA's Game Options through its button.
     game_options: bool,
     game_options_opened: bool,
+    /// With `game_options`: press VERA's Setups instead.
+    setups: bool,
     /// The random-map routes rest the pointer on Create Random Map until the
     /// chooser's help has typed in before pressing it: the retail helper's
     /// click rests 100 ms before its press and 90 ms more before its release,
@@ -405,6 +407,14 @@ impl SkirmishCapture {
     pub(super) fn game_options() -> Self {
         Self {
             game_options: true,
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn setups() -> Self {
+        Self {
+            game_options: true,
+            setups: true,
             ..Self::default()
         }
     }
@@ -829,21 +839,27 @@ impl SkirmishCapture {
     /// VERA's Game Options through the production press and release; the
     /// pointer then rests again.
     fn open_game_options(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        let (id, action) = match self.setups {
+            true => (0x7102, "Setups"),
+            false => (0x7101, "Game Options"),
+        };
         let button = crate::app::frontend::shell_layout::skirmish_layout(state)
             .statics
-            .get(0x7101)
-            .context("0x102 has no Game Options")?;
+            .get(id)
+            .with_context(|| format!("0x102 has no {action}"))?;
         Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
         App::handle_skirmish_shell_mouse_down(state);
         App::handle_skirmish_shell_mouse_up(state);
         Self::set_pointer(state, self.rest_point());
-        ensure!(
-            state.frontend.skirmish_shell_state.game_options.is_some(),
-            "Game Options did not open its box"
-        );
+        let shell = &state.frontend.skirmish_shell_state;
+        let opened = match self.setups {
+            true => shell.setups_browser.is_some(),
+            false => shell.game_options.is_some(),
+        };
+        ensure!(opened, "{action} did not open its page");
         self.game_options_opened = true;
         self.route
-            .push(json!({"dialog": 0x102, "frame": frame, "action": "Game Options"}));
+            .push(json!({"dialog": 0x102, "frame": frame, "action": action}));
         Ok(())
     }
 

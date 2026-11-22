@@ -283,7 +283,14 @@ pub(crate) fn render_lan_lobby(
             let size = (width as i32, height as i32);
             let pressed = |id| pressed && id == OK;
             super::shell_box::push_skirmish_box(
-                state, size, &notice, pressed, look, sprites, texts,
+                state,
+                Some(atlas),
+                size,
+                &notice,
+                pressed,
+                look,
+                sprites,
+                texts,
             );
         }
     }

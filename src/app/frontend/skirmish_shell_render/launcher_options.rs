@@ -32,7 +32,7 @@ pub(crate) fn paint_page(
 ) -> GuiPaint {
     let (gui, panel) = dialog.shell_gui();
     let art = |id| match dialog.shell_control(id)? {
-        Control::Button(button) if button.on_page() => Some(ButtonArt::Modal),
+        Control::Button(button) if button.on_page() => Some(ButtonArt::ModalSqueezed),
         Control::Button(_) if column => Some(ButtonArt::Panel),
         _ => None,
     };

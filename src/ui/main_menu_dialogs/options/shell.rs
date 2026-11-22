@@ -1309,15 +1309,6 @@ impl OptionsDialogState {
             hovered: open.hot_row,
         })
     }
-
-    /// The value the slider's node holds, which its plaque prints.
-    pub(crate) fn shell_slider_value(&self, id: LauncherTrackbarId) -> Option<i32> {
-        let node = self.shell.node(Control::Setting(Setting::Slider(id)))?;
-        match self.shell.gui.get(node, Prop::Pos) {
-            Ok(Some(Value::Int(value))) => Some(*value),
-            _ => None,
-        }
-    }
 }
 
 #[cfg(all(test, tests_ui))]

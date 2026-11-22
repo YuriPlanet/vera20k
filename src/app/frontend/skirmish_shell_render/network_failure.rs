@@ -51,6 +51,7 @@ pub(crate) fn render_network_failure(
     let (controls_out, texts_out) = (Some(&mut controls), Some((&mut texts, false)));
     super::shell_box::push_skirmish_box(
         state,
+        atlas,
         size,
         &shell_box,
         pressed,

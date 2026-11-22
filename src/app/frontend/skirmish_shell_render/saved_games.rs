@@ -11,6 +11,7 @@ use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
 use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};
@@ -67,16 +68,14 @@ fn row_cells<I>(
 /// plain sunken plate, and the column's buttons in `buttons`' art.
 pub(crate) fn paint_saved_browser<I>(
     state: &AppState,
+    atlas: Option<&SkirmishShellChromeAtlas>,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
     buttons: ButtonArt,
     rows: bool,
 ) -> GuiPaint {
     let ui = &browser.ui;
-    let (Some(atlas), Some(root)) = (
-        state.frontend.skirmish_shell_chrome.as_ref(),
-        ui.root_in(BROWSER_DIALOG),
-    ) else {
+    let (Some(atlas), Some(root)) = (atlas, ui.root_in(BROWSER_DIALOG)) else {
         return GuiPaint::default();
     };
     let cells =
@@ -96,6 +95,7 @@ pub(crate) fn paint_saved_browser<I>(
 /// texts after `texts`, which give up the box's rect first.
 pub(crate) fn push_saved_browser_box<I>(
     state: &AppState,
+    atlas: Option<&SkirmishShellChromeAtlas>,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
     sprites: &mut Vec<SpriteInstance>,
@@ -104,13 +104,13 @@ pub(crate) fn push_saved_browser_box<I>(
     let Some(prompt) = browser.prompt.as_ref() else {
         return;
     };
-    let atlas = state.frontend.skirmish_shell_chrome.as_ref();
     let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
     let size = (layout.screen.w, layout.screen.h);
     let pressed = |id| browser.pressed(id);
     let texts = Some((texts, true));
     push_skirmish_box(
         state,
+        atlas,
         size,
         &prompt.shell_box(),
         pressed,
@@ -124,11 +124,13 @@ pub(crate) fn push_saved_browser_box<I>(
 /// VERA's Setups page over `0x102`, its `title` centred over the column.
 pub(super) fn seed_browser_paint<I>(
     state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
     layout: &SavedSeedLayout,
     browser: &SavedSeedBrowserState<I>,
     title: &str,
 ) -> GuiPaint {
-    let mut paint = paint_saved_browser(state, layout, browser, ButtonArt::Panel, true);
+    let mut paint =
+        paint_saved_browser(state, Some(atlas), layout, browser, ButtonArt::PanelCentred, true);
     super::text::push_text_draw(
         &mut paint.texts,
         state,
@@ -141,6 +143,7 @@ pub(super) fn seed_browser_paint<I>(
     );
     push_saved_browser_box(
         state,
+        Some(atlas),
         layout,
         browser,
         &mut paint.controls,
@@ -183,7 +186,14 @@ pub(crate) fn render_saved_game_shell(
             paint.text(&text, rect, align);
         }
         // The column's buttons are the active game's SIDEBTTN art.
-        let widgets = paint_saved_browser(state, &layout, browser, ButtonArt::Host, true);
+        let widgets = paint_saved_browser(
+            state,
+            state.frontend.skirmish_shell_chrome.as_ref(),
+            &layout,
+            browser,
+            ButtonArt::Host,
+            true,
+        );
         paint.controls.extend(widgets.controls);
         paint.texts.extend(widgets.texts);
         for (id, rect, label, enabled) in [
@@ -213,6 +223,7 @@ pub(crate) fn render_saved_game_shell(
         // title and column labels included.
         push_saved_browser_box(
             state,
+            state.frontend.skirmish_shell_chrome.as_ref(),
             &layout,
             browser,
             &mut paint.controls,

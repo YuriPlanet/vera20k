@@ -77,6 +77,10 @@ pub(crate) enum ButtonArt {
     /// while `Toggled` (record `+0xC5`), with the type-1 caption, or one in
     /// their rect in their own `Align`.
     Panel,
+    /// [`Self::Panel`]'s art with a caption that keeps the rect's centre,
+    /// pressed or not, and the normal colour when disabled (the saved-file
+    /// browsers over Skirmish): only the art shows either.
+    PanelCentred,
     /// [`Self::Panel`] on a family page's column: the SDBTNANM art on the
     /// main-menu chrome ([`GuiPaint::column`]), fitted right-anchored to the
     /// cell, and the type-1 caption inset in the window rect.
@@ -87,6 +91,9 @@ pub(crate) enum ButtonArt {
     /// [`Self::Modal`]'s art with its caption centred on the whole rect,
     /// pressed or not (VERA's team bar).
     ModalCentred,
+    /// [`Self::Modal`] with a page button's caption: grown with the page and
+    /// squeezed onto the face (Options').
+    ModalSqueezed,
     /// A framed plate with its caption in its `Align` (VERA's Extras rows).
     Plate,
     /// The caption alone, in its `Align` (`0x113`'s text sort buttons, whose
@@ -99,7 +106,8 @@ pub(crate) enum ButtonArt {
 pub(crate) enum ComboArt {
     /// The owner-draw face, arrow and caption.
     Plain,
-    /// [`Self::Plain`] in the owner-draw two-pixel bevel (`0x105`'s).
+    /// [`Self::Plain`] in the owner-draw two-pixel bevel, with a list of
+    /// its own (`0x105`'s).
     Framed,
     /// No face: the host paints it (VERA's roster cells); only an open
     /// list paints.
@@ -135,6 +143,10 @@ pub(crate) struct GuiStyle<'a> {
     pub(crate) control_lists: bool,
     /// The combos' faces.
     pub(crate) combos: ComboArt,
+    /// The open lists are Skirmish `0x102`'s: a thumb as wide as its
+    /// scrollbar, and rows cut short of it (`0x0060DF38`). The other pages'
+    /// lists keep the thumb a pixel in from each side and their rows whole.
+    pub(crate) skirmish_lists: bool,
     /// An edit's caret shows (it has the focus, in its blink) by the host's
     /// word, for a tree the shell controller does not own.
     pub(crate) caret_of: Option<&'a dyn Fn(NodeId) -> bool>,
@@ -164,6 +176,7 @@ impl Default for GuiStyle<'_> {
             enabled_of: None,
             control_lists: false,
             combos: ComboArt::Plain,
+            skirmish_lists: false,
             caret_of: None,
             edit_fill: None,
             text_factor: None,
@@ -272,7 +285,6 @@ fn items(gui: &Gui, node: NodeId, prop: Prop) -> &[String] {
         _ => &[],
     }
 }
-
 
 /// The widgets under `root`, in tree order. Invisible subtrees are skipped.
 pub(crate) fn paint_gui_children(
@@ -421,13 +433,13 @@ pub(crate) fn paint_gui_with(
                     .and_then(|(art_of, id)| art_of(id))
                     .unwrap_or(style.buttons);
                 let pressed = match art {
-                    ButtonArt::Modal | ButtonArt::ModalCentred => held,
+                    ButtonArt::Modal | ButtonArt::ModalCentred | ButtonArt::ModalSqueezed => held,
                     _ => captured,
                 } == Some(node);
                 match art {
                     ButtonArt::Host => continue,
                     ButtonArt::Caption => {}
-                    ButtonArt::Panel => super::chrome::push_right_panel_button_shp(
+                    ButtonArt::Panel | ButtonArt::PanelCentred => super::chrome::push_right_panel_button_shp(
                         &mut paint.controls,
                         atlas,
                         rect,
@@ -443,14 +455,15 @@ pub(crate) fn paint_gui_with(
                             pressed,
                             highlighted: flag(gui, node, Prop::Toggled, false),
                         };
-                        let frame =
-                            super::chrome::right_panel_button_sdbtnanm_frame_index(visual, !enabled);
+                        let frame = super::chrome::right_panel_button_sdbtnanm_frame_index(
+                            visual, !enabled,
+                        );
                         let chrome = state.frontend.main_menu_shell_chrome.as_ref();
                         paint.column.extend(chrome.and_then(|chrome| {
                             shell_paint::column_button(chrome, rect, frame, SHELL_CONTROL_DEPTH)
                         }));
                     }
-                    ButtonArt::Modal | ButtonArt::ModalCentred => {
+                    ButtonArt::Modal | ButtonArt::ModalCentred | ButtonArt::ModalSqueezed => {
                         let button = ModalButton {
                             rect,
                             pressed,
@@ -493,7 +506,7 @@ pub(crate) fn paint_gui_with(
                 let rgb = text_rgb(
                     gui,
                     node,
-                    enabled,
+                    enabled || art == ButtonArt::PanelCentred,
                     style.rgb,
                     Some(shell_paint::SHELL_TEXT_RGB_DISABLED),
                 );
@@ -504,7 +517,7 @@ pub(crate) fn paint_gui_with(
                         ),
                         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     ),
-                    (ButtonArt::ModalCentred, _) => {
+                    (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => {
                         (rect, ShellAlign::H_CENTER | ShellAlign::V_CENTER)
                     }
                     (_, Some(_)) => (rect, align),
@@ -668,7 +681,7 @@ pub(crate) fn paint_gui_with(
                     let rows = cells.into_iter().skip(view.top).take(geometry.visible_rows);
                     for (visible, row) in rows.enumerate() {
                         let r = geometry.row(visible);
-                        paint_cells(&mut paint, state, style, row, r, scale, covered);
+                        paint_cells(&mut paint, state, atlas, style, row, r, scale, covered);
                     }
                     continue;
                 }
@@ -784,13 +797,14 @@ pub(crate) fn paint_gui_with(
 fn paint_cells(
     paint: &mut GuiPaint,
     state: &AppState,
+    atlas: &SkirmishShellChromeAtlas,
     style: GuiStyle<'_>,
     cells: CellRow,
     row: RectPx,
     scale: ShellScale,
     covered: bool,
 ) {
-    if let (true, Some(atlas)) = (cells.filled, state.frontend.skirmish_shell_chrome.as_ref()) {
+    if cells.filled {
         super::chrome::push_solid_rect(
             &mut paint.controls,
             atlas,
@@ -896,6 +910,51 @@ fn paint_combo(
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
+    if style.combos == ComboArt::Framed {
+        // `0x105`'s list is no `ComboDropWin`: a one-pixel outline, the
+        // selection lit wherever the pointer is, its rows uncut.
+        let depth = SHELL_DROPDOWN_DEPTH - 0.00015;
+        super::chrome::push_solid_rect(
+            &mut paint.popup,
+            atlas,
+            popup.rect,
+            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+            depth,
+        );
+        super::chrome::push_rect_outline(
+            &mut paint.popup,
+            atlas,
+            popup.rect,
+            super::OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68,
+            depth - 0.00001,
+        );
+        if let Some(row) = selected.and_then(|row| popup.row_rect(row)) {
+            super::chrome::push_solid_rect(
+                &mut paint.popup,
+                atlas,
+                row,
+                OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                depth - 0.00002,
+            );
+        }
+        let left = crate::ui::skirmish_shell::COMBO_TEXT_LEFT_INSET as f32;
+        let left = (left * scale.factor()).round() as i32;
+        for (index, (item, _)) in rows.iter().enumerate() {
+            let Some(row) = popup.row_rect(index) else {
+                continue;
+            };
+            paint.popup_texts.push(text(
+                state,
+                item,
+                RectPx::new(row.x + left, row.y, row.w - left, row.h),
+                ShellAlign::V_CENTER,
+                scale.factor(),
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_DROPDOWN_TEXT_DEPTH - 0.00011,
+            ));
+        }
+        return;
+    }
     push_popup_instances(
         &mut paint.popup,
         atlas,
@@ -907,7 +966,10 @@ fn paint_combo(
             });
             Some((at, swatch(row)?))
         }),
-        popup.scrollbar().zip(popup.thumb()),
+        popup.scrollbar().zip(popup.thumb()).map(|(bar, thumb)| {
+            let wide = RectPx::new(bar.x, thumb.y, bar.w, thumb.h);
+            (bar, if style.skirmish_lists { wide } else { thumb })
+        }),
         drop_down.pressed_part.map(dropdown_scroll_part),
         scale,
         SHELL_DROPDOWN_DEPTH - 0.00002,
@@ -927,7 +989,7 @@ fn paint_combo(
         // scrollbar reserve (`0x0060DF38`).
         let inset = COMBODROPWIN_TEXT_INSET_X;
         let at = scale.derive_rect(at, |r| RectPx::new(r.x + inset, r.y, r.w - 2 * inset, r.h));
-        fit_owner_draw_label(font, item, fit.round() as u32, |item| {
+        let mut draw = |item: &str| {
             paint.popup_texts.push(text(
                 state,
                 item,
@@ -937,6 +999,11 @@ fn paint_combo(
                 rgb,
                 SHELL_DROPDOWN_TEXT_DEPTH,
             ));
-        });
+        };
+        if style.skirmish_lists {
+            fit_owner_draw_label(font, item, fit.round() as u32, draw);
+        } else {
+            draw(item);
+        }
     }
 }

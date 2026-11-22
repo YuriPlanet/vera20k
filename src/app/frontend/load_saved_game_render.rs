@@ -57,9 +57,17 @@ pub(crate) fn render_load_saved_game_page(
             .push((layout.list_window, geometry.scrollbar));
     }
     // The list and its rows, blank while the teardown slide runs, then the box.
-    let mut over = paint_saved_browser(state, &layout.browser, browser, ButtonArt::Host, !leaving);
+    let mut over = paint_saved_browser(
+        state,
+        state.frontend.skirmish_shell_chrome.as_ref(),
+        &layout.browser,
+        browser,
+        ButtonArt::Host,
+        !leaving,
+    );
     push_saved_browser_box(
         state,
+        state.frontend.skirmish_shell_chrome.as_ref(),
         &layout.browser,
         browser,
         &mut over.controls,

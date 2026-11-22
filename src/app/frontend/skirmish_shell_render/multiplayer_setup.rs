@@ -827,7 +827,16 @@ pub(crate) fn render_multiplayer_setup(
             Some(&mut overlay.controls),
             Some((&mut overlay.texts, false)),
         );
-        super::shell_box::push_skirmish_box(state, size, notice, pressed, box_look, sprites, texts);
+        super::shell_box::push_skirmish_box(
+            state,
+            Some(atlas),
+            size,
+            notice,
+            pressed,
+            box_look,
+            sprites,
+            texts,
+        );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
     if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {

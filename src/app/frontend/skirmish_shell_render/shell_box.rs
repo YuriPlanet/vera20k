@@ -181,6 +181,7 @@ pub(crate) fn box_texts(
 /// `exclude_under`.
 pub(crate) fn push_skirmish_box(
     state: &AppState,
+    atlas: Option<&SkirmishShellChromeAtlas>,
     (w, h): (i32, i32),
     shell_box: &ShellBox,
     pressed: impl Fn(u16) -> bool,
@@ -189,7 +190,7 @@ pub(crate) fn push_skirmish_box(
     texts: Option<(&mut Vec<ShellTextDraw>, bool)>,
 ) {
     let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
-    if let (Some(out), Some(atlas)) = (sprites, state.frontend.skirmish_shell_chrome.as_ref()) {
+    if let (Some(out), Some(atlas)) = (sprites, atlas) {
         let (at, edge) = (parts.dialog, OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68);
         if look.background.is_none() {
             push_solid_rect(
@@ -227,6 +228,7 @@ pub(crate) fn render_size(state: &AppState) -> (i32, i32) {
 /// download boxes Red Alert 2's, with how much has arrived under the text.
 pub(crate) fn push_choose_map_prompt(
     state: &AppState,
+    atlas: Option<&SkirmishShellChromeAtlas>,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
     mut sprites: Option<&mut Vec<SpriteInstance>>,
     texts: Option<&mut Vec<ShellTextDraw>>,
@@ -235,7 +237,6 @@ pub(crate) fn push_choose_map_prompt(
     let (body, ok) = super::text::choose_map_prompt_labels(state, prompt);
     let cancel = state.csf_label("GUI:Cancel", "Cancel");
     let shell_box = prompt.shell_box(body, ok, cancel);
-    let atlas = state.frontend.skirmish_shell_chrome.as_ref();
     let background = atlas.and_then(|atlas| {
         match prompt.kind {
             Kind::EjectAi | Kind::RandomMapFailed => None,
@@ -248,16 +249,20 @@ pub(crate) fn push_choose_map_prompt(
         && let Some(progress) = crate::app::map_library::download_progress(state)
     {
         let (w, h) = render_size(state);
-        let body = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE).body;
+        let body = shell_box
+            .parts(w, h, crate::ui::shell::geom::RETAIL_SCALE)
+            .body;
         let depth = BoxLook::skirmish(None).depths.button;
         super::modals::push_download_progress_bar(out, atlas, body, progress, depth);
     }
     // Its widgets' captured button keeps its pushed look off the pointer too.
-    let held = crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, shell_box.dialog);
+    let held =
+        crate::ui::shell::menu_page::pressed_id(&state.frontend.shell_controller, shell_box.dialog);
     let pressed = |id| held == Some(id);
     let (texts, look) = (texts.map(|out| (out, true)), BoxLook::prompt(background));
     push_skirmish_box(
         state,
+        atlas,
         render_size(state),
         &shell_box,
         pressed,
