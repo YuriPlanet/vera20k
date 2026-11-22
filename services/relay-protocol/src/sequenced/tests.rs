@@ -239,14 +239,23 @@ fn paced_room_with(
     key: &SecretKey,
     pacing: CertificatePacing,
 ) -> (RelayServer, ClientSession, ClientSession) {
+    paced_room_for(
+        key,
+        OrderingCertificate {
+            pacing,
+            ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
+        },
+    )
+}
+
+/// Sources 0 and 1 connected and configured for ordering under `certificate`.
+fn paced_room_for(
+    key: &SecretKey,
+    certificate: OrderingCertificate,
+) -> (RelayServer, ClientSession, ClientSession) {
     let mut server = RelayServer::new(key.clone(), 2);
     let (mut first, mut second) = (client(key, 0), client(key, 1));
-    let cert = OrderingCertificate {
-        pacing,
-        ..OrderingCertificate::parse(&certificate(key, 3, 1400)).unwrap()
-    }
-    .sign(key)
-    .unwrap();
+    let cert = certificate.sign(key).unwrap();
     for peer in [&mut first, &mut second] {
         connect(&mut server, peer, 0);
         configure(&mut server, peer, &cert, 0);

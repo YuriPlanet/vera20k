@@ -26,6 +26,9 @@ pub use sequenced::{
     MatchSpeedChange, MultiplayerPauseStatus, NarrativeHold, SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The share of each second the relay lets a player's simulation take,
+/// which online render pacing leaves it.
+pub use vera20k_relay_protocol::SUSTAIN_PERCENT;
 /// The relay's turn length, which online playout follows.
 pub use vera20k_relay_protocol::turn_frames;
 /// The relay link measurements a match's network report reads.
