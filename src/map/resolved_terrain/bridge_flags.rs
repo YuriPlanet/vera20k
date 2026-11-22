@@ -153,15 +153,28 @@ pub(super) fn apply_native_bridge_flag_stamp_to_parts(
     real_cell_updates
 }
 
+/// High bridge stamping (47E040/47E470) is the one point that establishes
+/// the deck. Start from the anchor's authored geometry and retain that level
+/// when the native bridge routines subsequently change Cell+11B or its flags.
+fn establish_high_bridge_deck(cell: &mut ResolvedTerrainCell) {
+    let facts = &mut cell.bridge_facts;
+    if facts.has_structural_bridge() && facts.has_flag(BRIDGE_FLAG_ANCHOR_SELF) {
+        facts.fixed_deck_level.get_or_insert_with(|| {
+            i16::from(cell.level as i8) + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+        });
+    }
+}
+
 pub(super) fn refresh_runtime_bridge_projection(
     cell: &mut ResolvedTerrainCell,
     structural_removed: bool,
 ) {
+    establish_high_bridge_deck(cell);
     let facts = cell.bridge_facts;
     if facts.has_structural_bridge() {
         cell.has_bridge_deck = true;
         cell.bridge_walkable = !cell.terrain_object_blocks && !cell.overlay_blocks;
-        cell.bridge_deck_level = cell.level.saturating_add(4);
+        cell.refresh_current_height_projection();
     } else if structural_removed
         || (facts.family != BridgeStampFamily::None
             && cell
@@ -180,13 +193,12 @@ pub(super) fn refresh_runtime_bridge_projection(
 
 impl ResolvedTerrainGrid {
     /// Compatibility fix for the ground + 4 rule (ObjectClass::SetHeight,
-    /// 0x005F5FA0 and AStar node height, 0x0042A460). Use the intact span's deck
-    /// for a depressed side lane. The live anchor and flags also track damage
-    /// and repair. No deck is synthesized for a missing or ambiguous anchor.
+    /// 0x005F5FA0 and AStar node height, 0x0042A460). The live span supplies
+    /// the height where depressed terrain would otherwise lower the deck.
+    /// Stock slope and height behavior still applies on level and raised lanes.
     pub(crate) fn corrected_high_bridge_deck_level(&self, coord: (u16, u16)) -> Option<i16> {
-        self.corrected_high_bridge_deck_at(
-            self.native_cell_identity((coord.0 as i16, coord.1 as i16)),
-        )
+        let index = self.native_fixed_cell_index(coord.0 as i16, coord.1 as i16)?;
+        self.corrected_high_bridge_deck_at(NativeCellIdentity::Real(index))
     }
 
     pub(crate) fn corrected_high_bridge_deck_at(&self, cell: NativeCellIdentity) -> Option<i16> {
@@ -197,19 +209,23 @@ impl ResolvedTerrainGrid {
         if !cell.bridge_facts.has_structural_bridge() {
             return None;
         }
-        let NativeCellIdentity::Real(anchor) = cell.bridge_facts.native_anchor? else {
+        let anchor = if cell.bridge_facts.has_flag(BRIDGE_FLAG_ANCHOR_SELF) {
+            cell
+        } else if let Some(NativeCellIdentity::Real(anchor)) = cell.bridge_facts.native_anchor {
+            self.cells.get(anchor)?
+        } else {
             return None;
         };
-        let anchor = self.cells.get(anchor)?;
-        if !anchor.bridge_facts.has_structural_bridge()
-            || anchor.bridge_facts.raw_flags & BRIDGE_FLAG_ANCHOR_SELF == 0
-            || (cell.level as i8) >= (anchor.level as i8)
-        {
+        let facts = anchor.bridge_facts;
+        if !facts.has_structural_bridge() || !facts.has_flag(BRIDGE_FLAG_ANCHOR_SELF) {
             return None;
         }
-        // The span's level is signed and its deck is four levels above it.
-        // Keep the widened result instead of decoding the legacy byte view.
-        Some(i16::from(anchor.level as i8) + crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16)
+        let deck = facts.fixed_deck_level?;
+        let lift = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16;
+        // A saved value must be representable by the authored signed cell level.
+        i8::try_from(deck.checked_sub(lift)?).ok()?;
+        let local_deck = i16::from(cell.level as i8) + lift;
+        (deck > local_deck).then_some(deck)
     }
 
     /// Give every fixture deck the CellClass bit0x100 a loaded deck carries.
@@ -276,6 +292,7 @@ impl ResolvedTerrainGrid {
             if slot.writes_native_anchor() {
                 self.cells[index].bridge_facts.native_anchor = stamp.set.then_some(anchor);
             }
+            establish_high_bridge_deck(&mut self.cells[index]);
             Some(index)
         } else {
             self.shared_cell_dummy.stamp_coord(x, y);
@@ -406,5 +423,61 @@ impl ResolvedTerrainGrid {
             }
         }
         true
+    }
+}
+
+#[cfg(all(test, tests_map))]
+mod tests {
+    use super::*;
+    use crate::util::save_codec;
+
+    #[test]
+    fn raised_high_bridge_lane_keeps_its_local_projection() {
+        let mut terrain = test_grid(16, 16, |rx, ry| ResolvedTerrainCell {
+            level: if (rx, ry) == (8, 9) { 5 } else { 4 },
+            ..test_flat_cell(rx, ry)
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((8, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        let lane = terrain.native_cell_identity((8, 9));
+        assert_eq!(terrain.corrected_high_bridge_deck_at(lane), None);
+    }
+
+    #[test]
+    fn collapsed_span_keeps_its_elevation_after_save_and_repair() {
+        let mut terrain = test_grid(16, 16, |rx, ry| ResolvedTerrainCell {
+            level: if (rx, ry) == (8, 8) { 5 } else { 0 },
+            ..test_flat_cell(rx, ry)
+        });
+        let stamp = |set| BridgeFlagStamp::new((8, 8), 0, set);
+        let family = BridgeStampFamily::Nesw;
+        let anchor = terrain.native_cell_identity((8, 8));
+        let lane = terrain.native_cell_identity((8, 9));
+        terrain.apply_runtime_bridge_mark_stamp(stamp(true), family);
+        assert_eq!(terrain.corrected_high_bridge_deck_at(lane), Some(9));
+        let baseline = terrain.capture_saved_template().unwrap();
+
+        terrain.write_native_cell_flags(anchor, 0);
+        terrain.write_native_cell_flags(lane, 0);
+        terrain.write_native_cell_anchor(lane, None);
+        terrain.write_native_cell_level(anchor, 4);
+        assert_eq!(terrain.corrected_high_bridge_deck_at(lane), None);
+
+        let mut changes = DynamicTerrainCells::default();
+        changes.record(terrain.cell(8, 8).unwrap());
+        changes.record(terrain.cell(8, 9).unwrap());
+        let bytes = save_codec::serialize(&(baseline, changes)).unwrap();
+        let (baseline, changes): (SavedTerrainTemplate, DynamicTerrainCells) =
+            save_codec::deserialize(&bytes).unwrap();
+        let mut restored = baseline.restore_values(SharedCellDummy::fresh()).unwrap();
+        changes.apply_to(&mut restored).unwrap();
+        assert_eq!(restored.corrected_high_bridge_deck_at(lane), None);
+        restored.write_native_cell_flags(anchor, BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF);
+        restored.write_native_cell_anchor(lane, Some(anchor));
+        restored.write_native_cell_flags(lane, BRIDGE_FLAG_STRUCTURAL);
+        assert_eq!(restored.corrected_high_bridge_deck_at(lane), Some(9));
+        assert_eq!(restored.corrected_high_bridge_deck_at(anchor), Some(9));
     }
 }

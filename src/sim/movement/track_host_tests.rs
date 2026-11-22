@@ -826,8 +826,9 @@ fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
     let mut terrain = test_grid(32, 32, |x, y| {
         let mut cell = test_flat_cell(x, y);
         cell.level = match (x, y) {
+            (10, 8) => 5,
             (10, 9) => 0,
-            (10, 10) => 8,
+            (10, 10) => 9,
             _ => 4,
         };
         cell
@@ -836,6 +837,9 @@ fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
         BridgeFlagStamp::new((10, 8), 0, true),
         BridgeStampFamily::Nesw,
     );
+    // A terrain write beneath the live span leaves its level-nine deck intact.
+    let anchor = terrain.native_cell_identity((10, 8));
+    terrain.write_native_cell_level(anchor, 4);
     let target = terrain.native_cell_identity((10, 9));
     let approach = terrain.native_cell_identity((10, 10));
     terrain.write_native_cell_level(approach, 4);
@@ -849,11 +853,11 @@ fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
             &mut 4,
             &mut false,
         ),
-        "the old ground + 4 height cannot enter the eight-level deck"
+        "the old ground + 4 height cannot enter the nine-level deck"
     );
-    terrain.write_native_cell_level(approach, 8);
+    terrain.write_native_cell_level(approach, 9);
     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(&terrain);
-    let (mut height, mut on_bridge) = (8, false);
+    let (mut height, mut on_bridge) = (9, false);
     assert!(
         crate::sim::movement::infantry_entry::adjust_height_and_list(
             &cells,
@@ -884,7 +888,7 @@ fn drive_stops_on_the_deck_over_a_depressed_side_lane() {
     );
     let tank = sim.substrate.entities.get(1).unwrap();
     assert!(tank.on_bridge());
-    assert_eq!(position_world_coord(&tank.position).z, 832);
+    assert_eq!(position_world_coord(&tank.position).z, 936);
     assert_eq!(
         sim.resolved_terrain
             .as_ref()

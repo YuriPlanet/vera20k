@@ -3,6 +3,7 @@
 //! Source: original gamemd, full546B/162instructions. This is separate
 //! from487A10: deck then ground, cached Next before damage, no admission7 gate.
 
+use super::PendingBridgeCell;
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -18,7 +19,7 @@ pub(super) fn apply(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
-    point: (i16, i16),
+    collapse: PendingBridgeCell,
     effects: &mut FrameEffects<'_>,
 ) {
     let (selected, probe) = {
@@ -27,7 +28,7 @@ pub(super) fn apply(
             .as_ref()
             .expect("bridge damage terrain");
         let cells = NativeCellQuery::canonical(terrain);
-        let selected = cells.lookup(point);
+        let selected = cells.lookup(collapse.point);
         let key = RawCellKey::from_native(terrain, selected);
         if sim
             .substrate
@@ -41,18 +42,17 @@ pub(super) fn apply(
         // Use its existing world lookup, including signed/Dummy restamping;
         // the selected Cell's own ground fields are not a substitute.
         let [x, y] = crate::sim::cell_kernel::native_cell_own_xy(selected, &cells);
-        let point = DriveCoord { x, y, z: 0 };
-        let Ok(z) = crate::sim::movement::ground_pose::query_ground_height(&cells, point) else {
-            return; // Unsupported raw slope, not an invented fallback height.
+        let z = if let Some(level) = collapse.corrected_deck_level {
+            i32::from(level) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
+        } else {
+            let point = DriveCoord { x, y, z: 0 };
+            let Ok(ground) = crate::sim::movement::ground_pose::query_ground_height(&cells, point)
+            else {
+                return; // Unsupported raw slope, not an invented fallback height.
+            };
+            ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
         };
-        (
-            selected,
-            DriveCoord {
-                x,
-                y,
-                z: z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
-            },
-        )
+        (selected, DriveCoord { x, y, z })
     };
     for dx in -2i16..=2 {
         for dy in -2i16..=2 {

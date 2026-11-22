@@ -30,7 +30,9 @@ pub(crate) trait BridgePublicationHost {
     fn write_anchor(&mut self, cell: Self::Cell, anchor: Option<Self::Cell>);
     /// Literal +44=-1, without an implicit Recalc or zone callback.
     fn clear_overlay(&mut self, cell: Self::Cell);
-    fn fallout(&mut self, cell: Self::Cell);
+    /// VERA's corrected deck level, without GetCell's shared-Dummy stamp.
+    fn corrected_deck_at(&self, coord: CellCoord) -> Option<i16>;
+    fn fallout(&mut self, cell: Self::Cell, corrected_deck_level: Option<i16>);
     fn radar(&mut self, cell: Self::Cell);
     /// The family's UpdateRamp_* helper; the twins differ only in base.
     fn perpendicular(
@@ -66,7 +68,13 @@ fn step(coord: CellCoord, direction: u8) -> CellCoord {
     )
 }
 
-fn finish_slot<H: BridgePublicationHost>(host: &mut H, cell: H::Cell, direction: u8, set: bool) {
+fn finish_slot<H: BridgePublicationHost>(
+    host: &mut H,
+    cell: H::Cell,
+    direction: u8,
+    set: bool,
+    corrected_deck_level: Option<i16>,
+) {
     host.write_state(
         cell,
         if set {
@@ -76,7 +84,7 @@ fn finish_slot<H: BridgePublicationHost>(host: &mut H, cell: H::Cell, direction:
         },
     );
     if !set {
-        host.fallout(cell);
+        host.fallout(cell, corrected_deck_level);
     }
     host.radar(cell);
 }
@@ -98,6 +106,30 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
     let destroyed = u32::from(!set) << 10;
     let direction_zero = u32::from(direction == 0) << 11;
 
+    // 47E040 clears the anchor before visiting its side lanes. Capture their
+    // corrected decks while the anchor is still intact. The real lookups below
+    // still use the current coordinate after each synchronous callback.
+    let decks = (!set).then(|| {
+        let center = host.coord(anchor);
+        let first = step(center, direction);
+        [
+            center,
+            first,
+            step(first, direction),
+            step(center, direction ^ 4),
+        ]
+        .map(|coord| (coord, host.corrected_deck_at(coord)))
+    });
+    let deck_for = |host: &H, cell| {
+        let decks = decks.as_ref()?;
+        let coord = host.coord(cell);
+        decks
+            .iter()
+            .find(|&&(captured, _)| captured == coord)
+            .map_or_else(|| host.corrected_deck_at(coord), |&(_, level)| level)
+    };
+
+    let deck = deck_for(host, anchor);
     // The first +11E store precedes the anchor flag word, even for destruction.
     host.write_state(
         anchor,
@@ -114,9 +146,10 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
             | (intact << 7)
             | direction_zero,
     );
-    finish_slot(host, anchor, direction, set);
+    finish_slot(host, anchor, direction, set, deck);
 
     let mut cell = host.lookup(step(host.coord(anchor), direction));
+    let deck = deck_for(host, cell);
     host.write_anchor(cell, set.then_some(anchor));
     host.write_flags(
         cell,
@@ -124,16 +157,17 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
             & 0xffff_f7ff
             | direction_zero,
     );
-    finish_slot(host, cell, direction, set);
+    finish_slot(host, cell, direction, set, deck);
 
     cell = host.lookup(step(host.coord(cell), direction));
+    let deck = deck_for(host, cell);
     host.write_anchor(cell, set.then_some(anchor));
     host.write_flags(
         cell,
         ((host.flags(cell) & 0xfffe_e8ff) | structural | forward | extra | destroyed) & 0xffff_f7ff
             | direction_zero,
     );
-    finish_slot(host, cell, direction, set);
+    finish_slot(host, cell, direction, set, deck);
 
     cell = host.lookup(step(host.coord(cell), direction));
     host.write_flags(cell, (host.flags(cell) & 0xffff_efff) | forward);
@@ -141,6 +175,7 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
     // Opposite is relative to the retained anchor's current coordinate, not
     // the original input coordinate or the third forward lookup.
     cell = host.lookup(step(host.coord(anchor), direction.wrapping_sub(4) & 7));
+    let deck = deck_for(host, cell);
     host.write_anchor(cell, set.then_some(anchor));
     host.write_flags(
         cell,
@@ -148,7 +183,7 @@ pub(crate) fn set_bridge_direction<H: BridgePublicationHost>(
             | extra
             | direction_zero,
     );
-    finish_slot(host, cell, direction, set);
+    finish_slot(host, cell, direction, set, deck);
     if direction == 6 {
         cell = host.lookup(step(host.coord(cell), 2));
         host.write_anchor(cell, set.then_some(anchor));
@@ -297,9 +332,13 @@ pub(crate) fn advance_bridgehead<H: BridgePublicationHost>(
             coord.1.wrapping_add(dy.wrapping_mul(n)),
         )
     };
-    for n in [-1, 0, 1] {
-        let target = host.lookup(offset(walk, along, n));
-        host.fallout(target);
+    let fallout = [-1, 0, 1].map(|n| {
+        let coord = offset(walk, along, n);
+        (coord, host.corrected_deck_at(coord))
+    });
+    for (coord, deck) in fallout {
+        let target = host.lookup(coord);
+        host.fallout(target, deck);
     }
     let center = host.coord(anchor);
     let level = host.level(anchor);

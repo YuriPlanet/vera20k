@@ -230,10 +230,11 @@ pub fn object_height_in_query(
     on_bridge: bool,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
-    let ground = cells
-        .and_then(|cells| super::ground_pose::query_ground_height(cells, coord).ok())
-        .unwrap_or(0);
-    super::ground_pose::height_at_z(coord.z, ground, on_bridge)
+    match cells.and_then(|cells| super::ground_pose::query_surface_z(cells, coord, on_bridge).ok())
+    {
+        Some(surface) => coord.z.wrapping_sub(surface),
+        None => super::ground_pose::height_at_z(coord.z, 0, on_bridge),
+    }
 }
 
 /// Object virtual+50 /5F6B60. A marked grounded object is low; an unmarked
@@ -438,6 +439,31 @@ pub(crate) mod tests {
             .as_ref()
             .and_then(|locomotor| locomotor.fly_runtime())
             .is_some_and(crate::sim::movement::fly_height::FlyRuntime::moving)
+    }
+
+    #[test]
+    fn unit_over_a_depressed_lane_is_grounded_on_the_bridge() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
+
+        let mut terrain = test_grid(12, 12, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (6, 7) { 0 } else { 4 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((6, 6), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        let cells = NativeCellQuery::canonical(&terrain);
+        let point = DriveCoord {
+            x: 6 * 256 + 128,
+            y: 7 * 256 + 128,
+            z: 832,
+        };
+        let height = || object_height_in_query(point, true, Some(&cells));
+        assert_eq!(height(), 0);
+        assert!(!object_flight_predicate(true, height, true));
     }
 
     #[test]

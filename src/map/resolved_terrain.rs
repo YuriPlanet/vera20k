@@ -255,7 +255,7 @@ impl BridgeLayer {
         let direction = BridgeDirection::from_overlay_id(overlay_id);
         let deck_level = match direction {
             BridgeDirection::Low => level,
-            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.saturating_add(4),
+            BridgeDirection::EastWest | BridgeDirection::NorthSouth => level.wrapping_add(4),
         };
         Self {
             deck_level,
@@ -375,7 +375,8 @@ pub struct ResolvedTerrainCell {
 
 impl ResolvedTerrainCell {
     /// Refresh byte-encoded height views of the current Cell, independently of
-    /// its Recalc-owned class, flags and cached topology. Preserve the encoded
+    /// its Recalc-owned class, flags and cached topology. The retained span
+    /// elevation lives on the anchor's bridge facts. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
     /// Native47B3A0/5F5FA0: tools/ramp_height_{oracle.py,vectors.json}; this
     /// byte projection does not establish signed world-coordinate consumers.

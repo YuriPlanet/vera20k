@@ -1,7 +1,9 @@
 //! Map construction (Fill): materializing map cells into resolved terrain,
 //! TMP tile metadata, overlay classification and the height maps.
 
-use super::bridge_flags::apply_native_bridge_flag_stamp_to_parts;
+use super::bridge_flags::{
+    apply_native_bridge_flag_stamp_to_parts, refresh_runtime_bridge_projection,
+};
 use super::native_cell::native_resolved_cell_index;
 use super::tubes::build_auto_low_bridge_tubes;
 use super::*;
@@ -807,25 +809,7 @@ impl ResolvedTerrainGrid {
             .into_iter()
             .flatten()
         {
-            let facts = cell.bridge_facts;
-            if facts.has_structural_bridge() {
-                cell.has_bridge_deck = true;
-                cell.bridge_walkable = !cell.terrain_object_blocks && !cell.overlay_blocks;
-                cell.bridge_deck_level = cell.level.saturating_add(4);
-            } else if facts.family != crate::map::bridge_facts::BridgeStampFamily::None
-                && cell
-                    .bridge_layer
-                    .as_ref()
-                    .is_some_and(|bl| bl.direction != BridgeDirection::Low)
-            {
-                cell.has_bridge_deck = false;
-                cell.bridge_walkable = false;
-                cell.bridge_deck_level = cell.level;
-            }
-
-            if facts.has_transition_flag() {
-                cell.bridge_transition = true;
-            }
+            refresh_runtime_bridge_projection(cell, false);
         }
 
         {

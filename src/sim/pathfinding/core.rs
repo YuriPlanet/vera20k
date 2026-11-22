@@ -667,6 +667,7 @@ fn neighbour_test(
     direction: usize,
     height: i16,
     goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> (bool, bool) {
     let (dx, dy) = DIRECTION_DELTAS[direction];
     let (x, y) = (i32::from(cell.0) + dx, i32::from(cell.1) + dy);
@@ -682,7 +683,12 @@ fn neighbour_test(
     // waits on the planes that make it.
     let ground_closed = ground.contains(index);
     let bridge_closed = bridge.contains(index);
-    let use_bridge = grid.selects_bridge_list_at(index, height);
+    let use_bridge = grid.selects_bridge_list_at(
+        index,
+        height,
+        if inside { terrain } else { None },
+        (x as u16, y as u16),
+    );
     let closed = if use_bridge {
         bridge_closed
     } else {
@@ -703,11 +709,13 @@ fn expansion_neighbours(
     cell: (u16, u16),
     height: i16,
     goal: (u16, u16),
+    terrain: Option<&ResolvedTerrainGrid>,
 ) -> (u8, u8) {
     let mut asked = 0;
     let mut bridge_lists = 0;
     for direction in 0..DIRECTION_DELTAS.len() {
-        let (ask, use_bridge) = neighbour_test(grid, ground, bridge, cell, direction, height, goal);
+        let (ask, use_bridge) =
+            neighbour_test(grid, ground, bridge, cell, direction, height, goal, terrain);
         asked |= u8::from(ask) << direction;
         bridge_lists |= u8::from(use_bridge) << direction;
     }
@@ -1029,7 +1037,11 @@ fn astar_search_along_route(
         } = *ws;
 
         let start_idx = start.1 as usize * w + start.0 as usize;
-        let start_on_bridge = is_at_bridge_level(start_height, start_cell);
+        let start_on_bridge = if corrected_deck(start, start_cell).is_some() {
+            start_layer == MovementLayer::Bridge
+        } else {
+            is_at_bridge_level(start_height, start_cell)
+        };
         // Close-on-generation: gamemd stamps a (cell, layer) closed at the
         // moment a node is created for it and freezes its g there. The start
         // node is created before the loop, so it is stamped here, with g 0.
@@ -1109,8 +1121,15 @@ fn astar_search_along_route(
             // Nothing a neighbour below does changes another's test: the one
             // closed bit it sets is its own, and the planes and the current
             // height stay as they are.
-            let (mut asked, bridge_lists) =
-                expansion_neighbours(grid, ground, bridge, (cx, cy), current.height, goal);
+            let (mut asked, bridge_lists) = expansion_neighbours(
+                grid,
+                ground,
+                bridge,
+                (cx, cy),
+                current.height,
+                goal,
+                options.resolved_terrain,
+            );
             let interior = interior_cells.is_some_and(|cells| cells.contains((cx, cy)));
             while asked != 0 {
                 let dir_index = asked.trailing_zeros() as usize;
@@ -1123,7 +1142,8 @@ fn astar_search_along_route(
                         (cx, cy),
                         dir_index,
                         current.height,
-                        goal
+                        goal,
+                        options.resolved_terrain,
                     ),
                     (true, bridge_lists >> dir_index & 1 != 0),
                     "an earlier neighbour changed the test of direction {dir_index}"
@@ -1720,11 +1740,22 @@ impl PathGrid {
     /// from `path_height` ([`is_at_bridge_level`]), from the kept planes:
     /// the level is read only for a structural cell. A cell past the grid
     /// reads as the default blocked cell does.
-    fn selects_bridge_list_at(&self, index: usize, path_height: i16) -> bool {
+    fn selects_bridge_list_at(
+        &self,
+        index: usize,
+        path_height: i16,
+        terrain: Option<&ResolvedTerrainGrid>,
+        coord: (u16, u16),
+    ) -> bool {
         let structural = self
             .bridge_structural
             .get(index / 64)
             .is_some_and(|word| word >> (index % 64) & 1 != 0);
+        if structural
+            && let Some(deck) = terrain.and_then(|t| t.corrected_high_bridge_deck_level(coord))
+        {
+            return path_height == deck;
+        }
         let selected = structural
             && selects_bridge_list(path_height, (true, self.ground_levels[index] as i8 as i16));
         debug_assert_eq!(
