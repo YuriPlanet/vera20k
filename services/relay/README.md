@@ -374,7 +374,11 @@ journals therefore advertise oldest sequence 1 throughout the match.
 
 A short outage never removes a player. Healthy players continue; the returning
 player can replay from its old cursor even after every short hop ticket expired.
-Any authenticated packet, keepalives included, keeps a source's place. A started
+Any authenticated packet, keepalives included, keeps a source's place. A game's
+keepalive is a PING every two seconds, answered with READY; an established hop
+that traded other datagrams both ways within those two seconds skips it, so a
+match's UPLINKs and pushes are its keepalive (a released game pings throughout).
+A started
 source silent for 10 minutes departs through the stream (`ABSENT_MS`; a game
 that hears nothing from its relay for that long releases its route, which ends
 the match). Before the start, a
