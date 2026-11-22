@@ -166,6 +166,11 @@ A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and
 for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
 unchanged.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
+`start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
+and for a random map of 9 to 30 players four more for each start past the eighth,
+bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
+or 512 bytes with 400 `invalid_options`;
+`staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
 `C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
 that carry it. Other modes omit the field.
@@ -174,11 +179,6 @@ Multiplayer Campaign rooms add `campaign`, the authored room record
 that offers `campaign_rooms`; that lobby keeps it through room revisions, the start and
 `watch_started`. Without the feature a game refuses campaign rooms online, and a 400
 `invalid_options` for a campaign room's options turns them off until the next sign-in.
-`start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
-and for a random map of 9 to 30 players four more for each start past the eighth,
-bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
-or 512 bytes with 400 `invalid_options`;
-`staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
 current: `options.json` holds rooms' options as the game sends them at the limits it

@@ -1818,11 +1818,12 @@ mod tests {
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
                 motd: "Welcome".into(),
                 lobby_visits: false,
-                campaign_rooms: false,
+                campaign_rooms: true,
             }))),
             WolStep::Accepted
         );
         assert!(visit.authenticated);
+        assert!(visit.lobby_campaign_rooms);
         assert_eq!(visit.motd(), Some("Welcome"));
         // Nothing waits any more.
         assert_eq!(
