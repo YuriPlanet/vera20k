@@ -153,21 +153,23 @@ pub struct AlphaShapeDraw<'a> {
 }
 
 impl Simulation {
-    /// GetCoords and the AlphaImage name of `object`, of `kind`.
+    /// GetCoords and the AlphaImage name of `object`, of `kind`, for a type
+    /// that names one. The name is read first: UpdateAlphaShape (`10009F40`)
+    /// returns before GetCoords for a type without an AlphaImage, and it runs
+    /// on every AI visit under Ares.
     fn alpha_source<'r>(
         &self,
         object: u64,
         kind: ObjectKind,
         rules: &'r RuleSet,
     ) -> Option<AlphaSource<'r>> {
-        let (coord, image) = match kind {
+        let named = |image: &'r str| (!image.is_empty()).then_some(image);
+        let (image, coord) = match kind {
             ObjectKind::Entity => {
                 let entity = self.substrate.entities.get(object)?;
+                let image = named(&self.entity_object_type(entity, rules)?.alpha_image)?;
                 let coord = ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref());
-                (
-                    [coord.x, coord.y, coord.z],
-                    self.entity_object_type(entity, rules)?.alpha_image.as_str(),
-                )
+                (image, [coord.x, coord.y, coord.z])
             }
             // `AnimClass::GetCoords @ 0x00422BE0`: Location plus its owner's.
             ObjectKind::Anim => {
@@ -175,51 +177,46 @@ impl Simulation {
                 let config = self
                     .interner
                     .anim_type_config_handle(anim.type_id(), rules)?;
+                let image = named(&rules.art().anim_config(config).alpha_image)?;
                 let coord = self.anim_absolute_coord(object)?;
-                (
-                    [coord.x, coord.y, coord.z],
-                    rules.art().anim_config(config).alpha_image.as_str(),
-                )
+                (image, [coord.x, coord.y, coord.z])
             }
             // Terrain, Bullets, ParticleSystems and VoxelAnims inherit
             // `ObjectClass::GetCoords @ 0x005F65A0`: Location (+0x9C).
             ObjectKind::Terrain => {
                 let terrain = self.terrain_objects.get(object)?;
-                let coord = terrain.world_coord();
                 let terrain_type = rules.terrain_object_type_case_insensitive(
                     self.interner.resolve(terrain.type_ref()),
                 )?;
+                let coord = terrain.world_coord();
                 (
+                    named(&terrain_type.alpha_image)?,
                     [coord.x, coord.y, coord.z],
-                    terrain_type.alpha_image.as_str(),
                 )
             }
             ObjectKind::Projectile => {
                 let bullet = self.projectiles.get(object)?;
-                let coord = bullet.position();
                 let bullet_type = self
                     .interner
                     .projectile_type(bullet.payload().projectile_type()?, rules)?;
+                let coord = bullet.position();
                 (
+                    named(&bullet_type.alpha_image)?,
                     [coord.x, coord.y, coord.z],
-                    bullet_type.alpha_image.as_str(),
                 )
             }
             ObjectKind::ParticleSystem => {
                 let system = self.substrate.particle_systems.get(object)?;
                 (
+                    named(&rules.particle_system_type(system.type_id()).alpha_image)?,
                     system.coords().to_array(),
-                    rules
-                        .particle_system_type(system.type_id())
-                        .alpha_image
-                        .as_str(),
                 )
             }
             ObjectKind::VoxelAnim => {
                 let piece = self.substrate.voxel_anims.get(object)?;
                 (
+                    named(&rules.voxel_anim_type(piece.type_id()).alpha_image)?,
                     piece.world_coord().to_array(),
-                    rules.voxel_anim_type(piece.type_id()).alpha_image.as_str(),
                 )
             }
             // A Particle is read where its constructor reveals it
@@ -228,11 +225,9 @@ impl Simulation {
             ObjectKind::Particle
             | ObjectKind::Spotlight
             | ObjectKind::Wave
-            | ObjectKind::Smudge => {
-                return None;
-            }
+            | ObjectKind::Smudge => return None,
         };
-        (!image.is_empty()).then_some(AlphaSource { coord, image })
+        Some(AlphaSource { coord, image })
     }
 
     /// The AlphaShapeClass block of `ObjectClass::Unlimbo`
@@ -369,6 +364,11 @@ impl Simulation {
     /// `+0x518` type of a Unit or Infantry), or a Building outside
     /// Construction (vt+0x184 not `0x12`) that is not operational
     /// (`BuildingClass::Is_Operational_For_Output` vt+0x350, `0x004555D0`).
+    ///
+    /// Only a Techno's Limbo is read: the other kinds run their AI only from
+    /// Logic, which Limbo leaves. RESIDUAL: a destroyed local Anim keeps its
+    /// local-list visit until the frame's drain, so under Ares that visit can
+    /// make its glow again; the drain deletes it before any draw.
     fn alpha_shape_withheld(&self, object: u64, kind: ObjectKind, rules: &RuleSet) -> bool {
         if kind != ObjectKind::Entity {
             return false;

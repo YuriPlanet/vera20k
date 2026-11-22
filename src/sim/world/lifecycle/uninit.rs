@@ -241,9 +241,9 @@ impl Simulation {
             return;
         }
         self.substrate.pending_delete.remove_object(stable_id);
-        // RESIDUAL: each particle's own destructor announces its expiry
-        // (`0x0062D9C8`); VERA only conceals them. No listener holds a
-        // particle id.
+        // Each particle's own destructor announces its expiry
+        // (`0x0062D9C8`); the common destructor below gives it to the glows,
+        // the only listener that holds a particle id.
         self.finalize_and_remove_common(stable_id, context, 1);
     }
 
@@ -783,8 +783,12 @@ impl Simulation {
                     // vector is freed. Ordinary AI retirement has no children left;
                     // direct disposal must still remove each individual AIR entry.
                     for particle in system.particles() {
-                        self.substrate.conceal_particle(particle.stable_id());
-                        self.delete_alpha_shape(particle.stable_id(), context.rules());
+                        let id = particle.stable_id();
+                        self.substrate.conceal_particle(id);
+                        // ParticleDtor62D9C8 announces the expiry: a glow
+                        // waits for PurgeDisabled, or under Ares goes now.
+                        self.alpha_shapes.pointer_expired(id);
+                        self.delete_alpha_shape(id, context.rules());
                     }
                 }
                 system.is_some()

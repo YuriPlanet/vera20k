@@ -232,3 +232,37 @@ fn an_anims_glow_outlives_it_in_stock_but_not_under_ares() {
         assert_eq!(glows(&sim, &rules).len(), usize::from(!ares), "ares {ares}");
     }
 }
+
+/// Deleting a system at once runs each particle's destructor, whose expiry
+/// (`0x0062D9C8`) disables the particle's glow for PurgeDisabled. Stock rules.
+#[test]
+fn a_particle_glow_goes_when_its_system_is_deleted_at_once() {
+    use crate::sim::particles::{Particle, ParticleSystem};
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Particles]\n0=SPARK\n[SPARK]\nAlphaImage=GLOW\n\
+         [ParticleSystems]\n0=SYS\n[SYS]\nHoldsWhat=SPARK\n",
+    ))
+    .unwrap();
+    rules.supply_alpha_image_for_test(
+        "GLOW",
+        AlphaImage::for_test([61, 31], [0, 0, 1, 1], vec![254]),
+    );
+    let type_id = crate::rules::particle_type::ParticleTypeId(0);
+    let mut sim = Simulation::with_seed(5);
+    let mut particle = Particle::test_fixture(type_id, glam::IVec3::new(1152, 1152, 0));
+    particle.set_stable_id_for_test(sim.substrate.allocate_stable_id());
+    sim.unlimbo_particle_alpha_shape(&particle, &rules);
+    assert_eq!(glows(&sim, &rules), [([-30, 135], "GLOW")]);
+
+    let system_id = sim.substrate.allocate_stable_id();
+    let mut system = ParticleSystem::test_fixture(
+        system_id,
+        crate::rules::particle_system_type::ParticleSystemTypeId(0),
+        glam::IVec3::new(1152, 1152, 0),
+    );
+    system.set_particles_for_test(vec![particle]);
+    sim.substrate.particle_systems.insert(system);
+    sim.delete_particle_system_now(system_id, crate::sim::world::UninitContext::new(&rules));
+    sim.alpha_shapes.purge_disabled();
+    assert!(glows(&sim, &rules).is_empty());
+}
