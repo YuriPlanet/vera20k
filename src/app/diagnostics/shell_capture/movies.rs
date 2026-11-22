@@ -672,13 +672,20 @@ impl MoviesCapture {
                         self.phase = Phase::ModsOptions;
                         return Ok(());
                     }
-                    if matches!(self.target, MoviesTarget::Options0xD5 { .. }) {
+                    if let MoviesTarget::Options0xD5 { category, .. } = self.target {
                         self.route
                             .push(json!({"dialog": 0xe2, "frame": frame, "action": "Options"}));
                         App::handle_main_menu_shell_action(
                             state,
                             crate::ui::main_menu_shell::MainMenuShellAction::Options,
                         );
+                        // Older explicitly named settings and hover captures still
+                        // exercise the legacy layout used by the in-game pages.
+                        if Category::ALL.contains(&category)
+                            && let Some(dialog) = state.frontend.options_dialog.as_mut()
+                        {
+                            dialog.select_category(category);
+                        }
                         self.phase = Phase::Options;
                         return Ok(());
                     }
@@ -941,8 +948,8 @@ impl MoviesCapture {
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    // The page buttons stay in the column: pressing another
-                    // swaps the controls in place, with no slide.
+                    // A launcher page button slides the column out and back
+                    // in on its page (`App::handle_launcher_options_mouse`).
                     let layout =
                         crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout
@@ -954,15 +961,9 @@ impl MoviesCapture {
                     App::handle_launcher_options_mouse(state, Some(true));
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
-                        state.frontend.shell_exit.is_none(),
-                        "a page button swaps the controls in place; it must not run the teardown slide"
+                        state.frontend.shell_exit.is_some(),
+                        "the settings page button did not start its slide"
                     );
-                    let swapped = state
-                        .frontend
-                        .options_dialog
-                        .as_ref()
-                        .is_some_and(|dialog| dialog.category() == category);
-                    ensure!(swapped, "the page must be showing after the press");
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
                         "action": "page button through ordinary pointer handler",
                         "page": format!("{category:?}")}));
