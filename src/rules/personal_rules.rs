@@ -27,7 +27,7 @@ pub struct PersonalRules {
     /// BuildingProductionQueue=` in VERA.INI). It sets Phobos' `[General]
     /// BuildingProductionQueue=` in the scenario root, so the simulation
     /// reads it from the rules every peer, save and replay reads. A network
-    /// room plays its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
+    /// room shares its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
     building_production_queue: bool,
 }
 

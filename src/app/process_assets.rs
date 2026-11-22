@@ -59,8 +59,8 @@ pub(crate) struct ProcessAssets {
     /// The player's own rule switches, read at startup with VERA.INI and
     /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
     /// [`Self::set_superweapon_limit`]) and the Options page
-    /// ([`Self::set_building_production_queue`]). A network room plays its
-    /// host's instead ([`Self::use_personal_rules`]).
+    /// ([`Self::set_building_production_queue`]). A network match plays its
+    /// room's instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
@@ -347,10 +347,10 @@ impl ProcessAssets {
         &self.personal_rules
     }
 
-    /// Play `rules` from the next scenario on, and agree on them in a network
-    /// room: the room's host's, or none in Quick Match
-    /// (`NativeRulesProcessOwner::use_personal_rules`). Before the rules load
-    /// the player's own apply when the sources select.
+    /// Play `rules` from the next scenario on, and digest them for a network
+    /// start (`NativeRulesProcessOwner::use_personal_rules`); a network match
+    /// plays the ones `MatchSession::network_personal_rules` picks. Before the
+    /// rules load the player's own apply when the sources select.
     pub(crate) fn use_personal_rules(
         &mut self,
         rules: crate::rules::personal_rules::PersonalRules,

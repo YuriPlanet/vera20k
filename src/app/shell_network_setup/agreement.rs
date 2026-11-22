@@ -155,8 +155,8 @@ pub(crate) enum OriginalGameChange<'a> {
 /// first. Ares comes before the files: On can mount the installation's
 /// `ares.mix`, which counts as a changed file, and a box naming the files
 /// would send the player to delete it. Empty when it plays the original.
-/// The Options switches never count: a room plays its host's (`HostRules`),
-/// and a Quick Match room has none.
+/// The Options switches never count: the room decides which its players play
+/// (`MatchSession::network_personal_rules`).
 pub(crate) fn original_game_changes<'a>(
     mod_title: Option<&'a str>,
     assets: &'a crate::app::process_assets::ProcessAssets,
