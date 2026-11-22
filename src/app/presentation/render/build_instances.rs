@@ -196,6 +196,15 @@ fn convenience_info_lines_admitted(
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
 /// VXL units, SHP buildings/infantry, AnimClass objects, damage fires.
 /// Ground parents retain Display order; residual effect buckets still sort depth.
+/// The SHP visitor, as the unit visitor draws a Carryall's SHP cargo with it.
+fn shp_cargo<'a, V>(shp: &'a mut Option<V>) -> Option<&'a mut instances::ShpVisit<'a>>
+where
+    V: FnMut(instances::ShpDraw<'_>, &crate::app::presentation::frame::ObjectRecord) + 'a,
+{
+    shp.as_mut()
+        .map(|visit| visit as &mut instances::ShpVisit<'a>)
+}
+
 pub(super) fn build_world_instances(
     state: &mut AppState,
     sw: f32,
@@ -364,10 +373,10 @@ pub(super) fn build_world_instances(
                                 let mut scratch =
                                     super::draw_plan_lowering::PlannedObjects::default();
                                 if let Some(visit) = units.as_mut() {
-                                    visit(&mut scratch, entity, band);
+                                    visit(&mut scratch, entity, band, shp_cargo(&mut shp));
                                 }
                                 if let Some(visit) = shp.as_mut() {
-                                    visit(&mut scratch, entity);
+                                    visit(instances::ShpDraw::Member(&mut scratch), entity);
                                 }
                                 scratch.is_empty()
                             });
@@ -398,11 +407,12 @@ pub(super) fn build_world_instances(
             ) else {
                 continue;
             };
+            // A Carryall's SHP cargo draws inside the Carryall's draw.
             if let Some(visit) = units.as_mut() {
-                visit(objects, entity, band);
+                visit(objects, entity, band, shp_cargo(&mut shp));
             }
             if let Some(visit) = shp.as_mut() {
-                visit(objects, entity);
+                visit(instances::ShpDraw::Member(objects), entity);
             }
         }
     }

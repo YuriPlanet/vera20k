@@ -84,6 +84,10 @@ pub(crate) struct ObjectRecord {
     /// The Foot occupation enable (`+0x6B6`), which a still SHP Unit's body
     /// image reads (`0x0073C6D5`).
     pub(crate) foot_occupation_enabled: bool,
+    /// IsOnCarryall (`+0x424`): `UnitClass::DrawIt` draws a carried Unit's
+    /// body lower, and its SHP shadows higher, by
+    /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
+    pub(crate) on_carryall: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -630,6 +634,7 @@ impl ObjectRecord {
             unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
             foot_occupation_enabled: entity.foot_occupation_enabled(),
+            on_carryall: entity.is_on_carryall(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,

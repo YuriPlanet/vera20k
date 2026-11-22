@@ -138,6 +138,24 @@ pub(crate) fn shp_inputs<'a>(
     })
 }
 
+/// Where [`shp_visitor`] puts an object's pieces.
+pub(crate) enum ShpDraw<'a> {
+    /// A Display member, planned under its own parent.
+    Member(&'a mut PlannedObjects),
+    /// The Unit a Carryall carries, which `AircraftClass::Draw_It` draws
+    /// before the Carryall's own shadow and body (`0x0041461D..0x00414653`)
+    /// at the Carryall's body point `carrier`: its pieces join the Carryall's
+    /// ([`super::units::unit_visitor`]).
+    Carried {
+        carrier: [f32; 2],
+        pieces: &'a mut Vec<ObjectPieceInstance>,
+    },
+}
+
+/// A [`shp_visitor`], as the unit visitor calls it for an SHP cargo.
+pub(crate) type ShpVisit<'v> =
+    dyn FnMut(ShpDraw<'_>, &crate::app::presentation::frame::ObjectRecord) + 'v;
+
 /// Tests' driver: [`shp_visitor`] over every object in encounter order.
 #[cfg(test)]
 pub(crate) fn build_shp_instances_from_inputs(
@@ -149,7 +167,7 @@ pub(crate) fn build_shp_instances_from_inputs(
     for (entity, _) in
         super::helpers::drawn_display_entities(&input.runtime.simulation, input.frame)
     {
-        visit(ground_objects, entity);
+        visit(ShpDraw::Member(ground_objects), entity);
     }
 }
 
@@ -168,7 +186,7 @@ pub(crate) fn build_shp_instances_from_inputs(
 pub(crate) fn shp_visitor<'a>(
     input: &'a ShpInputs<'a>,
     ground_order: &'a NativeDisplayOrder,
-) -> impl FnMut(&mut PlannedObjects, &crate::app::presentation::frame::ObjectRecord) + 'a {
+) -> impl FnMut(ShpDraw<'_>, &crate::app::presentation::frame::ObjectRecord) + 'a {
     let runtime = input.runtime;
     let sim = &runtime.simulation;
     let rules = Some(&runtime.resources.rules);
@@ -208,9 +226,16 @@ pub(crate) fn shp_visitor<'a>(
     // the plan allocates nothing once these have grown.
     let mut pieces = Vec::new();
     let mut building_pieces = Vec::new();
-    move |ground_objects: &mut PlannedObjects,
-          entity: &crate::app::presentation::frame::ObjectRecord| {
+    move |mut draw: ShpDraw<'_>, entity: &crate::app::presentation::frame::ObjectRecord| {
         let stable_id = entity.stable_id();
+        let carrier = match &draw {
+            ShpDraw::Carried { carrier, .. } => Some(*carrier),
+            ShpDraw::Member(_) => None,
+        };
+        // Only a Unit is lifted (`Simulation::carryall_tote_target`).
+        if carrier.is_some() && entity.category() != EntityCategory::Unit {
+            return;
+        }
         // `0x00487950` on the local player's map: a sandbox view, or a viewer
         // with no house, sees no shroud.
         let shrouded = |cell: (u16, u16)| {
@@ -227,7 +252,10 @@ pub(crate) fn shp_visitor<'a>(
         // lifted anchor. See `locomotor_visual::BUILDING_ART_LIFT_PX`. The screen
         // bounds use this same anchor, before any turret pitch cache is touched.
         // The screen cull reads only the position: most objects stop here.
-        let (sx, sy) = {
+        let (sx, sy) = if let Some(carrier) = carrier {
+            let [x, y] = super::units::carried_body_point(carrier, entity);
+            (x, y)
+        } else {
             let (x, y) = crate::render::locomotor_visual::screen_position(entity);
             if entity.category() == EntityCategory::Structure {
                 crate::render::locomotor_visual::building_art_anchor(x, y)
@@ -247,7 +275,11 @@ pub(crate) fn shp_visitor<'a>(
                     })
             })
             .flatten();
-        let visible = if let Some([left, top, width, height]) = type_bounds {
+        // A carried cargo is drawn where its Carryall is, not culled by its own
+        // point.
+        let visible = if carrier.is_some() {
+            true
+        } else if let Some([left, top, width, height]) = type_bounds {
             // Building455C20 translates Type465570 by its render point.
             // DrawIfVisible43CF49..43CF78 tests four strict edges, without
             // a positive-area guard: a known empty point can be admitted.
@@ -338,16 +370,26 @@ pub(crate) fn shp_visitor<'a>(
                 .copied()
                 .unwrap_or(crate::rules::house_colors::NO_REMAP)
         });
-        let Some(draw_decision) = tactical_entity_admission(
-            super::helpers::TacticalEntityPurpose::Drawing,
-            entity,
-            local_owner_id,
-            sim.fog(),
-            ignore_visibility,
-            sim.session().binary_frame(),
-            super::units::house_color_to_remap_row(hc),
-            observer,
-        ) else {
+        let remap_row = super::units::house_color_to_remap_row(hc);
+        let admission = match carrier {
+            Some(_) => super::units::carried_admission(
+                entity,
+                sim.session().binary_frame(),
+                remap_row,
+                observer,
+            ),
+            None => tactical_entity_admission(
+                super::helpers::TacticalEntityPurpose::Drawing,
+                entity,
+                local_owner_id,
+                sim.fog(),
+                ignore_visibility,
+                sim.session().binary_frame(),
+                remap_row,
+                observer,
+            ),
+        };
+        let Some(draw_decision) = admission else {
             return;
         };
         let interp_z = pos.z();
@@ -364,6 +406,13 @@ pub(crate) fn shp_visitor<'a>(
                     .is_some()
             })
         {
+            // RESIDUAL: a carried Unit drawn as a TerrainType image draws
+            // nothing; DrawIt would draw it at the carried point. Trigger: a
+            // mod Carryall lifting a Unit whose `Image=` names a TerrainType;
+            // none in retail. Effect: the cargo is not drawn while carried.
+            let ShpDraw::Member(ground_objects) = draw else {
+                return;
+            };
             if let Some(frame) = resolve_object_shp_frame_with_facing(
                 Some(runtime),
                 rules,
@@ -735,9 +784,18 @@ pub(crate) fn shp_visitor<'a>(
                     [0.0, 0.0],
                 )
             };
-        let Some(parent) = ground_order.object_draw(stable_id, SpriteEncoding::Plain) else {
-            return;
+        // A carried cargo is no Display member: it takes the policy its parent
+        // would ([`NativeDisplayOrder::object_draw`]).
+        let parent = match carrier {
+            Some(_) => None,
+            None => match ground_order.object_draw(stable_id, SpriteEncoding::Plain) {
+                Some(parent) => Some(parent),
+                None => return,
+            },
         };
+        let parent_policy = parent.map_or(BlitPolicy::z_read(SpriteEncoding::Plain), |parent| {
+            parent.policy
+        });
         // Building DrawBody's pieces use 0x6E00 (Z read/write), whose raw
         // leaf drops the word. Infantry518F90 uses 0x2E00 (Z read only),
         // whose raw and RLE leaves both OR it. The retained mobile parent
@@ -745,7 +803,7 @@ pub(crate) fn shp_visitor<'a>(
         let body_policy = if entity.category() == EntityCategory::Structure {
             BlitPolicy::opaque(SpriteEncoding::Plain)
         } else {
-            parent.policy
+            parent_policy
         };
         let body = entry.map(|entry| {
             let mut instance = SpriteInstance {
@@ -877,7 +935,7 @@ pub(crate) fn shp_visitor<'a>(
                     &body_key,
                     [sx, sy],
                     instance,
-                    parent.policy,
+                    parent_policy,
                 )
             });
             let skip_embedded_shadow = ares_shadow.is_some();
@@ -893,7 +951,7 @@ pub(crate) fn shp_visitor<'a>(
                         &body_key,
                         [sx, sy],
                         instance,
-                        parent.policy,
+                        parent_policy,
                     )
                 }
                 _ => ares_shadow.flatten(),
@@ -926,7 +984,7 @@ pub(crate) fn shp_visitor<'a>(
                     depth,
                     tint: body_tint,
                     palette_light: palette_light.with_colour_word(
-                        if parent.policy.ors_colour_word(turret_entry.extended) {
+                        if parent_policy.ors_colour_word(turret_entry.extended) {
                             colour_word
                         } else {
                             0
@@ -956,7 +1014,7 @@ pub(crate) fn shp_visitor<'a>(
             pieces.extend(shadow);
             pieces.push(ObjectPieceInstance {
                 target,
-                render_z: parent.policy.render_z,
+                render_z: parent_policy.render_z,
                 instance,
             });
             // Unit73CE5E/73CEAD -> Foot41C090 -> Techno705E00 draws
@@ -984,7 +1042,7 @@ pub(crate) fn shp_visitor<'a>(
                     body_entry,
                     instance,
                     draw_decision,
-                    parent.policy,
+                    parent_policy,
                 )
             {
                 pieces.push(shadow);
@@ -992,11 +1050,17 @@ pub(crate) fn shp_visitor<'a>(
             if let Some((page, turret_instance)) = turret {
                 pieces.push(ObjectPieceInstance {
                     target: ObjectTexture::ShpPage(page),
-                    render_z: parent.policy.render_z,
+                    render_z: parent_policy.render_z,
                     instance: turret_instance,
                 });
             }
-            ground_objects.object(parent, pieces.drain(..));
+            match (&mut draw, parent) {
+                (ShpDraw::Member(objects), Some(parent)) => {
+                    objects.object(parent, pieces.drain(..));
+                }
+                (ShpDraw::Carried { pieces: cargo, .. }, _) => cargo.extend(pieces.drain(..)),
+                (ShpDraw::Member(_), None) => {}
+            }
         }
 
         // Emit building animation overlays and bib — but NOT during build-up/down.
@@ -1108,8 +1172,10 @@ pub(crate) fn shp_visitor<'a>(
             }
         }
 
-        if entity.category() == EntityCategory::Structure {
-            ground_objects.building(parent, building_pieces.drain(..));
+        if entity.category() == EntityCategory::Structure
+            && let (ShpDraw::Member(objects), Some(parent)) = (&mut draw, parent)
+        {
+            objects.building(parent, building_pieces.drain(..));
         }
     }
 }
@@ -1168,16 +1234,12 @@ pub(crate) fn embedded_shp_shadow_piece(
     // Building43D290's body point is the Location art anchor plus the frame's
     // canvas offset. Recover that shared anchor before applying the shadow
     // frame's own offset.
+    // A carried object raises it (`0x00706481`, `0x00706559`).
     let anchor = [
         body_instance.position[0] - body_entry.offset_x,
-        body_instance.position[1] - body_entry.offset_y,
+        body_instance.position[1] - body_entry.offset_y - carried_shadow_raise(entity),
     ];
     let lift_px = crate::render::locomotor_visual::screen_lift_px(entity);
-    // RESIDUAL: a carried object (Techno+424, set by the Carryall pickup
-    // 417297) raises this point another 14 pixels (706481/706559). The
-    // Carryall's cargo draw (units.rs) covers voxel Units only, so an SHP
-    // cargo is not drawn and nothing here reads the flag. Trigger: a mod
-    // Carryall lifting an SHP vehicle.
     shp_shadow_half(
         atlas,
         body_key,
@@ -1269,8 +1331,8 @@ fn ares_shp_unit_shadow_admitted(
 /// body's shadow lies on the ground, with Z adjust `GetZAdjustment() - 2`
 /// (vt+0x2EC). It replaces the stock turreted branch's shadow
 /// (`0x0073C733..0x0073C7AC`), which `UnitClass_DrawSHP_SkipTurretedShadow`
-/// (Ares.dll `0x10048180`) jumps over. The carried 14-pixel lift is the
-/// embedded shadow's residual: no SHP cargo is drawn.
+/// (Ares.dll `0x10048180`) jumps over. A carried Unit's is raised
+/// ([`carried_shadow_raise`]).
 fn ares_shp_unit_shadow_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     world: super::foot_depth::DepthWorld<'_>,
@@ -1296,7 +1358,10 @@ fn ares_shp_unit_shadow_piece(
         body_key,
         atlas.object_shp_frame_count(&body_key.type_id)?,
         body_instance,
-        [body_point[0], body_point[1] + point_y as f32],
+        [
+            body_point[0],
+            body_point[1] + point_y as f32 - carried_shadow_raise(entity),
+        ],
         super::foot_depth::unit_z_adjust_in(world, entity, true, None).wrapping_sub(2) as f32,
         policy,
     )
@@ -1342,8 +1407,8 @@ fn shp_unit_composite<'a>(
 /// (`0x0073C733..0x0073C7AC`): the body's shadow half at the body point, Z
 /// adjust `GetZAdjustment() - 2` (vt+0x2EC), flags `0x2E01`. Nothing gates it:
 /// it draws for a lifted, cloaking or `NoShadow=yes` Unit too. Ares replaces
-/// it ([`ares_shp_unit_shadow_piece`]). The carried 14-pixel lift
-/// (`0x0073C753`) is the embedded shadow's residual: no SHP cargo is drawn.
+/// it ([`ares_shp_unit_shadow_piece`]). A carried Unit's is raised
+/// (`0x0073C753`, [`carried_shadow_raise`]).
 fn stock_turreted_shp_shadow_piece(
     atlas: &crate::render::sprite_atlas::SpriteAtlas,
     world: super::foot_depth::DepthWorld<'_>,
@@ -1358,10 +1423,24 @@ fn stock_turreted_shp_shadow_piece(
         body_key,
         atlas.object_shp_frame_count(&body_key.type_id)?,
         body_instance,
-        body_point,
+        [body_point[0], body_point[1] - carried_shadow_raise(entity)],
         super::foot_depth::unit_z_adjust_in(world, entity, true, None).wrapping_sub(2) as f32,
         policy,
     )
+}
+
+/// How far an SHP shadow arm raises a carried Unit's shadow above its body
+/// point (IsOnCarryall `+0x424`): back to the point `UnitClass::DrawIt`
+/// lowered the body from ([`super::units::carried_body_point`]). The stock
+/// turreted branch (`0x0073C753`), TechnoClass_DrawSHP's embedded shadow
+/// (`0x00706481`, `0x00706559`) and Ares' early shadow (Ares.dll
+/// `10047F64..10047F70`) all do.
+fn carried_shadow_raise(entity: &crate::app::presentation::frame::ObjectRecord) -> f32 {
+    if entity.on_carryall {
+        super::units::CARRIED_DROP_PIXELS
+    } else {
+        0.0
+    }
 }
 
 /// The shadow `InfantryClass::DrawIt @ 0x00518F90` draws under an airborne

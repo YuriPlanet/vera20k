@@ -300,8 +300,9 @@ fn a_visceroid_refuses_the_embedded_shadow_but_the_turreted_one_has_no_gate() {
 /// shadow, the branch's own (`0x0073C733`), under its body and turret.
 /// The pieces a stock turreted SHP Unit draws: eight body frames at the
 /// draw point, the 32-frame turret ring from frame 8 three pixels higher,
-/// then the shadow half.
-fn stock_turreted_shp_pieces() -> Vec<ObjectPieceInstance> {
+/// then the shadow half. Drawn as a Display member, or as the cargo a
+/// Carryall draws at its body point `carrier`.
+fn stock_turreted_shp_pieces(carrier: Option<[f32; 2]>) -> Vec<ObjectPieceInstance> {
     use crate::app::presentation::frame::PresentationFrame;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
@@ -370,37 +371,48 @@ fn stock_turreted_shp_pieces() -> Vec<ObjectPieceInstance> {
     let colors =
         crate::map::houses::HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(0))]);
     let mut draws = crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
-    build_shp_instances_from_inputs(
-        &ShpInputs {
-            runtime: &runtime,
-            frame: &frame,
-            atlas: Some(&atlas),
-            overlay_atlas: None,
-            unit_atlas: None,
-            voxel_images: &Default::default(),
-            zshape_skips: &Default::default(),
-            depth_tested_images: None,
+    let input = ShpInputs {
+        runtime: &runtime,
+        frame: &frame,
+        atlas: Some(&atlas),
+        overlay_atlas: None,
+        unit_atlas: None,
+        voxel_images: &Default::default(),
+        zshape_skips: &Default::default(),
+        depth_tested_images: None,
+        camera,
+        render_size: [800, 600],
+        zoom: 1.0,
+        building_viewport: crate::app::presentation::render::tactical_world_viewport(
             camera,
-            render_size: [800, 600],
-            zoom: 1.0,
-            building_viewport: crate::app::presentation::render::tactical_world_viewport(
-                camera,
-                [0, 0, 800, 600],
-                None,
-            ),
-            axis: crate::render::batch::DepthAxis {
-                origin_y: 0.0,
-                world_height: 10_000.0,
-            },
-            local_owner: Some("Americans"),
-            ignore_visibility: true,
-            lighting: &crate::map::lighting::CellLightGrid::new(),
-            house_colors: &colors,
-            building_zshape: None,
+            [0, 0, 800, 600],
+            None,
+        ),
+        axis: crate::render::batch::DepthAxis {
+            origin_y: 0.0,
+            world_height: 10_000.0,
         },
-        &mut draws,
-        frame.display_order(&runtime.simulation),
-    );
+        local_owner: Some("Americans"),
+        ignore_visibility: true,
+        lighting: &crate::map::lighting::CellLightGrid::new(),
+        house_colors: &colors,
+        building_zshape: None,
+    };
+    let order = frame.display_order(&runtime.simulation);
+    if let Some(carrier) = carrier {
+        let mut cargo = record.clone();
+        cargo.on_carryall = true;
+        let mut pieces = Vec::new();
+        shp_visitor(&input, order)(
+            ShpDraw::Carried {
+                carrier,
+                pieces: &mut pieces,
+            },
+            &cargo,
+        );
+        return pieces;
+    }
+    build_shp_instances_from_inputs(&input, &mut draws, order);
     draws
         .into_owned()
         .iter()
@@ -411,7 +423,7 @@ fn stock_turreted_shp_pieces() -> Vec<ObjectPieceInstance> {
 
 #[test]
 fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
-    let targets: Vec<_> = stock_turreted_shp_pieces()
+    let targets: Vec<_> = stock_turreted_shp_pieces(None)
         .iter()
         .map(|piece| piece.target)
         .collect();
@@ -430,7 +442,7 @@ fn a_turreted_shp_unit_draws_only_its_branch_shadow() {
 /// not the no-turret branch's own rectangle.
 #[test]
 fn a_turreted_shp_units_body_and_turret_share_the_composite() {
-    let pieces = stock_turreted_shp_pieces();
+    let pieces = stock_turreted_shp_pieces(None);
     let [body, turret] = [&pieces[1].instance, &pieces[2].instance];
     assert_eq!(turret.position[1], body.position[1] - 3.0);
     for part in [body, turret] {
@@ -444,4 +456,21 @@ fn a_turreted_shp_units_body_and_turret_share_the_composite() {
         );
         assert_eq!(part.z_adjust, body.z_adjust);
     }
+}
+
+/// A Carryall draws its cargo at its own body point (`AircraftClass::Draw_It`,
+/// `0x0041461D..0x00414653`). DrawIt lowers a carried Unit's body 14 pixels
+/// (`0x0073CF16`), and the turreted branch raises its shadow back to that
+/// point (`0x0073C753`).
+#[test]
+fn a_carried_shp_unit_hangs_below_its_carryall_with_its_shadow_at_it() {
+    let carrier = [500.0, 200.0];
+    let pieces = stock_turreted_shp_pieces(Some(carrier));
+    let positions: Vec<_> = pieces.iter().map(|piece| piece.instance.position).collect();
+    let [x, y] = carrier;
+    assert_eq!(
+        positions,
+        [[x, y], [x, y + 14.0], [x, y + 14.0 - 3.0]],
+        "shadow, body, turret"
+    );
 }
