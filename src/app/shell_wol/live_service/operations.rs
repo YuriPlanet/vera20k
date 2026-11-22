@@ -100,7 +100,6 @@ impl LiveService {
             auth_attempt: 0,
             revision: 0,
             room: RoomAgreement::default(),
-            campaign_rooms: false,
             start_preparation: None,
             locally_refused_start: false,
             player_id: String::new(),

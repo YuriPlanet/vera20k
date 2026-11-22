@@ -83,6 +83,8 @@ pub(crate) struct WolLoginAccepted {
     /// VERA: the lobby lets a room's players visit the public lobby
     /// (docs/lobby-protocol.md "Visiting the lobby").
     pub(crate) lobby_visits: bool,
+    /// VERA: the lobby offers `campaign_rooms` (docs/lobby-protocol.md).
+    pub(crate) campaign_rooms: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -718,6 +720,7 @@ impl WolVisit {
             (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
                 self.lobby_visits = accepted.lobby_visits;
+                self.lobby_campaign_rooms = accepted.campaign_rooms;
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
                 // sink [0xB77DC2] (0x007A559D).
@@ -1815,6 +1818,7 @@ mod tests {
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
                 motd: "Welcome".into(),
                 lobby_visits: false,
+                campaign_rooms: false,
             }))),
             WolStep::Accepted
         );

@@ -1445,6 +1445,26 @@ fn loading_return_while_service_is_taken_keeps_finish_before_lobby_admission() {
     );
 }
 
+/// Lobby events run while poll holds the service, so a room the lobby
+/// reopens still reads the campaign rooms its sign-in offered.
+#[test]
+fn campaign_rooms_a_sign_in_offered_hold_while_poll_holds_the_service() {
+    let (live, _input, _output) = control_service(None);
+    let mut visit = WolVisit::open(false);
+    visit.provider = WolProvider::Online;
+    visit.live_service = Some(live);
+    visit.awaiting = service::Awaiting::Connect {
+        deadline: Instant::now() + Duration::from_secs(1),
+    };
+    let _borrowed = visit.live_service.take(); // As poll holds it.
+    visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
+        motd: String::new(),
+        lobby_visits: false,
+        campaign_rooms: true,
+    })));
+    assert!(visit.lobby_campaign_rooms);
+}
+
 #[test]
 fn a_match_from_a_kept_room_asks_for_the_room_back_on_finish() {
     let (service, input, _output) = control_service(Some("room-match"));
