@@ -548,15 +548,16 @@ pub(super) fn project_players(state: &mut AppState) {
         return;
     };
     let game = service.selected_game.and_then(|id| service.game(id));
+    let game_name_hash = game.map(|game| crate::net::lan_messages::game_name_hash(&game.name));
     let selected = service.selected_game;
     let mut players = Vec::new();
     if game.is_none() {
         players.push(super::shell_lan::local_lobby_row(&local_name(state)));
     }
     for peer in &service.observed_participants {
-        let color = match (game, peer.message.payload()) {
-            (Some(game), LanPayload::ParticipantDetails(fields)) => {
-                if fields.game_name_hash != crate::net::lan_messages::game_name_hash(&game.name) {
+        let color = match (game_name_hash, peer.message.payload()) {
+            (Some(hash), LanPayload::ParticipantDetails(fields)) => {
+                if fields.game_name_hash != hash {
                     continue;
                 }
                 fields.color

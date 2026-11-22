@@ -118,16 +118,23 @@ struct ObservedParticipant {
     last_seen: u32,
 }
 
-/// VERA: an outside-data clamp. gamemd's receive grows its game list for each
-/// new name (`0x005E038F`); here a new sender is ignored while the list is
-/// full, listed rows keep refreshing, and the `0x005DB720` expiry frees rows.
-/// It bounds what each advertisement re-projects and compares.
+/// VERA: an outside-data clamp. gamemd's receive adds each new name to its
+/// growable game list (`0x005E038F`); here a new sender is ignored while the
+/// list is full, listed rows keep refreshing, and the `0x005DB720` expiry frees
+/// rows. It bounds what each advertisement re-projects and compares.
 const MAX_LAN_GAMES: usize = 64;
 
 /// VERA: the same clamp for lobby player observations. A row is kept per sender
 /// and message kind, so a player sending both Presence and ParticipantDetails
 /// takes two.
 const MAX_LAN_PARTICIPANTS: usize = 256;
+
+/// VERA: rows one IPv4 address may hold in each table, so one machine sending
+/// from many ports cannot fill a table. A game binds the one LAN port, so an
+/// honest address holds one game and two observations; the rest is room for
+/// machines behind one address.
+const MAX_LAN_GAMES_PER_ADDRESS: usize = 4;
+const MAX_LAN_PARTICIPANTS_PER_ADDRESS: usize = 8;
 
 /// How long a player the host kicks from VERA's room is kept out of it.
 const KICK_KEEP_OUT_BUCKETS: u32 = super::match_runtime::frame_pacer::frame_bucket(5 * 60 * 1000);
@@ -501,7 +508,8 @@ impl LanService {
     /// only when the game turns open, so same-named hosts share one row; here
     /// each sender keeps its own row, and a rematch guest rejoins its original
     /// host. The usual `0x005DB720` expiry retires stale entries, and a new
-    /// sender is ignored while [`MAX_LAN_GAMES`] are listed.
+    /// sender is ignored while [`MAX_LAN_GAMES`] are listed, or
+    /// [`MAX_LAN_GAMES_PER_ADDRESS`] from its address.
     fn record_advertised_game(
         &mut self,
         endpoint: SocketAddrV4,
@@ -517,7 +525,14 @@ impl LanService {
             record.name = name;
             record.open = open;
             record.last_seen = now;
-        } else if self.games.len() < MAX_LAN_GAMES {
+        } else if self.games.len() < MAX_LAN_GAMES
+            && self
+                .games
+                .iter()
+                .filter(|record| record.endpoint.ip() == endpoint.ip())
+                .count()
+                < MAX_LAN_GAMES_PER_ADDRESS
+        {
             self.games.push(DiscoveryRecord {
                 endpoint,
                 name,
@@ -528,7 +543,8 @@ impl LanService {
     }
 
     /// Keeps the latest message of its kind from each sender for BB's player
-    /// list; a new row is ignored while [`MAX_LAN_PARTICIPANTS`] are held.
+    /// list; a new row is ignored while [`MAX_LAN_PARTICIPANTS`] are held, or
+    /// [`MAX_LAN_PARTICIPANTS_PER_ADDRESS`] from its address.
     fn record_observed_participant(
         &mut self,
         endpoint: SocketAddrV4,
@@ -542,7 +558,14 @@ impl LanService {
         {
             peer.message = message;
             peer.last_seen = now;
-        } else if self.observed_participants.len() < MAX_LAN_PARTICIPANTS {
+        } else if self.observed_participants.len() < MAX_LAN_PARTICIPANTS
+            && self
+                .observed_participants
+                .iter()
+                .filter(|peer| peer.endpoint.ip() == endpoint.ip())
+                .count()
+                < MAX_LAN_PARTICIPANTS_PER_ADDRESS
+        {
             self.observed_participants.push(ObservedParticipant {
                 endpoint,
                 message,
