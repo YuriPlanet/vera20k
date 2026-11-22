@@ -22,10 +22,9 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1021; the chain docs give 361 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
-  untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
-  for the stock destructor. A residual disposition is still a gap: every
+  removed). The engine source cites 1040; the chain docs give 361 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 47 are
+  untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
 - Tests at the commit that adds this page, when Ares was still a build feature
@@ -126,8 +125,9 @@ the alternate model, including an unloading harvester's alternate, before that
 model has its own unit. The current bounded chain is ordinary base-gun VXL art.
 RNG draws 0, simulation timer writes 0, detach calls 0.
 
-SHP image/frame hooks and mixed actual/alternate indexed-gun modes remain open.
-Native uses actual TurretCount/IsGattling to choose the selected model's base or
+The SHP draw takes the same alternate (`UnitClass_DrawSHP_WaterType` `73C5FC`,
+`UnitClass_DrawSHP_ChangeType1`, in `app::presentation::instances::shp`). Mixed
+actual/alternate indexed-gun modes remain open. Native uses actual TurretCount/IsGattling to choose the selected model's base or
 indexed slots, while the current atlas keys derive this from the selected model.
 Custom combinations can show a different gun or omit it. These
 require separate physical slot identities through the existing voxel catalog and
@@ -137,11 +137,8 @@ atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
 
 ## Presentation and UI not ported
 
-- Unit art still needs WaterImage's SHP path and mixed indexed-gun draws above,
-  the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
-  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
-  (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
-  the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
+- Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
+  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
   `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
   [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
   ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
@@ -239,24 +236,11 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 67 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
-hook script above skips this page, and counts `0x5F3D65` as cited). Most are DLL plumbing, unit art and the alpha
-lights.
+These 47 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+hook script above skips this page). Most are DLL plumbing.
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
-| `0x420A71` | `100475A0` | AlphaShapeClass_CTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x420F75` | `10047470` | AlphaLightClass_UpdateScreen_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x4210AC` | `10047440` | AlphaLightClass_UpdateScreen_Header | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x4211AC` | `10047400` | AlphaLightClass_UpdateScreen_Body | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421371` | `100477D0` | TacticalClass_UpdateAlphasInRectangle_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x42146E` | `10047780` | TacticalClass_UpdateAlphasInRectangle_Header | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x42152C` | `10047740` | TacticalClass_UpdateAlphasInRectangle_Body | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421730` | `10047610` | AlphaShapeClass_SDDTOR | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421798` | `10047670` | AlphaShapeClass_SDDTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x423B0B` | `100476C0` | AnimClass_Update_AlphaLight | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x5F3D65` | `100476E0` | ObjectClass_DTOR | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x71944E` | `10047810` | TeleportLocomotionClass_ILocomotion_Process | `Ext/Techno/Hooks.Alpha.cpp` |
 | `0x4A1C10` | `1005F550` | Checksummer_Add_BYTE | `Misc/Checksum.cpp` |
 | `0x4A1CA0` | `1005F600` | Checksummer_Add_bool | `Misc/Checksum.cpp` |
 | `0x4A1D30` | `1005F5E0` | Checksummer_Add_WORD | `Misc/Checksum.cpp` |
@@ -265,14 +249,6 @@ lights.
 | `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
 | `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
 | `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
-| `0x73B4A0` | `100481E0` | UnitClass_DrawVXL_WaterType | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C5FC` | `10048190` | UnitClass_DrawSHP_WaterType | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C613` | `10047FE0` | UnitClass_DrawSHP_FacingsA | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C655` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C69D` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C702` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C733` | `10048180` | UnitClass_DrawSHP_SkipTurretedShadow | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73CD01` | `10048150` | UnitClass_DrawSHP_FacingsB | `Ext/Techno/Hooks.Art.cpp` |
 | `0x483BF1` | `1006ADE0` | CellClass_Load_Crates | `Misc/Savegame.cpp` |
 | `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
 | `0x565215` | `1006AEC0` | MapClass_CTOR_NoInit_Crates | `Misc/Savegame.cpp` |

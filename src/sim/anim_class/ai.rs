@@ -17,6 +17,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectKind;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
@@ -87,6 +88,13 @@ impl Simulation {
         };
         let config = rules.art().anim_config(config_handle);
 
+        // Ares `AnimClass_Update_AlphaLight` (hook `0x00423B0B`,
+        // `Ares.dll 100476C0`) moves a glow before the flaming-guy test; a
+        // flaming guy's moves at the head of its ObjectClass::AI
+        // (`anim_flaming_guy_ai`).
+        if rules.ares() && !config.is_flaming_guy {
+            self.update_alpha_shape(id, ObjectKind::Anim, rules);
+        }
         //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
         if config.is_flaming_guy {
             self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);

@@ -653,6 +653,49 @@ fn cliff_voxel_hull_turret_and_barrel_use_the_shared_composite_seed() {
     }
 }
 
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn turreted_shp_body_and_turret_take_the_voxel_composites_depth() {
+    use super::native_z::pack_voxel_z_gradient;
+
+    // A turreted SHP Unit draws its body and turret into the Unit composite
+    // and blits it once (0x0073B140, called at 0x0073CDDB), as a voxel body
+    // does: each SHP part decides depth as the voxel composite on the shared
+    // rectangle does at that pixel.
+    let gpu = Gpu::new();
+    let composite = pack_voxel_z_gradient(ZGradient::Vertical, false);
+    let mut voxel = Layer::solid(Shader::Voxel, BLUE, -10.0);
+    voxel.instance.z_gradient = composite;
+    let baseline = gpu.render(&[cliff_depth_lanes(), voxel]);
+    let bounds = [([0.0, 2.0], [8.0, 6.0]), ([1.0, 0.0], [6.0, 5.0])];
+    let mut layers = vec![cliff_depth_lanes()];
+    for (position, size) in bounds {
+        let mut part = Layer::solid(Shader::SpriteRead, BLUE, -10.0);
+        part.instance.position = position;
+        part.instance.size = size;
+        part.instance.z_gradient = composite;
+        part.instance.zshape_origin = [0.0, SIDE as f32];
+        layers.push(part);
+    }
+    let actual = gpu.render(&layers);
+    for y in 0..SIDE {
+        for x in 0..SIDE {
+            let covered = bounds.iter().any(|(position, size)| {
+                (position[0]..position[0] + size[0]).contains(&(x as f32))
+                    && (position[1]..position[1] + size[1]).contains(&(y as f32))
+            });
+            let pixel = (y * SIDE + x) as usize;
+            let expected = if covered { baseline[pixel] } else { RED };
+            assert_eq!(actual[pixel], expected, "at ({x},{y})");
+        }
+    }
+    // Each part seeding from its own frame, as a lone SHP draw does, differs.
+    for layer in &mut layers[1..] {
+        layer.instance.z_gradient = ZGradient::Vertical as u32;
+    }
+    assert_ne!(gpu.render(&layers), actual, "fixture missed per-part seeds");
+}
+
 fn indexed_bridge_test_layer(position: [f32; 2], size: [u32; 2], index: u8) -> Layer {
     let mut layer = Layer::solid(Shader::Voxel, BLUE, 0.0);
     layer.instance.position = position;

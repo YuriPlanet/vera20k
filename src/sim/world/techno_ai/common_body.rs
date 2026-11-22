@@ -426,6 +426,10 @@ pub(super) fn mission_counter_step(
     outcome: &mut ObjectAiOutcome,
 ) -> bool {
     sim.substrate.entities.count_mission_ai_visit(id);
+    // Ares' `ObjectClass_Update_AlphaLight` hooks ObjectClass::AI's entry.
+    if rules.ares() {
+        sim.update_alpha_shape(id, crate::sim::world::substrate::ObjectKind::Entity, rules);
+    }
     // The sound block (`0x005F3E78..0x005F3F0C`) runs before the fall block
     // (`0x005F3F11`), so a faller its landing kills still plays its sounds.
     sim.object_ai_sounds(id, rules, &mut ctx.effects);
