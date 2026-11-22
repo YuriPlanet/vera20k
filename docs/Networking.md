@@ -1186,6 +1186,9 @@ command stream above is an intentional adaptation.
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings. A returning guest waits for the
   admitted host's discovery ID. Same-named games keep their own advertisements.
+- The lobby lists at most 64 advertised games and keeps at most 256 player
+  observations. While a list is full, a new sender is ignored until a listed one
+  stops sending and expires; listed rows keep refreshing.
 
 ## Reproducible validation tools
 

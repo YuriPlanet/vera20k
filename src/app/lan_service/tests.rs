@@ -39,6 +39,29 @@ fn same_named_games_keep_each_host_endpoint() {
     assert_eq!(service.games.len(), 2);
 }
 
+#[test]
+fn full_discovery_tables_ignore_new_senders_and_refresh_listed_ones() {
+    let mut service = service();
+    let sender =
+        |index: usize| SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1000 + u16::try_from(index).unwrap());
+    let presence = LanMessage::presence("Guest", 0, 0).unwrap();
+    for index in 0..=MAX_LAN_GAMES {
+        service.record_advertised_game(sender(index), "Host".into(), false, 10);
+    }
+    for index in 0..=MAX_LAN_PARTICIPANTS {
+        service.record_observed_participant(sender(index), presence.clone(), 10);
+    }
+    assert_eq!(service.games.len(), MAX_LAN_GAMES);
+    assert_eq!(service.observed_participants.len(), MAX_LAN_PARTICIPANTS);
+
+    service.record_advertised_game(sender(0), "Host".into(), true, 12);
+    let refreshed = service.game(endpoint_id(sender(0))).unwrap();
+    assert!(refreshed.open);
+    assert_eq!(refreshed.last_seen, 12);
+    service.record_observed_participant(sender(0), presence, 12);
+    assert_eq!(service.observed_participants[0].last_seen, 12);
+}
+
 /// The `0x549` handler broadcasts only for another row (`0x005DDCFF`);
 /// the discovery rebuild's clamp sends the game query alone (`0x005DB9FF`).
 #[test]
