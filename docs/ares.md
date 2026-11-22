@@ -86,7 +86,7 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover but Tunnel, human or AI,
+- [Ground, airborne and building EMP](ares-emp.md) (every Foot mover, Tunnel included, human or AI,
   miners, falling and mind-controlled victims, every EMP-prone building with its factory, gap,
   superweapon, PowersUnit, clone, Prism and undeploy effects, the Tank Bunker exemption,
   and the player's miner and base warnings; team members and spawners in
