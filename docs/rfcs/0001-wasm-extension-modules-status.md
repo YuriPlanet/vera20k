@@ -380,8 +380,9 @@ python3 -m tools.cargo_run -- test -p vera20k-wasm-ext --lib
 # at the .wasm files. VERA20K_TEST_PLAYTEST_WASM takes the four playtest mods
 # (veteran-fury, siege-doctrine, meteor-storm, trigger-lab), `:`-separated, and
 # plays 2000 frames with each (playtest_modules_keep_running, --nocapture prints
-# their logs). VERA20K_TEST_MUSTER_WASM takes muster_field.wasm and plays a whole
-# round from player command records (muster_field_plays_a_round_from_player_orders).
+# their logs). VERA20K_TEST_MUSTER_WASM takes muster_field.wasm and plays its first
+# wave from player command records (muster_field_plays_a_round_from_player_orders)
+# and a campaign lost with an empty company (muster_field_ends_when_the_last_banner_falls).
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 VERA20K_TEST_..._WASM=... \
   python3 -m tools.cargo_run -- test -p vera20k-core --lib -- sim::ext_modules:: sim::trigger_runtime::
 RA2_DIR=<retail> VERA20K_REQUIRE_RETAIL_ASSETS=1 python3 -m tools.cargo_run -- \
