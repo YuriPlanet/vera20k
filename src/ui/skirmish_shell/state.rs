@@ -8,54 +8,38 @@ mod opponent_scroll;
 mod player_name;
 mod random_map_extras;
 mod random_map_setup;
-mod saved_seed_browser;
+pub(crate) mod saved_seed_browser;
 mod saved_setup;
 mod team_menus;
 mod team_starts;
 mod trackbars;
 
-#[cfg(test)]
-use self::combos::{combo_dropdown_max_top_index, top_index_from_scrollbar_track_click};
-use self::combos::{
-    handle_combo_mouse_down, handle_combo_mouse_move, set_open_combo_top_index,
-    top_index_from_thumb_y,
-};
-
+pub(crate) use combos::{apply_combo_selection, combo_open};
 pub use combos::{
-    available_color_choices, available_start_choices, combo_dropdown_content_rect,
-    combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_scroll_thumb_rect,
-    combo_dropdown_scrollbar_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
-    combo_rect, country_choices, selected_combo_item, selected_combo_item_index, team_choices,
+    available_color_choices, available_start_choices, combo_dropdown_max_visible_rows,
+    combo_enabled, combo_items, combo_rect, country_choices, selected_combo_item,
+    selected_combo_item_index, team_choices,
 };
 pub(crate) use hit_test::status_help_key_for_hover_with_catalog;
 pub use hit_test::{
-    action_for_owner_draw_button, apply_action, hit_test, hit_test_owner_draw_button,
-    hovered_choose_map_modal_control, hovered_shell_control, status_help_key_for_choose_map_hover,
-    status_help_key_for_hover, status_help_key_for_random_map_setup,
+    status_help_key_for_choose_map_hover, status_help_key_for_hover,
+    status_help_key_for_random_map_setup,
 };
 pub use launch::{launch_session, pack_launch_session_without_start_validation};
-pub use opponent_scroll::{
-    opponent_scroll_deadline, opponent_scroll_geometry, opponent_scroll_held, poll_opponent_scroll,
-};
+pub use opponent_scroll::{opponent_scroll_geometry, opponent_scroll_rows};
 
 pub use choose_map::{
-    ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
-    ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    FAVORITES_ROW, ONLINE_MAPS_ROW, RANDOM_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection,
-    ai_rows_beyond_limit_occupied, favorite_key,
+    ChooseMapContext, ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer,
+    ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection, FAVORITES_ROW, ONLINE_MAPS_ROW,
+    RANDOM_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection, ai_rows_beyond_limit_occupied,
+    favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
-    PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
-    PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,
-    blur_player_name_edit, clear_status_help_text, close_combo_dropdown, combo_dropdown_open,
-    dismiss_validation_modal, drain_pending_ui_sounds, focus_player_name_edit,
-    handle_player_name_backspace, handle_player_name_delete, handle_player_name_end,
-    handle_player_name_home, handle_player_name_left, handle_player_name_right,
-    handle_player_name_tab, initialize_rows_for_selected_map, insert_player_name_text,
-    player_name_caret_prefix, player_name_edit_rect_hit, player_row_visible,
-    repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
-    skirmish_session_options, update_player_name_scroll_for_caret,
+    PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES, SkirmishShellDialog, SkirmishShellState,
+    accept_selected_map, initialize_rows_for_selected_map, player_name_from_profile,
+    player_row_visible, repair_teams_for_selected_mode, selected_player_rows,
+    skirmish_session_options,
 };
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
@@ -67,7 +51,7 @@ pub use random_map_setup::{
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
-    SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
+    SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
 pub use team_menus::{
@@ -75,10 +59,7 @@ pub use team_menus::{
     balance_teams_by_strength, team_start_seats,
 };
 pub use team_starts::starts_by_team;
-pub use trackbars::{
-    SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
-    handle_option_mouse_up, handle_option_mouse_wheel, trackbar_visual_value,
-};
+pub use trackbars::SkirmishTrackbarBounds;
 
 use crate::skirmish_launch::{
     AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, SKIRMISH_MAX_SLOT_COUNT,
@@ -87,7 +68,7 @@ use crate::skirmish_launch::{
 use self::player_name::inactive_ai_team_default;
 #[cfg(test)]
 use self::trackbars::CREDITS_MAX;
-use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, SkirmishTrackbarId};
+use super::layout::{ChooseMapModalButton, SkirmishCheckboxId, SkirmishTrackbarId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnerDrawButton {
@@ -110,25 +91,6 @@ pub enum SkirmishShellAction {
     GameOptions,
     /// The app owns the saved setups.
     Setups,
-    SelectColor(ColorComboId),
-    SelectMap(usize),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkirmishShellUiSound {
-    GuiCheckboxSound,
-    GenericClick,
-    GuiComboOpenSound,
-    GuiComboCloseSound,
-}
-
-impl SkirmishShellUiSound {
-    pub(crate) fn combo(cue: crate::ui::shell::combobox::ComboCue) -> Self {
-        match cue {
-            crate::ui::shell::combobox::ComboCue::Open => Self::GuiComboOpenSound,
-            crate::ui::shell::combobox::ComboCue::Close => Self::GuiComboCloseSound,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,6 +180,7 @@ pub enum ChooseMapHoverTarget {
     Button(ChooseMapModalButton),
 }
 
+/// The combo whose list is open, as [`super::page::open_combo`] reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenComboDropdown {
     pub id: SkirmishComboId,
@@ -227,39 +190,11 @@ pub struct OpenComboDropdown {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DropdownScrollDragState {
-    pub id: SkirmishComboId,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropdownScrollbarPart {
     UpArrow,
     DownArrow,
     Thumb,
     Track,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DropdownScrollbarPressState {
-    pub id: SkirmishComboId,
-    pub part: DropdownScrollbarPart,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkirmishValidationModalState {
-    pub message: String,
-    pub ok_button: String,
-    pub ok_button_pressed: bool,
-}
-
-impl SkirmishValidationModalState {
-    pub fn new(message: impl Into<String>, ok_button: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            ok_button: ok_button.into(),
-            ok_button_pressed: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

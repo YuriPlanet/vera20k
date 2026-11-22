@@ -2413,8 +2413,7 @@ fn poll_network_load_wait(
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
             let text =
-                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
-                    .into_owned();
+                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {

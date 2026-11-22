@@ -12,6 +12,7 @@ mod responses;
 mod sign_in;
 mod wire;
 
+use crate::app::shell_route::ShellRoute;
 use crate::util::time::{Duration, Instant};
 use std::collections::BTreeMap;
 use std::net::SocketAddrV4;
@@ -938,11 +939,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                     log::warn!("Online setup request failed: {error:#}");
                     let text = if let Some(MapTooSmall(capacity)) = error.downcast_ref() {
                         crate::assets::csf_file::format_csf(
-                            &crate::app::App::csf_label(
-                                state,
-                                "TXT_SCENARIO_TOO_SMALL",
-                                "TXT_SCENARIO_TOO_SMALL",
-                            ),
+                            &state.csf_label("TXT_SCENARIO_TOO_SMALL", "TXT_SCENARIO_TOO_SMALL"),
                             &[crate::assets::csf_file::CsfArg::Int(i64::from(*capacity))],
                         )
                     } else {
@@ -1027,9 +1024,10 @@ fn problem_chat_open(
     awaiting_room: bool,
 ) -> bool {
     match route {
-        crate::app::shell_route::ShellRoute::NetworkSetup => setup_open,
-        route if route.wol() => quick_match_open,
-        route => route.wol_lobby() && lobby_open && !awaiting_room,
+        ShellRoute::NetworkSetup => setup_open,
+        ShellRoute::Wol => quick_match_open,
+        ShellRoute::WolLobby => lobby_open && !awaiting_room,
+        _ => false,
     }
 }
 

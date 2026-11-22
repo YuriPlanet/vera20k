@@ -179,9 +179,7 @@ pub(crate) fn still_frame(
                     && presentation
                         .saved_game_browser
                         .as_ref()
-                        .is_some_and(|browser| {
-                            browser.description_edit.focused && browser.caret_blink_on()
-                        }),
+                        .is_some_and(|browser| browser.caret_visible()),
                 panel_due,
                 fonts,
             })

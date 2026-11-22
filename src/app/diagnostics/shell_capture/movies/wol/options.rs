@@ -28,20 +28,23 @@ impl WolCapture {
 
     /// `0x2BC` shown and settled over the hidden lobby.
     pub(super) fn options_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::options::shown;
         use crate::ui::wol_options::{
-            BUDDIES, CANCEL, CHECKBOXES, MUSIC, OK, PAGES, SOUND_OPTIONS, WolOptionsState,
+            BUDDIES, CANCEL, CHECKBOXES, MUSIC, OK, PAGES, SOUND_OPTIONS,
         };
         let live = state.frontend.wol_preferences;
-        let page = Self::options_page(state)?;
+        let checks = shown(state).map(|(preferences, _)| preferences.checks());
         ensure!(
-            page.ui.checked == WolOptionsState::open(&live, Default::default()).checked
-                && page.sound.is_none(),
+            checks == Some(live.checks()) && Self::options_page(state)?.sound.is_none(),
             "0x2BC init does not show the live values"
         );
         ensure!(!Self::lobby(state)?.shown, "0x113 must hide under 0x2BC");
-        self.event(frame, json!({"0x2BC settled": page.ui.checked}));
+        self.event(frame, json!({"0x2BC settled": checks}));
         let checked = |state: &AppState, id| {
-            Self::options_page(state).is_ok_and(|page| page.ui.is_checked(id))
+            let index = CHECKBOXES.iter().position(|checkbox| checkbox.id == id);
+            shown(state)
+                .zip(index)
+                .is_some_and(|((preferences, _), index)| preferences.checks()[index])
         };
         match self.target {
             WolTarget::OptionsSteady => {
@@ -142,9 +145,7 @@ impl WolCapture {
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
         let layout = crate::app::shell_wol::options::layout(state);
         welcome_click(state, translate_list_arrow(&layout)?);
-        let popup = Self::options_page(state)?
-            .ui
-            .translate_popup(&layout)
+        let popup = crate::app::shell_wol::options::translate_popup(state)
             .context("the translation list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
         let row = layout
@@ -154,11 +155,11 @@ impl WolCapture {
             state,
             crate::ui::skirmish_shell::checkbox_icon_rect(row, layout.page.scale),
         );
-        let ui = &Self::options_page(state)?.ui;
+        let translate = crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat);
         ensure!(
-            ui.translate == translated_lobby_only() && ui.translate_list.control.is_none(),
-            "the clicks did not pick the settings: {:?}",
-            ui.translate
+            translate == Some(translated_lobby_only())
+                && crate::app::shell_wol::options::translate_popup(state).is_none(),
+            "the clicks did not pick the settings: {translate:?}"
         );
         options_button(state, OK)?;
         ensure!(
@@ -193,7 +194,8 @@ impl WolCapture {
     pub(super) fn translation_reopened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let layout = crate::app::shell_wol::options::layout(state);
         ensure!(
-            Self::options_page(state)?.ui.translate == translated_lobby_only(),
+            crate::app::shell_wol::options::shown(state).map(|(_, chat)| chat)
+                == Some(translated_lobby_only()),
             "the reopened page does not show the saved settings"
         );
         self.event(frame, "reopened with the saved settings");
@@ -202,14 +204,14 @@ impl WolCapture {
         restore_settings(state, bytes)?;
         if self.target == WolTarget::ModernOptionsTranslationList {
             welcome_click(state, translate_list_arrow(&layout)?);
-            let row = Self::options_page(state)?
-                .ui
-                .translate_popup(&layout)
+            let row = crate::app::shell_wol::options::translate_popup(state)
                 .and_then(|popup| popup.row_rect(4))
                 .context("the translation list did not open")?;
             set_window_pointer_to_rect_center(state, row);
         } else {
-            let list = layout.translate.context("the translation list")?.list;
+            let list = layout
+                .rect(crate::ui::wol_options::TRANSLATE)
+                .context("the translation list")?;
             set_window_pointer_to_rect_center(state, list);
         }
         App::handle_wol_mouse_move(state);
@@ -317,19 +319,12 @@ impl WolCapture {
     /// `0xD6` shown and settled over the hidden `0x2BC`.
     pub(super) fn sound_settled(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let positions = crate::app::input::sound::volume_positions(state);
-        let dialog = Self::options_page(state)?
-            .sound
-            .as_ref()
-            .context("0xD6 state")?;
-        ensure!(dialog.positions == positions, "0xD6 init positions differ");
+        let shown = crate::app::shell_wol::options::sound_positions(state);
+        ensure!(shown == Some(positions), "0xD6 init positions differ");
         // A press on the music rail near its left end jumps once.
         let rail = crate::app::shell_wol::options::sound_layout(state).sliders[0];
         welcome_click(state, RectPx::new(rail.x + 8, rail.y, 4, rail.h));
-        let moved = Self::options_page(state)?
-            .sound
-            .as_ref()
-            .context("0xD6 state")?
-            .positions;
+        let moved = crate::app::shell_wol::options::sound_positions(state).context("0xD6 state")?;
         ensure!(
             moved[0] < positions[0] && moved[1..] == positions[1..],
             "the music rail press did not move it: {positions:?} -> {moved:?}"

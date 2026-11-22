@@ -6,6 +6,7 @@
 //! answer instead.
 
 use super::*;
+use crate::app::shell_route::ShellRoute;
 use crate::app::shell_wol::quick_match::{self as qm, MatchTransport, stage};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::ui::wol_lobby::EX_INFO_VERSION;
@@ -74,7 +75,7 @@ impl WolCapture {
                 Ok(())
             }
             QmPhase::Box(key) => {
-                if box_body(state).is_some_and(|body| body == csf(state, key)) {
+                if box_body(state).is_some_and(|body| body == state.csf_text(key)) {
                     self.qm_box_shown(state, frame, key)?;
                 }
                 Ok(())
@@ -196,7 +197,7 @@ impl WolCapture {
                 ],
             })),
         );
-        let requesting = csf(state, "WOL:RequestingMatch");
+        let requesting = state.csf_text("WOL:RequestingMatch");
         self.expect_rows(state, frame, from, &[requesting])?;
         let requests = self.requests(state, frame)?;
         // The user-list sink's ladder batch (0x007A77CB), then the request.
@@ -284,7 +285,7 @@ impl WolCapture {
             WolTarget::QmExit => {
                 let from = qm_rows(state)?.len();
                 matchbot_says(state, "Exit", false, None);
-                let exit = csf(state, "WOL:MatchFailExit");
+                let exit = state.csf_text("WOL:MatchFailExit");
                 self.expect_rows(state, frame, from, &[exit])?;
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchFailExit"));
             }
@@ -297,19 +298,19 @@ impl WolCapture {
     /// The matchbot's progress, fail and unknown texts, one row each.
     fn qm_lines(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         let says = [
-            ("Working", true, csf(state, "GUI:MatchingProgress2")),
+            ("Working", true, state.csf_text("GUI:MatchingProgress2")),
             ("Info hello", false, "hello".to_owned()),
             (
                 "Pool 12",
                 false,
                 csf_name(state, "WOL:MatchingPlayerPool", "12"),
             ),
-            ("Fail", true, csf(state, "WOL:MatchFail")),
-            ("PingFail", true, csf(state, "WOL:MatchFailPing")),
+            ("Fail", true, state.csf_text("WOL:MatchFail")),
+            ("PingFail", true, state.csf_text("WOL:MatchFailPing")),
             (
                 "Status 7",
                 true,
-                csf(state, "WOL:MatchUnknownServerCommand"),
+                state.csf_text("WOL:MatchUnknownServerCommand"),
             ),
         ];
         for (text, private, expected) in says {
@@ -354,11 +355,12 @@ impl WolCapture {
             self.hover_settle(state);
             return Ok(());
         }
-        let ok = crate::ui::shell::modal::body_ok_layout(
+        let ok = crate::ui::shell::modal::menu_message_box(
+            1,
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         )
-        .ok;
+        .button(0);
         welcome_click(state, ok);
         let requests = self.requests(state, frame)?;
         ensure!(
@@ -386,8 +388,8 @@ impl WolCapture {
         );
         let found = [
             csf_name(state, "WOL:MatchFoundWith", PEER),
-            csf(state, "WOL:MatchOpponentPingUnknown"),
-            csf(state, "WOL:MatchCreatingGame"),
+            state.csf_text("WOL:MatchOpponentPingUnknown"),
+            state.csf_text("WOL:MatchCreatingGame"),
         ];
         self.expect_rows(state, frame, from, &found)?;
         ensure!(
@@ -433,7 +435,7 @@ impl WolCapture {
             crate::app::shell_network_setup::quick_match(state)
                 && state.match_state.session.host()
                 && qm::dialog(state).is_some()
-                && !state.frontend.shell_route.network_setup(),
+                && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the create did not run the host's nodes headless under 0x117"
         );
         if self.target == WolTarget::QmHostWaiting {
@@ -623,7 +625,7 @@ impl WolCapture {
         );
         let found = [
             csf_name(state, "WOL:MatchFoundWith", PEER),
-            csf(state, "WOL:MatchOpponentPingUnknown"),
+            state.csf_text("WOL:MatchOpponentPingUnknown"),
             csf_name(state, "WOL:MatchAttemptingToFindGame", PEER),
         ];
         self.expect_rows(state, frame, from, &found)?;
@@ -684,14 +686,14 @@ impl WolCapture {
                 members: vec![member(PEER, MEMBER_OPERATOR, ""), member(NICKNAME, 0, "")],
             })),
         );
-        let joined = csf(state, "WOL:MatchJoinedGame");
+        let joined = state.csf_text("WOL:MatchJoinedGame");
         self.expect_rows(state, frame, from, &[joined])?;
         ensure!(
             qm::stage(state) == stage::WAITING
                 && crate::app::shell_network_setup::quick_match(state)
                 && !state.match_state.session.host()
                 && qm::dialog(state).is_some()
-                && !state.frontend.shell_route.network_setup(),
+                && state.frontend.shell_route != ShellRoute::NetworkSetup,
             "the join did not run the guest's nodes headless under 0x117 at stage 9"
         );
         let opened = setup_requests(state);
@@ -876,12 +878,8 @@ fn box_body(state: &AppState) -> Option<String> {
         .map(|message| message.body.clone())
 }
 
-fn csf(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
-}
-
 fn csf_name(state: &AppState, key: &str, name: &str) -> String {
-    format_csf(&csf(state, key), &[CsfArg::Str(name)])
+    format_csf(&state.csf_text(key), &[CsfArg::Str(name)])
 }
 
 fn squeeze(text: &str) -> String {
