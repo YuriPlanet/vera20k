@@ -7,8 +7,9 @@
 //!
 //! The HUD is no security boundary. Such a bridge keeps its own handle table,
 //! checks [`Hud::origin`] (and [`world::World::template_origin`]) before a
-//! change, undoes its changes to others' items, and numbers the enums for its
-//! wire. Events may name a node removed since they were queued.
+//! change, undoes its changes to others' items, expects [`Hud::remove_origin`]
+//! to take others' nodes beneath its own, and numbers the enums for its wire.
+//! Events may name a node removed since they were queued.
 //!
 //! A frame: [`Hud::layout`], [`Hud::input`] against that layout,
 //! [`Hud::drain_events`], the host's changes, [`Hud::layout`], [`Hud::paint`].
@@ -192,15 +193,18 @@ impl Hud {
     }
 
     /// Removes all that `origin` made: its nodes with their subtrees, its
-    /// templates and its draw lists.
+    /// templates and its draw lists. What others made beneath its nodes goes
+    /// too, so their handles to it become `Stale`.
     pub fn remove_origin(&mut self, origin: Origin) {
-        let made: Vec<NodeId> = self.meta.iter().filter(|(_, m)| m.origin == origin).map(|(id, _)| *id).collect();
-        let mut changed = false;
-        for id in made {
-            // An earlier removal may have taken it with a parent's subtree.
-            changed |= self.tree.remove(id).is_ok();
-        }
-        if changed {
+        // In paint order, not the map's, so the ids given out next are the same in every run.
+        let mut made = Vec::new();
+        self.visit(|id| {
+            if self.meta.get(&id).is_some_and(|m| m.origin == origin) {
+                made.push(id);
+            }
+        });
+        if !made.is_empty() {
+            self.tree.remove_all(&made);
             let tree = &self.tree;
             self.meta.retain(|id, _| tree.node(*id).is_ok());
             for roots in &mut self.roots {

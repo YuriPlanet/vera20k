@@ -177,3 +177,22 @@ fn a_bridge_can_ask_who_made_a_template_or_list() {
     assert_eq!(hud.world.template_origin(template), Ok(CLIENT));
     assert_eq!(hud.world.list_origin(list), Ok(Origin::Host));
 }
+
+#[test]
+fn removing_an_origin_leaves_the_same_ids_to_give_out_in_every_run() {
+    let rebuilt = || {
+        let mut hud = Hud::new(64, InputPolicy::default());
+        let dock = hud
+            .create_root(Layer::Panels, Origin::Host, NodeKind::Panel)
+            .unwrap();
+        for _ in 0..16 {
+            hud.create(NodeKind::Panel, dock, CLIENT).unwrap();
+        }
+        hud.remove_origin(CLIENT);
+        assert!(hud.tree().children(dock).unwrap().is_empty());
+        (0..16)
+            .map(|_| hud.create(NodeKind::Panel, dock, Origin::Host).unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rebuilt(), rebuilt());
+}

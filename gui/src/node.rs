@@ -513,14 +513,38 @@ impl Tree {
         Ok(())
     }
 
+    /// Removes the nodes with their subtrees, in the order given, going over
+    /// each parent's children once.
+    pub(crate) fn remove_all(&mut self, ids: &[NodeId]) {
+        let mut parents = Vec::new();
+        for &id in ids {
+            let Ok(node) = self.node(id) else { continue };
+            parents.extend(node.parent);
+            self.remove_subtree(id);
+        }
+        parents.sort_unstable();
+        parents.dedup();
+        for parent in parents {
+            let Ok(node) = self.node_mut(parent) else { continue };
+            let mut children = std::mem::take(&mut node.children);
+            children.retain(|child| self.node(*child).is_ok());
+            if let Ok(node) = self.node_mut(parent) {
+                node.children = children;
+            }
+        }
+    }
+
     /// No recursion: a caller may nest as deep as the node limit.
     fn remove_subtree(&mut self, id: NodeId) {
         let mut pending = vec![id];
         while let Some(id) = pending.pop() {
             let slot = &mut self.slots[id.idx as usize];
             let Some(node) = slot.node.take() else { continue };
-            slot.generation = slot.generation.wrapping_add(1);
-            self.free.push(id.idx);
+            // A slot out of generations is retired: reused, it would revive a stale id.
+            if let Some(next) = slot.generation.checked_add(1) {
+                slot.generation = next;
+                self.free.push(id.idx);
+            }
             self.live -= 1;
             pending.extend(node.children.into_iter().rev());
         }
@@ -613,6 +637,19 @@ mod tests {
         assert_eq!(t.get(child, Prop::Text), Err(Refused::Stale));
         assert!(t.get(again, Prop::Text).is_ok());
         assert_eq!(t.live_count(), 1);
+    }
+
+    #[test]
+    fn a_slot_out_of_generations_is_retired() {
+        let mut t = Tree::new(1);
+        let first = t.create(NodeKind::Button, None).unwrap();
+        t.remove(first).unwrap();
+        t.slots[0].generation = u32::MAX;
+        let last = t.create(NodeKind::Button, None).unwrap();
+        t.remove(last).unwrap();
+        let next = t.create(NodeKind::Button, None).unwrap();
+        assert_ne!(next.idx, last.idx);
+        assert_eq!(t.get(last, Prop::Text), Err(Refused::Stale));
     }
 
     #[test]
