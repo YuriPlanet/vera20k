@@ -103,7 +103,8 @@ const ENDED_AGO_LIMIT: u64 = 24 * 60 * 60;
 /// Gameplay grants (timing confirmation, `relay_renewed`, match resume) are
 /// issued for 300 seconds (docs/lobby-protocol.md). Their
 /// `expires` is lobby wall time; a local clock running slow would renew after
-/// the relay already rejects the ticket, so renewal is timed from receipt.
+/// the relay already rejects the ticket, so renewal and lapse are timed from
+/// receipt.
 /// It uses frame_pacer::wall_clock_ms, which keeps counting through sleep;
 /// an `Instant` deadline would wait out the slept time with a dead ticket.
 const RELAY_GRANT_LIFETIME: Duration = Duration::from_secs(300);
@@ -365,6 +366,10 @@ pub(super) struct LiveService {
     next_renewal_attempt: Option<u32>,
     /// Renewal deadline of the newest gameplay grant received.
     relay_renewal_due: Option<u32>,
+    /// When the newest gameplay grant lapses: its receipt plus
+    /// [`RELAY_GRANT_LIFETIME`]. A lobby session that ends mid-match
+    /// (`clear_cleanup`) keeps it: the match plays on until the pass lapses.
+    relay_lapses_at: Option<u32>,
     maps: maps::Transfers,
     translations: Translations,
     /// A match an external launcher formed (docs/spawn.md): adopted bearer,
@@ -744,6 +749,16 @@ pub(crate) fn online_match_id(state: &AppState) -> Option<&str> {
         .as_ref()?
         .match_id
         .as_deref()
+}
+
+/// This game's relay pass lapsed by `now_ms` (frame_pacer::wall_clock_ms).
+pub(crate) fn relay_pass_lapsed(state: &AppState, now_ms: u32) -> bool {
+    state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.live_service.as_ref())
+        .is_some_and(|service| service.relay_pass_lapsed(now_ms))
 }
 
 /// Both existing cleanup owners must finish before another online admission.

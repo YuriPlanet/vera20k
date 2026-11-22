@@ -381,6 +381,7 @@ pub(crate) fn post_connection_changes(state: &mut AppState) {
 /// relay's frames, which a returning game does as it rejoins.
 /// `messages::show_status_notices` shows it as a message row.
 pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
+    use crate::app::shell_wol::relay_pass_lapsed;
     use crate::net::live_commands::NetworkRecoveryStatus;
     let live = state.match_state.live_network.as_ref()?;
     let frame = state
@@ -392,20 +393,13 @@ pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
         .binary_frame();
     let now = super::frame_pacer::wall_clock_ms() as u32;
     Some(match live.recovery_status(now, frame)? {
-        NetworkRecoveryStatus::Reconnecting => {
-            // The relay drops a lapsed pass, which only the lobby can renew:
-            // then waiting cannot help.
-            let lapsed = live.relay_expires().is_some_and(|expires| {
-                crate::util::time::SystemTime::now()
-                    .duration_since(crate::util::time::UNIX_EPOCH)
-                    .is_ok_and(|now| now.as_secs() >= expires)
-            });
-            if lapsed {
-                "VERA:ReconnectPassLapsed"
-            } else {
-                "VERA:Reconnecting"
-            }
+        // The relay drops a lapsed pass, which only the lobby can renew: then
+        // waiting cannot help. The ticket's expiry is lobby time, so the pass's
+        // life is timed from its receipt, as its renewal is.
+        NetworkRecoveryStatus::Reconnecting if relay_pass_lapsed(state, now) => {
+            "VERA:ReconnectPassLapsed"
         }
+        NetworkRecoveryStatus::Reconnecting => "VERA:Reconnecting",
         NetworkRecoveryStatus::CatchingUp { .. } if live.restoring_match() => "VERA:Rejoining",
         NetworkRecoveryStatus::CatchingUp { .. } => "VERA:CatchingUp",
     })

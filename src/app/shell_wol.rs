@@ -46,7 +46,9 @@ pub(crate) use live_service::{
     DecodedRelayGrant, begin_spawned_match, decode_external_relay_grant,
     decode_external_watch_grant, end_spawned_match, relay_ticket_is_watch,
 };
-pub(crate) use live_service::{local_choices_agreed, online_cleanup_pending, online_match_id};
+pub(crate) use live_service::{
+    local_choices_agreed, online_cleanup_pending, online_match_id, relay_pass_lapsed,
+};
 pub(crate) use login::{
     account_form_layout, login_layout, status_key as login_status_key,
 };
