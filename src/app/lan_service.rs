@@ -2531,7 +2531,7 @@ pub(crate) fn campaign_host_source(state: &AppState) -> Option<usize> {
 
 pub(crate) enum CampaignControlSend {
     Immediate,
-    Queued(u64),
+    Queued(crate::net::global::GlobalBatch),
 }
 
 pub(crate) fn send_campaign_control(
@@ -2572,8 +2572,8 @@ pub(crate) fn send_campaign_control(
         }
         return Some(CampaignControlSend::Immediate);
     }
-    let discarded_at_enqueue = if let Some(live) = state.match_state.live_network.as_mut() {
-        live.enqueue_reliable_globals(&bytes, &endpoints)
+    let batch = if let Some(live) = state.match_state.live_network.as_mut() {
+        live.global_mut().send_reliable_batch(&bytes, &endpoints)
     } else {
         state
             .match_state
@@ -2581,9 +2581,10 @@ pub(crate) fn send_campaign_control(
             .as_mut()?
             .transport
             .as_mut()?
-            .enqueue_reliable_globals(&bytes, &endpoints)
+            .global_mut()
+            .send_reliable_batch(&bytes, &endpoints)
     }?;
-    Some(CampaignControlSend::Queued(discarded_at_enqueue))
+    Some(CampaignControlSend::Queued(batch))
 }
 
 fn receive_campaign_control(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {

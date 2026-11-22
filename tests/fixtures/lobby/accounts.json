@@ -1,0 +1,125 @@
+{
+  "about": "Player names, account passwords and emails at the edges of the lobby's rules (docs/lobby-protocol.md), each with whether the game takes it. The game's test in src/ui/wol_account.rs checks each; a lobby gives each the same answer.",
+  "cases": [
+    {
+      "case": "a 24-byte name",
+      "field": "name",
+      "value": "Commander_Of_The-Soviets",
+      "valid": true
+    },
+    {
+      "case": "a 25-byte name",
+      "field": "name",
+      "value": "Commander_Of_The-Soviets1",
+      "valid": false
+    },
+    {
+      "case": "an empty name",
+      "field": "name",
+      "value": "",
+      "valid": false
+    },
+    {
+      "case": "a name with a dot",
+      "field": "name",
+      "value": "Yuri.Prime",
+      "valid": false
+    },
+    {
+      "case": "a 7-byte password",
+      "field": "password",
+      "value": "seven77",
+      "valid": false
+    },
+    {
+      "case": "an 8-byte password",
+      "field": "password",
+      "value": "eight888",
+      "valid": true
+    },
+    {
+      "case": "a 64-byte password with a space and a tilde",
+      "field": "password",
+      "value": "Kirov reporting! ~xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "valid": true
+    },
+    {
+      "case": "a 65-byte password",
+      "field": "password",
+      "value": "Kirov reporting! ~xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "valid": false
+    },
+    {
+      "case": "a password with a tab",
+      "field": "password",
+      "value": "tab\tinside",
+      "valid": false
+    },
+    {
+      "case": "the shortest email",
+      "field": "email",
+      "value": "a@b.c",
+      "valid": true
+    },
+    {
+      "case": "an email without a dotted domain",
+      "field": "email",
+      "value": "a@b",
+      "valid": false
+    },
+    {
+      "case": "an email without a local part",
+      "field": "email",
+      "value": "@b.c",
+      "valid": false
+    },
+    {
+      "case": "an email with an empty first label",
+      "field": "email",
+      "value": "a@.c",
+      "valid": false
+    },
+    {
+      "case": "an email with an empty last label",
+      "field": "email",
+      "value": "a@b.",
+      "valid": false
+    },
+    {
+      "case": "an email with two @",
+      "field": "email",
+      "value": "a@b@c.d",
+      "valid": false
+    },
+    {
+      "case": "an email with a space",
+      "field": "email",
+      "value": "a b@c.d",
+      "valid": false
+    },
+    {
+      "case": "an email whose label starts with a hyphen",
+      "field": "email",
+      "value": "x@-invalid.example",
+      "valid": false
+    },
+    {
+      "case": "an email with a 65-byte local part",
+      "field": "email",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@example.com",
+      "valid": false
+    },
+    {
+      "case": "a 254-byte email with a 64-byte local part",
+      "field": "email",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.org",
+      "valid": true
+    },
+    {
+      "case": "a 255-byte email",
+      "field": "email",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.info",
+      "valid": false
+    }
+  ]
+}
