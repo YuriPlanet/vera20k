@@ -232,9 +232,12 @@ difference shows within 15 frames.
     variable and distance polls, immediate actions, `once`, enabling and disabling
     triggers, house variables and `get_many`.
 
-  `muster-field` is a whole round of an auto-battler without interface code: hire
-  units by ordering them out of a row, merge three of a kind, then watch one battle
-  fight itself. It shows two patterns. Player orders become input through
+  `muster-field` is a small auto-battler campaign without interface code: eight
+  waves and three banners, pay after every battle, hire by ordering units out of a
+  row, keys on a quartermaster for redraw, camp upgrades and the start, three of a
+  kind merged into a champion, and company-wide supplies picked by moving a truck.
+  Its parts are files of their own (`shop`, `battle`, `waves`, `campaign`,
+  `content`, `perks`). It shows two patterns. Player orders become input through
   `CommandAllowed`: the handler may not write, so it refuses the order and queues it
   in module memory for the next `on_frame`. A human house's units are ordered with
   `SetMission`, which works for every house (`House::order` takes computer houses

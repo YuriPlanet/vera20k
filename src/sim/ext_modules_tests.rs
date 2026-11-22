@@ -284,20 +284,15 @@ fn playtest_modules_keep_running() {
     }
 }
 
-/// Plays `sdk/examples/muster-field` when `VERA20K_TEST_MUSTER_WASM` names its
-/// module: a round ordered as a player's clicks travel, each a native record
-/// through the command queue, so `CommandAllowed` reads the decoded command.
-#[test]
-fn muster_field_plays_a_round_from_player_orders() {
-    use crate::sim::command::{Command, CommandEnvelope};
+/// The player's units in Muster Field's camp, by cell: (id, cell, type).
+type CampUnits = Vec<(u64, (u16, u16), String)>;
 
-    let Some(path) = std::env::var_os("VERA20K_TEST_MUSTER_WASM") else {
-        return;
-    };
-    let Some(mut scene) = scenario_with_computer() else {
-        return;
-    };
-    let bytes = std::fs::read(&path).expect("module file reads");
+/// Loads Muster Field from `VERA20K_TEST_MUSTER_WASM` against one computer
+/// house; the scene, the player's house index and the camp's units.
+fn muster_field() -> Option<(HeadlessScenario, usize, crate::sim::intern::InternedId)> {
+    let path = std::env::var_os("VERA20K_TEST_MUSTER_WASM")?;
+    let mut scene = scenario_with_computer()?;
+    let bytes = std::fs::read(path).expect("module file reads");
     scene
         .runtime
         .simulation
@@ -315,81 +310,129 @@ fn muster_field_plays_a_round_from_player_orders() {
         .enumerate()
         .find(|(_, id)| sim.houses[id].is_human())
         .expect("the battle has a player");
-    let units = |scene: &HeadlessScenario| {
-        let mut units: Vec<(u64, (u16, u16))> = scene
-            .sim()
-            .entities()
-            .iter_sorted()
-            .filter(|(_, e)| {
-                e.owner() == house && e.lifecycle.object_alive() && !e.lifecycle.in_limbo()
-            })
-            .map(|(id, e)| (id, (e.position.rx(), e.position.ry())))
-            .collect();
-        units.sort_by_key(|&(_, at)| at);
-        units
-    };
-    let send = |scene: &mut HeadlessScenario, command: Command| {
-        let sim = &mut scene.runtime.simulation;
-        let record = match command {
-            Command::Stop { entity_id } => sim.encode_stop_record(house, entity_id),
-            Command::Scatter { entity_id } => sim.encode_scatter_record(house, entity_id),
-            _ => sim.encode_megamission_record(house, &command),
+    // The opening lines; a test reads what its orders bring.
+    scene.runtime.simulation.ext_modules_mut().take_log();
+    Some((scene, player, house))
+}
+
+fn camp_units(scene: &HeadlessScenario, house: crate::sim::intern::InternedId) -> CampUnits {
+    let sim = scene.sim();
+    let mut units: CampUnits = sim
+        .entities()
+        .iter_sorted()
+        .filter(|(_, e)| {
+            e.owner() == house && e.lifecycle.object_alive() && !e.lifecycle.in_limbo()
+        })
+        .map(|(id, e)| {
+            let at = (e.position.rx(), e.position.ry());
+            (id, at, sim.resolve(e.type_ref()).to_string())
+        })
+        .collect();
+    units.sort_by_key(|unit| unit.1);
+    units
+}
+
+/// Sends one order as a player's click travels: a native record through the
+/// command queue, so `CommandAllowed` reads the decoded command.
+fn order(
+    scene: &mut HeadlessScenario,
+    house: crate::sim::intern::InternedId,
+    command: crate::sim::command::Command,
+) {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let sim = &mut scene.runtime.simulation;
+    let record = match command {
+        Command::Stop { entity_id } => sim.encode_stop_record(house, entity_id),
+        Command::Scatter { entity_id } => sim.encode_scatter_record(house, entity_id),
+        _ => sim.encode_megamission_record(house, &command),
+    }
+    .expect("the order encodes");
+    let tick = sim.session.tick();
+    sim.queue_command(CommandEnvelope::synchronized(record, tick));
+    for _ in 0..4 {
+        scene.tick();
+    }
+}
+
+/// Plays frames until the module logs a line holding `wanted`; the lines.
+fn play_until(scene: &mut HeadlessScenario, wanted: &str, frames: usize) -> Vec<String> {
+    let mut log = Vec::new();
+    for _ in 0..frames {
+        scene.tick();
+        log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
+        if log.iter().any(|line| line.contains(wanted)) {
+            break;
         }
-        .expect("the order encodes");
-        let tick = sim.session.tick();
-        sim.queue_command(CommandEnvelope::synchronized(record, tick));
-        for _ in 0..4 {
-            scene.tick();
-        }
+    }
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None, "{log:?}");
+    log
+}
+
+/// Plays `sdk/examples/muster-field`: a muster that waits for the player,
+/// hire, redraw, improve, a merge and its supply, then the first wave, all
+/// from player orders.
+#[test]
+fn muster_field_plays_a_round_from_player_orders() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::command::Command;
+
+    let Some((mut scene, player, house)) = muster_field() else {
+        return;
     };
+    let units = camp_units(&scene, house);
+    let officer = units
+        .iter()
+        .find(|unit| unit.2 == "SSRV")
+        .expect("the quartermaster stands")
+        .clone();
+    let row: CampUnits = units.iter().filter(|u| u.2 != "SSRV").cloned().collect();
+    assert_eq!(row.len(), 3, "three offers at camp rank 1");
+    // At unlimited game speed these frames pass in seconds.
+    for _ in 0..4700 {
+        scene.tick();
+    }
+    assert_eq!(camp_units(&scene, house), units, "the muster waits");
+    assert_eq!(credits(&scene, player), 1600);
+    let camp = row[1].1;
+    let line = (camp.0, camp.1 + 5);
     let to = |entity_id, (target_rx, target_ry)| Command::Move {
         entity_id,
         target_rx,
         target_ry,
     };
+    let guard = |entity_id, (x, y)| Command::Guard {
+        entity_id,
+        target: Some(TargetKind::Cell(x, y)),
+    };
 
-    let row = units(&scene);
-    assert_eq!(row.len(), 3, "only the row is left of the starting forces");
-    // At unlimited game speed these frames pass in seconds.
-    for _ in 0..4700 {
-        scene.tick();
-    }
-    assert_eq!(units(&scene), row, "the muster waits for the player");
-    assert_eq!(credits(&scene, player), 2400);
-    let camp = row[1].1;
-    let line = (camp.0, camp.1 + 5);
-
-    // A move inside the row hires nobody; one out of it does, and walks.
-    send(&mut scene, to(row[0].0, camp));
-    assert_eq!(credits(&scene, player), 2400);
-    send(&mut scene, to(row[0].0, line));
-    let price = 2400 - credits(&scene, player);
-    assert!(price > 0, "the move hired");
-    for _ in 0..60 {
-        scene.tick();
-    }
-    let now = units(&scene);
-    let at = |id| now.iter().find(|unit| unit.0 == id).map(|unit| unit.1);
-    assert_ne!(at(row[0].0), Some(row[0].1), "the hired unit walks");
-    assert_eq!(at(row[1].0), Some(row[1].1), "a waiting one stands");
-
-    send(&mut scene, to(row[0].0, camp));
-    assert_eq!(credits(&scene, player), 2400 - price + price * 3 / 4);
-    assert_eq!(units(&scene).len(), 2, "the dismissed unit left");
-
-    let before = credits(&scene, player);
-    send(
+    // A move along the row hires nobody; one out of it does.
+    order(&mut scene, house, to(row[0].0, camp));
+    assert_eq!(credits(&scene, player), 1600);
+    order(&mut scene, house, to(row[0].0, line));
+    let after_hire = credits(&scene, player);
+    assert!(after_hire < 1600, "the move hired");
+    order(
         &mut scene,
+        house,
         Command::Stop {
-            entity_id: row[1].0,
+            entity_id: officer.0,
         },
     );
-    assert_eq!(credits(&scene, player), before - 60);
-    let redrawn = units(&scene);
-    assert_eq!(redrawn.len(), 3);
-    assert!(redrawn.iter().all(|unit| unit.0 != row[1].0));
+    assert_eq!(credits(&scene, player), after_hire - 50, "a redraw");
+    order(&mut scene, house, guard(officer.0, officer.1));
+    assert_eq!(credits(&scene, player), after_hire - 650, "an improvement");
+    // A hired unit may still stand in the row.
+    let mut taken = vec![row[0].0];
+    let offers = |scene: &HeadlessScenario, taken: &[u64]| -> CampUnits {
+        let units = camp_units(scene, house);
+        units
+            .into_iter()
+            .filter(|u| u.1.1 == camp.1 && u.2 != "SSRV" && !taken.contains(&u.0))
+            .collect()
+    };
+    assert_eq!(offers(&scene, &taken).len(), 4, "camp rank 2 offers four");
 
-    // Four types, so the ninth hire at the latest completes three of a kind.
+    // Hire by type until three of a kind merge into a champion.
     scene
         .runtime
         .simulation
@@ -397,42 +440,118 @@ fn muster_field_plays_a_round_from_player_orders() {
         .get_mut(&house)
         .expect("the player's house")
         .economy_mut()
-        .add_credits(10_000);
-    let mut hired = Vec::new();
-    while hired.len() < 9 {
-        let offered = units(&scene)
-            .into_iter()
-            .find(|unit| !hired.contains(&unit.0))
-            .expect("the row refills")
-            .0;
-        send(&mut scene, to(offered, line));
-        hired.push(offered);
-    }
-    let mut log = scene.runtime.simulation.ext_modules_mut().take_log();
-    assert!(log.iter().any(|l| l.contains("晋升精英")), "{log:?}");
-
-    let survivor = *hired.last().expect("someone was hired");
-    send(
-        &mut scene,
-        Command::Scatter {
-            entity_id: survivor,
-        },
-    );
-    log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
-    assert!(log.iter().any(|l| l.starts_with("开战")), "{log:?}");
-    for _ in 0..3700 {
-        scene.tick();
-        let lines = scene.runtime.simulation.ext_modules_mut().take_log();
-        if !lines.is_empty() {
-            log.extend(lines);
+        .add_credits(20_000);
+    let mut hired: Vec<String> = vec![row[0].2.clone()];
+    let mut log = Vec::new();
+    for _ in 0..40 {
+        if log.iter().any(|l: &String| l.contains("精锐")) {
             break;
         }
+        let count = |ty: &str| hired.iter().filter(|h| *h == ty).count();
+        let row = offers(&scene, &taken);
+        match row.iter().max_by_key(|unit| count(&unit.2)) {
+            Some(best) if count(&best.2) > 0 => {
+                hired.push(best.2.clone());
+                taken.push(best.0);
+                order(&mut scene, house, to(best.0, line));
+            }
+            _ => order(
+                &mut scene,
+                house,
+                Command::Stop {
+                    entity_id: officer.0,
+                },
+            ),
+        }
+        log.extend(scene.runtime.simulation.ext_modules_mut().take_log());
     }
-    assert_eq!(scene.sim().ext_modules().status()[0].1, None, "{log:?}");
-    let last = log.last().expect("the module spoke");
-    // Nine hires and a champion beat the one wave, with nobody at the controls.
-    assert!(last.contains("击退了袭击者"), "{log:?}");
+    assert!(log.iter().any(|l| l.contains("三合一")), "{log:?}");
+    let trucks: CampUnits = camp_units(&scene, house)
+        .into_iter()
+        .filter(|u| ["TRUCKB", "PICK", "BUS"].contains(&u.2.as_str()))
+        .collect();
+    assert_eq!(trucks.len(), 3, "a merge offers three supplies");
+    order(&mut scene, house, to(trucks[0].0, (camp.0, camp.1 - 9)));
+    let log = scene.runtime.simulation.ext_modules_mut().take_log();
+    assert!(log.iter().any(|l| l.contains("获得补给")), "{log:?}");
+
+    // A champion alone is surrounded: two more go with it.
+    for _ in 0..2 {
+        let offer = offers(&scene, &taken)[0].0;
+        taken.push(offer);
+        order(&mut scene, house, to(offer, line));
+    }
+    let company = |scene: &HeadlessScenario| {
+        camp_units(scene, house)
+            .into_iter()
+            .filter(|u| u.1.1 >= camp.1 + 2)
+            .count()
+    };
+    // Out of the row and into the line.
+    for _ in 0..150 {
+        scene.tick();
+    }
+    let fielded = company(&scene);
+    assert_eq!(fielded, 3, "a champion and two more");
+    let before = credits(&scene, player);
+    order(
+        &mut scene,
+        house,
+        Command::Scatter {
+            entity_id: officer.0,
+        },
+    );
+    let log = play_until(&mut scene, "第2/8波", 9000);
+    // A champion, a supply and a full company beat the first wave.
+    assert!(log.iter().any(|l| l.starts_with("胜，歼")), "{log:?}");
+    assert!(credits(&scene, player) >= before + 535, "the wage is paid");
+    assert_eq!(company(&scene), fielded, "the dead return");
     eprintln!("{}", log.join("\n"));
+}
+
+/// An empty company loses three banners, and the campaign ends in defeat.
+#[test]
+fn muster_field_ends_when_the_last_banner_falls() {
+    use crate::sim::command::Command;
+
+    let Some((mut scene, _, house)) = muster_field() else {
+        return;
+    };
+    let mut log = Vec::new();
+    for banners in [2, 1] {
+        let officer = camp_units(&scene, house)
+            .into_iter()
+            .find(|unit| unit.2 == "SSRV")
+            .expect("the quartermaster stands");
+        order(
+            &mut scene,
+            house,
+            Command::Scatter {
+                entity_id: officer.0,
+            },
+        );
+        let wanted = "第1/8波【探路散兵】";
+        log = play_until(&mut scene, wanted, 9000);
+        let last = log.iter().find(|l| l.contains(wanted)).expect("a muster");
+        assert!(last.starts_with("败，歼"), "{log:?}");
+        assert!(last.ends_with(&format!("军旗{banners}")), "{log:?}");
+    }
+    let officer = camp_units(&scene, house)
+        .into_iter()
+        .find(|unit| unit.2 == "SSRV")
+        .expect("the quartermaster stands");
+    order(
+        &mut scene,
+        house,
+        Command::Scatter {
+            entity_id: officer.0,
+        },
+    );
+    log.extend(play_until(&mut scene, "军旗倒下", 9000));
+    assert!(
+        log.iter().any(|l| l.contains("最后一面军旗倒下")),
+        "{log:?}"
+    );
 }
 
 /// Spawns a Grizzly for the first computer house beside its base.
