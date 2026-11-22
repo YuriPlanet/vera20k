@@ -691,6 +691,8 @@ pub(crate) enum LauncherTrackbarId {
     /// How strongly the `[Colors]` team-colour bands are boosted, on the
     /// [`crate::rules::house_colors`] scale: position 0 is the retail strength.
     HouseColorStrength,
+    /// Number of build cameos shown per sidebar row.
+    SidebarColumns,
     /// The in-game menu's Game Speed, the slider of gamemd's Game Controls
     /// (`0xBBB` control `0x529`). The profile pack leaves it out: the menu
     /// sets it up with [`OptionsDialogState::set_in_game_controls`] and
@@ -728,6 +730,7 @@ impl LauncherTrackbarId {
         match self {
             Self::Score | Self::Sound | Self::Voice => 10,
             Self::GameSpeed => crate::ui::shell::game_speed::MAX_POSITION as u8,
+            Self::SidebarColumns => (SidebarColumns::ALL.len() - 1) as u8,
             Self::HouseColorStrength => {
                 crate::rules::house_colors::STRENGTH_MAX - crate::rules::house_colors::STRENGTH_MIN
             }
@@ -740,17 +743,16 @@ impl LauncherTrackbarId {
     const fn value_base(self) -> i32 {
         match self {
             Self::HouseColorStrength => crate::rules::house_colors::STRENGTH_MIN as i32,
+            Self::SidebarColumns => 2,
             _ => 0,
         }
     }
 
     /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
-    /// plaque off (`0x4AC` with 0). VERA's Team Color Strength has none
-    /// either, so it matches Visual Details beside it and prints its level
-    /// where Visual Details prints its step.
+    /// plaque off (`0x4AC` with 0). Sidebar Columns uses a value plaque.
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Score | Self::Sound | Self::Voice => 50,
+            Self::Score | Self::Sound | Self::Voice | Self::SidebarColumns => 50,
             _ => 0,
         }
     }
@@ -867,6 +869,9 @@ impl Setting {
     /// The setting's caption and status help (`0x00604729..0x00604838` for
     /// retail's).
     pub(crate) fn text(self) -> (&'static str, &'static str) {
+        if self == Self::Slider(LauncherTrackbarId::SidebarColumns) {
+            return ("VERA:SidebarColumns", "VERA:SidebarColumnsHelp");
+        }
         ROWS.iter()
             .find(|row| row.setting == self)
             .map_or(("", ""), |row| (row.caption, row.help))
@@ -1080,6 +1085,9 @@ pub enum Category {
     Audio,
     Controls,
     General,
+    LauncherMain,
+    Enhancements,
+    Extensions,
     /// The in-game menu's first page, which its own Game Controls button
     /// shows ([`GAME_CONTROLS`]). No column button.
     GameControls,
@@ -1121,6 +1129,9 @@ impl Category {
             Self::Audio => "GUI:AudioOptions",
             Self::Controls => "VERA:Controls",
             Self::General => "VERA:General",
+            Self::LauncherMain => "GUI:OptionsMenu",
+            Self::Enhancements => "VERA:EnhancementsDebug",
+            Self::Extensions => "VERA:ExtensionsOptions",
             Self::GameControls => "GUI:GameControls",
         }
     }
@@ -1135,7 +1146,9 @@ impl Category {
             Self::Audio => Some("VERA:AudioPageHelp"),
             Self::Controls => Some("VERA:ControlsPageHelp"),
             Self::General => Some("VERA:GeneralPageHelp"),
-            Self::GameControls => None,
+            Self::Enhancements => Some("VERA:EnhancementsDebugHelp"),
+            Self::Extensions => Some("VERA:ExtensionsOptionsHelp"),
+            Self::LauncherMain | Self::GameControls => None,
         }
     }
 }
@@ -1234,7 +1247,7 @@ impl Default for LauncherOptionsValues {
         }
         Self {
             checks,
-            positions: [1, 1, 3, 4, 7, 7, 0, 0],
+            positions: [1, 1, 3, 4, 7, 7, 0, 0, 0],
             sidebar: SidebarSize::default(),
             sidebar_columns: SidebarColumns::default(),
             health_bars: HealthBarMode::default(),
@@ -1500,6 +1513,9 @@ impl OptionsDialogState {
     }
 
     pub(crate) fn trackbar_position(&self, id: LauncherTrackbarId) -> u8 {
+        if id == LauncherTrackbarId::SidebarColumns {
+            return (self.values.sidebar_columns.count() - 2) as u8;
+        }
         self.values[id]
     }
 
@@ -1507,16 +1523,27 @@ impl OptionsDialogState {
     /// captions and queues preview/cue work only after the integer position
     /// actually changes; the accepted projection remains owned by `0x0055FAA0`.
     fn set_trackbar_position(&mut self, id: LauncherTrackbarId, position: u8) {
-        if position > id.maximum() || !self.trackbar_enabled(id) || self.values[id] == position {
+        if position > id.maximum()
+            || !self.trackbar_enabled(id)
+            || self.trackbar_position(id) == position
+        {
             return;
         }
-        self.values[id] = position;
+        if id != LauncherTrackbarId::SidebarColumns {
+            self.values[id] = position;
+        }
         let volume = f32::from(position) * 0.1;
         // The audio sliders preview instead of the notch click.
         let event = match id {
             LauncherTrackbarId::Score => LauncherOptionsEvent::ScorePreview(volume),
             LauncherTrackbarId::Sound => LauncherOptionsEvent::SoundPreview(volume),
             LauncherTrackbarId::Voice => LauncherOptionsEvent::VoicePreview(volume),
+            LauncherTrackbarId::SidebarColumns => {
+                self.pending_cues.push(PageCue::ListClick);
+                let columns = SidebarColumns::ALL[usize::from(position)];
+                self.values.sidebar_columns = columns;
+                LauncherOptionsEvent::SidebarColumnsSelected(columns)
+            }
             // 61E609..61E6DD: a changed position plays the cue. Game Speed
             // applies when the menu closes. The strength is a once-per-drag
             // setting rather than a live preview: the battle it applies to
@@ -2345,11 +2372,13 @@ mod tests {
             - 2 * usize::from(!HAS_VSYNC)
             - usize::from(!HAS_HD_MAP_PREVIEWS);
         assert_eq!(count(|s| matches!(s, Setting::Checkbox(_))), boxes);
-        // Every slider but Game Speed; all eight lists, and Graphics API
-        // where the build has it.
+        // Every slider but Game Speed and Sidebar Columns, whose slider only
+        // the launcher's Enhancements page shows (`shell::launcher_pages`);
+        // these pages keep its list. All eight lists, and Graphics API where
+        // the build has it.
         assert_eq!(
             count(|s| matches!(s, Setting::Slider(_))),
-            LauncherTrackbarId::COUNT - 1
+            LauncherTrackbarId::COUNT - 2
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),

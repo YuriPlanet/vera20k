@@ -111,10 +111,11 @@ impl RecruitWalks {
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
 /// order: a candidate in the team's `group` (any with -2), or any for a
 /// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
-/// (`0x005F6560`, `native_coord::squared_xy_distance`) plus `0x3200` outside
-/// the group (wrapping); it
+/// (`0x005F6560`, `native_coord::squared_xy_distance_for_map`) plus `0x3200`
+/// outside the group (wrapping); it
 /// wins when it passes its own tests, its key is below the best (signed) or
-/// the best is still -1, and `can_add` admits it.
+/// the best is still -1, and `can_add` admits it. A VERA-only map compares the
+/// true 64-bit square, so the wrap cannot make a far candidate win.
 pub(super) fn recruit_pick(
     candidates: impl IntoIterator<Item = RecruitCandidate>,
     origin: [i32; 2],
@@ -122,23 +123,42 @@ pub(super) fn recruit_pick(
     recruiter: bool,
     mut can_add: impl FnMut(u64) -> bool,
     ares: bool,
+    vera_only_map: bool,
 ) -> Option<u64> {
-    let mut best = -1i32;
+    let mut best = -1i64;
     let mut winner = None;
     for candidate in candidates {
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin, ares);
-        if candidate.group != group {
-            key = key.wrapping_add(OTHER_GROUP_PENALTY);
-        }
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
+            candidate.xy,
+            origin,
+            ares,
+            vera_only_map,
+        );
+        let key = if candidate.group != group {
+            other_group_key(distance, vera_only_map)
+        } else {
+            distance
+        };
         if candidate.matches && (key < best || best == -1) && can_add(candidate.id) {
             winner = Some(candidate.id);
             best = key;
         }
     }
     winner
+}
+
+/// `OTHER_GROUP_PENALTY` added to a candidate outside the team's group. The
+/// original adds it in 32-bit wrapping arithmetic; a VERA-only map adds it to
+/// the true 64-bit square.
+fn other_group_key(distance: i64, vera_only_map: bool) -> i64 {
+    if vera_only_map {
+        distance + i64::from(OTHER_GROUP_PENALTY)
+    } else {
+        i64::from((distance as i32).wrapping_add(OTHER_GROUP_PENALTY))
+    }
 }
 
 impl Simulation {
@@ -661,6 +681,7 @@ impl Simulation {
                 recruiter,
                 can_add,
                 rules.ares(),
+                self.session.map_exceeds_original_size(),
             )
         } else {
             // Kept only when a later entry of the class may search again.
@@ -681,6 +702,7 @@ impl Simulation {
                 recruiter,
                 can_add,
                 rules.ares(),
+                self.session.map_exceeds_original_size(),
             );
             if later {
                 walks.keep(class, owned, typed);

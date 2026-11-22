@@ -196,7 +196,16 @@ fn new_wave(state: &AppState, kind: ShellSlideKind, direction: WaveDirection) ->
         ShellSlideKind::WolLobby => Some(visit.lobby()?.ui.page_spec()),
         _ => None,
     });
-    ShellFrameWave::new(kind.column(rows, page), direction, Instant::now())
+    let mut column = kind.column(rows, page);
+    if kind == ShellSlideKind::Options
+        && let Some(dialog) = state.frontend.options_dialog.as_ref()
+        && let Some((top_buttons, button_above_back)) =
+            crate::ui::main_menu_dialogs::options::shell::launcher_slide_column(dialog.category())
+    {
+        column.top_buttons = top_buttons;
+        column.button_above_back = button_above_back;
+    }
+    ShellFrameWave::new(column, direction, Instant::now())
 }
 
 /// What a family dialog's teardown leads to once its slide-out has run: the
@@ -824,7 +833,14 @@ mod tests {
             (column.top_buttons, column.bottom_button, column.map_button)
         };
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
-        assert_eq!(top_and_bottom(ShellSlideKind::Mods), (2, true, false));
+        assert_eq!(
+            top_and_bottom(ShellSlideKind::Mods),
+            (
+                crate::ui::mods_shell::PAGE.stacked.len() as u32,
+                true,
+                false
+            )
+        );
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),
             (3, true, false)

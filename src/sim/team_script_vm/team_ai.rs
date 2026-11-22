@@ -94,20 +94,23 @@ pub(super) fn center_sample(
 
 /// `Calc_Center`'s arithmetic (`0x006EB225..0x006EB31B`): the mean XY of
 /// the samples (wrapping sums, signed truncating division), and the one
-/// nearest `focus` by squared XY distance (`0x005F6500`, `native_coord::squared_xy_distance`; 0
-/// without a focus). A smaller distance, or any distance after a kept 0,
-/// replaces the one kept, so without a focus the last sample is closest.
-/// `None` without samples. One pass in member order, so the caller hands
-/// its member walk over as it goes.
+/// nearest `focus` by squared XY distance (`0x005F6500`,
+/// `native_coord::squared_xy_distance_for_map`; 0 without a focus). A smaller
+/// distance, or any distance after a kept 0, replaces the one kept, so without
+/// a focus the last sample is closest. `None` without samples. One pass in
+/// member order, so the caller hands its member walk over as it goes. A
+/// VERA-only map compares the true 64-bit square instead of the wrapped
+/// native one.
 pub(super) fn center_of(
     samples: impl IntoIterator<Item = CenterSample>,
     focus: Option<[i32; 2]>,
     ares: bool,
+    vera_only_map: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
     let mut count = 0i32;
     let mut closest = None;
-    let mut closest_distance = 0i32;
+    let mut closest_distance = 0i64;
     for sample in samples {
         for _ in 0..if sample.doubled { 2 } else { 1 } {
             sum[0] = sum[0].wrapping_add(sample.xy[0]);
@@ -118,7 +121,12 @@ pub(super) fn center_of(
             continue;
         }
         let distance = focus.map_or(0, |focus| {
-            crate::util::native_coord::squared_xy_distance(sample.xy, focus, ares)
+            crate::util::native_coord::squared_xy_distance_for_map(
+                sample.xy,
+                focus,
+                ares,
+                vera_only_map,
+            )
         });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
@@ -424,7 +432,12 @@ impl Simulation {
             )
         });
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(samples, focus, rules.ares()) {
+        let (zone, closest) = match center_of(
+            samples,
+            focus,
+            rules.ares(),
+            self.session.map_exceeds_original_size(),
+        ) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.

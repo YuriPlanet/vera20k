@@ -31,6 +31,8 @@ use crate::ui::shell::modal::{FOOTER_TEMPLATE, template_on};
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::skirmish_shell::COMBO_FACE_H;
 
+mod launcher_pages;
+
 /// Something on a page, as the node standing for it in the tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Control {
@@ -44,6 +46,7 @@ pub(crate) enum Control {
 pub(crate) enum PageLabel {
     /// The category's name, in a retail band heading's place.
     Heading,
+    Section(Category),
     /// A list's or slider's caption, over its face or track.
     Caption(Setting),
     /// One of VERA's translation keys.
@@ -220,6 +223,17 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     )
     .returning(0x05CB),
 };
+
+/// The launcher page's slide column: its top buttons, and whether a button
+/// stands on the tile above Back. None for a page the launcher reaches only
+/// through the older column.
+pub(crate) fn launcher_slide_column(category: Category) -> Option<(u32, bool)> {
+    match category {
+        Category::LauncherMain => Some((3, HAS_MODS)),
+        Category::Enhancements | Category::Extensions => Some((0, false)),
+        _ => None,
+    }
+}
 
 /// Whether the retail panel at this window size has a tile for every column
 /// button above Main Menu's. 640x480's six tiles hold five, too few for the
@@ -407,6 +421,20 @@ impl LauncherOptionsLayout {
         } else {
             menu_page::compute_layout(&OPTIONS_PAGE, width as u32, height as u32)
         };
+        if let Some(controls) = launcher_pages::controls(category, &panel, px) {
+            let size = (width.max(0) as u32, height.max(0) as u32);
+            return Self {
+                category,
+                title: panel.title,
+                warning: panel.warning_monitor,
+                status_help: panel.status_help,
+                controls,
+                scale,
+                screen: size,
+                battle_frame: size,
+                surface: OptionsSurface::Launcher,
+            };
+        }
         let keyboard = (
             KEYBOARD_BUTTON,
             LauncherButton::Exit(LauncherParentResult::Keyboard),
@@ -761,6 +789,7 @@ impl OptionsDialogState {
     ) -> (Cow<'_, str>, ShellAlign) {
         let text = match label {
             PageLabel::Heading => self.text(layout.category.heading()),
+            PageLabel::Section(category) => self.text(category.heading()),
             PageLabel::Caption(Setting::Slider(LauncherTrackbarId::GameSpeed)) => {
                 self.game_speed_caption.as_str().into()
             }
@@ -1044,7 +1073,18 @@ impl OptionsDialogState {
                         .with(Prop::Max, Value::Int(base + i32::from(id.maximum())))
                         .with(Prop::Step, Value::Int(1))
                         .with(Prop::Pos, Value::Int(position))
-                        .with(Prop::ShowValue, Value::Bool(id.plaque_reserve() > 0))
+                        .with(
+                            Prop::ShowValue,
+                            Value::Bool(
+                                if layout.category == Category::Enhancements
+                                    && layout.surface == OptionsSurface::Launcher
+                                {
+                                    launcher_pages::shows_value(id)
+                                } else {
+                                    id.plaque_reserve() > 0
+                                },
+                            ),
+                        )
                         .with(Prop::Enabled, Value::Bool(self.trackbar_enabled(id)))
                 }
                 // The boxes toggle on the press (`0x006163A0`).
@@ -1472,6 +1512,55 @@ mod tests {
                     "{id:?} on the {category:?} page"
                 );
             }
+        }
+    }
+
+    /// The launcher page's Mods stands on the tile right above Main Menu,
+    /// and a press there opens Mods.
+    #[test]
+    fn launcher_mods_slot_and_gui_hit_rect_are_next_to_main_menu() {
+        for (w, h) in [(640, 480), (800, 600), (1536, 1152)] {
+            let layout = LauncherOptionsLayout::responsive(w, h, Category::LauncherMain);
+            let mods = LauncherButton::Exit(LauncherParentResult::Mods);
+            assert_eq!(layout.button_rect(mods).is_some(), HAS_MODS);
+            if let Some(rect) = layout.button_rect(mods) {
+                let back = button(&layout, LauncherButton::Exit(LauncherParentResult::Back));
+                assert_eq!((rect.x, rect.y + rect.h, rect.w), (back.x, back.y, back.w));
+                let mut dialog = state();
+                dialog.shell_mouse_down(rect.x + 4, rect.y + 4, &layout);
+                dialog.shell_mouse_up(rect.x + 4, rect.y + 4, &layout);
+                assert_eq!(
+                    dialog.drain_output().result,
+                    Some(LauncherParentResult::Mods)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn enhancements_give_both_slider_tracks_the_same_value_reserve() {
+        use LauncherTrackbarId::{HouseColorStrength, SidebarColumns};
+        let layout = page(Category::Enhancements);
+        let rect = |id| {
+            layout
+                .controls
+                .iter()
+                .find(|(control, _)| *control == Control::Setting(Setting::Slider(id)))
+                .unwrap()
+                .1
+        };
+        assert_eq!(
+            (rect(SidebarColumns).x, rect(SidebarColumns).w),
+            (rect(HouseColorStrength).x, rect(HouseColorStrength).w)
+        );
+        let dialog = state();
+        for id in [SidebarColumns, HouseColorStrength] {
+            let controls = dialog.shell_wanted(&layout);
+            let (_, node) = controls
+                .iter()
+                .find(|(control, _)| *control == Control::Setting(Setting::Slider(id)))
+                .unwrap();
+            assert!(node.props.contains(&(Prop::ShowValue, Value::Bool(true))));
         }
     }
 
