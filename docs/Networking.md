@@ -22,15 +22,12 @@ VERA20k clients; legacy IPX and gamemd wire compatibility are not supported.
 
 The Network menu enters the LAN lobby. The physical service handles discovery,
 join, options, roster, readiness and GO, then transfers the same socket pair into
-the running match. For online play, choose Internet, enter a username and
-press OK. Names use 1–24 ASCII letters, digits, underscores or hyphens;
-each active player needs a different name. No password or account creation is
-required. Players then create or join a game. A host can
-select Easy, Normal or Hard AI from an open player slot in Battle or Free For All.
-
-On the Internet login page, players can delete their own account with its username
-or registered email and current password. Older clients and a rolled-back lobby
-support the username form. [Account protocol](lobby-protocol.md#accounts)
+the running match. For online play, choose Internet, then Play as Guest, which
+plays under a generated `GuestNNNNN` name without an account, or Sign In and Play,
+which opens the account page: sign in there, or create an account, reset its
+password or delete it ([Accounts](lobby-protocol.md#accounts)). Players then create
+or join a game. A host can select Easy, Normal or Hard AI from an open player slot in
+Battle or Free For All.
 
 The HTTPS service supplies match-specific relay credentials before the same loading
 and command handoff. Both paths transfer selected authored maps or generated
@@ -919,15 +916,9 @@ still accepts the field, so a rollback needs no lobby change; a rolled-back game
 A player in VERA's online lobby can watch a match being played (VERA's; gamemd has
 no such thing). The game list shows running matches after the rooms, tagged Watch,
 with how many watch each out of the 10 it takes; Join on one asks the lobby to `watch`
-it ([lobby protocol](lobby-protocol.md#watching)). The lobby lists only matches of the
-watcher's own version with two or more people in them, one of them playing, or, to a
-game that signed in with `Vera-Watch-AI: 1`, where only AI play while everyone in the
-room watches; on a relay that lets watchers in,
-and never one from a room with a password, a clan room, a generated map or a
-stock Co-op mission. Authored campaign watching requires a WOL lobby that
-advertises `campaign_rooms` and forwards the campaign recipe in
-`watch_started`. The viewer uses the installed series and validates its
-content. Create Game starts Watching on Live. The host can also choose a two-minute delay or turn Watching off. The next
+it. Which matches the lobby lists is its rule
+([lobby protocol](lobby-protocol.md#watching)). Create Game starts Watching on Live.
+The host can also choose a two-minute delay or turn Watching off. The next
 room uses the host's last confirmed choice in the same session. Quick Match and ranked
 games always have a two-minute viewing delay.
 
@@ -941,9 +932,8 @@ When all three apply, the lobby sets VO2C flags bit 1
 (`OrderingCertificate::ordered_alone`). The relay then orders that one source,
 and the game plays through it with the usual command lead time
 (`live_commands::relay_clock`). Even without a watcher, the match holds a relay
-ordering room and journal, and losing the relay ends it. The desktop client
-advertises support. Other clients keep local play for a lone observer until
-they advertise it too.
+ordering room and journal, and losing the relay ends it. Desktop and browser games
+advertise it; a game from before it keeps local play for a lone observer.
 
 The lobby's grant carries the match's start, its options and a watch ticket. The
 watcher's game prepares the map as a guest does and checks that its version and rules
@@ -1083,13 +1073,10 @@ covers the exact `campaign.ini` bytes, the map digest covers the exact map
 file, and the effective map digest covers the parsed map after INI includes.
 The launcher compares those proofs before admitting the start.
 
-The Internet client requires the WOL session capability `campaign_rooms`.
-A supporting lobby preserves the optional `campaign` record in `HostOptions`,
-including room revisions, match start and `watch_started`. Those clients use
-the existing authenticated relay match identity. Released lobbies without
-the capability continue to admit standard rooms. A client connected to one of
-those lobbies reports that online campaign rooms are unavailable. LAN remains
-available for the same installed series and matching builds.
+Online, a campaign room needs a lobby that offers `campaign_rooms` (HostOptions
+`campaign` in [the lobby protocol](lobby-protocol.md)). VERA's lobby does not, so the
+game says there that online campaign rooms are unavailable. LAN remains available for
+the same installed series and matching builds.
 
 #### Cutscenes and stage changes
 
@@ -1239,12 +1226,8 @@ real BB/BC/BD handlers; declared service events stand in for the remote side:
 discovery, admission, host options, readiness, map reports and completion. They
 write LAN and MultiPlayer preferences, so give them an isolated `RA2_DIR` and a
 `[paths] settings_dir` outside it, never a player's profile. The WOL persona
-targets (`wolinfoMD.ini`) and `lan-guest-random-map` (the received `RandMap.Sed`
-and `RandMap.img`) write into that settings directory only when it holds the same
-marker. `lan-transfer-loading-first` writes the original `XMP29U2.MAP` as
-`CONTROLLED.MAP` into the marked game copy and checks the production parser's
-name, length and SHA-256; it refuses an existing file and removes only the
-unchanged file it created. The `lan-*-loading-first` targets stop at the network
+targets (`wolinfoMD.ini`) write into that settings directory only when it holds the
+same marker. The `lan-*-loading-first` targets stop at the network
 loading boundary, while `lan-host-abort-return` and `lan-guest-abort-return` go on
 through pause, Abort and the queued EXIT back to the LAN lobby.
 `lan-0xbb-join-denied` and `lan-0xbb-join-denied-return` answer a real Join with
@@ -1339,7 +1322,7 @@ the host starts it and it must run 90 frames. The manifest's
 The `online-live-watch` target checks [watching](#watching) from a third account. It
 takes `--online-account <watcher>` and `--online-host <host name>`, both required, and
 refuses every other online option: the host's match sets the rest. From the settled
-online lobby it waits, with only the lobby's own 30-second list poll, until the watch
+online lobby it waits, with only the game's own 5-second list poll, until the watch
 list shows a running match whose players include the host, then selects that row and
 presses Join. The grant, the map and the relay's stream must bring it into the match
 as a watcher with its followed player's sight, not the whole map. It records whether
