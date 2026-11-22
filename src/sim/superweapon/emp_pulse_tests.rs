@@ -315,9 +315,9 @@ fn ares_drop_pod_reads_its_handler_keys() {
     );
 }
 
-/// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
+/// A self-guarding super: an auto-firing, self-targeting EMPulse
 /// whose cannon's warhead curtains its House's nearby units.
-const IRON_GUARD: &str = "\
+const SELF_GUARD: &str = "\
 [VehicleTypes]
 0=TANK
 [TANK]
@@ -366,22 +366,22 @@ IronCurtain.Duration=125
 
 /// `SW.AITargeting=Self` picks the providing building's own cell
 /// (PickTarget 100389C9), so the human House's automatic launch fires the
-/// Iron Guard and its warhead curtains the tank beside it.
+/// guard and its warhead curtains the tank beside it.
 #[test]
 fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
-    assert_iron_guard_protects("GUARD", None);
+    assert_self_guard_protects("GUARD", None);
 }
 
 /// HasSuperWeapon, the House grant pass and IsLaunchSite all admit the
 /// installed upgrade when the cannon's base type has no Super of its own.
 #[test]
 fn ares_self_targeting_auto_fire_uses_a_super_from_an_installed_upgrade() {
-    assert_iron_guard_protects("TOWER", Some("COIL"));
+    assert_self_guard_protects("TOWER", Some("COIL"));
 }
 
-fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
+fn assert_self_guard_protects(building: &str, upgrade: Option<&str>) {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let ini = crate::sim::arena_fixture::clear_ground_ini(IRON_GUARD);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(SELF_GUARD);
     let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n[TOWER]\nFoundation=1x1\n");
     let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
