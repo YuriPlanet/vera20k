@@ -59,7 +59,7 @@ as Ares in every game); **residual** (gameplay, but its host is unported);
 | `0x469467` | `1005C600` | Temporal warps a Foot in the Air or Top layer too | ported: `temporal::temporal_detonation` |
 | `0x472198` | `1005C6C0` | No mind-control link to a parasite in limbo | presentation |
 | `0x47243F` | `1005C680` | A captured computer building queues Guard, no fate roll | ported: `capture_manager::decide_unit_fate` |
-| `0x4748A0` | `1005CC40` | ReadPip without the default-as-index distortion; integer values | presentation: `Pip=`/`OccupyPip=` colours only; not ported |
+| `0x4748A0` | `1005CC40` | ReadPip without the default-as-index distortion; integer values | ported: `IniSection::read_pip` (`rules/ini_value.rs`); a negative integer keeps the current frame |
 | `0x4759D4` | `1005CD00` | WriteEdge with an out-of-range edge | n/a: INI writer |
 | `0x47F9A4` | `1005C6F0` | Walls drawn in their owner's colour | presentation |
 | `0x48A4F9` | `1005D070` | A negative damage packet selects its explosion by magnitude | ported: `detonation_anim::select_with_context` |
