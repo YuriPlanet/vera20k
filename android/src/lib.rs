@@ -36,6 +36,7 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     // global reference the loader owns.
     let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
     let mut env = vm.attach_current_thread().ok()?;
+    // SAFETY: the activity handle is the loader's JNI global reference above.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
     Some(f(&mut env, &activity))
 }

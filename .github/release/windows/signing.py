@@ -25,7 +25,7 @@ WORKFLOW = ".github/workflows/windows-signing-check.yml"
 PAYLOAD_ARTIFACT = "windows-signing-payload-unsigned"
 PACKAGE_FILES = {
     "vera20k.exe", "config.toml.example", "README.txt", "LICENSE-GPL",
-    "THIRD_PARTY_LICENSES.html",
+    "THIRD_PARTY_LICENSES.html", "dxcompiler.dll", "LICENSE-DXC.txt",
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
 LANGUAGES = "languages"

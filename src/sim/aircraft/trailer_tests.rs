@@ -143,19 +143,25 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
         )
     };
     let before = constructor_state(&sim);
-    sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+    sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
         .expect("null Trailer bypasses division by zero");
     assert_eq!(constructor_state(&sim), before);
 
     let (mut sim, rules, plane) = retail_trailer_world("SMKPUFF", 0).unwrap();
     let before = constructor_state(&sim);
     assert!(
-        sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+        sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
             .is_err()
     );
     assert_eq!(constructor_state(&sim), before);
     let error = sim
-        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .expect_err("reached invalid cadence must fail the production frame");
     assert_eq!((error.entity_id, error.binary_frame), (plane, 103));
     assert!(error.cause.contains("SpawnDelay 0"));
@@ -165,7 +171,7 @@ fn trailer_invalid_divisors_stop_before_construction_and_fail_the_frame() {
     sim.session.set_binary_frame_for_test(0x8000_0000);
     let before = constructor_state(&sim);
     assert!(
-        sim.emit_aircraft_trailer(plane, &rules, FrameEffects::default())
+        sim.emit_aircraft_trailer(plane, &rules, &mut FrameEffects::default())
             .is_err()
     );
     assert_eq!(constructor_state(&sim), before);

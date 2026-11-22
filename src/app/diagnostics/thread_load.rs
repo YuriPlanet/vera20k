@@ -21,7 +21,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::util::time::{Duration, Instant};
 
 /// The simulation thread's CPU time at the end of its last job, in
-/// nanoseconds.
+/// nanoseconds. Written by that thread, which holds no app state, and read
+/// by the overlay on the main thread: hence a process-wide atomic.
 static SIMULATION_THREAD_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Called by the simulation thread after each job.

@@ -140,13 +140,8 @@ fn footprint_has_other_object(
     let Some(gate) = sim.substrate.entities.get(id) else {
         return false;
     };
-    crate::sim::production::building_base_foundation_cells(
-        gate.position.rx(),
-        gate.position.ry(),
-        foundation,
-    )
-    .into_iter()
-    .any(|(rx, ry)| {
+    let (rx, ry) = (gate.position.rx(), gate.position.ry());
+    crate::sim::crew_survival::foundation_cells(rx, ry, foundation).any(|(rx, ry)| {
         sim.substrate.occupancy.get(rx, ry).is_some_and(|occ| {
             occ.iter_layer(MovementLayer::Ground)
                 .any(|occupant| occupant.entity_id != id)
@@ -308,7 +303,7 @@ fn play_gate_sound(
         return;
     };
     let event = crate::sim::world::SimSoundEvent::voc_at_location(
-        sound.to_owned(),
+        rules.sound_name(sound),
         entity,
         sim.resolved_terrain.as_ref(),
     );
@@ -477,7 +472,7 @@ mod tests {
                 CellListInsertion::PrependNonBuilding,
             );
         }
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.scenario_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         (sim, rules)
@@ -919,7 +914,7 @@ mod tests {
                 .take_for_test()
                 .into_iter()
                 .filter_map(|event| match event {
-                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id),
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules).to_string()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -934,5 +929,24 @@ mod tests {
             .set_handler_state(3);
         mission_open(&mut sim, GATE, &rules);
         assert_eq!(played(&mut sim), ["Rules"]);
+    }
+
+    #[test]
+    fn footprint_sees_only_another_ground_object() {
+        for (blocker, obstructed) in [
+            (None, false),
+            (Some("ground"), true),
+            (Some("bridge"), false),
+        ] {
+            let row =
+                json!({"input": {"status": 0, "blocker": blocker}, "initial": {"hold": [0, 0]}});
+            let (sim, rules) = native_fixture(&row);
+            let foundation = &rules.object("GATE").unwrap().foundation;
+            assert_eq!(
+                footprint_has_other_object(&sim, GATE, foundation),
+                obstructed,
+                "{blocker:?}"
+            );
+        }
     }
 }

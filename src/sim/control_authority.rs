@@ -1,25 +1,26 @@
 //! Command permissions by admitted source and native House slot.
 //!
 //! A source's primary House comes from the session's source roster. The
-//! extra grants are fixed at admission. The lookup table is derived from
-//! those grants and the live House array.
+//! extra grants are fixed at admission. A lookup finds the subject's slot in
+//! the live House array, which grows during a match, and then its grant.
 
 use std::fmt;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::Arc;
 
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
-use crate::util::lookup_hash::LookupMap;
+
+const MAX_SOURCE_COUNT: usize = i8::MAX as usize + 1;
 
 /// A requested grant for a source and a House other than its primary House.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ControlGrant {
     pub source: i8,
     pub house: u8,
     pub level: ControlGrantLevel,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ControlGrantLevel {
     FullControl,
     UnitsOnly,
@@ -40,6 +41,7 @@ pub enum ControlGrantError {
     ScenarioAlreadyStarted,
     GrantsAlreadyAdmitted,
     InvalidSource(i8),
+    InvalidSourceCount { admitted: usize, available: usize },
     InvalidHouse(u8),
     OwnHouse { source: i8, house: u8 },
     ConflictingLevels { source: i8, house: u8 },
@@ -56,6 +58,13 @@ impl fmt::Display for ControlGrantError {
                 f.write_str("the scenario already has admitted control grants")
             }
             Self::InvalidSource(source) => write!(f, "source {source} is not admitted"),
+            Self::InvalidSourceCount {
+                admitted,
+                available,
+            } => write!(
+                f,
+                "saved control authority has {admitted} source rows for a roster of {available}"
+            ),
             Self::InvalidHouse(house) => write!(f, "House slot {house} is not registered"),
             Self::OwnHouse { source, house } => {
                 write!(
@@ -112,23 +121,9 @@ impl ControlScope {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ControlAuthority {
     delegated: Option<Box<ControlGrantTable>>,
-}
-
-impl Clone for ControlAuthority {
-    fn clone(&self) -> Self {
-        Self {
-            delegated: self.delegated.as_ref().map(|grants| {
-                Box::new(ControlGrantTable {
-                    entries: Arc::clone(&grants.entries),
-                    source_count: grants.source_count,
-                    scopes: RwLock::default(),
-                })
-            }),
-        }
-    }
 }
 
 impl ControlAuthority {
@@ -143,11 +138,54 @@ impl ControlAuthority {
         if grants.is_empty() {
             return Ok(Self::default());
         }
-        let source_count = source_count.min(i8::MAX as usize + 1);
+        let source_count = source_count.min(MAX_SOURCE_COUNT);
         grants.sort_unstable_by_key(|grant| (grant.source, grant.house));
         grants.dedup();
+        Self::validate_entries(&grants, house_count, source_count, source_house)?;
+        Ok(Self {
+            delegated: Some(Box::new(ControlGrantTable {
+                entries: grants.into(),
+                source_count,
+            })),
+        })
+    }
+
+    /// Validate decoded authority against the restored, append-only House
+    /// registry. The original source width can be smaller than a growing
+    /// House roster. An explicit shared-source roster never changes width.
+    pub(crate) fn validate_restored(
+        &self,
+        house_count: usize,
+        live_source_count: usize,
+        shared_sources: bool,
+        source_house: impl Fn(i8) -> Option<usize>,
+    ) -> Result<(), ControlGrantError> {
+        let Some(grants) = &self.delegated else {
+            return Ok(());
+        };
+        let available = live_source_count.min(MAX_SOURCE_COUNT);
+        if grants.source_count > available || shared_sources && grants.source_count != available {
+            return Err(ControlGrantError::InvalidSourceCount {
+                admitted: grants.source_count,
+                available,
+            });
+        }
+        Self::validate_entries(
+            &grants.entries,
+            house_count,
+            grants.source_count,
+            source_house,
+        )
+    }
+
+    fn validate_entries(
+        grants: &[ControlGrant],
+        house_count: usize,
+        source_count: usize,
+        source_house: impl Fn(i8) -> Option<usize>,
+    ) -> Result<(), ControlGrantError> {
         let mut previous = None;
-        for &ControlGrant { source, house, .. } in &grants {
+        for &ControlGrant { source, house, .. } in grants {
             let Some(primary) = usize::try_from(source)
                 .ok()
                 .filter(|&row| row < source_count)
@@ -167,17 +205,15 @@ impl ControlAuthority {
                 return Err(ControlGrantError::ConflictingLevels { source, house });
             }
         }
-        Ok(Self {
-            delegated: Some(Box::new(ControlGrantTable {
-                entries: grants.into(),
-                source_count,
-                scopes: RwLock::default(),
-            })),
-        })
+        Ok(())
     }
 
     pub(crate) const fn has_any_grants(&self) -> bool {
         self.delegated.is_some()
+    }
+
+    pub(crate) fn admitted_source_count(&self) -> Option<usize> {
+        self.delegated.as_ref().map(|table| table.source_count)
     }
 
     pub(crate) fn grants(&self) -> &[ControlGrant] {
@@ -185,6 +221,22 @@ impl ControlAuthority {
             Some(grants) => &grants.entries,
             None => &[],
         }
+    }
+
+    /// The grant `source` holds on `subject`'s House, without the primary
+    /// House's own authority: `None` scope for a source outside the admitted
+    /// roster, a House without a grant, or no delegated grants at all.
+    pub(crate) fn delegated_scope(
+        &self,
+        source: usize,
+        subject: InternedId,
+        houses: &Houses,
+    ) -> ControlScope {
+        self.delegated
+            .as_ref()
+            .map_or(ControlScope::None, |grants| {
+                grants.scope(source, subject, houses)
+            })
     }
 
     /// The caller resolves the admitted source to its primary House before
@@ -208,91 +260,69 @@ impl ControlAuthority {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct ControlGrantTable {
+    #[serde(serialize_with = "save_grants", deserialize_with = "load_grants")]
     entries: Arc<[ControlGrant]>,
+    #[serde(deserialize_with = "load_source_count")]
     source_count: usize,
-    scopes: RwLock<Option<ControlScopeTable>>,
+}
+
+fn save_grants<S: serde::Serializer>(
+    entries: &Arc<[ControlGrant]>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serde::Serialize::serialize(entries.as_ref(), serializer)
+}
+
+fn load_grants<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Arc<[ControlGrant]>, D::Error> {
+    let entries = <Vec<ControlGrant> as serde::Deserialize>::deserialize(deserializer)?;
+    let key = |entry: &ControlGrant| (entry.source, entry.house);
+    if entries.first().is_none_or(|entry| entry.source < 0)
+        || entries
+            .windows(2)
+            .any(|pair| key(&pair[0]) >= key(&pair[1]))
+    {
+        return Err(serde::de::Error::custom(
+            "invalid canonical control grant table",
+        ));
+    }
+    Ok(entries.into())
+}
+
+fn load_source_count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error> {
+    let count = <usize as serde::Deserialize>::deserialize(deserializer)?;
+    if count > MAX_SOURCE_COUNT || count == 0 && !crate::util::save_codec::layout::describing() {
+        return Err(serde::de::Error::custom(
+            "control grant source count is out of range",
+        ));
+    }
+    Ok(count)
 }
 
 impl ControlGrantTable {
+    /// `subject`'s grant from `source`. Grants address House slots, so the
+    /// subject's slot is looked up in the live registry, which is
+    /// append-only in a running match: a House registered after admission
+    /// holds no grant.
     fn scope(&self, source: usize, subject: InternedId, houses: &Houses) -> ControlScope {
-        // House slots are append-only in a running match. A different live
-        // count requires a new stride and name-to-slot mapping.
-        let current_size = |table: &&ControlScopeTable| table.house_count == houses.len();
-        let scopes = self.scopes.read().unwrap_or_else(PoisonError::into_inner);
-        if let Some(table) = scopes.as_ref().filter(current_size) {
-            return table.get(source, subject);
+        if source >= self.source_count {
+            return ControlScope::None;
         }
-        drop(scopes);
-
-        let mut scopes = self.scopes.write().unwrap_or_else(PoisonError::into_inner);
-        // Another reader may have refreshed it while we acquired the write lock.
-        if scopes.as_ref().filter(current_size).is_none() {
-            *scopes = ControlScopeTable::build(&self.entries, self.source_count, houses);
-        }
-        scopes
-            .as_ref()
-            .map_or(ControlScope::None, |table| table.get(source, subject))
-    }
-}
-
-#[derive(Debug)]
-struct ControlScopeTable {
-    house_count: usize,
-    columns: LookupMap<InternedId, usize>,
-    cells: Box<[ControlScope]>,
-}
-
-impl ControlScopeTable {
-    fn build(grants: &[ControlGrant], source_count: usize, houses: &Houses) -> Option<Self> {
-        let house_count = houses.len();
-        let mut cells = vec![ControlScope::None; source_count.checked_mul(house_count)?];
-        for &ControlGrant {
-            source,
-            house,
-            level,
-        } in grants
-        {
-            let source = usize::try_from(source).ok()?;
-            let house = usize::from(house);
-            // Both dimensions are checked so an absent House slot cannot
-            // address a cell in the next source's row.
-            if source < source_count && house < house_count {
-                cells[source * house_count + house] = level.scope();
-            }
-        }
-        let columns = houses
-            .order()
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(index, name)| (name, index))
-            .collect();
-        let table = Self {
-            house_count,
-            columns,
-            cells: cells.into_boxed_slice(),
-        };
-        debug_assert!(grants.iter().all(|grant| {
-            houses
-                .order()
-                .get(usize::from(grant.house))
-                .is_none_or(|&subject| {
-                    table.get(grant.source as usize, subject) == grant.level.scope()
-                })
-        }));
-        Some(table)
-    }
-
-    fn get(&self, source: usize, subject: InternedId) -> ControlScope {
-        let Some(&column) = self.columns.get(&subject) else {
+        let (Ok(source), Some(Ok(house))) = (
+            i8::try_from(source),
+            houses.index_of(subject).map(u8::try_from),
+        ) else {
             return ControlScope::None;
         };
-        self.cells
-            .get(source * self.house_count + column)
-            .copied()
-            .unwrap_or(ControlScope::None)
+        // Admission sorts the entries by source and House, one entry each.
+        self.entries
+            .binary_search_by_key(&(source, house), |grant| (grant.source, grant.house))
+            .map_or(ControlScope::None, |index| {
+                self.entries[index].level.scope()
+            })
     }
 }
 
@@ -371,20 +401,10 @@ mod tests {
             authority.scope(0, primary, second, &houses),
             ControlScope::FullControl
         );
-        let scopes = authority.delegated.as_ref().unwrap().scopes.read().unwrap();
-        let table = scopes.as_ref().unwrap();
-        assert_eq!(table.house_count, 4);
-        assert_eq!(table.cells.len(), 2 * table.house_count);
-        assert_eq!(table.columns.get(&late), Some(&3));
-        assert!(
-            authority
-                .clone()
-                .delegated
-                .unwrap()
-                .scopes
-                .into_inner()
-                .unwrap()
-                .is_none()
+        // A copy answers from the same grants against the grown registry.
+        assert_eq!(
+            authority.clone().scope(1, primary, first, &houses),
+            ControlScope::UnitsOnly
         );
     }
 

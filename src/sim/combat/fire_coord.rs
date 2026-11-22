@@ -239,7 +239,7 @@ pub fn turret_pivot_coordinate(
                 &source,
                 obj,
                 weapon_index,
-                entity.weapon_burst.index() as u8,
+                entity.seldom.weapon_burst.index() as u8,
                 Flh::default(),
             )
             .coord,
@@ -887,7 +887,7 @@ fn open_topped_port_coordinate(
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = transport_obj.alternate_fire_flh(port);
-    let burst_index = (transport.weapon_burst.index() & 1) as u8;
+    let burst_index = (transport.seldom.weapon_burst.index() & 1) as u8;
     let delta = flh_world_delta(
         base.art.map_or(0, |art| art.turret_offset),
         flh,
@@ -1666,7 +1666,7 @@ mod control_link_port_tests {
                     0,
                     4,
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let actor = sim.substrate.entities.get_mut(id).unwrap();

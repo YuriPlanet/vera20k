@@ -143,6 +143,10 @@ pub(crate) struct GuiStyle<'a> {
     /// The glyph scale of every caption, value and row, when not the
     /// `scale` the widgets paint at (VERA's room's smaller text).
     pub(crate) text_factor: Option<f32>,
+    /// The glyph scale of a combo face's caption, when not the `scale` the
+    /// widgets paint at (VERA's team bar lists' words at the roster's size,
+    /// over open lists in `text_factor`'s).
+    pub(crate) face_factor: Option<f32>,
     /// The colour of a text with no `Color` (VERA's room's green).
     pub(crate) rgb: [f32; 3],
 }
@@ -163,6 +167,7 @@ impl Default for GuiStyle<'_> {
             caret_of: None,
             edit_fill: None,
             text_factor: None,
+            face_factor: None,
             rgb: SHELL_LABEL_TEXT_RGB,
         }
     }
@@ -839,10 +844,11 @@ fn paint_combo(
     let face_swatch = selected.and_then(swatch);
     let open = drop_down.is_some();
     let items = items(gui, node, Prop::Items);
-    // A host-counted combo's rows are the host's.
-    let rows: Vec<&str> = match &host_rows {
-        Some(rows) => rows.iter().map(|(row, _)| row.as_str()).collect(),
-        None => items.iter().map(String::as_str).collect(),
+    // A host-counted combo's rows are the host's, each in its own colour
+    // (`u32::MAX` for the style's).
+    let rows: Vec<(&str, u32)> = match &host_rows {
+        Some(rows) => rows.iter().map(|(row, rgb)| (row.as_str(), *rgb)).collect(),
+        None => items.iter().map(|row| (row.as_str(), u32::MAX)).collect(),
     };
     let font = &state.renderer.bit_font;
     if style.combos != ComboArt::Host {
@@ -881,7 +887,7 @@ fn paint_combo(
                     face,
                     at,
                     ShellAlign::V_CENTER,
-                    scale.factor(),
+                    style.face_factor.unwrap_or(scale.factor()),
                     rgb,
                     SHELL_CONTROL_TEXT_DEPTH,
                 ));
@@ -910,8 +916,12 @@ fn paint_combo(
     let glyph = style.text_factor.unwrap_or(scale.factor());
     let fit = combo_dropdown_text_fit_width(popup.content(), scale) as f32 * scale.factor() / glyph;
     for row in popup.first..popup.first + popup.visible_rows {
-        let (Some(at), Some(item)) = (popup.row_rect(row), rows.get(row).copied()) else {
+        let (Some(at), Some((item, packed))) = (popup.row_rect(row), rows.get(row).copied()) else {
             continue;
+        };
+        let rgb = match packed {
+            u32::MAX => style.rgb,
+            c => [c as u8, (c >> 8) as u8, (c >> 16) as u8].map(|c| f32::from(c) / 255.0),
         };
         // `ComboDropWin` draws from x+3, the caption cut to the row less the
         // scrollbar reserve (`0x0060DF38`).
@@ -924,7 +934,7 @@ fn paint_combo(
                 at,
                 ShellAlign::V_CENTER,
                 glyph,
-                style.rgb,
+                rgb,
                 SHELL_DROPDOWN_TEXT_DEPTH,
             ));
         });

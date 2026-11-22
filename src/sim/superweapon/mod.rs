@@ -112,9 +112,7 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
-use crate::util::native_x87::{
-    MaskedX87Chop53, NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering,
-};
+use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF32Bits, NativeF64Bits};
 
 /// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
 /// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
@@ -1498,17 +1496,21 @@ pub(crate) fn super_nearly_ready(
 /// `1.0f` (`[0x007E2AC8]`).
 const ONE_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3F80_0000);
 
-/// `0x0041F148..0x0041F167`: in PC53/chop, `remaining / recharge` is not
-/// above `1.0f - percent` (`FCOMPP`, `TEST AH,0x1`); a zero recharge gives
-/// +inf or NaN, which fail, or -inf, which passes.
+/// `0x0041F148..0x0041F167`: in PC53/chop with masked exceptions,
+/// `remaining / recharge` is not above `1.0f - percent` (`FCOMPP`,
+/// `TEST AH,0x1`, which also fails an unordered compare). A zero recharge
+/// gives +inf or NaN, which fail, or -inf, which passes; an infinite
+/// `AIMinorSuperReadyPercent=` (ReadDouble overflows from about `1.8e308`,
+/// e.g. `1e309`, and the chop store to float keeps it; `1e39` stores the
+/// largest finite float) loads as infinity too.
 pub(crate) fn charge_nearly_full(remaining: i32, recharge: i32, percent: NativeF32Bits) -> bool {
-    type X = X87Chop53;
-    let Ok(ratio) = X::div(X::load_i32(remaining), X::load_i32(recharge)) else {
-        return remaining < 0;
-    };
-    let percent = X::load_f32(percent).expect("AIMinorSuperReadyPercent is finite");
-    let threshold = X::sub(X::load_f32(ONE_F32).expect("1.0f is finite"), percent);
-    X::compare(threshold, ratio) != X87Ordering::Less
+    type X = MaskedX87Chop53;
+    let ratio = X::div(X::load_i32(remaining), X::load_i32(recharge));
+    let threshold = X::sub(X::load_f32(ONE_F32), X::load_f32(percent));
+    matches!(
+        X::compare(threshold, ratio),
+        MaskedX87Ordering::Greater | MaskedX87Ordering::Equal
+    )
 }
 
 /// The charge each of `owner`'s Supers with `Type=` value `kind_index` has
@@ -1558,6 +1560,7 @@ pub struct SuperTimerView {
     on_hold: bool,
     recharge_frames: i32,
     place: u32,
+    is_ready: bool,
 }
 
 impl SuperTimerView {
@@ -1577,7 +1580,13 @@ impl SuperTimerView {
             on_hold,
             recharge_frames,
             place,
+            is_ready: false,
         }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_ready_for_test(self, is_ready: bool) -> Self {
+        Self { is_ready, ..self }
     }
 
     pub fn owner(self) -> InternedId {
@@ -1608,6 +1617,11 @@ impl SuperTimerView {
     pub fn place(self) -> u32 {
         self.place
     }
+
+    /// Fully charged and ready to fire (`+0x6F`).
+    pub fn is_ready(self) -> bool {
+        self.is_ready
+    }
 }
 
 /// The timer list, in its order.
@@ -1630,6 +1644,7 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
                         .super_weapon(sim.interner.resolve(instance.type_id))
                         .map_or(0, |sw| instance.recharge_time(sw)),
                     place: instance.timer_place?,
+                    is_ready: instance.is_ready,
                 })
             })
         })
@@ -1836,7 +1851,7 @@ pub(crate) fn tick_house_superweapon_instances(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let current_frame = sim.session.binary_frame();
     let ares = rules.ares_form();
@@ -1845,8 +1860,12 @@ pub(crate) fn tick_house_superweapon_instances(
             .houses
             .get(&owner)
             .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
-    for type_id in house_super_order(sim, rules, owner) {
-        let sw = rules.super_weapon(sim.interner.resolve(type_id));
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        // An exact-name hit in the rules' map for the order's own name.
+        let sw = rules.super_weapon(name);
         let (fade, ready, drain_ended) = {
             let instance = sim
                 .super_weapons
@@ -1914,12 +1933,12 @@ pub(crate) fn tick_house_superweapon_instances(
             }
         }
         if let Some([x, y, z]) = fade
-            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.clone())
+            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.as_deref())
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
             sim.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 audible_to: None,
                 rx,
                 ry,
@@ -1984,7 +2003,7 @@ pub(super) fn deactivate_ares_handler(
     typ: InternedId,
     sw: &SuperWeaponType,
     is_player: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !sw.kind.has_ares_handler() {
         return;
@@ -2019,7 +2038,7 @@ pub(super) fn raise_ares_activation_events(
     typ: InternedId,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::trigger_runtime::AresEventSource;
     let launch = AresEventSource::Launch {
@@ -2034,7 +2053,7 @@ pub(super) fn raise_ares_activation_events(
 /// `HouseClass::HouseClass` builds the House's whole Supers vector, one
 /// Super per `[SuperWeaponTypes]` entry in that order
 /// (`0x004F620E..0x004F6290`), for every House in every game mode; the grant
-/// and hold passes only walk that list ([`house_super_order`]). Only the
+/// and hold passes only walk that list ([`house_super`]). Only the
 /// admitted campaign prefix has a measured native-ID cursor, so only it binds
 /// each Super's ID (`bind_native_ids`).
 pub(crate) fn construct_house_supers(
@@ -2074,16 +2093,13 @@ pub(crate) fn shorten_ares_firestorm_drain(
     owner: InternedId,
     amount: i32,
 ) {
-    let Some(type_id) = house_super_order(sim, rules, owner)
-        .into_iter()
-        .find(|&id| {
-            rules
-                .super_weapon(sim.interner.resolve(id))
-                .is_some_and(|sw| {
-                    sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
-                })
-        })
-    else {
+    let Some(type_id) = rules.super_weapon_order.iter().find_map(|name| {
+        let id = house_super(sim, owner, name)?;
+        rules
+            .super_weapon(name)
+            .is_some_and(|sw| sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm)
+            .then_some(id)
+    }) else {
         return;
     };
     let frame = sim.session.binary_frame() as i32;
@@ -2092,18 +2108,20 @@ pub(crate) fn shorten_ares_firestorm_drain(
     }
 }
 
-fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
-    let Some(weapons) = sim.super_weapons.get(&owner) else {
-        return Vec::new();
-    };
-    rules
-        .super_weapon_order
-        .iter()
-        .filter_map(|name| {
-            let id = sim.interner.get(name)?;
-            weapons.contains_key(&id).then_some(id)
-        })
-        .collect()
+/// `owner`'s Super of the `[SuperWeaponTypes]` entry `name`, if it holds one.
+/// The House walks walk `rules.super_weapon_order` and ask this per entry:
+/// a House's set never changes after [`construct_house_supers`], and an
+/// interned name keeps its id, so asking as the walk goes answers as a copy
+/// of the order taken before it would, without building one per House per
+/// tick. Each entry is one probe of the name, uppercased on the stack, with
+/// no allocation: the rules hold the order as names and the ids are the
+/// interner's, which gives a name its id only when it is first interned.
+fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
+    let id = sim.interner.get(name)?;
+    sim.super_weapons
+        .get(&owner)?
+        .contains_key(&id)
+        .then_some(id)
 }
 
 /// Tick already-active global superweapon effects in their native pre-object
@@ -2115,7 +2133,7 @@ pub(crate) fn tick_active_superweapon_effects(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let frame = sim.session.binary_frame() as i32;
     if sim.session.lighting_mut().step_nuke_flash(frame) {
@@ -2681,7 +2699,7 @@ pub(crate) fn update_owned_supers(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {
@@ -2694,8 +2712,11 @@ pub(crate) fn update_owned_supers(
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
@@ -2879,11 +2900,14 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
         if !providers.provided.contains(&type_id) {
             continue;
         }
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         if !sim.session.game_options().super_weapons && sw.disableable_from_shell {

@@ -52,6 +52,88 @@ pub struct ShellBox {
     /// Centred on the whole window as gamemd centres it (a box over a
     /// match), not on [`menu_area`].
     pub on_screen: bool,
+    /// VERA's footer arrangement ([`Footer`]); `None` keeps the template's.
+    pub footer: Option<Footer>,
+}
+
+/// VERA's own arrangement of a count-rule box, Add Mod's
+/// (`app::shell_mod_import`): the body fills the panel inside a 24-pixel
+/// inset, OK, the third button and Cancel sit along its footer, and each
+/// `raised` button stands one button height and 6 pixels above the footer
+/// button it names. gamemd has no such box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Footer {
+    /// The body is cut to its first 66 pixels, leaving room for a list
+    /// under it.
+    pub list: bool,
+    /// `(button, footer button)`: the extra buttons, not counted by the
+    /// count rule, each above its footer button.
+    pub raised: &'static [(u16, u16)],
+}
+
+impl Footer {
+    const INSET: i32 = 24;
+
+    fn is_raised(&self, id: u16) -> bool {
+        self.raised.iter().any(|&(raised, _)| raised == id)
+    }
+
+    /// `base`, the count-rule box, arranged; `ids` are the box's buttons.
+    fn arrange(&self, base: BoxParts, ids: &[u16]) -> BoxParts {
+        const INSET: i32 = Footer::INSET;
+        let scale = base.scale;
+        let mut body = scale.derive_rect(base.dialog, |dialog| {
+            RectPx::new(
+                dialog.x + INSET,
+                dialog.y + INSET,
+                dialog.w - 2 * INSET,
+                dialog.h - 3 * INSET,
+            )
+        });
+        if self.list {
+            body = scale.derive_rect(body, |rect| RectPx::new(rect.x, rect.y, rect.w, 66));
+        }
+        let button = scale.base_rect(base.button(0));
+        let place = |slot: i32| {
+            scale.derive_rect(base.dialog, |dialog| {
+                let x = match slot {
+                    0 => INSET,
+                    1 => (dialog.w - button.w) / 2,
+                    _ => dialog.w - INSET - button.w,
+                };
+                RectPx::new(
+                    dialog.x + x,
+                    dialog.y + dialog.h - INSET - button.h,
+                    button.w,
+                    button.h,
+                )
+            })
+        };
+        let cancel = base.rect_of(control::CANCEL).is_some();
+        let mut buttons: RectTable = base
+            .buttons
+            .iter()
+            .map(|(id, rect)| match id {
+                control::OK => (id, place(if cancel { 0 } else { 2 })),
+                control::THIRD => (id, place(1)),
+                control::CANCEL => (id, place(2)),
+                _ => (id, rect),
+            })
+            .collect();
+        for &(id, under) in self.raised {
+            if let (true, Some(rect)) = (ids.contains(&id), buttons.get(under)) {
+                let above = scale.derive_rect(rect, |rect| {
+                    RectPx::new(rect.x, rect.y - rect.h - 6, rect.w, rect.h)
+                });
+                buttons.insert(id, above);
+            }
+        }
+        BoxParts {
+            body,
+            buttons,
+            ..base
+        }
+    }
 }
 
 /// A box's rects: its window, the body and each button by id, in the box's
@@ -126,6 +208,7 @@ impl ShellBox {
             buttons: Vec::new(),
             template: None,
             on_screen: false,
+            footer: None,
         }
     }
 
@@ -180,6 +263,12 @@ impl ShellBox {
         self
     }
 
+    /// Arranged as [`Footer`] says.
+    pub fn footer(mut self, footer: Footer) -> Self {
+        self.footer = Some(footer);
+        self
+    }
+
     /// The answer button `id` gives: its index; Enter and Escape's IDOK 1.
     pub fn answer(&self, id: u16) -> Option<usize> {
         if id == control::IDOK {
@@ -198,15 +287,28 @@ impl ShellBox {
     /// Its rects on the shell's mapping: retail 640/800 layouts keep their
     /// native size, a larger window the 800x600 box scaled with the page.
     pub fn parts(&self, width: i32, height: i32, scale: geom::ShellScale) -> BoxParts {
-        let template = self.template.unwrap_or(count_rule(self.buttons.len()));
+        // A footer's raised buttons are not the count rule's.
+        let counted: Vec<u16> = self
+            .buttons
+            .iter()
+            .map(|b| b.id)
+            .filter(|id| !self.footer.is_some_and(|footer| footer.is_raised(*id)))
+            .collect();
+        let template = self.template.unwrap_or(count_rule(counted.len()));
         let mut parts = match self.on_screen {
             true => parts_in(template, RectPx::new(0, 0, width, height)),
             false => template_on(template, width, height, scale),
         };
         // The template's buttons by position, under this box's ids.
         let rects: Vec<RectPx> = parts.buttons.iter().map(|(_, rect)| rect).collect();
-        parts.buttons = self.buttons.iter().map(|b| b.id).zip(rects).collect();
-        parts
+        parts.buttons = counted.iter().copied().zip(rects).collect();
+        match self.footer {
+            Some(footer) => {
+                let ids: Vec<u16> = self.buttons.iter().map(|b| b.id).collect();
+                footer.arrange(parts, &ids)
+            }
+            None => parts,
+        }
     }
 
     /// Its buttons as nodes under its dialog root.
@@ -385,6 +487,38 @@ vera20k_gui::scaled_rects!(WolCreateGameLayout {
     cancel,
     status
 });
+
+/// VERA Online's welcome and player count are centred on the Create Room art.
+/// The original MNBTTN buttons share their rectangles with pointer input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolEntryChoiceLayout {
+    pub dialog: RectPx,
+    pub heading: RectPx,
+    pub players_online: RectPx,
+    pub guest: RectPx,
+    pub account: RectPx,
+}
+
+pub(crate) fn wol_entry_choice_layout_on(
+    area: RectPx,
+    scale: geom::ShellScale,
+) -> WolEntryChoiceLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| scale.scale_rect(RectPx::new(dialog.x + x, dialog.y + y, w, h));
+    let button = geom::child_window(0, 0, 99, 15);
+    let gap = 16;
+    let left = (dialog.w - 2 * button.w - gap) / 2;
+    let top = dialog.h - 34 - button.h;
+    let middle = dialog.h / 2;
+    let line = |y, h| child(20, y, dialog.w - 40, h);
+    WolEntryChoiceLayout {
+        dialog: scale.scale_rect(dialog),
+        heading: line(middle - 34, 32),
+        players_online: line(middle, 28),
+        guest: child(left, top, button.w, button.h),
+        account: child(left + button.w + gap, top, button.w, button.h),
+    }
+}
 
 /// VERA online's account popups (Create Account, its mailed code, Forgot
 /// Password) on the online Create Game box: one caption and edit per field,

@@ -87,6 +87,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .into_fresh_staged_simulation(
             &descriptor,
             FreshScenarioPrefix::Campaign {
+                network: None,
                 native_rules_receipt: receipt,
                 rules: &rules,
                 map_data: &map,
@@ -209,7 +210,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
             67,
             TickLane::Ordinary,
             true,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary campaign fixture frame");
         heard_stallone |= sim.sound_events().iter().any(
@@ -235,7 +236,7 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         starting_hp,
         "MindControl does not damage the tank"
     );
-    assert_eq!(tank.mind_control.controller(), Some(controller));
+    assert_eq!(tank.seldom.mind_control.controller(), Some(controller));
     assert_eq!(tank.owner(), americans);
     assert!(
         sim.trigger_runtime

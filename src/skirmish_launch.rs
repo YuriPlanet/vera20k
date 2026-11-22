@@ -515,7 +515,8 @@ pub struct SkirmishLaunchOptions {
 }
 
 /// VERA: the rules a network room plays besides its options, which only its
-/// host sets: the host's Terrain Deformation box and Superweapon Limit.
+/// host sets: the host's Terrain Deformation box, Superweapon Limit and
+/// Building Production Queue.
 /// Every player's match plays these instead of their own; offline games play
 /// the player's own (`ProcessAssets::use_personal_rules`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -530,6 +531,11 @@ pub struct HostRules {
     /// [`admitted_superweapon_limit`]: crate::rules::personal_rules::admitted_superweapon_limit
     #[serde(default, skip_serializing_if = "is_zero")]
     pub superweapon_limit: u8,
+    /// The Building Production Queue. Left out while off, so a room without
+    /// it sends the rules it sent before the setting; a lobby or LAN guest
+    /// from before it cannot read options that carry it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub building_production_queue: bool,
     /// The host's VERARULES.INI in base64, which games sent until the file
     /// was retired for New Mod. Never sent now; read only so that a room or a
     /// replay from such a game is refused by [`Self::personal_rules`] with a
@@ -540,15 +546,16 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.superweapon_limit == 0
+        !self.terrain_deformation && self.superweapon_limit == 0 && !self.building_production_queue
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
-    /// box and Superweapon Limit.
+    /// box, Superweapon Limit and Building Production Queue.
     pub fn from_own(own: &PersonalRules) -> Self {
         Self {
             terrain_deformation: own.terrain_deformation(),
             superweapon_limit: own.superweapon_limit(),
+            building_production_queue: own.building_production_queue(),
             retired_personal_rules: None,
         }
     }
@@ -562,6 +569,7 @@ impl HostRules {
         let mut rules = PersonalRules::default();
         rules.set_terrain_deformation(self.terrain_deformation);
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
+        rules.set_building_production_queue(self.building_production_queue);
         Ok(rules)
     }
 }
@@ -682,6 +690,45 @@ pub struct RoomOptions {
     pub teams: Option<u8>,
 }
 
+/// The session values `[MultiplayerDialogSettings]` seeds that C2's proc
+/// (`Dialog0xC2__DlgProc`, `0x0078F7F0`) handles but YR's skirmish and room
+/// dialogs never show: Tech Level, Bases (`0x00A8B258`), Fog of War
+/// (`0x00A8B31F`), Multi-Engineer (`0x00A8B26C`) and Harvester Truce
+/// (`0x00A8B31D`). VERA's Game Options show them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionOptions {
+    pub tech_level: i32,
+    pub bases: bool,
+    pub fog_of_war: bool,
+    pub multi_engineer: bool,
+    pub harvester_truce: bool,
+}
+
+/// C2's Short Game click (`Dialog0xC2__DlgProc`, `0x0078FB8D..0x0078FBB0`):
+/// a short game needs bases, so ticking it ticks Bases. Only a click does
+/// this; values restored from settings stay as they are.
+pub fn click_short_game(short_game: &mut bool, bases: &mut bool) {
+    *short_game = !*short_game;
+    if *short_game {
+        *bases = true;
+    }
+}
+
+/// C2's Bases click (`0x0078FAAA..0x0078FAC9`): unticking it unticks Short
+/// Game.
+pub fn click_bases(bases: &mut bool, short_game: &mut bool) {
+    *bases = !*bases;
+    if !*bases {
+        *short_game = false;
+    }
+}
+
+impl Default for SessionOptions {
+    fn default() -> Self {
+        SkirmishLaunchOptions::default().session_options()
+    }
+}
+
 impl SkirmishLaunchOptions {
     pub fn room_options(&self) -> RoomOptions {
         RoomOptions {
@@ -697,6 +744,24 @@ impl SkirmishLaunchOptions {
         self.ally_change_allowed = room.ally_change_allowed;
         self.bans = room.bans;
         self.teams = room.teams;
+    }
+
+    pub fn session_options(&self) -> SessionOptions {
+        SessionOptions {
+            tech_level: self.tech_level,
+            bases: self.bases,
+            fog_of_war: self.fog_of_war,
+            multi_engineer: self.multi_engineer,
+            harvester_truce: self.harvester_truce,
+        }
+    }
+
+    pub fn set_session_options(&mut self, session: SessionOptions) {
+        self.tech_level = session.tech_level;
+        self.bases = session.bases;
+        self.fog_of_war = session.fog_of_war;
+        self.multi_engineer = session.multi_engineer;
+        self.harvester_truce = session.harvester_truce;
     }
 }
 
@@ -1192,7 +1257,7 @@ impl SkirmishLaunchSession {
         }
     }
 
-    fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
+    pub(crate) fn retain_recorded_house_roster(&mut self, constructor: PreFillHouseRoster) {
         let rows_at_decode = self.roster_from_rows();
         self.recorded_house_roster = (constructor != rows_at_decode).then(|| {
             Box::new(RecordedHouseRoster {
@@ -1569,6 +1634,25 @@ mod tests {
             played.superweapon_limit(),
             crate::rules::personal_rules::SUPERWEAPON_LIMIT_MAX
         );
+    }
+
+    /// A room carries its host's Building Production Queue and every player
+    /// plays it; a room from before the setting reads as off.
+    #[test]
+    fn a_room_carries_its_hosts_building_queue() {
+        let mut own = crate::rules::personal_rules::PersonalRules::default();
+        own.set_building_production_queue(true);
+        let shared = HostRules::from_own(&own);
+        assert_eq!(
+            serde_json::to_value(&shared).unwrap(),
+            serde_json::json!({"building_production_queue": true})
+        );
+        let played = shared.personal_rules().unwrap();
+        assert!(played.building_production_queue());
+        assert_eq!(played.compatibility_crc(), own.compatibility_crc());
+        let older: HostRules =
+            serde_json::from_value(serde_json::json!({"terrain_deformation": true})).unwrap();
+        assert!(!older.personal_rules().unwrap().building_production_queue());
     }
 
     #[test]

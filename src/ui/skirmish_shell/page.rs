@@ -9,8 +9,8 @@
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
 use super::layout::{
-    DropdownMetrics, RectPx, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT, SkirmishCheckboxId,
-    SkirmishShellLayout, SkirmishTrackbarId, combo_face_rect,
+    DropdownMetrics, RectPx, SEAT_MENU, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT,
+    SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId, TEAM_MENU, combo_face_rect,
 };
 use super::state::{
     OwnerDrawButton, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
@@ -100,6 +100,30 @@ fn combo_id(state: &SkirmishShellState, kind: u16, slot: usize) -> Option<Skirmi
     })
 }
 
+/// VERA's Quick Team Setup and Bulk Seat Actions under the options, combos
+/// of their own ids ([`TEAM_MENU`], [`SEAT_MENU`]) whose lists act on the rows
+/// (`state::team_menus`).
+const MENUS: [(u16, SkirmishComboId); 2] = [
+    (TEAM_MENU, SkirmishComboId::TeamMenu),
+    (SEAT_MENU, SkirmishComboId::SeatMenu),
+];
+
+/// The width VERA's menus open at, in 800x600 pixels: room for Fill with
+/// AI's longest caption.
+const MENU_LIST_W: i32 = 250;
+
+fn menu_of(id: u16) -> Option<SkirmishComboId> {
+    MENUS
+        .iter()
+        .find(|(menu, _)| *menu == id)
+        .map(|(_, combo)| *combo)
+}
+
+/// The combo widget `id` stands for now: a row slot's or one of the menus.
+fn any_combo(state: &SkirmishShellState, id: u16) -> Option<SkirmishComboId> {
+    menu_of(id).or_else(|| combo_of(state, id).map(|(combo, _)| combo))
+}
+
 fn combo_of(state: &SkirmishShellState, id: u16) -> Option<(SkirmishComboId, usize)> {
     let offset = id.checked_sub(COMBO)?;
     let slot = usize::from(offset % 0x20);
@@ -118,13 +142,15 @@ fn flag_slot(id: u16) -> Option<usize> {
 /// their own (VERA's ids).
 use super::layout::HEADINGS;
 
-/// The words the page's captions take: each combo row's label, the Random
-/// a country face shows (`GUI:RandomEx`), the option boxes' and the right
+/// The words the page's captions take: each combo row's label (the menus'
+/// items among them), the Random a country face shows (`GUI:RandomEx`), the
+/// menus' captions in [`MENUS`] order, the option boxes' and the right
 /// panel's buttons' captions in [`CONTROLS`] order, and the headings.
 #[derive(Debug, Clone, Default)]
 pub struct SkirmishLabels {
     pub items: Vec<(SkirmishComboItem, String)>,
     pub random_country: String,
+    pub menus: [String; 2],
     pub checkboxes: [String; 5],
     pub buttons: [String; 5],
     pub headings: [String; 8],
@@ -181,9 +207,15 @@ fn spec() -> NodeSpec {
         .id(OPPONENT_SCROLL.into())
         .with(Prop::WheelStep, Value::Int(1))
         .with(Prop::RehoverOnRelease, Value::Bool(true));
+    let menus = MENUS.map(|(id, combo)| {
+        NodeSpec::new(NodeKind::Combo)
+            .id(id.into())
+            .tooltip(status_help_key_for_hover(Target::ComboFace(combo)).unwrap_or_default())
+    });
     NodeSpec::new(NodeKind::Dialog)
         .child(scroll)
         .children(combos)
+        .children(menus)
         .children(controls)
         .children(headings)
 }
@@ -200,6 +232,9 @@ fn rect(
     };
     if let Some((combo, slot)) = combo_of(state, id) {
         return combo_rect(layout, state, combo).filter(|_| slot_shows(slot));
+    }
+    if let Some(combo) = menu_of(id) {
+        return combo_rect(layout, state, combo);
     }
     if let Some(slot) = flag_slot(id) {
         return layout.flags.get(slot).copied().filter(|_| slot_shows(slot));
@@ -280,6 +315,43 @@ pub fn sync_page(
                 Value::Int(if kind == 3 { scrollbar_w } else { 0 }),
             ),
             (Prop::PopupFlipBelow, Value::Int(flip)),
+        ] {
+            page::set(gui, root, node, prop, value);
+        }
+    }
+    // The menus show their caption, not a pick. Their list opens at least
+    // [`MENU_LIST_W`] wide from the face's left edge and, past the status
+    // line, above the face.
+    for ((node, combo), caption) in MENUS.into_iter().zip(&labels.menus) {
+        let items = combo_items(state, maps, combo);
+        let face = combo_rect(layout, state, combo).map(|rect| combo_face_rect(rect, layout.scale));
+        let popup = face.map(|face| {
+            let mut popup = vera20k_gui::shell::combobox::ComboPopup::new(
+                face,
+                layout.scale,
+                items.len(),
+                0,
+                0,
+            );
+            popup.rect.w = layout
+                .scale
+                .derive_rect(RectPx::new(0, 0, MENU_LIST_W, 0), |rect| rect)
+                .w
+                .max(face.w);
+            if popup.rect.y + popup.rect.h > layout.status_help.y {
+                popup.rect.y = face.y - 1 - popup.rect.h;
+            }
+            popup.rect
+        });
+        for (prop, value) in [
+            (Prop::HitRect, Value::Rect(face.unwrap_or_default())),
+            // Host-counted: the painter takes the rows from [`menu_rows`],
+            // a greyed one in its own colour.
+            (Prop::RowCount, Value::Int(items.len() as i32)),
+            (Prop::Selected, Value::Int(-1)),
+            (Prop::Text, Value::Text(caption.clone())),
+            (Prop::Enabled, Value::Bool(combo_open(state, combo))),
+            (Prop::PopupRect, Value::Rect(popup.unwrap_or_default())),
         ] {
             page::set(gui, root, node, prop, value);
         }
@@ -405,12 +477,23 @@ fn handle(
                 }
             }
             PageEvent::Toggled(id, on) => {
-                if let Some(Target::Checkbox(checkbox)) = control(id) {
-                    *checkbox_value(state, checkbox) = on;
+                match control(id) {
+                    // VERA: the page ties Short Game to the Bases its Game
+                    // Options hold, as C2 does (`0x0078FB8D`).
+                    Some(Target::Checkbox(SkirmishCheckboxId::ShortGame0x54e))
+                        if state.short_game != on =>
+                    {
+                        crate::skirmish_launch::click_short_game(
+                            &mut state.short_game,
+                            &mut state.session.bases,
+                        );
+                    }
+                    Some(Target::Checkbox(checkbox)) => *checkbox_value(state, checkbox) = on,
+                    _ => {}
                 }
             }
             PageEvent::Picked(id, row) => {
-                let combo = combo_of(state, id).map(|(combo, _)| combo);
+                let combo = any_combo(state, id);
                 let item = combo.and_then(|combo| {
                     combo_items(state, maps, combo)
                         .get(usize::try_from(row).ok()?)
@@ -463,7 +546,11 @@ pub fn pointer_held(gui: &Gui) -> bool {
 }
 
 /// The computer rows' scrollbar moved: the rows follow its top.
-fn take_scroll(controller: &DialogController, state: &mut SkirmishShellState, events: &[PageEvent]) {
+fn take_scroll(
+    controller: &DialogController,
+    state: &mut SkirmishShellState,
+    events: &[PageEvent],
+) {
     if events.contains(&PageEvent::Scrolled(OPPONENT_SCROLL))
         && let Some(root) = controller.root_in(DIALOG)
         && let Some(top) = page::int(controller.gui(), root, OPPONENT_SCROLL, Prop::Top)
@@ -503,9 +590,68 @@ pub fn pointer(
     if sync_page(controller, state, layout, maps, labels).is_none() {
         return (Vec::new(), None);
     }
-    let events = route(controller, at, x, y);
+    let open_menu = open_menu_top(controller);
+    let mut events = route(controller, at, x, y);
+    keep_menu_open(controller, state, maps, open_menu, &mut events);
     take_scroll(controller, state, &events);
     handle(state, maps, events)
+}
+
+/// Menu widget `id`'s rows as the painter shows them: each item's caption
+/// and whether a click picks it (a greyed item or heading does not).
+pub fn menu_rows(
+    state: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    labels: &SkirmishLabels,
+    id: u16,
+) -> Option<Vec<(String, bool)>> {
+    let items = combo_items(state, maps, menu_of(id)?);
+    Some(
+        items
+            .into_iter()
+            .map(|item| (labels.item(item), item.pickable()))
+            .collect(),
+    )
+}
+
+/// The menu whose list is open, with its first row.
+fn open_menu_top(controller: &DialogController) -> Option<(u16, usize)> {
+    let gui = controller.gui();
+    let node = gui.popup()?;
+    let id = u16::try_from(gui.id_of(node)?).ok()?;
+    menu_of(id)?;
+    Some((id, gui.combo_drop_down(node)?.popup.first))
+}
+
+/// A press on a menu's greyed item or heading picks nothing and keeps the
+/// list open, with no close cue.
+fn keep_menu_open(
+    controller: &mut DialogController,
+    state: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+    open: Option<(u16, usize)>,
+    events: &mut Vec<PageEvent>,
+) {
+    let Some((menu, top)) = open else {
+        return;
+    };
+    let Some(at) = events.iter().position(|event| match *event {
+        PageEvent::Picked(id, row) if id == menu => menu_of(id)
+            .and_then(|combo| {
+                combo_items(state, maps, combo)
+                    .get(usize::try_from(row).ok()?)
+                    .copied()
+            })
+            .is_some_and(|item| !item.pickable()),
+        _ => false,
+    }) else {
+        return;
+    };
+    events.remove(at);
+    events.retain(|event| *event != PageEvent::Cue(PageCue::ComboClose));
+    if let Some(node) = controller.control(DIALOG, menu) {
+        let _ = controller.gui_mut().open_popup(node, top);
+    }
 }
 
 /// A held scrollbar arrow's repeat on the computer rows; whether anything
@@ -561,7 +707,9 @@ pub fn wheel(
 }
 
 /// The computer rows' scrollbar arrow drawn pushed.
-pub fn opponent_arrow(controller: &DialogController) -> Option<vera20k_gui::shell::list::ListScrollPart> {
+pub fn opponent_arrow(
+    controller: &DialogController,
+) -> Option<vera20k_gui::shell::list::ListScrollPart> {
     let node = controller.control(DIALOG, OPPONENT_SCROLL)?;
     controller.gui().list_view(node)?.pressed
 }
@@ -634,8 +782,8 @@ pub fn hover_target(
         .hovered()
         .filter(|node| root.is_some() && gui.tree().parent(*node) == Ok(root))?;
     let id = u16::try_from(gui.id_of(node)?).ok()?;
-    match (combo_of(state, id), flag_slot(id)) {
-        (Some((combo, _)), _) => Some(Target::ComboFace(combo)),
+    match (any_combo(state, id), flag_slot(id)) {
+        (Some(combo), _) => Some(Target::ComboFace(combo)),
         (_, Some(_)) => Some(Target::FlagPicture),
         _ => control(id),
     }
@@ -647,7 +795,7 @@ pub fn open_combo(
     state: &SkirmishShellState,
 ) -> Option<super::state::OpenComboDropdown> {
     let node = gui.popup()?;
-    let (id, _) = combo_of(state, u16::try_from(gui.id_of(node)?).ok()?)?;
+    let id = any_combo(state, u16::try_from(gui.id_of(node)?).ok()?)?;
     let list = gui.combo_drop_down(node)?;
     let (top_index, hot_row) = (list.popup.first, list.hot_row);
     Some(super::state::OpenComboDropdown {

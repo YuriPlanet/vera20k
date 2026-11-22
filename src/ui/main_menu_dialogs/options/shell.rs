@@ -333,9 +333,15 @@ fn page_rows(
                 if width == 150 {
                     out.push((caption, dlu(ROW_X, top, 150, 10)));
                 } else {
-                    out.push((caption, dlu(ROW_X, top, 60, 10)));
+                    // A level number needs a narrow box; a step name, such
+                    // as Visual Details' "Medium", half the track.
+                    let step_w = match id {
+                        LauncherTrackbarId::HouseColorStrength => 20,
+                        _ => 60,
+                    };
+                    out.push((caption, dlu(ROW_X, top, 120 - step_w, 10)));
                     let step = Control::Label(PageLabel::Step(id));
-                    out.push((step, dlu(ROW_X + 60, top, 60, 10)));
+                    out.push((step, dlu(ROW_X + 120 - step_w, top, step_w, 10)));
                 }
                 out.push((control, px(child_window(ROW_X, top + 15, width, 13))));
                 top += SLIDER_PITCH;
@@ -760,26 +766,31 @@ impl OptionsDialogState {
             }
             PageLabel::Caption(setting) => self.text(setting.text().0),
             PageLabel::Localized(key) => tr(key).into(),
-            PageLabel::Step(id) => return (self.slider_step(id).into(), ShellAlign::H_RIGHT),
+            PageLabel::Step(id) => return (self.slider_step(id), ShellAlign::H_RIGHT),
             PageLabel::Blank => self.labels.get("GUI:Blank").into(),
         };
         (text, ShellAlign::NONE)
     }
 
     /// The step name a plaque-less slider prints; a plaque slider shows its
-    /// value on the plaque instead.
-    pub(super) fn slider_step(&self, id: LauncherTrackbarId) -> &str {
+    /// value on the plaque instead. VERA's Team Color Strength prints the
+    /// level its position stands for, so the player never sees a 0 for
+    /// gamemd's own colours.
+    pub(super) fn slider_step(&self, id: LauncherTrackbarId) -> Cow<'_, str> {
         let position = usize::from(self.trackbar_position(id));
-        match id {
+        Cow::Borrowed(match id {
             LauncherTrackbarId::GameSpeed => self
                 .game_speed_names
                 .get(position)
                 .map_or("", String::as_str),
+            LauncherTrackbarId::HouseColorStrength => {
+                return Cow::Owned(self.house_color_strength().to_string());
+            }
             _ => id
                 .steps()
                 .get(position)
                 .map_or("", |key| self.labels.get(key)),
-        }
+        })
     }
 
     /// A box's text: its caption, or in the Esc menu's two columns, where the
@@ -907,6 +918,12 @@ impl OptionsDialogState {
                 &v.ares,
                 |s| super::ares_label(*s),
                 E::AresSelected,
+            ),
+            LauncherComboId::GraphicsApi => LauncherList::new(
+                super::GraphicsApi::choices(),
+                &v.graphics_api,
+                |api| api.label(),
+                E::GraphicsApiSelected,
             ),
             LauncherComboId::Display => {
                 let label = |target: &DisplayTarget| match target {
@@ -2119,6 +2136,29 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[test]
+    fn high_refresh_checkbox_sends_both_choices_with_vsync_off() {
+        let layout = LauncherOptionsLayout::new(640, 480, Category::Display);
+        let mut dialog = state();
+        dialog.values[LauncherCheckboxId::VSync] = false;
+        let id = LauncherCheckboxId::HighRefreshRateInBattle;
+        let rect = checkbox(&layout, id);
+        assert!(!dialog.shell_checkbox_checked(id));
+        for enabled in [true, false] {
+            dialog.shell_mouse_down(rect.x + 2, rect.y + 2, &layout);
+            dialog.shell_mouse_up(rect.x + 2, rect.y + 2, &layout);
+            assert_eq!(dialog.shell_checkbox_checked(id), enabled);
+            assert!(
+                dialog
+                    .drain_output()
+                    .events
+                    .contains(&LauncherOptionsEvent::Toggled(id, enabled))
+            );
+            assert!(!dialog.shell_checkbox_checked(LauncherCheckboxId::VSync));
+        }
+    }
+
     #[test]
     fn status_help_names_the_control_under_the_pointer() {
         let csf = |key: &str| Some(key.to_owned());
@@ -2667,9 +2707,8 @@ mod tests {
         assert_eq!(state.house_color_strength(), STRENGTH_RETAIL);
         state.shell_sync(&layout);
         assert_eq!(
-            state.shell_slider_value(LauncherTrackbarId::HouseColorStrength),
-            Some(1),
-            "the plaque reads the level"
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
+            "1"
         );
 
         // The strip admits from `bottom - 18`; the far right is the top level.
@@ -2678,8 +2717,8 @@ mod tests {
         state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
         assert_eq!(state.house_color_strength(), STRENGTH_MAX);
         assert_eq!(
-            state.shell_slider_value(LauncherTrackbarId::HouseColorStrength),
-            Some(10)
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
+            "10"
         );
         assert_eq!(
             drained(&mut state),

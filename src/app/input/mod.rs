@@ -15,6 +15,7 @@ pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
 pub(crate) mod dialog_page;
 pub(crate) mod diplomacy;
+pub(crate) mod briefing_diplomacy;
 pub(crate) mod restate;
 pub(crate) mod dispatch;
 pub(crate) mod entity_pick;

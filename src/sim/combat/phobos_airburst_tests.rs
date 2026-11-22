@@ -29,7 +29,6 @@ fn rules_ini(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rules_ini_full(
     parent: &str,
     child_weapon: &str,
@@ -74,7 +73,6 @@ struct Scene {
     victims: Vec<u64>,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_scene(
     ini: &IniFile,
     source_cell: (u16, u16),
@@ -1105,7 +1103,9 @@ fn firing_effects_play_the_child_weapon_anim_and_report() {
     );
     assert!(
         scene.world.sound_events().iter().any(|event| match event {
-            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => sound_id == "GUNRPT",
+            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+                sound_id.name_in(&scene.rules) == "GUNRPT"
+            }
             _ => false,
         }),
         "weapon Report is played"
@@ -1135,7 +1135,9 @@ fn firing_effects_play_the_child_weapon_anim_and_report() {
     detonate(&mut scene);
     assert_eq!(scene.world.anims().count(), 0);
     assert!(!scene.world.sound_events().iter().any(|event| match event {
-        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => sound_id == "GUNRPT",
+        crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+            sound_id.name_in(&scene.rules) == "GUNRPT"
+        }
         _ => false,
     }));
 }

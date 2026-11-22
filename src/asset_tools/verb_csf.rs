@@ -18,8 +18,9 @@
 //! spaces the game never shows). A verb that reported one form silently would
 //! misdescribe them: a caller diffing our text against a hex dump of the file
 //! would see a mismatch and have no way to tell a normalisation from a bug. So
-//! `value` is always what the game displays. The active table supplies its own
-//! selected raw record; an explicit source uses the bounded diagnostic rescan.
+//! `value` is always what the game displays, and the stored text comes from
+//! the very record the parser selected (`CsfFile::raw_entry`), for the active
+//! table and an explicit source alike, so the tool walks no bytes of its own.
 //! Stored text is reported when the two differ, or on `--raw` for every hit.
 //!
 //! Values legitimately contain newlines and tabs. Nothing here strips them; JSON
@@ -31,12 +32,9 @@
 //!   (byte-widening for label names) and the sibling `locate` / `report`
 //!   modules. Nothing from `sim/`, `render/`, `ui/`, `audio/`, or `net/`.
 
-use std::collections::HashMap;
-
 use crate::asset_tools::report::{CsfEntry, CsfReport, ErrorReport};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::csf_file::CsfFile;
-use crate::util::native_string::widen_bytes;
 
 /// Default page size for `csf-grep`. A one-word grep over the retail table
 /// routinely matches hundreds of labels, and dumping them all buries the answer.
@@ -51,31 +49,6 @@ const YR_CSF: &str = "ra2md.csf";
 
 /// Longest key fragment quoted back in a `csf-get` miss hint.
 const MAX_HINT_FRAGMENT_CHARS: usize = 24;
-
-// --- Record constants for the raw rescan ---
-//
-// These mirror the private constants in `assets::csf_file`. Duplicating them is
-// deliberate and is the narrowest available option: the parser normalises inside
-// its decoder and exposes no accessor for the stored text, so the pre-normalised
-// form has to be walked out of the bytes a second time. If the two ever drift,
-// the rescan finds no records and the report says so in a warning rather than
-// quietly reporting every string as unchanged.
-
-/// Bytes of the file header before the first label record.
-const CSF_HEADER_BYTES: usize = 24;
-/// Label record marker, " LBL" in Westwood byte order.
-const LABEL_MAGIC: u32 = 0x4C42_4C20;
-/// Plain string value marker, " RTS".
-const STRING_MAGIC: u32 = 0x5354_5220;
-/// String value carrying a trailing extra field, "WRTS".
-const STRING_EXTRA_MAGIC: u32 = 0x5354_5257;
-/// Smallest label record: magic + pair count + name length.
-const LABEL_RECORD_MIN_BYTES: usize = 12;
-
-/// Ceiling on labels held by the rescan. Retail `ra2md.csf` carries a few
-/// thousand; the cap exists so a corrupt file that looks like an endless run of
-/// 12-byte records cannot turn into an unbounded allocation.
-const MAX_LABELS_SCANNED: usize = 200_000;
 
 /// Options shared by `csf-get` and `csf-grep`.
 #[derive(Debug, Clone)]
@@ -124,16 +97,6 @@ struct LocatedTable<'a> {
     warnings: Vec<String>,
 }
 
-/// One label as the file stores it, before the parser's normalisation.
-struct RawLabel {
-    /// The label name with its original casing. The parser upper-cases keys for
-    /// lookup; retail writes them mixed-case, and the file's spelling is what a
-    /// caller grepping an INI or a decompile will be looking at.
-    stored_key: String,
-    /// First string value, decoded but not normalised.
-    value: String,
-}
-
 /// A matched page plus the totals the report needs. The two verbs converge here.
 struct Matches<'a> {
     /// Echoed back as `CsfReport::query`, exactly as the caller spelled it.
@@ -142,16 +105,6 @@ struct Matches<'a> {
     matched: usize,
     /// `(upper-cased join key, displayed value)` for the rows that survived paging.
     page: Vec<(String, &'a str)>,
-}
-
-/// Result of re-walking the label records for their stored text.
-struct RawScan {
-    /// Keyed by the ASCII-upper-cased label, matching how `CsfFile` keys its map
-    /// — the join between the two would silently miss every mixed-case label
-    /// otherwise.
-    by_key: HashMap<String, RawLabel>,
-    /// True when [`MAX_LABELS_SCANNED`] stopped the walk early.
-    truncated: bool,
 }
 
 /// `asset csf-get <KEY>` — one label, matched in full but case-insensitively.
@@ -194,24 +147,7 @@ fn query_report(
         hint: None,
     })?;
     // CsfFile owns slot selection, including Ares duplicates created by an
-    // unsorted in-file append. Carry raw text from that SAME selected slot.
-    let scan = RawScan {
-        by_key: csf
-            .entries()
-            .filter_map(|(key, _)| {
-                csf.raw_entry(key).map(|(stored_key, value)| {
-                    (
-                        key.to_string(),
-                        RawLabel {
-                            stored_key: stored_key.to_string(),
-                            value: value.to_string(),
-                        },
-                    )
-                })
-            })
-            .collect(),
-        truncated: false,
-    };
+    // unsorted in-file append; raw_entry reads the same selected slot.
     for name in admitted {
         if let Some(resolved) = crate::asset_tools::locate::locate(asset_manager, &name) {
             table.source.push_str(" + ");
@@ -220,7 +156,7 @@ fn query_report(
             table.source_archive.push_str(&resolved.source_archive);
         }
     }
-    build_parsed_report(&table, query, opts, &csf, scan)
+    build_parsed_report(&table, query, opts, &csf)
 }
 
 /// Resolve the table to read, honouring `--source` and warning when the result
@@ -287,7 +223,7 @@ fn table_from<'a>(
     }
 }
 
-/// Parse, match, and join displayed text with stored text.
+/// Parse, match, and report displayed text with stored text.
 ///
 /// Split out from [`get`]/[`grep`] so every behaviour below is exercisable
 /// against a synthetic buffer, with no mounted retail install.
@@ -304,9 +240,7 @@ fn build_report(
              `--source <FILE.CSF>` to read a different table"
         )),
     })?;
-
-    let scan = scan_raw_labels(table.bytes);
-    build_parsed_report(table, query, opts, &csf, scan)
+    build_parsed_report(table, query, opts, &csf)
 }
 
 fn build_parsed_report(
@@ -314,24 +248,9 @@ fn build_parsed_report(
     query: Query<'_>,
     opts: &CsfOptions,
     csf: &CsfFile,
-    scan: RawScan,
 ) -> Result<CsfReport, ErrorReport> {
     let source = &table.source;
     let mut warnings: Vec<String> = table.warnings.clone();
-    if scan.truncated {
-        warnings.push(format!(
-            "the raw rescan stopped at {MAX_LABELS_SCANNED} labels, so stored text is unavailable \
-             beyond that point"
-        ));
-    }
-    if scan.by_key.is_empty() && !csf.is_empty() {
-        warnings.push(format!(
-            "the raw rescan read no label records although the parser read {} — stored text and \
-             the normalisation flag are unavailable for every entry",
-            csf.len()
-        ));
-    }
-
     // Both arms produce (upper-cased key, displayed value) pairs; values are
     // borrowed from the parsed table and only the kept page is materialised.
     let Matches {
@@ -376,24 +295,12 @@ fn build_parsed_report(
         }
     };
 
-    let mut entries: Vec<CsfEntry> = Vec::with_capacity(page.len());
-    let mut missing_raw = 0usize;
-    for (key, value) in page {
-        let (entry, raw_missing) = make_entry(&key, value, &scan, opts.raw);
-        if raw_missing {
-            missing_raw += 1;
-        }
-        entries.push(entry);
-    }
+    let entries: Vec<CsfEntry> = page
+        .into_iter()
+        .map(|(key, value)| make_entry(&key, value, csf, opts.raw))
+        .collect();
 
     let shown = entries.len();
-    if missing_raw > 0 && !scan.by_key.is_empty() {
-        warnings.push(format!(
-            "{missing_raw} of {shown} reported entries had no matching record in the raw rescan; \
-             `raw` and `changed_by_normalization` are unavailable for those, not known to be \
-             unchanged"
-        ));
-    }
     if matched > shown {
         warnings.push(format!(
             "showing {shown} of {matched} matches; {} dropped by --offset {} / --limit {} — raise \
@@ -430,31 +337,17 @@ fn matches_needle(key: &str, value: &str, lowered_needle: &str) -> bool {
     key.to_lowercase().contains(lowered_needle) || value.to_lowercase().contains(lowered_needle)
 }
 
-/// Build one report row, joining the parser's displayed value to the stored text.
-///
-/// Returns `true` alongside the row when the rescan had no record for this
-/// label: "could not tell" and "nothing changed" are different answers, so the
-/// flag stays false and the caller counts the gap for a warning instead.
-fn make_entry(key_upper: &str, value: &str, scan: &RawScan, want_raw: bool) -> (CsfEntry, bool) {
-    let label = scan.by_key.get(key_upper);
-    let stored_key = match label {
-        Some(found) => found.stored_key.clone(),
-        None => key_upper.to_string(),
-    };
-    let changed = label.is_some_and(|found| found.value != value);
-    let raw = match label {
-        Some(found) if changed || want_raw => Some(found.value.clone()),
-        _ => None,
-    };
-    (
-        CsfEntry {
-            key: stored_key,
-            value: value.to_string(),
-            raw,
-            changed_by_normalization: changed,
-        },
-        label.is_none(),
-    )
+/// Build one report row from the parser's displayed value and the stored text
+/// of the same record.
+fn make_entry(key_upper: &str, value: &str, csf: &CsfFile, want_raw: bool) -> CsfEntry {
+    let (stored_key, stored) = csf.raw_entry(key_upper).unwrap_or((key_upper, value));
+    let changed = stored != value;
+    CsfEntry {
+        key: stored_key.to_string(),
+        value: value.to_string(),
+        raw: (changed || want_raw).then(|| stored.to_string()),
+        changed_by_normalization: changed,
+    }
 }
 
 /// Error for a `csf-get` that matched nothing.
@@ -482,107 +375,6 @@ fn grep_fragment(key: &str) -> String {
     let tail = key.rsplit(':').next().unwrap_or(key).trim();
     let fragment = if tail.is_empty() { key.trim() } else { tail };
     fragment.chars().take(MAX_HINT_FRAGMENT_CHARS).collect()
-}
-
-/// Re-walk the label records for the text each label stores, un-normalised.
-///
-/// Bounded and total: every read is checked against the buffer, every offset is
-/// checked for overflow, and the label count is capped. A malformed retail file
-/// therefore yields a short scan (and a warning) rather than a panic or a
-/// multi-gigabyte allocation.
-fn scan_raw_labels(data: &[u8]) -> RawScan {
-    let mut by_key: HashMap<String, RawLabel> = HashMap::new();
-    let mut truncated = false;
-
-    if data.len() < CSF_HEADER_BYTES {
-        return RawScan { by_key, truncated };
-    }
-
-    let mut offset = CSF_HEADER_BYTES;
-    loop {
-        if by_key.len() >= MAX_LABELS_SCANNED {
-            truncated = true;
-            break;
-        }
-        let Some((label, next_offset)) = scan_one_label(data, offset) else {
-            break;
-        };
-        // Later duplicates win, matching the parser's map insert: a file with the
-        // same label twice must join against the same value the parser kept.
-        by_key.insert(label.stored_key.to_ascii_uppercase(), label);
-        // A record always consumes at least LABEL_RECORD_MIN_BYTES; the guard
-        // states that invariant rather than trusting it.
-        if next_offset <= offset {
-            break;
-        }
-        offset = next_offset;
-    }
-
-    RawScan { by_key, truncated }
-}
-
-/// Read one label record. `None` ends the walk — the same "stop at the first
-/// failed read or magic check" rule the parser uses, so both see the same set.
-fn scan_one_label(data: &[u8], offset: usize) -> Option<(RawLabel, usize)> {
-    if read_u32_at(data, offset)? != LABEL_MAGIC {
-        return None;
-    }
-    let pair_count = read_u32_at(data, offset.checked_add(4)?)?;
-    let name_len = read_u32_at(data, offset.checked_add(8)?)? as usize;
-    let name_start = offset.checked_add(LABEL_RECORD_MIN_BYTES)?;
-    let name_end = name_start.checked_add(name_len)?;
-    let stored_key = widen_bytes(data.get(name_start..name_end)?);
-
-    let mut pos = name_end;
-    let mut value = String::new();
-    for _ in 0..pair_count {
-        let str_magic = read_u32_at(data, pos)?;
-        let has_extra = str_magic == STRING_EXTRA_MAGIC;
-        if str_magic != STRING_MAGIC && !has_extra {
-            return None;
-        }
-        let char_count = read_u32_at(data, pos.checked_add(4)?)? as usize;
-        let byte_count = char_count.checked_mul(2)?; // UTF-16-LE.
-        pos = pos.checked_add(8)?;
-        let encoded = data.get(pos..pos.checked_add(byte_count)?)?;
-        // Only the first value is display text; later pairs are unused in retail.
-        if value.is_empty() {
-            value = decode_stored(encoded);
-        }
-        pos = pos.checked_add(byte_count)?;
-
-        // The extra field holds an audio cue name, never display text.
-        if has_extra {
-            let extra_len = read_u32_at(data, pos)? as usize;
-            pos = pos.checked_add(4)?.checked_add(extra_len)?;
-            if pos > data.len() {
-                return None;
-            }
-        }
-    }
-
-    Some((RawLabel { stored_key, value }, pos))
-}
-
-/// Bitwise-NOT then UTF-16-LE, with no whitespace normalisation: the string as
-/// the file stores it. A trailing odd byte is dropped, matching the parser.
-fn decode_stored(encoded: &[u8]) -> String {
-    let units: Vec<u16> = encoded
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| u16::from_le_bytes([!pair[0], !pair[1]]))
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
-/// Bounds-checked little-endian read. `util::read_helpers::read_u32_le` indexes
-/// directly and would panic on a truncated record — which retail-sourced bytes
-/// must never be able to do inside a tool that reports errors as values.
-fn read_u32_at(data: &[u8], offset: usize) -> Option<u32> {
-    let end = offset.checked_add(4)?;
-    let bytes: [u8; 4] = data.get(offset..end)?.try_into().ok()?;
-    Some(u32::from_le_bytes(bytes))
 }
 
 #[cfg(all(test, tests_asset_tools))]
@@ -681,6 +473,12 @@ mod tests {
 
     /// File header marker, " FSC" in Westwood byte order.
     const HEADER_MAGIC: u32 = 0x4353_4620;
+    /// Label record marker, " LBL".
+    const LABEL_MAGIC: u32 = 0x4C42_4C20;
+    /// Plain string value marker, " RTS".
+    const STRING_MAGIC: u32 = 0x5354_5220;
+    /// String value carrying a trailing extra field, "WRTS".
+    const STRING_EXTRA_MAGIC: u32 = 0x5354_5257;
 
     /// Encode display text the way a .csf stores it: UTF-16-LE, bitwise-NOT'd.
     fn encode_value(text: &str) -> Vec<u8> {
@@ -864,7 +662,7 @@ mod tests {
     }
 
     #[test]
-    fn the_rescan_reads_wrts_records_and_skips_their_extra_field() {
+    fn wrts_records_report_their_stored_text_and_skip_the_extra_field() {
         let extra: &[u8] = b"some_audio_cue";
         let value = "Tank  ready";
         let mut data: Vec<u8> = build_csf(&[]);
@@ -878,17 +676,10 @@ mod tests {
         data.extend_from_slice(&(extra.len() as u32).to_le_bytes());
         data.extend_from_slice(extra);
 
-        let scan = scan_raw_labels(&data);
-        let label = scan
-            .by_key
-            .get("EVA:TANKREADY")
-            .expect("WRTS records carry display text like RTS ones");
-        assert_eq!(label.stored_key, "EVA:TankReady");
-        assert_eq!(label.value, value, "the rescan must not normalise");
-
-        // And the joined report still shows the collapsed double space.
         let out = report(&data, Query::Exact("EVA:TankReady"), &CsfOptions::default());
+        assert_eq!(out.entries[0].key, "EVA:TankReady");
         assert_eq!(out.entries[0].value, "Tank ready");
+        assert_eq!(out.entries[0].raw.as_deref(), Some(value));
         assert!(out.entries[0].changed_by_normalization);
     }
 
@@ -899,7 +690,7 @@ mod tests {
         assert_eq!(out.entries[0].value, "second");
         assert!(
             !out.entries[0].changed_by_normalization,
-            "the rescan must have joined the same occurrence the parser kept"
+            "the stored text must come from the same occurrence the parser kept"
         );
     }
 
@@ -914,17 +705,13 @@ mod tests {
     }
 
     #[test]
-    fn a_truncated_trailing_record_never_panics_the_rescan() {
+    fn a_truncated_trailing_record_never_panics_the_report() {
         let mut data = build_csf(&[("A", "one")]);
         // A label record that claims a name far longer than the file holds.
         data.extend_from_slice(&LABEL_MAGIC.to_le_bytes());
         data.extend_from_slice(&1u32.to_le_bytes());
         data.extend_from_slice(&u32::MAX.to_le_bytes());
         data.extend_from_slice(b"AB");
-
-        let scan = scan_raw_labels(&data);
-        assert_eq!(scan.by_key.len(), 1);
-        assert!(!scan.truncated);
 
         let out = report(&data, Query::Exact("A"), &CsfOptions::default());
         assert_eq!(out.entries[0].value, "one");
@@ -940,36 +727,11 @@ mod tests {
         data.extend_from_slice(&STRING_MAGIC.to_le_bytes());
         data.extend_from_slice(&u32::MAX.to_le_bytes()); // 8 GB of characters
 
-        let scan = scan_raw_labels(&data);
+        let out = report(&data, Query::Substring(""), &CsfOptions::default());
         assert_eq!(
-            scan.by_key.len(),
-            1,
+            out.entry_count, 1,
             "the oversized record is skipped, not allocated"
         );
-    }
-
-    #[test]
-    fn missing_raw_records_are_reported_as_unknown_not_as_unchanged() {
-        // A table whose label records the parser reads but the rescan cannot:
-        // simulated by joining against an empty scan.
-        let scan = RawScan {
-            by_key: HashMap::from([(
-                "OTHER".to_string(),
-                RawLabel {
-                    stored_key: "Other".to_string(),
-                    value: "x".to_string(),
-                },
-            )]),
-            truncated: false,
-        };
-        let (entry, missing) = make_entry("NAME:MTNK", "Grizzly", &scan, true);
-        assert!(missing);
-        assert!(!entry.changed_by_normalization);
-        assert!(
-            entry.raw.is_none(),
-            "an absent record must not be reported as an empty stored string"
-        );
-        assert_eq!(entry.key, "NAME:MTNK");
     }
 
     #[test]

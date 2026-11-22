@@ -247,7 +247,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("the supplied factory object constructs");
         assert_eq!(
@@ -528,8 +528,16 @@ fn double_owned_opens_a_foreign_factory_only_outside_campaign() {
 
     sim.session.set_game_mode(ScenarioGameMode::Campaign);
     assert_eq!(query(&sim), None);
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    let mode = ScenarioGameMode::Skirmish;
+    sim.session.set_game_mode(mode);
     assert_eq!(query(&sim), Some(factory));
+    sim.install_session_admission(
+        mode,
+        None,
+        mode.stock_rule_policy(None)
+            .with_double_owned(crate::rules::rule_policy::DoubleOwnedPolicy::OwnerMask),
+    );
+    assert_eq!(query(&sim), None);
 }
 
 /// House4F78E4..4F7925 consults its captured labs before TechLevel,
@@ -571,13 +579,13 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
     );
-    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, owner, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::Yes,
         "captured lab grant bypasses TechLevel=-1 and the unmet ordinary prerequisite"
     );
-    sim.change_owner_with_rules(lab, other, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, other, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No

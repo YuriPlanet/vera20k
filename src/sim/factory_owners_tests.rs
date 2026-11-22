@@ -31,8 +31,17 @@ fn fixture(extra: &str) -> (Simulation, RuleSet, InternedId) {
 }
 
 fn construct(sim: &mut Simulation, rules: &RuleSet, ty: &str) -> u64 {
-    sim.construct_object_limbo_at_height(ty, "HUMAN", 8, 8, 0, 0, rules, FrameEffects::default())
-        .unwrap()
+    sim.construct_object_limbo_at_height(
+        ty,
+        "HUMAN",
+        8,
+        8,
+        0,
+        0,
+        rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap()
 }
 
 fn list(sim: &mut Simulation, owner: InternedId, ids: Vec<u64>) {
@@ -237,8 +246,22 @@ fn permanent_grant_scans_all_upgrade_slots_and_persists_without_the_building() {
         .unwrap()
         .building_art
         .set_actually_placed_for_test(true);
-    sim.grand_opening(yard, false, false, &rules, None, FrameEffects::default());
-    sim.grand_opening(yard, false, false, &rules, None, FrameEffects::default());
+    sim.grand_opening(
+        yard,
+        false,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
+    sim.grand_opening(
+        yard,
+        false,
+        false,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let source = rules.country_index("SOURCE").unwrap();
     assert_eq!(sim.houses[&owner].permanent_factory_plans(), &[source]);
     list(&mut sim, owner, vec![]);

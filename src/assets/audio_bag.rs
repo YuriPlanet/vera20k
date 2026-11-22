@@ -31,6 +31,17 @@
 //! - Compressed entries decode through `assets::ima_adpcm`, the crate's single
 //!   IMA ADPCM implementation, mirroring the single decoder in `gamemd.exe`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::util::read_helpers::read_u32_le;
@@ -127,12 +138,16 @@ impl AudioIndex {
     }
 
     fn parse(idx_data: &[u8], bag_data: Vec<u8>, layout: IndexLayout) -> Option<Self> {
-        if idx_data.len() < IDX_HEADER_SIZE {
+        let (Some(first_word), Some(version), Some(entry_count), Some(table)) = (
+            read_u32_le(idx_data, 0),
+            read_u32_le(idx_data, 4),
+            read_u32_le(idx_data, 8),
+            idx_data.get(IDX_HEADER_SIZE..),
+        ) else {
             log::warn!("AudioIndex: idx too short ({} bytes)", idx_data.len());
             return None;
-        }
-
-        let version = u32::from_le_bytes([idx_data[4], idx_data[5], idx_data[6], idx_data[7]]);
+        };
+        let entry_count = entry_count as usize;
         let entry_size = match layout {
             IndexLayout::Stock => match version {
                 1 => IDX_ENTRY_SIZE_V1,
@@ -145,53 +160,42 @@ impl AudioIndex {
             // 1005AB3C tests DWORD0, not the version at DWORD1. This installed
             // reader accepts other version tags and rejects ordinary 32-byte
             // GABA/version1 files. Preserve it without weakening stock parsing.
-            IndexLayout::Ares if read_u32_le(idx_data, 0) == 1 => IDX_ENTRY_SIZE_V1,
+            IndexLayout::Ares if first_word == 1 => IDX_ENTRY_SIZE_V1,
             IndexLayout::Ares => IDX_ENTRY_SIZE_V2,
         };
 
-        let entry_count =
-            u32::from_le_bytes([idx_data[8], idx_data[9], idx_data[10], idx_data[11]]) as usize;
-
-        let expected_size = entry_count
-            .checked_mul(entry_size)?
-            .checked_add(IDX_HEADER_SIZE)?;
-        if idx_data.len() < expected_size {
+        let Some(table) = entry_count
+            .checked_mul(entry_size)
+            .and_then(|table_size| table.get(..table_size))
+        else {
             log::warn!(
-                "AudioIndex: truncated idx ({} bytes, need {} for {} entries)",
+                "AudioIndex: truncated idx ({} bytes for {} entries of {})",
                 idx_data.len(),
-                expected_size,
-                entry_count
+                entry_count,
+                entry_size
             );
             return None;
-        }
+        };
 
-        let mut entries = Vec::with_capacity(entry_count);
-        for i in 0..entry_count {
-            let base = IDX_HEADER_SIZE + i * entry_size;
-            let name_bytes = &idx_data[base..base + 16];
-            let name_end = name_bytes.iter().position(|&b| b == 0).unwrap_or(16);
-            let name = String::from_utf8_lossy(&name_bytes[..name_end]).to_ascii_uppercase();
-
-            let offset = read_u32_le(idx_data, base + 16);
-            let size = read_u32_le(idx_data, base + 20);
-            let sample_rate = read_u32_le(idx_data, base + 24);
-            let flags = read_u32_le(idx_data, base + 28);
-            // V2 entries have chunk_size at +0x20 (IMA ADPCM block alignment).
-            let chunk_size = if entry_size >= IDX_ENTRY_SIZE_V2 {
-                read_u32_le(idx_data, base + 32)
-            } else {
-                0
-            };
-
-            entries.push(AudioBagEntry {
-                name,
-                offset,
-                size,
-                sample_rate,
-                flags,
-                chunk_size,
-            });
-        }
+        let mut entries = table
+            .chunks_exact(entry_size)
+            .map(|entry| {
+                let (name_bytes, fields) = entry.split_first_chunk::<16>()?;
+                let name_end = name_bytes.iter().position(|&b| b == 0).unwrap_or(16);
+                let name =
+                    String::from_utf8_lossy(name_bytes.get(..name_end)?).to_ascii_uppercase();
+                Some(AudioBagEntry {
+                    name,
+                    offset: read_u32_le(fields, 0)?,
+                    size: read_u32_le(fields, 4)?,
+                    sample_rate: read_u32_le(fields, 8)?,
+                    flags: read_u32_le(fields, 12)?,
+                    // V2 entries have chunk_size at +0x20 (IMA ADPCM block
+                    // alignment); a V1 entry ends before it.
+                    chunk_size: read_u32_le(fields, 16).unwrap_or(0),
+                })
+            })
+            .collect::<Option<Vec<AudioBagEntry>>>()?;
 
         // Sort by name for binary search (matches original engine behavior).
         entries.sort_by(|a, b| a.name.cmp(&b.name));

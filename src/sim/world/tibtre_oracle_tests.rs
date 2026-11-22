@@ -305,7 +305,7 @@ fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
                 id,
                 &s.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             compare(
@@ -349,7 +349,7 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
             coords[0],
             true,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let succeeded = result.is_some();
@@ -434,7 +434,7 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
         tree,
         &s.rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let (x, y, _) = s
@@ -555,7 +555,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         ),
         &s.rules,
         Some(registry()),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     for _ in 0..1600 {
         frame(&mut s);
@@ -608,7 +608,7 @@ fn tibtre_spawned_ore_grows_is_harvested_and_reaches_refinery_credits() {
         ),
         &s.rules,
         Some(registry()),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     for _ in 0..1800 {
         frame(&mut s);

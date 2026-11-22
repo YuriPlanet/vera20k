@@ -99,7 +99,7 @@ fn useless_harvester_contact() -> Option<(Simulation, RuleSet, PathGrid, u64, u6
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         !sim.substrate
@@ -123,13 +123,19 @@ fn useless_harvester_contact() -> Option<(Simulation, RuleSet, PathGrid, u64, u6
         sim.substrate
             .entities
             .get(harvester)?
+            .seldom
             .radio_contacts
             .slot(0),
         Some(depot),
         "explicit Repair HELLO establishes the native sale contact"
     );
     assert_eq!(
-        sim.substrate.entities.get(depot)?.radio_contacts.slot(0),
+        sim.substrate
+            .entities
+            .get(depot)?
+            .seldom
+            .radio_contacts
+            .slot(0),
         Some(harvester),
         "the depot owns the reciprocal contact"
     );
@@ -176,14 +182,20 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
     let americans = sim.interner.get("Americans").unwrap();
     let russians = sim.interner.get("Russians").unwrap();
     let old_owner_credits = sim.houses[&americans].economy().credits();
-    sim.change_owner_with_rules(harvester, russians, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(
+        harvester,
+        russians,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     let _ = crate::sim::team_script_vm::join_team_for_test(&mut sim, &[harvester], false, false);
     assert!(
         sim.assign_target_represented(
             targeter,
             Some(TargetKind::Entity(harvester)),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .is_ok()
     );
@@ -192,6 +204,7 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
             .entities
             .get(harvester)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(depot),
@@ -221,7 +234,7 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
             building.mission.queued().known(),
             building.mission.effective().known(),
             building.mission.handler_state(),
-            building.radio_contacts.slot(0),
+            building.seldom.radio_contacts.slot(0),
         )
     });
     let unit_state = sim.substrate.entities.get(harvester).map(|unit| {
@@ -233,7 +246,7 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
             unit.mission.current().known(),
             unit.mission.queued().known(),
             unit.navigation.nav_com(),
-            unit.radio_contacts.slot(0),
+            unit.seldom.radio_contacts.slot(0),
         )
     });
     assert!(
@@ -258,6 +271,7 @@ fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
             .entities
             .get(depot)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         None,
@@ -427,7 +441,7 @@ fn an_archive_destination_clears_a_stale_useless_latch_after_a_scan_miss() {
         &mut sim,
         harvester,
         &rules,
-        crate::sim::world::ObjectAiCtx {
+        &mut crate::sim::world::ObjectAiCtx {
             overlay_registry: Some(
                 crate::sim::tiberium::test_support::overlay_registry_with_land(),
             ),
@@ -473,7 +487,7 @@ fn damaged_tank(
 }
 
 fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    sim.unit_ai_seek_repair(id, rules, FrameEffects::default());
+    sim.unit_ai_seek_repair(id, rules, &mut FrameEffects::default());
 }
 
 /// Unit743270 accepts Repair; Unit740EF0 establishes contact and queues Enter
@@ -525,7 +539,7 @@ fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
     }
     let unit = sim.substrate.entities.get(tank).unwrap();
     assert!(entered);
-    assert_eq!(unit.radio_contacts.slot(0), Some(depot));
+    assert_eq!(unit.seldom.radio_contacts.slot(0), Some(depot));
     assert_eq!(unit.navigation.nav_com(), None);
     assert_eq!((unit.position.rx(), unit.position.ry()), (14, 20));
     assert_eq!(unit.health.current(), initial_health);
@@ -563,7 +577,7 @@ fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
         let unit = sim.substrate.entities.get(tank).unwrap();
         entered |= unit.mission.current().known() == Some(MissionType::Enter);
         if unit.health.current() == rules.object("MTNK").unwrap().strength
-            && unit.radio_contacts.slot(0).is_none()
+            && unit.seldom.radio_contacts.slot(0).is_none()
         {
             assert!(entered, "Repair must hand off to Enter before service");
             assert!(unit.health.current() > initial_health);
@@ -573,6 +587,7 @@ fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
                     .entities
                     .get(depot)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .iter_live()
                     .any(|id| id == tank)
@@ -586,7 +601,7 @@ fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
         unit.health.current(),
         unit.mission.current(),
         unit.mission.queued(),
-        unit.radio_contacts.slot(0),
+        unit.seldom.radio_contacts.slot(0),
         unit.position.rx(),
         unit.position.ry(),
         unit.navigation.nav_com(),
@@ -616,13 +631,13 @@ fn repair_mission_hello_queues_enter_without_commencing_or_setting_destination()
     );
     let before_rng = sim.scenario_rng.logical_state();
     assert_eq!(
-        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        sim.unit_mission_repair(tank, &rules, &mut FrameEffects::default()),
         1
     );
     let unit = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(unit.mission.current().known(), Some(MissionType::Repair));
     assert_eq!(unit.mission.queued().known(), Some(MissionType::Enter));
-    assert_eq!(unit.radio_contacts.slot(0), Some(depot));
+    assert_eq!(unit.seldom.radio_contacts.slot(0), Some(depot));
     assert_eq!(unit.navigation.nav_com(), None);
     assert_eq!(sim.scenario_rng.logical_state(), before_rng);
 }
@@ -642,13 +657,13 @@ fn repair_mission_without_a_bay_waits_at_its_unjittered_rate() {
     );
     let before_rng = sim.scenario_rng.logical_state();
     assert_eq!(
-        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        sim.unit_mission_repair(tank, &rules, &mut FrameEffects::default()),
         rules.mission_control.rate_frames(MissionType::Repair)
     );
     let unit = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(unit.mission.current().known(), Some(MissionType::Repair));
     assert_eq!(unit.mission.queued(), MissionId::NONE);
-    assert_eq!(unit.radio_contacts.slot(0), None);
+    assert_eq!(unit.seldom.radio_contacts.slot(0), None);
     assert_eq!(sim.scenario_rng.logical_state(), before_rng);
 }
 
@@ -678,16 +693,18 @@ fn repair_mission_keeps_waiting_for_an_occupied_retail_depot() {
         .entities
         .get_mut(depot)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, occupant);
     sim.substrate
         .entities
         .get_mut(occupant)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, depot);
     let before_rng = sim.scenario_rng.logical_state();
-    let delay = sim.unit_mission_repair(waiting, &rules, FrameEffects::default());
+    let delay = sim.unit_mission_repair(waiting, &rules, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate
             .entities
@@ -717,6 +734,7 @@ fn repair_mission_keeps_waiting_for_an_occupied_retail_depot() {
             .entities
             .get(depot)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0),
         Some(occupant)
@@ -732,7 +750,7 @@ fn heads_for(sim: &Simulation, id: u64, station: u64) -> bool {
     let unit = sim.substrate.entities.get(id).unwrap();
     unit.navigation.nav_com() == Some(NavTargetRef::object(station))
         || unit.pending_entry() == Some(station)
-        || unit.radio_contacts.slot(0) == Some(station)
+        || unit.seldom.radio_contacts.slot(0) == Some(station)
 }
 
 #[test]
@@ -761,7 +779,7 @@ fn a_damaged_computer_tank_on_guard_heads_for_its_depot() {
         tank,
         Some(TargetKind::Cell(30, 30)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 
     seek(&mut sim, &rules, tank);
@@ -961,7 +979,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
             RadioMessage::CanEnter,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Negatory
     );
@@ -970,7 +988,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
     // the yard, of the other Naval kind, and takes the depot.
     let expected = if rules.ares() { depot } else { yard };
     assert_eq!(
-        sim.nearest_unit_repair_station(tank, &rules, FrameEffects::default()),
+        sim.nearest_unit_repair_station(tank, &rules, &mut FrameEffects::default()),
         Some(expected)
     );
 
@@ -985,7 +1003,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
     );
     let _ = depot;
     assert_eq!(
-        sim.nearest_unit_repair_station(far, &rules, FrameEffects::default()),
+        sim.nearest_unit_repair_station(far, &rules, &mut FrameEffects::default()),
         None
     );
 }

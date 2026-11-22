@@ -175,7 +175,7 @@ impl Simulation {
         id: u64,
         sample: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((has_turret, armed)) = self.substrate.entities.get(id).and_then(|entity| {
             let object = self.object_type(entity.type_ref(), rules)?;
@@ -216,7 +216,8 @@ impl Simulation {
             .expect("turret actor remains resident");
         let sound_id = self
             .object_type(entity.type_ref(), rules)
-            .and_then(|object| object.turret_rotate_sound.clone());
+            .and_then(|object| object.turret_rotate_sound.as_deref())
+            .map(|sound| rules.sound_name(sound));
         let world = Self::movement_sound_world(entity);
         self.sound_events.emit(SimSoundEvent::AnimationStopped {
             anim_id: owner,
@@ -245,7 +246,7 @@ impl Simulation {
     pub(crate) fn turret_rotate_sound_limbo(
         &mut self,
         id: u64,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         rules: &RuleSet,
     ) {
         if !Self::turret_rotate_loop_live(&self.substrate, id) {

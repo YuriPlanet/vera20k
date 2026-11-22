@@ -40,21 +40,13 @@ pub(super) enum TrackWorldEvent {
 pub(crate) struct TrackPass {
     pub moved: u32,
     pub aborted: bool,
+    pub bridge_state_changed: bool,
 }
 
 impl TrackPass {
-    fn paid(moved: u32) -> Self {
-        Self {
-            moved,
-            aborted: false,
-        }
-    }
-
-    fn aborted(moved: u32) -> Self {
-        Self {
-            moved,
-            aborted: true,
-        }
+    fn abort(mut self) -> Self {
+        self.aborted = true;
+        self
     }
 }
 
@@ -112,7 +104,7 @@ impl Simulation {
         supplied: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let ares = rules.ares_form();
         self.force_track_observed(id, selector, supplied, ares, &mut |sim, id, coord| {
@@ -139,7 +131,7 @@ impl Simulation {
         cell: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         match registry {
             Some(registry) => {
@@ -233,7 +225,7 @@ impl Simulation {
         invocation: TrackInvocation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let object = self
             .substrate
@@ -250,7 +242,7 @@ impl Simulation {
         // order. No scalar speed update crosses the world receiver handoff.
         // The prefix also runs for `retry`, whose budget masks its speed.
         let current_grid = self.path_grid.as_deref();
-        let fresh_budget = super::track_speed::advance(
+        let (fresh_budget, first_car) = super::track_speed::advance(
             entity,
             object,
             rules,
@@ -258,6 +250,15 @@ impl Simulation {
             self.resolved_terrain.as_ref(),
             current_grid,
         );
+        if let Some(first) = first_car {
+            let bits = entity.foot_speed.native_applied_fraction().bits();
+            let mut cars = super::navcom::TrackFollowers::new(invocation.entity_id, first);
+            while let Some(id) = cars.next(&self.substrate.entities) {
+                if let Some(car) = self.substrate.entities.get_mut(id) {
+                    car.foot_speed.set_speed_fraction_native_bits(bits);
+                }
+            }
+        }
         // Drive4B1297 / Ship6A095F: a tube word with no selected track enters
         // the tube instead of the paid loop.
         if self.track_tube_head(
@@ -332,7 +333,7 @@ impl Simulation {
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             registry,
             observe,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("track fixture must provide every coordinate receiver")
         .moved
@@ -345,7 +346,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TrackPass, String> {
         let TrackInvocation {
             entity_id: id,
@@ -357,7 +358,7 @@ impl Simulation {
             return Ok(TrackPass::default());
         };
         let mut call = TrackProcess::begin(family, &state, fresh_budget, retry);
-        let mut moved = 0u32;
+        let mut pass = TrackPass::default();
         let candidate_direction = self.substrate.entities.get(id).and_then(|entity| {
             entity
                 .navigation
@@ -375,10 +376,10 @@ impl Simulation {
             let Some((state, stored_head, current)) =
                 Self::track_state(&self.substrate, id, family)
             else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             let Some(payment) = call.pay_current(&state) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             let TrackPayment::Sample(sample) = payment else {
                 break;
@@ -402,7 +403,7 @@ impl Simulation {
                     observe,
                     effects,
                 );
-                moved = moved.saturating_add(1);
+                pass.moved = pass.moved.saturating_add(1);
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     set_head(entity, family, None);
                     // Drive4B2104 / Ship6A1747 clear the active class's +63
@@ -426,38 +427,42 @@ impl Simulation {
                 {
                     loco.store_track_destination(family, None);
                 }
-                self.unit_per_cell_process(
-                    id,
-                    super::per_cell::PerCellReason::Arrival,
-                    rules,
-                    registry,
-                    effects,
-                );
+                pass.bridge_state_changed |= self
+                    .per_cell_process(
+                        id,
+                        super::per_cell::PerCellReason::Arrival,
+                        rules,
+                        registry,
+                        effects,
+                    )
+                    .map_err(|error| error.cause)?;
                 observe(self, id, TrackWorldEvent::PerCell);
                 if !self.track_survives(id) {
-                    return Ok(TrackPass::aborted(moved));
+                    return Ok(pass.abort());
                 }
                 if reached {
                     let entity = self.substrate.entities.get_mut(id).unwrap();
                     entity.navigation.stop_moving();
                     entity.navigation.path_replay_mut().clear_live_head();
                     entity.navigation.settle_destination_setter();
-                    // RESIDUAL: 0x004B2259 asks Get_Mission (vt+0x184 =
-                    // 0x005B3040: current, else queued); this reads current.
-                    // They differ only for an arrival while current is NONE
-                    // with Move queued, before the first Commence (rare):
-                    // native enters idle mode here, VERA once the commenced
-                    // Mission_Move does.
-                    if entity.mission.current().known() == Some(MissionType::Move) {
-                        let returns = self.unit_enter_idle_mode(id, rules, false, effects);
+                    // Drive 0x004B2259 / Ship 0x006A1898: Get_Mission
+                    // (0x005B3040) reads the queued mission when current is NONE.
+                    if entity.mission.effective().known() == Some(MissionType::Move) {
+                        let returns = crate::sim::world::enter_idle_mode(
+                            self,
+                            id,
+                            rules,
+                            Some(rules.overlay_registry()),
+                            effects,
+                        );
                         observe(self, id, TrackWorldEvent::Arrival);
                         if returns {
-                            return Ok(TrackPass::aborted(moved));
+                            return Ok(pass.abort());
                         }
                     }
                 }
                 if self.track_navigation_gate(id, rules, effects) {
-                    return Ok(TrackPass::aborted(moved));
+                    return Ok(pass.abort());
                 }
                 if !self
                     .substrate
@@ -465,7 +470,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|e| e.lifecycle.object_alive())
                 {
-                    return Ok(TrackPass::paid(moved));
+                    return Ok(pass);
                 }
                 // +504 false/alive admits the residual tail directly. It must
                 // never restart the paid loop with a newly selected curve.
@@ -490,7 +495,7 @@ impl Simulation {
             }
             let Some((live, live_head, actual)) = Self::track_state(&self.substrate, id, family)
             else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             let previous = if live.cursor() == 0 {
                 cell(actual)
@@ -509,7 +514,7 @@ impl Simulation {
             // The point XY was paid earlier; facing independently reloads the
             // live cursor BEFORE placement, then survives Mark callbacks.
             let Some((xy, _)) = sample.transform(family, &live, live_head) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             let paid_facing = call
                 .live_facing_sample(live.cursor())
@@ -534,14 +539,14 @@ impl Simulation {
                 observe,
                 effects,
             );
-            moved = moved.saturating_add(1);
+            pass.moved = pass.moved.saturating_add(1);
             if !self
                 .substrate
                 .entities
                 .get(id)
                 .is_some_and(|entity| entity.lifecycle.object_alive())
             {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             }
             // A live object's SetHeight(0) runs with Marked cleared (Drive
             // `0x004B1A8B`/`0x004B1AA8`, Ship `0x006A10CD`/`0x006A10E7`).
@@ -564,7 +569,7 @@ impl Simulation {
                     .snap(u16::from(facing) << 8, self.session.binary_frame());
             }
             let Some((live, _, _)) = Self::track_state(&self.substrate, id, family) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             if call.is_at_occupation_handoff(&live) {
                 Self::track_raw_mark(
@@ -577,7 +582,7 @@ impl Simulation {
                 );
             }
             let Some((live, _, _)) = Self::track_state(&self.substrate, id, family) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             if chain_allowed
                 && call.is_at_chain_cursor(&live)
@@ -590,18 +595,19 @@ impl Simulation {
                     registry,
                     observe,
                     effects,
+                    &mut pass.bridge_state_changed,
                 )?
             {
                 chain_allowed = false;
                 if !self.track_survives(id) {
-                    return Ok(TrackPass::paid(moved));
+                    return Ok(pass);
                 }
             }
             let Some(entity) = self.substrate.entities.get_mut(id) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             let Some(mut state) = progress(entity, family) else {
-                return Ok(TrackPass::paid(moved));
+                return Ok(pass);
             };
             call.finish_surviving_point(&mut state);
             entity
@@ -611,10 +617,10 @@ impl Simulation {
                 .store_track_progress(family, state);
         }
         let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return Ok(TrackPass::paid(moved));
+            return Ok(pass);
         };
         let Some(mut state) = progress(entity, family) else {
-            return Ok(TrackPass::paid(moved));
+            return Ok(pass);
         };
         call.store_residual(&mut state);
         entity
@@ -624,7 +630,7 @@ impl Simulation {
             .store_track_progress(family, state);
         let Some((live, stored_head, current)) = Self::track_state(&self.substrate, id, family)
         else {
-            return Ok(TrackPass::paid(moved));
+            return Ok(pass);
         };
         if let Some(step) = live.residual_step(family, current, stored_head) {
             let identity = |coord: DriveCoord| {
@@ -656,7 +662,7 @@ impl Simulation {
                 effects,
             );
         }
-        Ok(TrackPass::paid(moved))
+        Ok(pass)
     }
 
     fn track_occupation_enabled(&self, id: u64) -> bool {
@@ -769,7 +775,7 @@ impl Simulation {
         entered: (u16, u16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(train) = self.substrate.entities.get(id) else {
             return;
@@ -872,7 +878,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1075,7 +1081,10 @@ impl Simulation {
         put: bool,
         ares: bool,
     ) {
-        for coord in Self::track_occupation_coords(substrate, id, family, supplied) {
+        for coord in Self::track_occupation_coords(substrate, id, family, supplied)
+            .into_iter()
+            .flatten()
+        {
             Self::track_raw_mark_at(substrate, path_grid, resolved_terrain, id, coord, put, ares);
         }
     }
@@ -1091,6 +1100,7 @@ impl Simulation {
         let supplied = head_or_null(self.substrate.entities.get(id), family);
         Self::track_occupation_coords(&self.substrate, id, family, supplied)
             .into_iter()
+            .flatten()
             .map(|coord| {
                 super::foot_mark::raw_occupation_plane(
                     coord,
@@ -1104,19 +1114,19 @@ impl Simulation {
 
     /// The coordinates Apply_Track_Occupation_Mode marks or clears for
     /// `supplied`, in its order: the RawTrack handoff point while the turn
-    /// has not passed it, then `supplied`. Empty without a track or for a
+    /// has not passed it, then `supplied`. Neither without a track or for a
     /// null `supplied`.
     fn track_occupation_coords(
         substrate: &ObjectSubstrate,
         id: u64,
         family: TrackFamily,
         supplied: DriveCoord,
-    ) -> Vec<DriveCoord> {
+    ) -> [Option<DriveCoord>; 2] {
         let Some((state, retained_head, current)) = Self::track_state(substrate, id, family) else {
-            return Vec::new();
+            return [None, None];
         };
         if supplied == (DriveCoord { x: 0, y: 0, z: 0 }) {
-            return Vec::new();
+            return [None, None];
         }
         let handoff = (!state.reversed() && state.turn_index() != -1)
             .then(|| {
@@ -1151,7 +1161,7 @@ impl Simulation {
                 })
             })
             .flatten();
-        handoff.into_iter().chain([supplied]).collect()
+        [handoff, Some(supplied)]
     }
 
     fn track_try_chain(
@@ -1163,7 +1173,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         observe: &mut impl FnMut(&mut Simulation, u64, TrackWorldEvent),
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
+        bridge_state_changed: &mut bool,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -1265,13 +1276,15 @@ impl Simulation {
         set_head(entity, family, None);
         // Drive4B1CF5 / Ship6A1338 publish +63 for the PerCell receiver.
         set_track_valid(entity, family, true);
-        self.unit_per_cell_process(
-            id,
-            super::per_cell::PerCellReason::Arrival,
-            rules,
-            registry,
-            effects,
-        );
+        *bridge_state_changed |= self
+            .per_cell_process(
+                id,
+                super::per_cell::PerCellReason::Arrival,
+                rules,
+                registry,
+                effects,
+            )
+            .map_err(|error| error.cause)?;
         observe(self, id, TrackWorldEvent::PerCell);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             // Drive4B1D06 / Ship6A1349 clear it before the survival ladder.
@@ -1374,7 +1387,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_enter_idle_base_with(id, rules, registry, effects, true)
     }
@@ -1386,7 +1399,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         planning_arrival: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
@@ -1447,7 +1460,9 @@ impl Simulation {
         // SlaveOwner, not Team (+5D4). The same-cell comparison calls
         // virtual+48 on both owners and truncates signed leptons /256.
         let archived = self.substrate.entities.get(id).and_then(|entity| {
-            if entity.category() != EntityCategory::Infantry || entity.slave.owner().is_some() {
+            if entity.category() != EntityCategory::Infantry
+                || entity.seldom.slave.owner().is_some()
+            {
                 return None;
             }
             let target = entity.archive_target()?;
@@ -1506,7 +1521,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         skip_human_land_check: bool,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let saved_base_return =
             self.foot_enter_idle_base(id, rules, Some(rules.overlay_registry()), effects);
@@ -1515,7 +1530,7 @@ impl Simulation {
         };
         //738990..7389AB: a resumed attack-move (HaveMegaMission, vt+0x4AC)
         // or Wait28 suppresses the Unit tail after Foot.
-        if entity.mega_mission.is_attack_move()
+        if entity.seldom.mega_mission.is_attack_move()
             || entity.mission.effective().known() == Some(MissionType::Deliberate)
         {
             return saved_base_return;
@@ -1599,7 +1614,7 @@ impl Simulation {
             && !miner
             && !armed
             && !unloads
-            && (entity.mcv_deploy_pending.is_pending()
+            && (entity.seldom.mcv_deploy_pending.is_pending()
                 || current == Some(MissionType::AreaGuard)
                 || (current == Some(MissionType::Unload) && deploys_into))
         {
@@ -1648,7 +1663,7 @@ impl Simulation {
                 (position.y / 256) as i16 as u16,
             );
             actor.mission.current().raw() == 7
-                && actor.radio_contacts.slot(0).is_some_and(|contact| {
+                && actor.seldom.radio_contacts.slot(0).is_some_and(|contact| {
                     self.substrate
                         .entities
                         .get(contact)
@@ -1697,24 +1712,20 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        // Foot vt+504 ->4DB9B0, called after terminal PerCell and
-        // StopMoving4DF0D0. Stock Enter7 + Building contact + UnitRepair
-        // calls Unit738970(0,0) at4DBA15; other admitted paths use(0,1).
-        // The second argument only admits the retained tube-resume arm
-        // 4D8403..8440. Ordinary ctor4D31F1 sets TubeIndex=-1, so both
-        // arguments reach the same Unit tail here. Tube continuation remains
-        // outside this receiver. Original arrival_terminal controls in
-        // tools/spatial_oracle/building_repair.depot_service.json pin the
-        // stock armed Enter -> queued Guard result and unchanged full RNG.
+        // Foot vt+0x504 (0x004DB9B0) calls the owner's vt+0x484 at
+        // 0x004DBA15. Enter with a UnitRepair building contact passes (0,0)
+        // instead of (0,1). The second flag only controls a legacy waypoint
+        // path (Foot+0x520, 0x004D83F8..0x004D8440). Fresh scenarios cannot
+        // populate the player's legacy path table; see aircraft::move_mission.
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
         if entity.navigation.nav_com().is_some() || entity.attack_target.target().is_some() {
             return false;
         }
-        self.unit_enter_idle_mode(id, rules, false, effects)
+        crate::sim::world::enter_idle_mode(self, id, rules, Some(rules.overlay_registry()), effects)
     }
 }
 
@@ -1752,7 +1763,7 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
         });
     if wide
         && sim.team_script_vm.team_for_member(id).is_none()
-        && entity.slave.owner().is_none()
+        && entity.seldom.slave.owner().is_none()
         && entity.slave_manager.is_none()
         && entity.bunker.link().installed_in().is_none()
     {
@@ -1798,7 +1809,7 @@ fn harvester_idle_selection(
     skip_human_land_check: bool,
 ) -> Option<MissionType> {
     let entity = sim.substrate.entities.get(id)?;
-    if !entity.radio_contacts.is_empty() {
+    if !entity.seldom.radio_contacts.is_empty() {
         return None;
     }
     let current = entity.mission.current().known();

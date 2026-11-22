@@ -178,7 +178,7 @@ impl<'a> BridgeDamageDrivers<'a> {
                 self.rules,
                 Some(self.rules.overlay_registry()),
                 point,
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             index += 1;
         }
@@ -207,7 +207,7 @@ impl<'a> BridgeDamageDrivers<'a> {
                 self.rules,
                 input,
                 family,
-                self.frame_effects,
+                &mut self.frame_effects,
             )
         } else {
             live_publication::damage_ordinary(
@@ -215,7 +215,7 @@ impl<'a> BridgeDamageDrivers<'a> {
                 self.rules,
                 input,
                 family,
-                self.frame_effects,
+                &mut self.frame_effects,
             )
             .unwrap_or_else(|error| {
                 panic!("ordinary {family:?} bridge publication at {input:?}: {error}")
@@ -286,7 +286,7 @@ impl DamageHost for LiveDamage<'_> {
             rx as u16,
             ry as u16,
             rules,
-            self.drivers.frame_effects,
+            &mut self.drivers.frame_effects,
         );
     }
 
@@ -306,7 +306,7 @@ pub(super) fn run(
     events: &[BridgeDamageEvent],
     strength: i32,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if sim.resolved_terrain.is_none() || sim.bridge_state.is_none() {
         return false;
@@ -319,7 +319,7 @@ pub(super) fn run(
             .unwrap()
             .native_cell_identity((event.rx as i16, event.ry as i16));
         let mut host = LiveDamage {
-            drivers: BridgeDamageDrivers::new(sim, rules, frame_effects),
+            drivers: BridgeDamageDrivers::new(sim, rules, frame_effects.reborrow()),
             event,
             strength,
         };

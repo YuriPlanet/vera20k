@@ -20,6 +20,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 use crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+use crate::render::shell_ui_style_assets::{decode_ui_pcx, decode_ui_shp, ui_art_candidates};
 
 const ATLAS_PADDING: u32 = 2;
 const MIN_ATLAS_WIDTH: u32 = 1024;
@@ -32,10 +33,77 @@ pub(crate) const PACKED_TRANSPARENT_RGB: [u8; 3] = [255, 0, 255];
 /// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`
 /// (SHELL.PAL is read at `0x0072ABDC`), the shared palette conversion.
 pub(crate) fn read_palette(assets: &AssetManager, name: &str) -> Result<Palette> {
-    let bytes = assets
-        .get_ref(name)
-        .with_context(|| format!("Palette {name} is missing or unreadable"))?;
-    Palette::from_bytes(bytes).with_context(|| format!("Could not parse palette {name}"))
+    decode_ui_art(assets, name, |bytes| {
+        Palette::from_bytes(bytes).with_context(|| format!("Could not parse palette {name}"))
+    })
+}
+
+/// The first copy of UI art `name` that `decode` accepts: the selected mod's
+/// copies first, then the game's (`ui_art_candidates`), so a mod's broken
+/// copy falls through to the next. The first rejection is the error.
+pub(crate) fn decode_ui_art<T>(
+    assets: &AssetManager,
+    name: &str,
+    decode: impl Fn(&[u8]) -> Result<T>,
+) -> Result<T> {
+    let mut first_error = None;
+    for candidate in ui_art_candidates(assets, name) {
+        match decode(candidate.bytes) {
+            Ok(art) => {
+                log::debug!("UI art {name} from {}", candidate.source);
+                return Ok(art);
+            }
+            Err(error) => {
+                log::debug!(
+                    "UI art {name} from {} was rejected: {error:#}",
+                    candidate.source
+                );
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    Err(first_error
+        .unwrap_or_else(|| anyhow::anyhow!("UI artwork {name} is missing or unreadable")))
+}
+
+/// PCX `file`, the selected mod's copy first, bounded as UI art when a mod
+/// is selected.
+pub(crate) fn read_ui_pcx(assets: &AssetManager, file: &str) -> Result<PcxFile> {
+    decode_ui_art(assets, file, |bytes| {
+        if assets.mod_selected() {
+            decode_ui_pcx(bytes)
+        } else {
+            PcxFile::from_bytes(bytes)
+        }
+        .map_err(Into::into)
+    })
+}
+
+/// SHP `name` handed to `read`. With a mod selected its copies are tried
+/// first and a copy `read` rejects falls through to the next; otherwise the
+/// game's one copy is read.
+pub(crate) fn read_ui_shp<T>(
+    assets: &AssetManager,
+    name: &str,
+    read: impl Fn(ShpFile) -> Result<T>,
+) -> Result<T> {
+    let decode = |bytes: &[u8]| {
+        let shp = if assets.mod_selected() {
+            decode_ui_shp(bytes)
+        } else {
+            ShpFile::from_bytes(bytes)
+        }
+        .with_context(|| format!("Could not parse {name}"))?;
+        read(shp)
+    };
+    if assets.mod_selected() {
+        decode_ui_art(assets, name, decode)
+    } else {
+        let bytes = assets
+            .get_ref(name)
+            .with_context(|| format!("Required game-menu artwork {name} is missing or unreadable"))?;
+        decode(bytes)
+    }
 }
 
 /// [`read_palette`], logging why the palette is unavailable.
@@ -47,8 +115,13 @@ pub(crate) fn load_palette(assets: &AssetManager, name: &str) -> Option<Palette>
 
 /// SHP `file` parsed; `None` (logged when unparsable) when unavailable.
 pub(crate) fn load_shp(assets: &AssetManager, file: &str) -> Option<ShpFile> {
-    ShpFile::from_bytes(assets.get_ref(file)?)
-        .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
+    if !assets.mod_selected() {
+        return ShpFile::from_bytes(assets.get_ref(file)?)
+            .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
+            .ok();
+    }
+    read_ui_shp(assets, file, Ok)
+        .map_err(|err| log::debug!("Could not load {file}: {err:#}"))
         .ok()
 }
 
@@ -105,8 +178,8 @@ pub(crate) fn shp_file_piece(
 /// A PCX through its embedded palette, full canvas, labelled by its
 /// lower-case name. `keyed` applies [`PACKED_TRANSPARENT_RGB`].
 pub(crate) fn pcx_piece(assets: &AssetManager, file: &str, keyed: bool) -> Option<ChromePiece> {
-    let pcx = PcxFile::from_bytes(assets.get_ref(file)?)
-        .map_err(|err| log::warn!("Could not parse {file}: {err:#}"))
+    let pcx = read_ui_pcx(assets, file)
+        .map_err(|err| log::debug!("Could not load {file}: {err:#}"))
         .ok()?;
     let mut rgba = pcx.to_rgba(None);
     if keyed {
@@ -358,11 +431,24 @@ pub(crate) fn pack_chrome_atlas(
         .iter()
         .map(|piece| (piece.width, piece.height))
         .collect();
+    // Mod art replaces every piece; a page taller than the device allows
+    // fails validation instead of drawing, and the callers already turn a
+    // missing atlas into the startup message naming the art.
+    let layout = layout(&sizes);
+    if !crate::render::gpu::texture_fits(&gpu.device, [layout.width, layout.height]) {
+        log::error!(
+            "{atlas_name} atlas: {}x{} px does not fit this GPU's {} px textures",
+            layout.width,
+            layout.height,
+            gpu.device.limits().max_texture_dimension_2d
+        );
+        return None;
+    }
     let ChromeAtlasLayout {
         width,
         height,
         origins,
-    } = layout(&sizes);
+    } = layout;
 
     let mut rgba = vec![0u8; (width * height * 4) as usize];
     for (piece, &[px, py]) in pieces.iter().zip(&origins) {

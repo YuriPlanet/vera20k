@@ -22,7 +22,8 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::shell_surface_present::ShellSurfacePresenter;
 use crate::render::shell_ui_style_assets::{
-    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver,
+    ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver, decode_ui_shp, mod_art_candidates,
+    read_client_png,
 };
 use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 
@@ -297,49 +298,33 @@ fn compose_startup_splash(
     client_height: usize,
     yr_original_style: bool,
 ) -> Result<Vec<u8>> {
-    let art = splash_art(yr_original_style);
-    let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
     let mut canvas = vec![0u8; client_width * client_height * 4];
     for pixel in canvas.as_chunks_mut::<4>().0 {
         pixel[3] = 255;
     }
+    if draw_mod_splash(
+        assets,
+        &mut canvas,
+        client_width,
+        client_height,
+        yr_original_style,
+    ) {
+        return Ok(canvas);
+    }
 
+    let art = splash_art(yr_original_style);
+    let resolver = ShellUiAssetResolver::new(assets, yr_original_style);
     let shape_name = art.shape_for_width(client_width as u32);
-    let palette_pair = ShellUiAssetPair::new(
-        ShellUiAssetLocator::archive(art.palette, "ra2.mix -> local.mix"),
-        ShellUiAssetLocator::active(art.palette),
-    );
-    let shape_pair = ShellUiAssetPair::new(
-        ShellUiAssetLocator::archive(shape_name, "ra2.mix -> local.mix"),
-        ShellUiAssetLocator::active(shape_name),
-    );
-    let palette_result = resolver.resolve(palette_pair);
-    let shape_result = resolver.resolve(shape_pair);
+    let palette_result = resolver.resolve(splash_asset_pair(art.palette));
+    let shape_result = resolver.resolve(splash_asset_pair(shape_name));
     if let (Ok(palette_asset), Ok(shape_asset)) = (&palette_result, &shape_result) {
         match (
             Palette::from_bytes(palette_asset.bytes),
             ShpFile::from_bytes(shape_asset.bytes),
         ) {
             (Ok(palette), Ok(shp)) => {
-                if let Some(frame) = shp.frames.first() {
-                    let frame_rgba = shp
-                        .frame_to_rgba(0, &palette)
-                        .context("decode startup splash SHP frame 0")?;
-                    let origin_x = centered_offset(client_width as i32, shp.width as i32)
-                        + frame.frame_x as i32;
-                    let origin_y = centered_offset(client_height as i32, shp.height as i32)
-                        + frame.frame_y as i32;
-                    blit_rgba_clipped(
-                        &mut canvas,
-                        client_width,
-                        client_height,
-                        &frame_rgba,
-                        frame.frame_width as usize,
-                        frame.frame_height as usize,
-                        origin_x,
-                        origin_y,
-                    );
-                }
+                paint_splash_shape(&mut canvas, client_width, client_height, &shp, &palette)
+                    .context("decode startup splash SHP frame 0")?
             }
             (Err(err), _) => log::warn!("Could not parse {}: {err}", art.palette),
             (_, Err(err)) => log::warn!(
@@ -361,6 +346,134 @@ fn compose_startup_splash(
     }
 
     Ok(canvas)
+}
+
+fn splash_asset_pair(name: &str) -> ShellUiAssetPair<'_> {
+    ShellUiAssetPair::new(
+        ShellUiAssetLocator::archive(name, "ra2.mix -> local.mix"),
+        ShellUiAssetLocator::active(name),
+    )
+}
+
+fn paint_splash_shape(
+    canvas: &mut [u8],
+    width: usize,
+    height: usize,
+    shp: &ShpFile,
+    palette: &Palette,
+) -> Result<(), crate::assets::error::AssetError> {
+    if let Some(frame) = shp.frames.first() {
+        blit_rgba_clipped(
+            canvas,
+            width,
+            height,
+            &shp.frame_to_rgba(0, palette)?,
+            frame.frame_width as usize,
+            frame.frame_height as usize,
+            centered_offset(width as i32, shp.width as i32) + i32::from(frame.frame_x),
+            centered_offset(height as i32, shp.height as i32) + i32::from(frame.frame_y),
+        );
+    }
+    Ok(())
+}
+
+fn draw_mod_splash(
+    assets: &AssetManager,
+    canvas: &mut [u8],
+    width: usize,
+    height: usize,
+    yr_style: bool,
+) -> bool {
+    if !assets.mod_selected() {
+        return false;
+    }
+    if let Some(path) = assets
+        .client_install()
+        .and_then(|client| client.theme.startup_splash.as_deref())
+        && let Some(image) = read_client_png(path)
+    {
+        paint_fitted_splash(canvas, width, height, image);
+        log::info!("Startup splash uses client artwork {}", path.display());
+        return true;
+    }
+
+    // VERA's fallback style matters when both variants are shipped. Each
+    // SHP always takes the palette of its own native family.
+    for art in [splash_art(yr_style), splash_art(!yr_style)] {
+        let base = ShellUiAssetResolver::new(assets, art == YR_SPLASH);
+        let mod_palette = mod_art_candidates(assets, art.palette).find_map(|asset| {
+            Palette::from_bytes(asset.bytes)
+                .ok()
+                .map(|palette| (palette, asset.source))
+        });
+        let names = if width == 640 {
+            [art.small, art.large]
+        } else {
+            [art.large, art.small]
+        };
+        let decode = |asset: crate::render::shell_ui_style_assets::ShellUiAssetRef<'_>| {
+            let shape = decode_ui_shp(asset.bytes).ok()?;
+            if shape.width == 0 || shape.height == 0 || shape.frames.first()?.pixels.is_empty() {
+                return None;
+            }
+            Some(shape)
+        };
+        let mod_shape = names.into_iter().find_map(|name| {
+            mod_art_candidates(assets, name)
+                .find_map(|asset| decode(asset).map(|shape| (shape, asset.source)))
+        });
+        if mod_palette.is_none() && mod_shape.is_none() {
+            continue;
+        }
+        let palette = mod_palette.or_else(|| {
+            let asset = base.resolve(splash_asset_pair(art.palette)).ok()?;
+            Palette::from_bytes(asset.bytes)
+                .ok()
+                .map(|palette| (palette, asset.source))
+        });
+        let shape = mod_shape.or_else(|| {
+            let asset = base.resolve(splash_asset_pair(names[0])).ok()?;
+            decode(asset).map(|shape| (shape, asset.source))
+        });
+        if let (Some((palette, colors)), Some((shape, source))) = (palette, shape) {
+            // Fit a larger alternate slot without losing its logo or author offsets.
+            let (wide, high) = (u32::from(shape.width), u32::from(shape.height));
+            let mut layer = image::RgbaImage::new(wide, high);
+            if paint_splash_shape(&mut layer, wide as usize, high as usize, &shape, &palette)
+                .is_ok()
+            {
+                paint_fitted_splash(canvas, width, height, layer);
+                log::info!("Startup splash uses {source} with palette from {colors}");
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn paint_fitted_splash(canvas: &mut [u8], width: usize, height: usize, image: image::RgbaImage) {
+    let fit =
+        (width as f64 / f64::from(image.width())).min(height as f64 / f64::from(image.height()));
+    let image = if fit < 1.0 {
+        image::imageops::resize(
+            &image,
+            (f64::from(image.width()) * fit).round().max(1.0) as u32,
+            (f64::from(image.height()) * fit).round().max(1.0) as u32,
+            image::imageops::FilterType::Triangle,
+        )
+    } else {
+        image
+    };
+    blit_rgba_clipped(
+        canvas,
+        width,
+        height,
+        image.as_raw(),
+        image.width() as usize,
+        image.height() as usize,
+        centered_offset(width as i32, image.width() as i32),
+        centered_offset(height as i32, image.height() as i32),
+    );
 }
 
 /// gamemd's splash text (0x005312a0) for a `client_width` x `client_height`
@@ -466,6 +579,36 @@ fn blit_rgba_clipped(
 mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
+
+    #[test]
+    fn supplied_splash_uses_its_own_palette_in_either_style() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let install = audio_test_install("startup-splash-retail");
+        let mod_dir = TestDirectory::new("startup-splash-mod");
+        let mut shape = [0u8; 33];
+        for offset in [2, 4, 6, 12, 14] {
+            shape[offset] = 1;
+        }
+        shape[28] = 32;
+        shape[32] = 1;
+        let mut palette = [0u8; 768];
+        palette[3..6].copy_from_slice(&[63, 0, 63]);
+        mod_dir.write_mix("expandmd98.mix", YR_SPLASH.large, &shape);
+        mod_dir.write_mix("expandmd97.mix", YR_SPLASH.palette, &palette);
+        std::fs::write(mod_dir.path().join(YR_SPLASH.large), b"invalid shape").unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        for yr_style in [false, true] {
+            let canvas = compose_startup_splash(&assets, 800, 600, yr_style).unwrap();
+            let center = (299 * 800 + 399) * 4;
+            assert_eq!(&canvas[center..center + 4], &[252, 0, 252, 255]);
+        }
+    }
 
     /// VERA20K's notice fills the bottom left down to the brand's row in place
     /// of gamemd's trademark lines; "Loading..." stays top left.

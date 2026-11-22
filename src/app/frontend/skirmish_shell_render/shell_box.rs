@@ -32,6 +32,9 @@ pub(crate) struct BoxLook<'a> {
     pub(crate) depths: ModalDepths,
     pub(crate) body_depth: f32,
     pub(crate) covered: &'a [RectPx],
+    /// A greyed button's caption colour: the type-3 buttons' packed
+    /// `0x9F` red, or VERA's own lists' darker one where a box asks.
+    pub(crate) disabled_rgb: [f32; 3],
 }
 
 impl BoxLook<'_> {
@@ -42,6 +45,7 @@ impl BoxLook<'_> {
             depths,
             body_depth,
             covered: &[],
+            disabled_rgb: SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
         }
     }
 
@@ -56,6 +60,7 @@ impl BoxLook<'_> {
             },
             body_depth: SHELL_DROPDOWN_TEXT_DEPTH - 0.00012,
             covered: &[],
+            disabled_rgb: SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
         }
     }
 
@@ -145,7 +150,7 @@ pub(crate) fn box_texts(
                 .derive_rect(rect, |r| owner_draw_button_label_rect(r, pressed));
             let rgb = match b.enabled {
                 true => SHELL_TEXT_RGB_ENABLED,
-                false => SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
+                false => look.disabled_rgb,
             };
             label(&b.caption, at, centre, rgb)
         })

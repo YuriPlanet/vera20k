@@ -10,6 +10,7 @@ mod random_map_extras;
 mod random_map_setup;
 pub(crate) mod saved_seed_browser;
 mod saved_setup;
+mod team_menus;
 mod team_starts;
 mod trackbars;
 
@@ -30,13 +31,15 @@ pub use opponent_scroll::{opponent_scroll_geometry, opponent_scroll_rows};
 pub use choose_map::{
     ChooseMapContext, ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer,
     ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection, FAVORITES_ROW, ONLINE_MAPS_ROW,
-    SEARCH_MAX_CHARS, SkirmishModeSelection, ai_rows_beyond_limit_occupied, favorite_key,
+    RANDOM_MAPS_ROW, SEARCH_MAX_CHARS, SkirmishModeSelection, ai_rows_beyond_limit_occupied,
+    favorite_key,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES, SkirmishShellDialog, SkirmishShellState,
     accept_selected_map, initialize_rows_for_selected_map, player_name_from_profile,
     player_row_visible, repair_teams_for_selected_mode, selected_player_rows,
+    skirmish_session_options,
 };
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
@@ -51,6 +54,10 @@ pub use saved_seed_browser::{
     SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
+pub use team_menus::{
+    MenuPick, apply_seat_action, apply_team_colors, apply_team_preset, apply_team_starts,
+    balance_teams_by_strength, team_start_seats,
+};
 pub use team_starts::starts_by_team;
 pub use trackbars::SkirmishTrackbarBounds;
 
@@ -93,6 +100,10 @@ pub enum SkirmishComboId {
     Color(usize),
     Start(usize),
     Team(usize),
+    /// VERA's Quick Team Setup under the rows ([`team_menus`]).
+    TeamMenu,
+    /// VERA's Bulk Seat Actions beside it.
+    SeatMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +120,31 @@ pub enum SkirmishComboItem {
     Color(usize),
     Start(LaunchStartPosition),
     Team(i32),
+    /// A Quick Team Setup item, greyed with why while `refusal` is set.
+    TeamTool {
+        tool: crate::ui::team_tools::TeamTool,
+        refusal: Option<crate::ui::team_tools::ToolRefusal>,
+    },
+    /// The heading over the quick teams, which picks nothing.
+    TeamHeading,
+    /// A Bulk Seat Actions item.
+    SeatAction {
+        action: crate::ui::team_tools::SeatAction,
+        enabled: bool,
+    },
+}
+
+impl SkirmishComboItem {
+    /// Whether a click on this item picks it: a menu's greyed items and
+    /// heading take none.
+    pub fn pickable(self) -> bool {
+        match self {
+            Self::TeamTool { refusal, .. } => refusal.is_none(),
+            Self::TeamHeading => false,
+            Self::SeatAction { enabled, .. } => enabled,
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

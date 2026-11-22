@@ -5,19 +5,30 @@ use crate::sim::house_state::{HouseOutcomeKind, HouseState};
 use crate::sim::intern::InternedId;
 use crate::sim::runtime::SimRuntime;
 use crate::sim::scenario_session::ScenarioGameMode;
-use crate::sim::world::{FrameEffects, OutcomeWaitBoundary, Simulation, TickLane};
+use crate::sim::world::{
+    FrameClient, FrameEffects, OutcomeWaitBoundary, Simulation, SoundBoundary, TickLane,
+};
 use std::cell::{Cell, RefCell};
 
 struct PausedOutcome<'a, 'b> {
-    client: &'a super::FrameClientBoundary<'b>,
-    elapsed: &'a RefCell<&'b mut super::super::frame_pacer::ScenarioElapsedClock>,
-    vox: &'a ServicedVox,
+    client: &'a mut super::FrameClientBoundary<'b>,
+    vox: &'a mut ServicedVox,
     cue_seen: &'a Cell<bool>,
+}
+
+impl FrameClient for PausedOutcome<'_, '_> {
+    fn sound(&mut self) -> Option<&mut dyn SoundBoundary> {
+        Some(self)
+    }
+
+    fn outcome_wait(&mut self) -> Option<&mut dyn OutcomeWaitBoundary> {
+        Some(self)
+    }
 }
 
 impl crate::sim::world::SoundBoundary for PausedOutcome<'_, '_> {
     fn consume(
-        &self,
+        &mut self,
         sim: &Simulation,
         rules: &crate::rules::ruleset::RuleSet,
         events: &[crate::sim::world::SimSoundEvent],
@@ -29,7 +40,8 @@ impl crate::sim::world::SoundBoundary for PausedOutcome<'_, '_> {
         {
             // Sampling a future stop detects a still-armed elapsed source.
             // The pause must already precede the very first outcome cue.
-            assert_eq!(self.elapsed.borrow_mut().stop_buckets(120 << 4), 0);
+            let pause = self.client.scenario_pause.as_mut().unwrap();
+            assert_eq!(pause.elapsed.stop_buckets(120 << 4), 0);
             self.cue_seen.set(true);
         }
         self.client.consume(sim, rules, events);
@@ -41,12 +53,12 @@ impl crate::sim::world::SoundBoundary for PausedOutcome<'_, '_> {
 }
 
 impl OutcomeWaitBoundary for PausedOutcome<'_, '_> {
-    fn apply_prefix_effect(&self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
+    fn apply_prefix_effect(&mut self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
         self.client
             .apply_prefix_effect_at(effect, self.vox.now_ms.get())
     }
 
-    fn wait_complete(&self, owner: InternedId, kind: HouseOutcomeKind) -> bool {
+    fn wait_complete(&mut self, owner: InternedId, kind: HouseOutcomeKind) -> bool {
         assert!(self.cue_seen.get());
         self.vox.wait_complete(owner, kind)
     }
@@ -58,7 +70,7 @@ struct ServicedVox {
 }
 
 impl OutcomeWaitBoundary for ServicedVox {
-    fn wait_complete(&self, _owner: InternedId, kind: HouseOutcomeKind) -> bool {
+    fn wait_complete(&mut self, _owner: InternedId, kind: HouseOutcomeKind) -> bool {
         ScenarioOutcomeVoiceWait::poll_pending(
             &mut self.pending.borrow_mut(),
             kind,
@@ -80,7 +92,7 @@ fn shared_outcome_clock_resumes_the_same_house_at_120_buckets_once() {
     sim.session_mut_for_test()
         .set_current_house_for_test(Some(owner));
     let mut runtime = SimRuntime::from_simulation(sim);
-    let vox = ServicedVox {
+    let mut vox = ServicedVox {
         now_ms: Cell::new(15),
         pending: RefCell::new(None),
     };
@@ -89,7 +101,7 @@ fn shared_outcome_clock_resumes_the_same_house_at_120_buckets_once() {
             &[],
             67,
             TickLane::Ordinary,
-            FrameEffects::empty().with_outcome_wait(&vox),
+            &mut FrameEffects::empty().with_outcome_wait(&mut vox),
         )
         .unwrap();
     assert!(first.outcome_waiting);
@@ -103,13 +115,13 @@ fn shared_outcome_clock_resumes_the_same_house_at_120_buckets_once() {
     vox.now_ms.set((120 << 4) - 1);
     assert!(
         runtime
-            .resume_outcome_wait(FrameEffects::empty().with_outcome_wait(&vox))
+            .resume_outcome_wait(&mut FrameEffects::empty().with_outcome_wait(&mut vox))
             .unwrap()
             .outcome_waiting
     );
     vox.now_ms.set(120 << 4);
     let completed = runtime
-        .resume_outcome_wait(FrameEffects::empty().with_outcome_wait(&vox))
+        .resume_outcome_wait(&mut FrameEffects::empty().with_outcome_wait(&mut vox))
         .unwrap();
     assert!(!completed.outcome_waiting);
     assert!(vox.pending.borrow().is_none());
@@ -125,7 +137,7 @@ fn shared_outcome_clock_resumes_the_same_house_at_120_buckets_once() {
     assert_eq!(runtime.simulation.session().tick(), 0);
     assert!(
         runtime
-            .resume_outcome_wait(FrameEffects::empty().with_outcome_wait(&vox))
+            .resume_outcome_wait(&mut FrameEffects::empty().with_outcome_wait(&mut vox))
             .is_err()
     );
 }
@@ -167,19 +179,23 @@ fn action110_stops_elapsed_before_action67_cue_and_house_wait() {
     elapsed_owner.start(0);
     let mut sounds = SoundEventQueue::new();
     let mut radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
-    let vox = ServicedVox {
+    let mut vox = ServicedVox {
         now_ms: Cell::new(15),
         pending: RefCell::new(None),
     };
     let cue_seen = Cell::new(false);
     let first = {
-        let elapsed = RefCell::new(&mut elapsed_owner);
-        let client = super::FrameClientBoundary::new(None, Some("Player"), &mut sounds, &mut radar)
-            .with_scenario_pause(&mut pause, &elapsed, ScenarioGameMode::Skirmish, false);
-        let observed = PausedOutcome {
-            client: &client,
-            elapsed: &elapsed,
-            vox: &vox,
+        let mut client =
+            super::FrameClientBoundary::new(None, Some("Player"), &mut sounds, &mut radar)
+                .with_scenario_pause(
+                    &mut pause,
+                    &mut elapsed_owner,
+                    ScenarioGameMode::Skirmish,
+                    false,
+                );
+        let mut observed = PausedOutcome {
+            client: &mut client,
+            vox: &mut vox,
             cue_seen: &cue_seen,
         };
         runtime
@@ -187,7 +203,7 @@ fn action110_stops_elapsed_before_action67_cue_and_house_wait() {
                 &[],
                 67,
                 TickLane::Ordinary,
-                FrameEffects::for_sound(&observed).with_outcome_wait(&observed),
+                &mut FrameEffects::for_client(&mut observed),
             )
             .unwrap()
     };
@@ -197,17 +213,21 @@ fn action110_stops_elapsed_before_action67_cue_and_house_wait() {
     assert!(runtime.simulation.ready_outcome_for_owner(owner).is_none());
     vox.now_ms.set(120 << 4);
     let finished = {
-        let elapsed = RefCell::new(&mut elapsed_owner);
-        let client = super::FrameClientBoundary::new(None, Some("Player"), &mut sounds, &mut radar)
-            .with_scenario_pause(&mut pause, &elapsed, ScenarioGameMode::Skirmish, false);
-        let observed = PausedOutcome {
-            client: &client,
-            elapsed: &elapsed,
-            vox: &vox,
+        let mut client =
+            super::FrameClientBoundary::new(None, Some("Player"), &mut sounds, &mut radar)
+                .with_scenario_pause(
+                    &mut pause,
+                    &mut elapsed_owner,
+                    ScenarioGameMode::Skirmish,
+                    false,
+                );
+        let mut observed = PausedOutcome {
+            client: &mut client,
+            vox: &mut vox,
             cue_seen: &cue_seen,
         };
         runtime
-            .resume_outcome_wait(FrameEffects::for_sound(&observed).with_outcome_wait(&observed))
+            .resume_outcome_wait(&mut FrameEffects::for_client(&mut observed))
             .unwrap()
     };
     assert!(!finished.outcome_waiting);
@@ -240,7 +260,7 @@ fn a_deferred_verdict_line_publishes_the_result_on_its_own_frame() {
     let mut sounds = crate::audio::events::SoundEventQueue::new();
     let mut radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
     let mut pending = None;
-    let client = super::FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
+    let mut client = super::FrameClientBoundary::new(None, Some("Human"), &mut sounds, &mut radar)
         .with_outcome_wait(&mut pending)
         .with_deferred_verdict(true);
     let output = runtime
@@ -248,7 +268,7 @@ fn a_deferred_verdict_line_publishes_the_result_on_its_own_frame() {
             &[],
             67,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&client).with_outcome_wait(&client),
+            &mut FrameEffects::for_client(&mut client),
         )
         .unwrap();
     assert!(!output.outcome_waiting);

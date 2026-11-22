@@ -18,7 +18,10 @@ use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::{RuleSet, SpotlightRules};
 use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
-use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Value};
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
+    X87Chop53 as X, X87Value,
+};
 use crate::util::retail_trig::TrigTable;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -89,11 +92,23 @@ impl SpotlightStore {
         }
     }
 }
+/// A geometry double: a native constant or an Asin table angle.
 fn d(value: NativeF64Bits) -> X87Value {
-    X::load_f64(value).expect("finite spotlight input")
+    X::load_f64(value).expect("spotlight geometry doubles are finite constants or table angles")
 }
 fn save(value: X87Value) -> NativeF64Bits {
-    X::store_f64(value).expect("finite spotlight state")
+    X::store_f64(value).expect("a spotlight geometry angle is a bounded table or facing product")
+}
+/// The light's angle and rate and the Rules doubles that drive them
+/// (`SpotlightSpeed=`, `SpotlightAcceleration=`, `SpotlightAngle=`), under
+/// masked exceptions: each is ReadDouble into binary64, so an INI value of
+/// about `1.8e308` and up (e.g. `1e309`) loads as infinity, and
+/// the sums and compares carry it as the FPU does.
+fn state(value: NativeF64Bits) -> MaskedX87Value {
+    M::load_f64(value)
+}
+fn save_state(value: MaskedX87Value) -> NativeF64Bits {
+    M::store_f64_masked_chop(value)
 }
 fn integer(value: X87Value) -> i32 {
     X::ftol_i32_low_masked(value)
@@ -144,7 +159,7 @@ fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> Option<[
     use crate::util::native_affine as a;
     //436384/436534 spills angle to float, then shared MatrixRotateZ5AF1A0
     //and TransformPoint5AFB80, vector floats, add pivot and ftol.
-    let angle = X::load_f32(X::store_f32(d(angle)).ok()?).ok()?;
+    let angle = M::load_f32(M::store_f32_masked_chop(state(angle)));
     let t = TrigTable::embedded();
     let sin = a::store(t.sin_from_table(angle))?;
     let cos = a::store(t.cos_from_table(angle))?;
@@ -160,33 +175,45 @@ fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> Option<[
     }
     Some(result)
 }
+/// AI4361D0's sweep (`0x00436439..0x0043652E`). Each compare's flag test
+/// decides its unordered (NaN) case: `TEST AH,0x41` passes only Greater,
+/// `TEST AH,0x1` passes Less and unordered alike.
 fn advance_angle(light: &mut Spotlight, rules: SpotlightRules) {
-    light.angle = save(X::add(d(light.angle), d(light.rate)));
-    let angle = d(light.angle);
-    let rate = d(light.rate);
-    let half = X::mul(
-        d(rules.angle),
-        d(NativeF64Bits::from_bits(0x3fe0000000000000)),
+    use MaskedX87Ordering::{Greater, Less, Unordered};
+    let less = |lhs, rhs| matches!(M::compare(lhs, rhs), Less | Unordered);
+    let angle = M::add(state(light.rate), state(light.angle));
+    light.angle = save_state(angle);
+    let rate = state(light.rate);
+    let half = M::mul(
+        state(rules.angle),
+        state(NativeF64Bits::from_bits(0x3fe0000000000000)),
     );
-    use crate::util::native_x87::X87Ordering::{Greater, Less};
     if light.increasing {
-        if X::compare(angle, half) == Greater {
-            light.rate = save(X::sub(rate, d(rules.acceleration)));
-            if X::compare(d(light.rate), X::load_i32(0)) == Less {
+        // 0x00436469 (`TEST AH,0x41`).
+        if M::compare(angle, half) == Greater {
+            let lowered = M::sub(rate, state(rules.acceleration));
+            light.rate = save_state(lowered);
+            // 0x00436484 (`TEST AH,0x1`).
+            if less(lowered, M::load_i32(0)) {
                 light.rate = NativeF64Bits::from_bits(0);
                 light.increasing = false;
             }
-        } else if X::compare(rate, d(rules.speed)) == Less {
-            light.rate = save(X::add(d(rules.acceleration), rate));
+        // 0x004364AD (`TEST AH,0x1`).
+        } else if less(rate, state(rules.speed)) {
+            light.rate = save_state(M::add(state(rules.acceleration), rate));
         }
-    } else if X::compare(angle, X::neg(half)) == Less {
-        light.rate = save(X::add(d(rules.acceleration), rate));
-        if X::compare(d(light.rate), X::load_i32(0)) == Greater {
+    // 0x004364D0 (`TEST AH,0x1`).
+    } else if less(angle, M::neg(half)) {
+        let raised = M::add(state(rules.acceleration), rate);
+        light.rate = save_state(raised);
+        // 0x004364EB (`TEST AH,0x41`).
+        if M::compare(raised, M::load_i32(0)) == Greater {
             light.rate = NativeF64Bits::from_bits(0);
             light.increasing = true;
         }
-    } else if X::compare(X::neg(d(rules.speed)), rate) == Less {
-        light.rate = save(X::sub(rate, d(rules.acceleration)));
+    // 0x00436515 (`TEST AH,0x1`).
+    } else if less(M::neg(state(rules.speed)), rate) {
+        light.rate = save_state(M::sub(rate, state(rules.acceleration)));
     }
 }
 /// BuildingLightClass::DistanceToIntensity @ 0x00436E80; AI4361D0 inlines it.
@@ -589,7 +616,12 @@ impl Simulation {
         }
     }
     /// BuildingLightClass::AI @ 0x004361D0.
-    pub(super) fn visit_spotlight(&mut self, id: u64, rules: &RuleSet, context: UninitContext<'_>) {
+    pub(super) fn visit_spotlight(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        mut context: UninitContext<'_>,
+    ) {
         let Some(mut light) = self.substrate.spotlights.get(id).cloned() else {
             return;
         };
@@ -606,22 +638,6 @@ impl Simulation {
         let parent_coord = coords(parent, self);
         let owner = parent.owner();
         let params = rules.general.spotlight;
-        // Authored exponent overflow can survive the native floating reader.
-        // Motion's finite numeric owner cannot represent it: retain the last
-        // drawable pose instead of panicking or clamping the retained INI.
-        // Parent expiry above still follows the ordinary cleanup path.
-        if [
-            params.speed,
-            params.acceleration,
-            params.angle,
-            light.angle,
-            light.rate,
-        ]
-        .into_iter()
-        .any(|value| !f64::from_bits(value.bits()).is_finite())
-        {
-            return;
-        }
         let mut lost_target = false;
         match light.mode {
             1 => {
@@ -663,15 +679,18 @@ impl Simulation {
                 light.coord = coord;
             }
             2 => {
-                let angle = X::add(X::mul(d(params.speed), X::load_i32(4)), d(light.angle));
-                let tau = d(NativeF64Bits::from_bits(0x401921fb54442d18));
-                light.angle = save(
-                    if X::compare(angle, tau) == crate::util::native_x87::X87Ordering::Greater {
-                        X::sub(angle, tau)
-                    } else {
-                        angle
-                    },
+                // 0x0043634F..0x0043637A: `TEST AH,0x41` wraps only an
+                // ordered angle past 2π.
+                let angle = M::add(
+                    M::mul(state(params.speed), M::load_i32(4)),
+                    state(light.angle),
                 );
+                let tau = state(NativeF64Bits::from_bits(0x401921fb54442d18));
+                light.angle = save_state(if M::compare(angle, tau) == MaskedX87Ordering::Greater {
+                    M::sub(angle, tau)
+                } else {
+                    angle
+                });
                 let Some(coord) = rotate(light.endpoint, parent_raw, light.angle) else {
                     return;
                 };
@@ -727,7 +746,13 @@ impl Simulation {
                     ) < threshold
                 });
             if seen {
-                self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                self.dispatch_object_tag_event(
+                    parent_id,
+                    35,
+                    Some(parent_id),
+                    None,
+                    context.reborrow(),
+                );
                 // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
                 // 0x4368C9): then 66 (in spotlight) on the same object while
                 // it is alive.

@@ -15,8 +15,8 @@ use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
     COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalLayout, RandomMapSetupLayout, RectPx,
-    SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboItem, SkirmishCountryChoice,
-    SkirmishShellLayout, combo_text_rect, random_map_setup_dropdown_rect,
+    SkirmishAiRowType, SkirmishCheckboxId, SkirmishComboId, SkirmishComboItem,
+    SkirmishCountryChoice, SkirmishShellLayout, combo_text_rect, random_map_setup_dropdown_rect,
 };
 
 use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, HostRows, paint_gui_with};
@@ -88,6 +88,13 @@ pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> Str
             LaunchStartPosition::Position(idx) => (idx + 1).to_string(),
         },
         SkirmishComboItem::Team(team) => team_label(state, team),
+        SkirmishComboItem::TeamTool { tool, refusal } => {
+            crate::ui::team_tools::team_tool_text(tool, refusal)
+        }
+        SkirmishComboItem::TeamHeading => crate::ui::team_tools::presets_heading(),
+        SkirmishComboItem::SeatAction { action, .. } => {
+            crate::ui::team_tools::seat_action_text(action)
+        }
     }
 }
 
@@ -147,7 +154,6 @@ pub(super) fn button_label_rect_px(rect: RectPx, pressed: bool, scale: ShellScal
 /// the authored numbers and the glyphs are emitted at `scale` x, so a stretched
 /// page keeps gamemd's text metrics instead of re-wrapping a resized rect.
 /// `1.0` is the retail path, byte-for-byte.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn push_text_draw(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
@@ -377,17 +383,29 @@ pub(crate) fn skirmish_labels(state: &AppState) -> crate::ui::skirmish_shell::pa
         .chain((0..SKIRMISH_MAX_SLOT_COUNT as u8).map(LaunchStartPosition::Position))
         .map(SkirmishComboItem::Start);
     let teams = (-2..i32::from(NATIVE_TEAMS)).map(SkirmishComboItem::Team);
+    // VERA's Quick Team Setup and Bulk Seat Actions: their items as the
+    // rows stand now, a greyed one with why.
+    let maps = state.frontend.scenario_catalog.shell_maps();
+    let menus = [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu]
+        .into_iter()
+        .flat_map(|menu| crate::ui::skirmish_shell::combo_items(shell, maps, menu));
     let items = ai
         .into_iter()
         .chain(shell.country_catalog.items().iter().copied())
         .chain([SkirmishComboItem::ColorSentinel(-2)])
         .chain(starts)
         .chain(teams)
+        .chain(menus)
         .map(|item| (item, combo_item_label(state, item)))
         .collect();
     crate::ui::skirmish_shell::page::SkirmishLabels {
         items,
         random_country: state.csf_label("GUI:RandomEx", "Random"),
+        menus: [
+            crate::ui::team_tools::TEAM_MENU_KEY,
+            crate::ui::team_tools::SEAT_MENU_KEY,
+        ]
+        .map(tr),
         // VERA captions the map button "Choose Map", as its room does
         // (`SetupDialog::button_label`): retail's "Customize Battle" reads as
         // the settings Game Options keeps.
@@ -609,7 +627,7 @@ fn choose_map_rows(
             modal.mode_geometry(layout).visible_rows,
         ),
         false => (
-            modal.filtered_record_indices.len(),
+            modal.map_row_count(),
             modal.map_top_index,
             modal.map_geometry(layout).visible_rows,
         ),
@@ -619,12 +637,18 @@ fn choose_map_rows(
             let chosen = modal.mode_rows().get(row)?;
             return Some(if chosen.id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
                 tr("VERA:OnlineMaps")
+            } else if chosen.id == crate::ui::skirmish_shell::RANDOM_MAPS_ROW {
+                tr("VERA:RandomMaps")
             } else if chosen.id == crate::ui::skirmish_shell::FAVORITES_ROW {
                 tr("VERA:Favorites")
             } else {
                 let mode = chosen.resolve(&state.frontend.skirmish_modes)?;
                 state.csf_label(&mode.ui_name_key, &mode.ui_name_key)
             });
+        }
+        // The Random Maps folder lists its saved seeds by description.
+        if let Some(seed) = modal.saved_seed_at(row) {
+            return Some(seed.description.display_text());
         }
         if let Some(labels) = &modal.row_labels {
             return labels.get(row).cloned();
@@ -667,8 +691,10 @@ fn push_choose_map_search_text(
     let scale = layout.scale;
     let depth = SHELL_DROPDOWN_TEXT_DEPTH - 0.00009;
     let geometry = modal.map_geometry(layout);
-    let empty = if !modal.filtered_record_indices.is_empty() {
+    let empty = if modal.map_row_count() > 0 {
         None
+    } else if modal.random_maps_selected() && modal.search.is_empty() {
+        Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
         Some(crate::app::map_library::empty_online_maps_text(state))
     } else if modal.favorites_selected() && modal.search.is_empty() {

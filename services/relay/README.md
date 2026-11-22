@@ -263,8 +263,11 @@ reporter holds the fastest rate its tick cost fits into four fifths of a second
 (legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
 seconds old) from a player who cannot hold the current rate slows the clock to
 the fastest Game Speed rate that player holds, at least one row slower and at
-most two rows below the certificate's rate; a tick-cost reporter that holds the
-rate only draws slowly and catches up on its own. Under `VO1C` every active
+most two rows below the certificate's rate. When fresh behind reports span two
+seconds of running fewer frames than the clock, the relay also limits the rate
+to nine tenths of the measured frames per second. This measured capacity can
+hold back a raise for five minutes, unless the player's ticks become at least
+10% quicker. Under `VO1C` every active
 source must have reported, so a member that may not read markers never meets one;
 under `VO2C` silent sources are ignored, and a certificate whose pacing flag is
 off keeps its rate. Each change appends an authenticated rate marker after the
@@ -274,7 +277,17 @@ at least 5 seconds apart. After 30 seconds with no fresh behind or catching-up
 report, and while every tick-cost reporter holds the next faster rate, the clock
 tries one row faster; a slowdown within 30 seconds of a raise doubles that wait,
 up to 5 minutes. Pauses displace these times like the start. Status keeps the
-certificate's rate. In a federated room the coordinator decides from every
+certificate's rate. A `VO2C` with flags bit 2 (continuous pacing) instead lets
+the clock seal at any whole rate from the certificate's down to 10: a behind
+player slows it to its holdable rate, at least one frame and at most 25%
+slower per change; a player catching up for 10 seconds straight slows it 5%
+once the last change is 10 seconds old. After a third of the raise wait it goes
+half the way to the slowest raise ceiling, at least one frame and at most a
+tenth of the rate per step. The ceiling is a reporter's tick cost and 95% of
+what it ran in a 10-second backlog or in a second sustained shortfall within
+five minutes, unless its ticks got 10% quicker since.
+Its rate markers carry any rate from 10 to 90; each game checks the rate
+against its certificate. In a federated room the coordinator decides from every
 relay's reports (see below). The relay's
 per-minute journal line counts the slowdowns as `slowdowns`, the raises as
 `raises`, and the reports of a player catching up or behind, about a second of
@@ -518,14 +531,15 @@ Its hop holds a version 3 watch ticket of a player ticket's length:
 `[3][match UUID16][0][expiry LEu64][nonce16][watcher UUID16][delay seconds LEu64]`
 then HMAC-SHA256 under the relay ticket key over those 66 bytes with domain
 `VERA20k relay watch ticket v1\0`. Its packet key is derived from the whole
-ticket as a player's is. The delay is at most 240 seconds, below the 300 seconds
-a finished match's records stay, so a watcher that kept up still reads the end.
+ticket as a player's is. The delay is at most 24 hours, as long as a match runs;
+a finished match's records stay 300 seconds, so a watcher held back longer misses
+the end.
 A relay from before watchers refuses any ticket version but 2.
 
 HELLO and CONFIRM go as a player's, but a CONFIRM carries only the cookie (no
 federation roster) and spends the players' handshake budgets. The relay admits
 a watcher only to a match that started and whose whole stream is in its journal,
-and at most 10 watchers a match and 1,024 in all (`Full`). A CONFIRM with the
+and at most 256 watchers a match and 1,024 in all (`Full`). A CONFIRM with the
 same watcher and a later expiry renews the hop: a new session that keeps the old
 hop's agreement and budgets, and the old session goes at once. A watcher sends
 only PING, which READY answers, and CONTROL requests: Ready `[0][agreement32]`,
@@ -539,7 +553,8 @@ who is silent for 30 seconds, or whose match the relay no longer holds loses its
 hop.
 
 The delay holds in every reply. Once a second the room notes its stream's end
-(frame, next record, active sources), keeping 242 such marks; a watcher reads
+(frame, next record, active sources), keeping 86,402 such marks (24 bytes each,
+about 2 MiB for a day-long match, counted in the room's ordering memory); a watcher reads
 the newest mark at least its delay old, and before the first one nothing. A
 watcher's STATUS is a player's STATUS of that delayed end with the hop feedback
 and no silent players, then, when there is one, `[frame varint][checksum u32]`: the newest frame at or

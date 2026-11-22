@@ -127,7 +127,10 @@ pub struct ZoneField {
     /// The base zone `RebuildZoneConnectivity @ 0x0056C510` returns: the
     /// strictly largest component, the first (lowest id) on ties. Only the
     /// native comparisons read it.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "only the native comparisons read it")
+    )]
     largest: u16,
     /// Derived zone of the largest base component (first wins ties).
     pub reference: u16,

@@ -2,6 +2,12 @@
 //! Uncompress64BDD0. The session owns these caches; Simulation keeps the only
 //! OutList/DoList. Inputs and mirror records are transient transfer values.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::BTreeMap;
 
 use crate::sim::command::{
@@ -11,6 +17,7 @@ use crate::sim::command::{
     MEGAMISSION_SOURCE_KIND_OFFSET, RESPONSE_TIME_OPCODE,
 };
 use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
+use crate::util::read_helpers::{array_at, read_i32_le};
 
 /// Session constructor69768C writes +2808 (A8DA40), passed by64764C.
 pub const NATIVE_EVENT_PACKET_CAPACITY: usize = 0x22e;
@@ -73,13 +80,11 @@ impl EventPacketHeader {
 }
 
 pub fn live_command_frontier(bytes: &[u8]) -> Option<u64> {
-    (bytes.len() >= LIVE_EVENT_PREFIX_LEN + HEADER_LEN
-        && bytes.starts_with(&LIVE_EVENT_MAGIC)
-        && matches!(
-            bytes[LIVE_EVENT_PREFIX_LEN],
-            FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE
-        ))
-    .then(|| u64::from_le_bytes(bytes[4..LIVE_EVENT_PREFIX_LEN].try_into().unwrap()))
+    let (frontier, body) = bytes
+        .strip_prefix(&LIVE_EVENT_MAGIC)?
+        .split_first_chunk::<{ LIVE_EVENT_PREFIX_LEN - LIVE_EVENT_MAGIC.len() }>()?;
+    (body.len() >= HEADER_LEN && matches!(body[0], FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE))
+        .then(|| u64::from_le_bytes(*frontier))
 }
 
 fn body_offset(bytes: &[u8]) -> usize {
@@ -98,9 +103,7 @@ pub fn encode_frame_sync(info: FrameInfo) -> Result<[u8; HEADER_LEN], PacketEnco
     if info.house_id < 0 {
         return Err(PacketEncodeError::InvalidHouse);
     }
-    let mut bytes: [u8; HEADER_LEN] = info.encode().as_bytes()[..HEADER_LEN]
-        .try_into()
-        .expect("fixed packet header");
+    let mut bytes = array_at::<0, HEADER_LEN, _>(info.encode().as_bytes());
     bytes[0] = FRAME_SYNC_OPCODE;
     Ok(bytes)
 }
@@ -550,7 +553,11 @@ impl EventPacketCodec {
                         DecodeFailureKind::InvalidHouse,
                     ));
                 }
-                frame = i32::from_le_bytes(bytes[start + 3..start + 7].try_into().unwrap());
+                // The FRAMEINFO header's wire length covered this stamp.
+                let Some(stamp) = read_i32_le(bytes, start + 3) else {
+                    break;
+                };
+                frame = stamp;
             }
             let mut record = CommandRecord::encode(opcode, i32::from(house), frame, &[])
                 .expect("native table fits an Event payload");
@@ -600,23 +607,26 @@ impl EventPacketCodec {
                         ));
                     }
                     let mut actors = vec![actor_token(&record)];
-                    actors.extend(
+                    actors.extend_from_slice(
                         bytes[start + wire_len..start + wire_len + trailing]
-                            .chunks_exact(ACTOR_TOKEN_LEN)
-                            .map(|bytes| ActorToken::try_from(bytes).unwrap()),
+                            .as_chunks::<ACTOR_TOKEN_LEN>()
+                            .0,
                     );
                     actors
                 };
-                if count > 1 {
-                    self.receive.entry(source_house).or_default()[usize::from(slot)] =
-                        vec![actors[0]];
-                }
+                let mut cache = (count > 1).then(|| {
+                    let cache =
+                        &mut self.receive.entry(source_house).or_default()[usize::from(slot)];
+                    *cache = vec![actors[0]];
+                    cache
+                });
                 for (index, actor) in actors.iter().enumerate() {
-                    if count > 1 && index > 0 {
+                    if index > 0
+                        && let Some(cache) = cache.as_mut()
+                    {
                         //64C057..64C091 updates the next cached actor after
                         //the preceding admission, before attempting this one.
-                        self.receive.get_mut(&source_house).unwrap()[usize::from(slot)]
-                            .push(*actor);
+                        cache.push(*actor);
                     }
                     record.payload_mut()[..ACTOR_TOKEN_LEN].copy_from_slice(actor);
                     if !admit(record.clone()) {
@@ -661,9 +671,7 @@ impl EventPacketCodec {
 }
 
 fn actor_token(record: &CommandRecord) -> ActorToken {
-    record.payload()[..ACTOR_TOKEN_LEN]
-        .try_into()
-        .expect("fixed actor token")
+    record.payload_field::<0, ACTOR_TOKEN_LEN>()
 }
 
 fn same_mission(left: &CommandRecord, right: &CommandRecord) -> bool {

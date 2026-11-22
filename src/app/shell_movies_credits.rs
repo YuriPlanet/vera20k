@@ -156,8 +156,12 @@ impl App {
         state.frontend.movie_list = None;
         let stem = movie_stem(name);
         // 0x005C0640 raises campaign movie progress before the existence check.
-        (state.persistence.options_profile.movie_progress).note_played(stem);
-        // 0x005BED61..0x005BED6A: outside a campaign (GameMode != 0) Play_Movie
+        state
+            .persistence
+            .options_profile
+            .movie_progress
+            .note_played(stem);
+        // 0x005BED61..0x005BED6A: outside a campaign world Play_Movie
         // returns right after that note, with no video, audio hold or suspend,
         // so a skirmish or multiplayer map's movie action only moves on.
         if running_scenario
@@ -165,7 +169,7 @@ impl App {
                 .match_state
                 .sim_runtime
                 .runtime()
-                .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
+                .is_some_and(|runtime| !runtime.simulation.session().uses_campaign_world())
         {
             return;
         }

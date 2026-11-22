@@ -98,6 +98,15 @@ impl BuildingZShape {
             offset,
             texels,
         } = decode_zshape_frame(&file.bytes, &shp)?;
+        // A mod's z-shape past the device's textures: bodies write flat
+        // depth, the caller's fallback, rather than failing validation.
+        if !crate::render::gpu::texture_fits(&gpu.device, [width, height]) {
+            log::warn!(
+                "{BUILDNGZ_FILE}: {width}x{height} px z-shape does not fit this GPU's {} px textures",
+                gpu.device.limits().max_texture_dimension_2d
+            );
+            return None;
+        }
         let view = create_r8_texture_view(gpu, "BUILDNGZ ZShape", &texels, width, height);
         log::info!(
             "BUILDNGZ.SHA z-shape: {width}x{height} from {} ({} frames)",

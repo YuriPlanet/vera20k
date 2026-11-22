@@ -75,21 +75,19 @@ pub fn run(ctx: &mut RockCtx<'_>, args: &RockArgs) -> i32 {
         }
         let (x, y) = draw_nonborder_slot(ctx.rng, ctx.scratch, args.stride, max_slot);
 
-        let (overlay, tile) = {
-            let cell = ctx.grid.get(x, y).expect("picked slot is an in-band cell");
-            (cell.overlay, cell.tile)
-        };
-        if overlay == -1 {
+        let cell = ctx
+            .grid
+            .get_mut(x, y)
+            .expect("picked slot is an in-band cell");
+        if cell.overlay == -1 {
             // 0x005A4253: every overlay-free pick zeroes the density byte.
             // Residual: its `Recalc_Attributes(-1)` (0x005A4259) is not ported;
             // it matters only if a later generator pass reads those attributes.
-            ctx.grid.get_mut(x, y).unwrap().density = 0;
-            if is_sand_lat_transition(ctx.ids, tile) {
-                let variant = ctx.rng.uniform(0, ROCK_VARIANT_MAX);
-                ctx.grid.get_mut(x, y).unwrap().overlay = variant + SROCK_BASE;
-            } else if ctx.ids.is_clear(tile) || ctx.ids.is_green_lat(tile) {
-                let variant = ctx.rng.uniform(0, ROCK_VARIANT_MAX);
-                ctx.grid.get_mut(x, y).unwrap().overlay = variant + TROCK_BASE;
+            cell.density = 0;
+            if is_sand_lat_transition(ctx.ids, cell.tile) {
+                cell.overlay = ctx.rng.uniform(0, ROCK_VARIANT_MAX) + SROCK_BASE;
+            } else if ctx.ids.is_clear(cell.tile) || ctx.ids.is_green_lat(cell.tile) {
+                cell.overlay = ctx.rng.uniform(0, ROCK_VARIANT_MAX) + TROCK_BASE;
             }
             // else: overlay-free but no rock terrain — still counts.
             placed += 1;

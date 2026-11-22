@@ -218,7 +218,6 @@ fn layout_in_rect(
 /// native units (the rect divided back by `scale`) and every glyph and
 /// advance is emitted at `scale`x, so a stretched shell's caption still
 /// centres in its stretched cell. The scissor stays in window pixels.
-#[allow(clippy::too_many_arguments)]
 pub fn draw_in_rect_scaled(
     font: &BitFont,
     text: &str,
@@ -236,7 +235,6 @@ pub fn draw_in_rect_scaled(
 
 /// [`draw_in_rect_scaled`] for the kind-1 statics: their UTF-16 unit reveal
 /// and tint.
-#[allow(clippy::too_many_arguments)]
 pub fn draw_in_rect_path_a_scaled(
     font: &BitFont,
     text: &str,
@@ -469,7 +467,7 @@ mod tests {
     #[test]
     fn a_button_caption_too_long_for_the_face_is_squeezed_onto_it() {
         let font = crate::render::bit_font::tests::make_vector_test_font();
-        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~~~]";
+        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~]";
         let natural = font.text_width(text);
         assert!(natural > RIGHT_PANEL_FACE_W && natural < 154, "{natural}");
         let rect = TextRect {

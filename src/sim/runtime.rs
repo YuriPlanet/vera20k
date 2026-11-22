@@ -125,6 +125,10 @@ impl<'a> SimView<'a> {
         self.simulation.entities()
     }
 
+    pub fn control_projection(&self) -> crate::sim::world::ControlProjection<'a> {
+        self.simulation.control_projection()
+    }
+
     pub fn session(&self) -> &'a crate::sim::scenario_session::ScenarioSession {
         &self.simulation.session
     }
@@ -199,7 +203,7 @@ impl SimRuntime {
             commands,
             tick_ms,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .map(|output| {
             output
@@ -218,14 +222,14 @@ impl SimRuntime {
         commands: &[crate::sim::command::CommandEnvelope],
         tick_ms: u32,
         lane: crate::sim::world::TickLane,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .advance_app_frame(commands, &self.resources.rules, tick_ms, lane, effects)
     }
     pub fn resume_outcome_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_outcome_wait(&self.resources.rules, effects)
@@ -235,7 +239,7 @@ impl SimRuntime {
     /// resources and without re-entering Logic or synchronized dispatch.
     pub fn resume_after_network_failure(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_after_network_failure(&self.resources.rules, effects)
@@ -243,7 +247,7 @@ impl SimRuntime {
 
     pub fn resume_network_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_network_wait(&self.resources.rules, effects)
@@ -251,7 +255,7 @@ impl SimRuntime {
 
     pub fn leave_network_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .leave_network_wait(&self.resources.rules, effects)
@@ -274,7 +278,7 @@ impl SimRuntime {
             command,
             &self.resources.rules,
             Some(self.resources.rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -329,7 +333,7 @@ mod tests {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("bound production frame")
                 .trigger_effects
@@ -481,7 +485,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
 
@@ -724,7 +728,7 @@ mod tests {
                 .native_unique_id(),
             ids[0].1
         );
-        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(doomed).is_none());
         assert_eq!(
             restored.native_identity_cursor(),
@@ -810,22 +814,34 @@ pub fn spawn_terrain_tile_animations(
             draw_runtime: AnimDrawRuntime::default(),
             owner: None,
         };
-        let id = sim
-            .spawn_anim_at_world(
-                rules,
-                descriptor,
-                AnimWorldCoord {
-                    x: tile.world_x,
-                    y: tile.world_y,
-                    z: tile.world_z,
-                },
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "resolved terrain animation [{}] must be bound before map spawn: {error}",
-                    tile.anim_name
-                )
-            });
+        let world = AnimWorldCoord {
+            x: tile.world_x,
+            y: tile.world_y,
+            z: tile.world_z,
+        };
+        // The loader binds every `Tile%02dAnim` name as a scheduler root, so
+        // the type resolves; construction can still refuse a mod's own ART
+        // for it, such as a `Bouncer=` launch outside the modelled x87 domain
+        // or an invalid Tiberium image start. VERA then loads the map
+        // without this tile's producer write (VERA's choice: gamemd's
+        // constructor 0x00421EA0 has no refusal path). A refused launch
+        // removes the anim; a refused Tiberium start, which fails after the
+        // constructor registered and revealed the anim, leaves it registered
+        // without its ZAdjust (residual, in the anim constructor). The map
+        // plays on without a notice: only that tile's decoration is missing,
+        // and the log names the anim and cell for the modder.
+        let id = match sim.spawn_anim_at_world(rules, descriptor, world) {
+            Ok(id) => id,
+            Err(error) => {
+                log::warn!(
+                    "tile animation [{}] at ({}, {}) not spawned: {error}",
+                    tile.anim_name,
+                    tile.rx,
+                    tile.ry
+                );
+                continue;
+            }
+        };
         assert!(
             sim.substrate
                 .set_terrain_anim_z_adjust_after_construction(id, tile.z_adjust),
@@ -1441,6 +1457,8 @@ pub enum ScenarioFinalizeError {
     ControlGrants(#[from] crate::sim::control_authority::ControlGrantError),
     #[error(transparent)]
     Overlay(#[from] crate::sim::crates::RuntimeOverlayError),
+    #[error(transparent)]
+    StageCarryOver(#[from] crate::sim::campaign_carry_over::StageCarryOverError),
 }
 
 /// Post-funnel scenario finalization shared by the app loader and the
@@ -1455,6 +1473,7 @@ pub fn finalize_constructed_scenario(
     house_roster: &crate::map::houses::HouseRoster,
     construction_rules: RulePolicy,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
+    stage_carry_over: Option<&crate::sim::campaign_carry_over::StageCarryOver>,
 ) -> Result<crate::sim::scenario_post_map::ScenarioPostMapOutput, ScenarioFinalizeError> {
     if let Some(launch) = skirmish_session {
         sim.install_control_grants(launch.control_grants().to_vec())?;
@@ -1543,11 +1562,7 @@ pub fn finalize_constructed_scenario(
     }
     // The caller submits one immutable initialization command; Simulation owns
     // every match-affecting write and Scenario RNG draw in the post-map tail.
-    let campaign_map = sim
-        .session
-        .campaign_mission_counter()
-        .filter(|_| !sim.session.game_mode_nonzero())
-        .map(|_| map_data);
+    let campaign_map = sim.session.campaign_mission_counter().map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
@@ -1559,8 +1574,14 @@ pub fn finalize_constructed_scenario(
             construction_rules,
             skirmish_session,
             campaign_map,
+            stage_home_global: stage_carry_over
+                .and_then(|record| record.globals())
+                .map(|globals| globals[0]),
         })?;
     sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules));
+    if let Some(record) = stage_carry_over {
+        sim.restore_stage_carry_over(record, rules)?;
+    }
     // Fresh source changes and Anim intensity reads transfer together to the
     // lighting owner. Discarding this prefix loses pre-building CellAnim light.
     Ok(output)
@@ -1599,6 +1620,7 @@ fn finalization_keeps_populated_neighbor_counts() {
         &rules,
         &roster,
         RulePolicy::stock_campaign(),
+        None,
         None,
     )
     .unwrap();

@@ -189,12 +189,16 @@ impl MpModeClass {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SkirmishModeLoadError {
-    #[error("MPModesMD.ini is missing from the configured retail archive stack")]
-    MissingRoster,
-    #[error("MPModesMD.ini from {archive} could not be parsed: {message}")]
-    InvalidRoster { archive: String, message: String },
-    #[error("MPModesMD.ini from {archive} did not contain any usable mode rows")]
-    EmptyRoster { archive: String },
+    #[error("{name} is missing from the configured archive stack")]
+    MissingRoster { name: String },
+    #[error("{name} from {archive} could not be parsed: {message}")]
+    InvalidRoster {
+        name: String,
+        archive: String,
+        message: String,
+    },
+    #[error("{name} from {archive} did not contain any usable mode rows")]
+    EmptyRoster { name: String, archive: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,16 +316,17 @@ pub fn parse_mpmodes_ini(ini: &IniFile) -> Vec<SkirmishGameMode> {
 pub fn skirmish_modes_from_assets(
     assets: &AssetManager,
 ) -> Result<Vec<SkirmishGameMode>, SkirmishModeLoadError> {
-    let (data, source) = assets
-        .get_with_source("MPModesMD.ini")
-        .ok_or(SkirmishModeLoadError::MissingRoster)?;
-    log::info!(
-        "Loading MPModesMD.ini ({} bytes) from {}",
-        data.len(),
-        source
-    );
+    let name = assets.ini_roots().modes();
+    let (data, source) =
+        assets
+            .get_with_source(name)
+            .ok_or_else(|| SkirmishModeLoadError::MissingRoster {
+                name: name.to_owned(),
+            })?;
+    log::info!("Loading {} ({} bytes) from {}", name, data.len(), source);
     let roster_ini =
         IniFile::from_bytes(&data).map_err(|err| SkirmishModeLoadError::InvalidRoster {
+            name: name.to_owned(),
             archive: source.clone(),
             message: err.to_string(),
         })?;
@@ -336,7 +341,7 @@ pub fn skirmish_modes_from_selected_ini(
     roster_ini: &IniFile,
     source: &str,
 ) -> Result<Vec<SkirmishGameMode>, SkirmishModeLoadError> {
-    let modes = parse_mpmodes_ini_with_overrides(roster_ini, |name| {
+    let mut modes = parse_mpmodes_ini_with_overrides(roster_ini, |name| {
         let Some((data, override_source)) = assets.get_with_source(name) else {
             log::warn!(
                 "Skirmish MPMode override {name} is missing; using native constructor defaults"
@@ -358,9 +363,23 @@ pub fn skirmish_modes_from_selected_ini(
             })
             .ok()
     });
+    if let Some(client) = assets.client_install() {
+        modes.retain_mut(|mode| {
+            // The native mode supplies gameplay policy. The client list
+            // tells us which of those modes can use its supplied maps.
+            mode.random_maps_allowed = false;
+            mode.class.policy().lists_in_skirmish
+                && client.maps.iter().any(|map| {
+                    map.game_modes
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+                })
+        });
+    }
 
     if modes.is_empty() {
         Err(SkirmishModeLoadError::EmptyRoster {
+            name: assets.ini_roots().modes().to_owned(),
             archive: source.to_owned(),
         })
     } else {
@@ -384,6 +403,19 @@ pub fn stock_skirmish_modes() -> Vec<SkirmishGameMode> {
             "[MultiplayerDialogSettings]\n{settings}"
         )))
     })
+}
+
+/// Default for generic process consumers that have no selected mode: prefer
+/// the loaded row at the usual id, then the first row the Skirmish menu admits.
+/// This never manufactures a stock mode for a custom catalog.
+pub fn default_skirmish_mode(modes: &[SkirmishGameMode]) -> Option<&SkirmishGameMode> {
+    mode_by_id(modes, crate::skirmish_launch::BATTLE_MODE_ID)
+        .filter(|mode| mode.class.policy().lists_in_skirmish)
+        .or_else(|| {
+            modes
+                .iter()
+                .find(|mode| mode.class.policy().lists_in_skirmish)
+        })
 }
 
 pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMode> {

@@ -303,7 +303,7 @@ impl Simulation {
         z: i32,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let marked = self
             .substrate
@@ -585,7 +585,7 @@ fn foundation_center_xy(
 pub fn object_center_xy(entity: &crate::sim::game_entity::GameEntity) -> [i32; 2] {
     let location = position_world_xy(&entity.position);
     if entity.category() == crate::map::entities::EntityCategory::Structure {
-        foundation_center_xy(location, entity.type_facts.foundation())
+        foundation_center_xy(location, entity.seldom.type_facts.foundation())
     } else {
         location
     }
@@ -765,7 +765,7 @@ impl Simulation {
                     entity.category() == crate::map::entities::EntityCategory::Structure
                 })
                 .map(|building| {
-                    let (width, height) = building.type_facts.foundation().dimensions();
+                    let (width, height) = building.seldom.type_facts.foundation().dimensions();
                     (i32::from(width), i32::from(height))
                 }),
             crate::sim::combat::TargetKind::Cell(..) => None,
@@ -861,7 +861,7 @@ impl Simulation {
         coord: DriveCoord,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let marked = self
             .substrate
@@ -896,16 +896,16 @@ impl Simulation {
         id: u64,
         height: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         let marked = self
             .substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.lifecycle.cell_marked());
         if marked {
-            self.unmark_entity_remove(id, context);
+            self.unmark_entity_remove(id, context.reborrow());
         }
         Self::set_object_height_unmarked(&mut self.substrate, &self.resolved_terrain, id, height);
         if marked {

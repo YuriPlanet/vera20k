@@ -23,7 +23,6 @@ use crate::map::terrain::TilePlacement;
 use crate::map::theater::TileKey;
 use crate::render::batch::SpriteInstance;
 use crate::render::surface_line::SurfaceStroke;
-use crate::ui::sidebar::SidebarView;
 use crate::util::time::{Duration, Instant};
 #[path = "ferry_lines.rs"]
 mod ferry_lines;
@@ -146,7 +145,9 @@ pub(super) struct SidebarInstances {
     pub viewport_rect: Vec<SpriteInstance>,
     pub content_boundary: Vec<SpriteInstance>,
     pub radar_anim: Vec<SpriteInstance>,
-    pub view: Option<SidebarView>,
+    /// The revision of the retained sidebar view these instances drew,
+    /// `None` when none drew.
+    pub view_revision: Option<u64>,
 }
 
 impl SidebarInstances {
@@ -176,6 +177,20 @@ fn lookup_exact_terrain_variant<T>(
         sub_tile,
         variant,
     })
+}
+
+/// Whether the TechnoExtras path draws an entity's frozen convenience rows.
+/// Buildings are excluded: their rows are drawn by
+/// `build_building_status_instances` at the building status anchor. Drawing
+/// them here too showed two repair countdowns over a captured-and-repairing
+/// neutral building. Foot and air units keep their rows here.
+fn convenience_info_lines_admitted(
+    convenience_help: bool,
+    viewer_allied: bool,
+    category: crate::map::entities::EntityCategory,
+) -> bool {
+    use crate::map::entities::EntityCategory;
+    convenience_help && viewer_allied && category != EntityCategory::Structure
 }
 
 /// Build all game-world sprite instances: terrain tiles, map overlays, bridges,
@@ -269,7 +284,7 @@ pub(super) fn build_world_instances(
             &own_order
         }
     };
-    let mut planned_objects = Vec::new();
+    let mut planned_objects = super::draw_plan_lowering::PlannedObjects::default();
     let mut bodies = Vec::new();
     instances::build_overlay_instances(
         state,
@@ -339,12 +354,15 @@ pub(super) fn build_world_instances(
             let slot = match member.kind {
                 ObjectKind::Record { slot, span } if window.reaches(span) => slot,
                 ObjectKind::Record { slot, .. } => {
-                    debug_assert!(
-                        frame
+                    // The cross-check runs the visitors on the passed-by
+                    // object into a scratch list: debug builds only.
+                    if cfg!(debug_assertions) {
+                        let draws_nothing = frame
                             .record_at(slot)
                             .zip(instances::layer_draw_band(member.layer))
                             .is_none_or(|(entity, band)| {
-                                let mut scratch = Vec::new();
+                                let mut scratch =
+                                    super::draw_plan_lowering::PlannedObjects::default();
                                 if let Some(visit) = units.as_mut() {
                                     visit(&mut scratch, entity, band);
                                 }
@@ -352,10 +370,13 @@ pub(super) fn build_world_instances(
                                     visit(&mut scratch, entity);
                                 }
                                 scratch.is_empty()
-                            }),
-                        "object {} was passed by but draws",
-                        member.id
-                    );
+                            });
+                        assert!(
+                            draws_nothing,
+                            "object {} was passed by but draws",
+                            member.id
+                        );
+                    }
                     continue;
                 }
                 ObjectKind::Debris => {
@@ -426,17 +447,13 @@ pub(super) fn build_world_instances(
         // Prepare slot binding/light pieces without querying the shared FPS
         // latch. Each Anim's retained Display encounter admits and appends its
         // pieces; preparation shares that encounter's view.
-        let mut building_anim_instances = Vec::new();
+        let mut prepared_building_anims = super::draw_plan_lowering::PlannedObjects::default();
         instances::build_building_anim_instances(
             state,
             input.tactical_admission(),
-            &mut building_anim_instances,
+            &mut prepared_building_anims,
             display_order,
         );
-        let prepared_building_anims = building_anim_instances
-            .into_iter()
-            .map(|parent| (parent.parent.id, parent))
-            .collect();
         particle_draws = instances::build_display_effect_instances(
             input,
             &mut planned_objects,
@@ -460,7 +477,7 @@ pub(super) fn build_world_instances(
                 palette,
                 planned_objects.iter().map(|parent| parent.parent.id),
             );
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.brackets = brackets.remove(&parent.parent.id);
         }
     }
@@ -487,7 +504,7 @@ pub(super) fn build_world_instances(
             .as_ref(),
     ) {
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        for parent in &mut planned_objects {
+        for parent in planned_objects.iter_mut() {
             parent.status = frame.object(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
                     sim,
@@ -510,8 +527,8 @@ pub(super) fn build_world_instances(
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
                 // VERA convenience status rows (reload / unit repair): built
                 // here because the GAME.FNT atlas lives on the renderer. The
-                // texts are frozen strings captured with the frame; only the
-                // glyph geometry is produced at draw time. Uses the same
+                // texts are formatted here from facts captured with the frame,
+                // with the glyph geometry. Uses the same
                 // health-bar visibility admission the pips already passed.
                 // Only the local house and its allies: an enemy's row is
                 // never drawn, even when its body is in view.
@@ -522,10 +539,16 @@ pub(super) fn build_world_instances(
                         sim.interner().resolve(entity.owner()),
                     )
                 });
-                if state.match_state.match_presentation.convenience_help
-                    && viewer_allied
-                    && !entity.hud.info_lines().is_empty()
-                {
+                // Buildings' convenience rows (repair/reload) are drawn once
+                // by build_building_status_instances, which owns the building
+                // status anchor. Drawing them here as well produced two repair
+                // countdowns over a captured-and-repairing neutral building.
+                // This TechnoExtras path is for foot/air units only.
+                if convenience_info_lines_admitted(
+                    state.match_state.match_presentation.convenience_help,
+                    viewer_allied,
+                    entity.category(),
+                ) {
                     let font = &state.renderer.bit_font;
                     let camera = [
                         state.match_state.input.camera_x,
@@ -536,10 +559,10 @@ pub(super) fn build_world_instances(
                         crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
                     let tint = [1.0_f32, 1.0, 1.0];
                     let line_height = font.cell_height() as f32 + 2.0;
-                    for (row, text) in entity.hud.info_lines().iter().enumerate() {
+                    for (row, text) in entity.hud.info_lines().enumerate() {
                         let origin = [base_x - 4.0, base_y + 10.0 + row as f32 * line_height];
                         let measure = font.compute_text_rect(
-                            text,
+                            &text,
                             [
                                 (origin[0] - camera[0]).round() as i32,
                                 (origin[1] - camera[1]).round() as i32,
@@ -549,7 +572,7 @@ pub(super) fn build_world_instances(
                         );
                         status.info_text.push(
                             crate::app::presentation::ui_overlays::status_text_instances(
-                                font, text, origin, measure, camera, tint,
+                                font, &text, origin, measure, camera, tint,
                             ),
                         );
                     }
@@ -682,7 +705,7 @@ pub(super) fn build_world_instances(
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects
         .iter()
-        .filter(|parent| parent.building_pieces.is_some())
+        .filter(|parent| parent.is_building())
         .map(|parent| parent.parent.id)
         .collect();
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
@@ -706,8 +729,8 @@ pub(super) fn build_world_instances(
     let cell_sparkles: Vec<SpriteInstance> = build_pixel_fx_sparkle_instances(state, sw, sh);
 
     // One-time first-frame statistics.
-    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
         let total_grid: usize = state
             .match_state
             .match_presentation
@@ -724,7 +747,7 @@ pub(super) fn build_world_instances(
                 .map(|layer| layer.instances.len())
                 .sum::<usize>(),
         );
-    }
+    });
 
     WorldInstances {
         terrain,
@@ -1038,7 +1061,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     view.fog(),
                     view.house_alliances(),
                     full_visibility,
-                    view.session().native_player_identity(),
+                    view.control_projection(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),
@@ -1395,7 +1418,16 @@ fn build_placement_ghost(
 
 /// Build sidebar UI instances: chrome, cameos, text, minimap, viewport rect, radar animation.
 pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances {
-    let view = current_sidebar_view(state).cloned();
+    // Nothing below changes the retained view; the minimap build and the
+    // font raster switches write other fields, so the view is read again
+    // after each instead of being copied.
+    let view_revision = current_sidebar_view(state).map(|_| {
+        state
+            .match_state
+            .match_presentation
+            .sidebar_projection
+            .view_revision()
+    });
     let minimap_rect = active_minimap_screen_rect(state);
     let (tactical_w, tactical_h) = crate::app::input::camera::tactical_viewport_size(state);
     let tactical_center_cell = crate::app::input::camera::tactical_centre_cell(state);
@@ -1406,7 +1438,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     // SidebarClass::BlitToScreen @ 0x006A70E0 translates that retained surface
     // to the right-sidebar destination without changing the copied extent.
     // The live view panel is the corresponding outer UI-scaled screen frame.
-    let sidebar_surface = view.as_ref().map(|view| {
+    let sidebar_surface = current_sidebar_view(state).map(|view| {
         [
             view.panel_rect.x,
             view.panel_rect.y,
@@ -1465,8 +1497,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         (Vec::new(), Vec::new(), Vec::new())
     };
 
+    let view = current_sidebar_view(state);
     let mut chrome = view
-        .as_ref()
         .map(|v| build_sidebar_chrome_instances(state, v))
         .unwrap_or_default();
     // The pictures of the buttons the side's layout adds to the sidebar draw
@@ -1480,14 +1512,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         ],
     ));
     // The observer's strip draws over the strip's tiles from the same atlas.
-    if let Some(v) = view.as_ref() {
+    if let Some(v) = view {
         chrome.extend(
             crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
         );
     }
     // The bottom bar draws into a surface of its own.
     let mut command_bar = view
-        .as_ref()
         .map(|_| build_command_bar_instances(state))
         .unwrap_or_default();
     // The smooth sidebar's chrome copy packs the pieces apart from the atlas.
@@ -1545,12 +1576,10 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         crate::render::sidebar_text::native_radar_outline_color(theme)
     };
     let cameo_layers = view
-        .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
     #[cfg(feature = "phobos")]
     let sw_sidebar = view
-        .as_ref()
         .map(|_| {
             crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
         })
@@ -1561,18 +1590,15 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             .raster()
             .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
     );
+    let view = current_sidebar_view(state);
     let mut text_layers = view
-        .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
         .unwrap_or_default();
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
     // text colour as the cameo labels.
     let layout_spec = state.match_state.match_presentation.sidebar_layout_spec;
-    if let Some(v) = view
-        .as_ref()
-        .filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money))
-    {
+    if let Some(v) = view.filter(|_| layout_spec.shows(crate::ui::sidebar::SidebarPart::Money)) {
         let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
         text_layers.status.extend(
             crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
@@ -1668,7 +1694,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         viewport_rect,
         content_boundary,
         radar_anim,
-        view,
+        view_revision,
     }
 }
 
@@ -1731,5 +1757,45 @@ mod tests {
 
         assert_eq!(result, None);
         assert_eq!(looked_up, vec![selected]);
+    }
+
+    #[test]
+    fn techno_extras_drops_building_rows_so_repair_countdown_draws_once() {
+        use crate::map::entities::EntityCategory;
+        // A captured-and-repairing neutral building is now friendly and has
+        // info lines; the building-status path owns its row, so this path must
+        // not draw a second one.
+        assert!(!convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Structure,
+        ));
+        // Units and aircraft still get their reload row here.
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Infantry,
+        ));
+        assert!(convenience_info_lines_admitted(
+            true,
+            true,
+            EntityCategory::Aircraft,
+        ));
+        // Existing gates still hold for the other cases.
+        assert!(!convenience_info_lines_admitted(
+            false,
+            true,
+            EntityCategory::Unit,
+        ));
+        assert!(!convenience_info_lines_admitted(
+            true,
+            false,
+            EntityCategory::Unit,
+        ));
     }
 }

@@ -30,6 +30,7 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
     /// Every fresh campaign installation, including continuation and retry.
     pub(crate) campaign_map: Option<&'a crate::map::map_file::MapFile>,
+    pub(crate) stage_home_global: Option<bool>,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
@@ -105,30 +106,32 @@ impl Simulation {
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
+        let uses_launch_houses = !self.session.uses_campaign_world();
 
         #[cfg(any(test, feature = "test-support"))]
         let mut skirmish_order = [None; 4];
         let uses_match_crates = input.construction_rules.uses_match_crates();
-        let crates = if input.skirmish_session.is_some() && uses_match_crates {
-            let player_count = crate::sim::crates::human_player_count(self);
-            #[cfg(any(test, feature = "test-support"))]
-            {
-                skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
-            }
-            let placement = crate::sim::crates::place_scenario_start_crates(
-                self,
-                input.rules,
-                input.overlay_registry,
-                player_count,
-                FrameEffects::default(),
-            )?;
-            // Startup OverlayClass::Mark completes synchronously before native
-            // proceeds to AI credits; the placement refreshed the bridge
-            // records and navigation from the now-final CellClass state.
-            Some(placement)
-        } else {
-            None
-        };
+        let crates =
+            if uses_match_crates && (input.skirmish_session.is_some() || !uses_launch_houses) {
+                let player_count = crate::sim::crates::human_player_count(self);
+                #[cfg(any(test, feature = "test-support"))]
+                {
+                    skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
+                }
+                let placement = crate::sim::crates::place_scenario_start_crates(
+                    self,
+                    input.rules,
+                    input.overlay_registry,
+                    player_count,
+                    &mut FrameEffects::default(),
+                )?;
+                // Startup OverlayClass::Mark completes synchronously before native
+                // proceeds to AI credits; the placement refreshed the bridge
+                // records and navigation from the now-final CellClass state.
+                Some(placement)
+            } else {
+                None
+            };
 
         if self.session.rule_policy().runs_ai_strategy() {
             // ScenarioClass::Post_Map_Init006869EA..00686A2B starts every
@@ -161,9 +164,7 @@ impl Simulation {
             );
         } else {
             // A map House's Allies= is read only in GameMode0 (0x006877B9).
-            if self.session.campaign_mission_counter().is_none()
-                && !self.session.game_mode_nonzero()
-            {
+            if self.session.campaign_mission_counter().is_none() && !uses_launch_houses {
                 self.install_house_alliances(
                     crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(
                         input.house_roster.alliance_map(),
@@ -177,7 +178,7 @@ impl Simulation {
         // (`0x006869A6`) follows the starting units and crates; the AI credits
         // and alliances after it change no owner or Limbo state it reads. The
         // base query is PlayerPtr's, so a network game stamps no shared Dummy.
-        let player_view = if self.session.game_mode_nonzero() {
+        let player_view = if uses_launch_houses {
             let network = self.session.execution_topology().is_lockstep();
             let cells = self.resolved_terrain.as_ref().map(|terrain| {
                 crate::map::resolved_terrain::NativeCellQuery::for_local_input(terrain, network)
@@ -190,7 +191,7 @@ impl Simulation {
         // Post_Map_Init's Special-House pass (lookup `0x006869AB..0x006869BC`,
         // alliances `0x00686A9E..0x00686AC1`), in the same GameMode>0 segment
         // as the AI credits and before the Secret Lab call (`0x00686AFE`) below.
-        if self.session.game_mode_nonzero() {
+        if uses_launch_houses {
             #[cfg(any(test, feature = "test-support"))]
             {
                 skirmish_order[3] = Some(ScenarioPostMapStep::SpecialAllies);
@@ -209,7 +210,7 @@ impl Simulation {
         // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
         // Generated/.SED maps have a separate684990 call, but the admitted
         // generated family is noncampaign. Restore never reruns this owner.
-        if self.session.game_mode_nonzero() {
+        if uses_launch_houses {
             Self::assign_secret_lab_production(
                 &mut self.interner,
                 &mut self.scenario_rng,
@@ -273,15 +274,12 @@ impl Simulation {
         // Basic Read68A601..68A656 reads both indexes with current defaults;
         // fresh SetDefaults683622/683628 initializes both to699.
         let opening_view_cell = input.campaign_map.and_then(|map| {
-            assert!(
-                input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
-                "campaign opening view requires the campaign family"
-            );
-            let incoming = self
-                .session
-                .campaign_restart_carry_over()
-                .expect("campaign record");
-            let waypoint = if incoming.globals()[0] {
+            let incoming = input.stage_home_global.unwrap_or_else(|| {
+                self.session
+                    .campaign_restart_carry_over()
+                    .is_some_and(|record| record.globals()[0])
+            });
+            let waypoint = if incoming {
                 map.basic.alt_home_cell
             } else {
                 map.basic.home_cell
@@ -424,7 +422,7 @@ impl Simulation {
                     special,
                     input.rules,
                     Some(input.overlay_registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                     false,
                 );
                 sim.make_ally(
@@ -432,7 +430,7 @@ impl Simulation {
                     owner,
                     input.rules,
                     Some(input.overlay_registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                     false,
                 );
             }
@@ -580,6 +578,7 @@ mod tests {
             construction_rules: RulePolicy::stock_campaign(),
             skirmish_session: None,
             campaign_map: None,
+            stage_home_global: None,
         }
     }
 

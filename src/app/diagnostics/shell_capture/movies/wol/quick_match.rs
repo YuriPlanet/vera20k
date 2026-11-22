@@ -555,8 +555,8 @@ impl WolCapture {
         );
         let requests = setup_requests(state);
         let users: Vec<String> = crate::app::shell_wol::lobby::member_names(state)
-            .into_iter()
             .rev()
+            .map(str::to_owned)
             .collect();
         ensure!(
             users.len() == 2
@@ -848,6 +848,7 @@ fn matchbot_says(
             from: member(MATCHBOT, MEMBER_OPERATOR, ""),
             text: text.encode_utf16().collect(),
             localized: false,
+            warning: false,
             private,
             action: false,
             ansi: true,

@@ -9,6 +9,11 @@ that add to the map the generator makes. Every choice starts at Original or Off,
 there is the same map as before. In a room the host's Extras travel with the random map's options,
 and every player's game builds the same map from them.
 
+After generating a map, click **Save** and give it a name. To play it later,
+open **Choose Map → Random Maps**, select its name and click **Use Map**.
+VERA keeps new saves in `Maps/Random Maps/`. The folder in Choose Map also
+lists seeds saved by earlier versions.
+
 ## Advanced — building sliders
 
 Three VERA sliders open the Advanced scroll range after the original seven. All are
@@ -17,7 +22,7 @@ Three VERA sliders open the Advanced scroll range after the original seven. All 
 | Slider | What it does |
 |---|---|
 | Tech Buildings | 0 keeps the original random count of neutral tech buildings; higher seats more, up to 40. |
-| Derelicts | Stands neutral, unpowered combat buildings — radar, battle lab, refinery, war factory, barracks, power plant and construction yard, for the Allied, Soviet and Yuri sides — on open ground away from the starts. |
+| Derelicts | Stands neutral, unpowered combat buildings — construction yard, barracks, battle lab and war factory — on open ground away from the starts, taken from the active Rules' `[AI]` build lists. |
 | Damage | Randomly damages every neutral building across the whole map. Higher values wreck more buildings and leave them at lower health, for a war-torn city. |
 
 Derelicts are always unpowered and damaged. Damage applies to tech buildings, towns, farms and
@@ -95,7 +100,8 @@ The game's own copy has no `[Extras]`, so the defaults below apply:
 Farms=CAFARM01,CAFRMA,CABARN02,CATS01,CAFARM02,CAFRMB,CAWT01
 Landmarks=CAWSH12,CAPARS11,CAEURO05,CASTL04,CAWASH19,CAWASH14,CAWASH15,CAMEX01
 FairTech=CAOILD          ; one of [AI] NeutralTechBuildings=
-Derelicts=GARAD,NARAD,NAPSIS,CALAB,NALAB,YATECH,GAREF,NAREF,YAREFN,GAWEAP,NAWEAP,YAWEAP,GABARR,NABARR,YABRCK,GAPOWR,NAPOWR,YAPOWR,GACNST,NACNST,YACNST,YAYARD,YAGRND
+; Derelicts defaults to the Rules' [AI] BuildConst, BuildBarracks, BuildTech
+; and BuildWeapons lists. Set it here to override that derivation.
 FarmFence=CAFNCW         ; an overlay
 TownFence=CAFNCB         ; an overlay
 GoldenHour=90,125,98,55  ; ambient light, red, green, blue, in percent
@@ -109,8 +115,18 @@ ToxicHaze=70,80,120,60
 - A building is used only where the rules define it and its art exists on the map's theater.
 - The `Farms=` buildings of more than one cell are the farmhouses a farmstead is built round; the
   rest stand beside them.
-- `Derelicts=` are the combat buildings the Derelicts slider stands. A building is used only where
-  the rules define it and its theater art exists, so a mod can drop a type by omitting it.
+- `Derelicts=` are the buildings the Derelicts slider stands. Absent, they are derived from the
+  active Rules' `[AI] BuildConst=`, `BuildBarracks=`, `BuildTech=` and `BuildWeapons=` lists, so a
+  mod's own buildings stand too. Setting it overrides the derivation. A building is used only where
+  the rules define it and its theater art exists. The derived list intentionally leaves out:
+
+  - Power plants — the game already fields the Tech Power Plant, so a derelict one is redundant.
+  - Radar towers — power from a derelict plant would feed a radar and the Eiffel Tower as well, and
+    a powered Eiffel Tower attacks everyone on the map. No derelict plant, no such problem.
+  - Ore refineries — Yuri's refinery shoots at whatever comes near, which a neutral building
+    should not.
+  - The naval yard and grinder — a shipyard on open ground looks wrong, and a grinder is not a
+    combat building.
 - A mood takes four whole numbers, in the percents `[General] TemperateAmbientLight=` and
   `TemperateAmbientRed=`, `TemperateAmbientGreen=` and `TemperateAmbientBlue=` give a time of day. A
   mood with fewer numbers keeps its default. The level light stays the time of day's.

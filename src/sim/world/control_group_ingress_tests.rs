@@ -60,7 +60,7 @@ fn pending_group_assignment_survives_save_and_commits_as_local_ingress() {
     loaded.scenario_rng = rng_before;
     let hash_before = loaded.state_hash();
     assert_eq!(
-        loaded.apply_due_frame_ingress_commands(&pending, &rules, 1, FrameEffects::default()),
+        loaded.apply_due_frame_ingress_commands(&pending, &rules, 1, &mut FrameEffects::default()),
         1
     );
     assert_eq!(loaded.entities().get(first).unwrap().object_group(), -1);
@@ -110,7 +110,7 @@ fn network_group_assignment_leaves_the_shared_group_to_every_peer() {
     assert!(sim.issue_local_command(command));
     let pending = sim.take_due_commands();
     assert_eq!(
-        sim.apply_due_frame_ingress_commands(&pending, &rules, 1, FrameEffects::default()),
+        sim.apply_due_frame_ingress_commands(&pending, &rules, 1, &mut FrameEffects::default()),
         1
     );
     assert_eq!(sim.entities().get(unit).unwrap().object_group(), -1);

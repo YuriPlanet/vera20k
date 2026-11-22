@@ -1,17 +1,16 @@
-//! VERA's room Teams: the host's Teams count, Team Starts, Team Colors and,
-//! online, the balance. With Teams set the session keeps every seated player
-//! on one of the room's teams (`MatchSession::set_network_teams`); with it
-//! Off the room is one free-for-all box. Team Starts seats each
-//! team's players next to each other, as it does in skirmish
+//! VERA's room Teams: the host's Teams count, and the Quick Team Setup and
+//! Bulk Seat Actions lists in its team bar ([`super::team_menus`]). With
+//! Teams set the session keeps every seated player on one of the room's
+//! teams (`MatchSession::set_network_teams`); with it Off the room is one
+//! free-for-all box. Team Starts seats each team's players next to each
+//! other, as it does in skirmish
 //! ([`crate::ui::skirmish_shell::starts_by_team`]), and Team Colors gives
-//! each team its own range of hues ([`colors_by_team`]). The lobby weighs
-//! the players and answers a balance with each one's team
-//! (`wol::balance_teams`).
+//! each team its own range of hues
+//! ([`crate::ui::team_tools::colors_by_team`]). The lobby weighs the players
+//! and answers a balance with each one's team (`wol::balance_teams`).
 
 use super::*;
 use crate::app::match_runtime::session::{MatchSession, SeatPick};
-use crate::rules::ruleset::RuleSet;
-use crate::rules::skirmish_colors::RETAIL_COLOR_COUNT;
 use crate::skirmish_launch::{
     LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT, SkirmishLaunchSession,
 };
@@ -40,6 +39,29 @@ pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str>
     let line = refused_room_rule(&mut state.match_state.session, lobby_watches)?;
     actions::queue(state, NetworkSetupRequest::PublishOptions);
     Some(line)
+}
+
+/// A lobby from before the room's Building Production Queue refuses options
+/// that carry it, whether or not it lists matches: the host turns the queue
+/// off and sends its options again. `None` when the refused options did not
+/// carry it, so the refusal stands.
+pub(crate) fn lobby_refused_building_queue(state: &mut AppState) -> Option<&'static str> {
+    let line = refused_building_queue(&mut state.match_state.session)?;
+    actions::queue(state, NetworkSetupRequest::PublishOptions);
+    Some(line)
+}
+
+fn refused_building_queue(session: &mut MatchSession) -> Option<&'static str> {
+    if !session.host() {
+        return None;
+    }
+    let mut options = session.network_setup()?.options.clone();
+    if !options.host_rules.building_production_queue {
+        return None;
+    }
+    options.host_rules.building_production_queue = false;
+    session.set_network_options(options).ok()?;
+    Some("VERA:BuildingQueueNotTaken")
 }
 
 fn refused_room_rule(
@@ -71,8 +93,8 @@ fn refused_room_rule(
     }
 }
 
-/// The host's Balance in the team bar: `/balance` in the room's chat, as
-/// if typed.
+/// The host's Balance Teams in Quick Team Setup, online: `/balance` in the
+/// room's chat, as if typed.
 pub(super) fn balance(state: &mut AppState) {
     actions::queue(state, NetworkSetupRequest::Balance);
 }
@@ -81,7 +103,7 @@ pub(super) fn balance(state: &mut AppState) {
 /// the room's map. With `keep_picks`, as the host's Start Game does, a
 /// player keeps the start they picked and only those on Random get one, in
 /// place of gamemd's farthest free start (`0x005D6890`); the Team Starts
-/// button gives everyone one. Where the room seats more players than the
+/// item gives everyone one. Where the room seats more players than the
 /// map has starts, a team's people share its bases ([`shared_bases`]) and
 /// everyone gets one. Returns whether it gave any out.
 pub(super) fn team_starts(state: &mut AppState, keep_picks: bool) -> anyhow::Result<bool> {
@@ -265,7 +287,7 @@ pub(crate) fn starts_needed(
 
 /// The rows that play, in row order, with their teams and starts: the
 /// seated people and the AI.
-fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosition)> {
+pub(super) fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosition)> {
     (0..NETWORK_PLAYER_SLOT_COUNT as u8)
         .filter_map(|row| {
             let human = launch
@@ -285,9 +307,9 @@ fn seats(launch: &SkirmishLaunchSession) -> Vec<(u8, LaunchTeam, LaunchStartPosi
 }
 
 /// Team Colors in a room with Teams set: every seated player's colour by
-/// team ([`colors_by_team`]), from the room's colour list and the loaded
-/// rules' `[Colors]`. Players can still change theirs. Returns whether it
-/// gave any out.
+/// team ([`crate::ui::team_tools::colors_by_team`]), from the room's colour
+/// list and the loaded rules' `[Colors]`. Players can still change theirs.
+/// Returns whether it gave any out.
 pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     let Some(count) = state.match_state.session.network_teams() else {
         return Ok(false);
@@ -295,7 +317,7 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     let Some(rules) = state.rules() else {
         return Ok(false);
     };
-    let listed = listed_hues(rules);
+    let listed = crate::ui::team_tools::listed_hues(rules);
     let launch = state
         .match_state
         .session
@@ -312,7 +334,9 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     let teams: Vec<u8> = seats.iter().map(|&(_, team)| team).collect();
     let picks: Vec<(u8, SeatPick)> = seats
         .iter()
-        .zip(colors_by_team(&listed, &teams, count))
+        .zip(crate::ui::team_tools::colors_by_team(
+            &listed, &teams, count,
+        ))
         .filter_map(|(&(row, _), color)| Some((row, SeatPick::Color(color?))))
         .collect();
     if picks.is_empty() {
@@ -322,175 +346,34 @@ pub(super) fn team_colors(state: &mut AppState) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-/// The colours a room lists ([`crate::rules::skirmish_colors::SkirmishColorMode`]),
-/// YR's eight first, each with the hue of its `[Colors]` entry.
-fn listed_hues(rules: &RuleSet) -> Vec<(u8, u8)> {
-    let colors = rules.skirmish_colors();
-    colors
-        .lobby_priorities()
-        .filter_map(|color| {
-            let entry = colors.entry_for_priority(i32::from(color));
-            Some((color, rules.color_schemes.get(entry)?.hsv[0]))
-        })
-        .collect()
-}
-
-/// `[Colors]` hues run 0..=254 round the circle, and 255 is red again, as
-/// `HSV_To_RGB` (`0x00517440`, [`crate::rules::color_scheme::hsv_to_rgb`])
-/// reads them.
-const HUES: i32 = 255;
-
-/// Team Colors: each seat's colour, given each seat's team in row order and
-/// the room's colours with their hues (`listed`, YR's eight first). The
-/// colours, sorted round the hue circle, are cut into one range per team
-/// ([`HueCircle`]), and each team's players get colours spread across its
-/// range. While every team fits in its range of YR's eight, only the eight
-/// are used, as a Random colour prefers them; a bigger room uses the whole
-/// list. A team with more players than its range takes the free colours
-/// nearest it, and once none is free, teammates share. `None` is a seat on
-/// none of the `count` teams, or a room without colours.
-fn colors_by_team(listed: &[(u8, u8)], teams: &[u8], count: u8) -> Vec<Option<u8>> {
-    let count = usize::from(count);
-    let mut players = vec![0; count];
-    for &team in teams {
-        if let Some(players) = players.get_mut(usize::from(team)) {
-            *players += 1;
-        }
-    }
-    let fits = |circle: &HueCircle| {
-        circle.ranges.len() == count
-            && circle
-                .ranges
-                .iter()
-                .zip(&players)
-                .all(|(&(_, len), &players)| players <= len)
-    };
-    let eight: Vec<(u8, u8)> = listed
-        .iter()
-        .copied()
-        .filter(|&(color, _)| usize::from(color) < RETAIL_COLOR_COUNT)
-        .collect();
-    let circle = Some(HueCircle::new(&eight, count))
-        .filter(fits)
-        .unwrap_or_else(|| HueCircle::new(listed, count));
-    let given = circle.hand_out(&players);
-    let mut next = vec![0; count];
-    teams
-        .iter()
-        .map(|&team| {
-            let team = usize::from(team);
-            let place = *given.get(team)?.get(next[team])?;
-            next[team] += 1;
-            Some(circle.colors[place].0)
-        })
-        .collect()
-}
-
-/// A room's colours sorted round the hue circle, with each team's range of
-/// them: its first place and how many it holds. The ranges hold the same
-/// number of colours, the first teams one more while they do not divide
-/// evenly, and follow each other round the circle from the first team's,
-/// whose middle is nearest red: two teams get warm against cool.
-struct HueCircle {
-    colors: Vec<(u8, i32)>,
-    ranges: Vec<(usize, usize)>,
-}
-
-impl HueCircle {
-    fn new(listed: &[(u8, u8)], count: usize) -> Self {
-        let mut colors: Vec<(u8, i32)> = listed
-            .iter()
-            .map(|&(color, hue)| (color, i32::from(hue) % HUES))
-            .collect();
-        colors.sort_by_key(|&(_, hue)| hue);
-        let mut circle = Self {
-            colors,
-            ranges: Vec::new(),
-        };
-        let places = circle.colors.len();
-        if places == 0 || count == 0 {
-            return circle;
-        }
-        let lengths: Vec<usize> = (0..count)
-            .map(|team| places / count + usize::from(team < places % count))
-            .collect();
-        let first = lengths.first().copied().unwrap_or_default();
-        let start = (0..places)
-            .min_by_key(|&start| hue_gap(circle.middle(start, first), 0))
-            .unwrap_or_default();
-        let mut place = start;
-        circle.ranges = lengths
-            .into_iter()
-            .map(|len| {
-                let range = (place, len);
-                place = (place + len) % places;
-                range
-            })
-            .collect();
-        circle
-    }
-
-    /// The middle hue of the `len` colours round the circle from `start`,
-    /// in half hue steps.
-    fn middle(&self, start: usize, len: usize) -> i32 {
-        let hue = |place: usize| self.colors[place % self.colors.len()].1;
-        let first = hue(start);
-        let last = hue(start + len.max(1) - 1);
-        2 * first + (last - first).rem_euclid(HUES)
-    }
-
-    /// Each team's places on the circle, one per player: spread across its
-    /// range, then the free places nearest its range, then its own again.
-    fn hand_out(&self, players: &[usize]) -> Vec<Vec<usize>> {
-        let places = self.colors.len();
-        let mut taken = vec![false; places];
-        let mut given = vec![Vec::new(); self.ranges.len()];
-        let teams = || self.ranges.iter().zip(players);
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let wanted = players.min(len);
-            for player in 0..wanted {
-                let place = (start + (2 * player + 1) * len / (2 * wanted)) % places;
-                taken[place] = true;
-                own.push(place);
-            }
-        }
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let middle = self.middle(start, len);
-            while own.len() < players {
-                let Some(place) = (0..places)
-                    .filter(|&place| !taken[place])
-                    .min_by_key(|&place| hue_gap(2 * self.colors[place].1, middle))
-                else {
-                    break;
-                };
-                taken[place] = true;
-                own.push(place);
-            }
-        }
-        for (own, (&(start, len), &players)) in given.iter_mut().zip(teams()) {
-            let distinct = own.len();
-            for player in distinct..players {
-                let place = match distinct {
-                    0 => (start + len / 2) % places,
-                    _ => own[player % distinct],
-                };
-                own.push(place);
-            }
-        }
-        given
-    }
-}
-
-/// How far apart two hues lie round the circle, both in half hue steps.
-fn hue_gap(a: i32, b: i32) -> i32 {
-    let gap = (a - b).rem_euclid(2 * HUES);
-    gap.min(2 * HUES - gap)
-}
-
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
-    use crate::rules::skirmish_colors::FIRST_EXTRA_PRIORITY;
+
+    /// Any lobby that refuses options carrying the building queue may be
+    /// from before it, so the host drops the queue and keeps its other rules;
+    /// a refusal of options without it stands.
+    #[test]
+    fn a_refused_building_queue_is_dropped_and_the_other_rules_kept() {
+        use crate::app::match_runtime::session::NetworkReturnContext;
+        let rooms = crate::test_fixture::json("tests/fixtures/lobby/options.json");
+        let mut launch: SkirmishLaunchSession =
+            serde_json::from_value(rooms["rooms"]["generated_map_for_thirty"]["launch"].clone())
+                .unwrap();
+        launch.options.host_rules.building_production_queue = true;
+        launch.options.host_rules.superweapon_limit = 7;
+        let mut room = MatchSession::default();
+        room.enter_network(NetworkReturnContext::Wol);
+        room.accept_network_setup(launch, true, None, true).unwrap();
+        assert_eq!(
+            refused_building_queue(&mut room),
+            Some("VERA:BuildingQueueNotTaken")
+        );
+        let rules = &room.network_setup().unwrap().options.host_rules;
+        assert!(!rules.building_production_queue);
+        assert_eq!(rules.superweapon_limit, 7);
+        assert_eq!(refused_building_queue(&mut room), None);
+    }
 
     #[test]
     fn only_a_confirmed_legacy_lobby_can_drop_a_host_rule() {
@@ -527,24 +410,6 @@ mod tests {
         );
     }
 
-    /// The `[Colors]` names of the colours Team Colors gives seats on
-    /// `teams`.
-    fn team_color_names(
-        rules: &RuleSet,
-        listed: &[(u8, u8)],
-        teams: &[u8],
-        count: u8,
-    ) -> Vec<String> {
-        let colors = rules.skirmish_colors();
-        colors_by_team(listed, teams, count)
-            .into_iter()
-            .map(|color| {
-                let entry = colors.entry_for_priority(i32::from(color.expect("a team's colour")));
-                rules.color_schemes[entry].name.clone()
-            })
-            .collect()
-    }
-
     /// Four players on Team A, three on B and one on no team on a
     /// four-start map: the lone player keeps a base of its own, each team
     /// gets one, and the spare start goes to A, with more players for each
@@ -557,73 +422,5 @@ mod tests {
         assert_eq!(base_teams, [0, 0, 1, -2]);
         assert_eq!(base_of, [0, 2, 1, 2, 3, 0, 2, 1]);
         assert_eq!(shared_bases(&[0, 1, 2], 2), None);
-    }
-
-    /// Two teams of four get YR's eight, warm against cool, as a Random
-    /// colour prefers them. Five a side take the whole list: every player
-    /// apart, each team's hues nearer its own end of the circle.
-    #[test]
-    fn team_colors_give_two_teams_warm_against_cool() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-            return;
-        };
-        let listed = listed_hues(&rules);
-        let four = team_color_names(&rules, &listed, &[0, 1, 0, 1, 0, 1, 0, 1], 2);
-        let team = |names: &[String], team: usize| -> Vec<String> {
-            names.iter().skip(team).step_by(2).cloned().collect()
-        };
-        assert_eq!(team(&four, 0), ["Magenta", "DarkRed", "Orange", "Gold"]);
-        assert_eq!(
-            team(&four, 1),
-            ["DarkGreen", "DarkSky", "DarkBlue", "Purple"]
-        );
-
-        let teams = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
-        let five: Vec<u8> = colors_by_team(&listed, &teams, 2)
-            .into_iter()
-            .flatten()
-            .collect();
-        let distinct: std::collections::BTreeSet<u8> = five.iter().copied().collect();
-        assert_eq!(distinct.len(), 10);
-        assert!(five.iter().any(|&color| color >= FIRST_EXTRA_PRIORITY));
-        for (&team, color) in teams.iter().zip(five) {
-            let (_, hue) = listed.iter().find(|(listed, _)| *listed == color).unwrap();
-            // Red is 0, cyan half the circle away, in half hue steps.
-            let hue = 2 * i32::from(*hue);
-            let warm = hue_gap(hue, 0) < hue_gap(hue, HUES);
-            assert_eq!(warm, team == 0, "colour {color} on Team {team}");
-        }
-    }
-
-    /// A full room of four teams keeps all 30 players apart, though one
-    /// team has a player more than its range holds. With more players than
-    /// colours, as with a mod that lists only the eight, only allies share.
-    #[test]
-    fn team_colors_keep_players_apart_and_share_only_with_allies() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
-            return;
-        };
-        let listed = listed_hues(&rules);
-        assert_eq!(listed.len(), 30);
-        let teams: Vec<u8> = [(0, 8), (1, 8), (2, 8), (3, 6)]
-            .into_iter()
-            .flat_map(|(team, players)| std::iter::repeat_n(team, players))
-            .collect();
-        let full = team_color_names(&rules, &listed, &teams, 4);
-        let distinct: std::collections::BTreeSet<&String> = full.iter().collect();
-        assert_eq!(distinct.len(), 30);
-
-        let teams = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1];
-        let shared = colors_by_team(&listed[..RETAIL_COLOR_COUNT], &teams, 2);
-        let team = |team: u8| -> std::collections::BTreeSet<u8> {
-            teams
-                .iter()
-                .zip(&shared)
-                .filter(|(on, _)| **on == team)
-                .map(|(_, color)| color.expect("a team's colour"))
-                .collect()
-        };
-        assert_eq!((team(0).len(), team(1).len()), (4, 4));
-        assert!(team(0).is_disjoint(&team(1)));
     }
 }

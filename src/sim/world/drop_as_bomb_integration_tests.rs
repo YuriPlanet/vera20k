@@ -115,7 +115,7 @@ fn boarded_transport(sim: &mut Simulation, rules: &RuleSet, kind: &str) -> (u64,
 /// Supplied intact-deck scene; the ordinary Mark owner relayers the transport
 /// around its initial Location. Collapse below will use the real producer.
 fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
-    sim.foot_mark_remove(id, rules, None, FrameEffects::default());
+    sim.foot_mark_remove(id, rules, None, &mut FrameEffects::default());
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     if water {
         // A Water tile under the deck: the Recalc(-1) the landing's
@@ -141,7 +141,7 @@ fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
         z: BRIDGE_DECK_HEIGHT_LEPTONS,
         ..at
     });
-    assert!(sim.foot_mark_put(id, rules, None, FrameEffects::default()));
+    assert!(sim.foot_mark_put(id, rules, None, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate.occupancy.listed_layer(CELL.0, CELL.1, id),
         Some(MovementLayer::Bridge)
@@ -187,7 +187,7 @@ fn a_bridge_drop_plays_voice_falling_once_through_foot_ai() {
         CELL.0,
         CELL.1,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for expected in [1, 0] {
         // The app consumes this retained channel between frames; observe
@@ -199,7 +199,7 @@ fn a_bridge_drop_plays_voice_falling_once_through_foot_ai() {
                 .frame_committed
         );
         assert_eq!(sim.sound_events.iter().filter(|event| matches!(
-            event, super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "FallingVoice"
+            event, super::SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "FallingVoice"
         )).count(), expected);
         assert!(sim.substrate.entities.get(tank).unwrap().is_falling_down());
     }
@@ -229,7 +229,7 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
         CELL.0,
         CELL.1,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for _ in 0..100 {
         let frame = sim.session.binary_frame() + 1;
@@ -241,7 +241,7 @@ fn a_tank_killed_by_its_bridge_fall_still_scans_on_that_visit() {
             .unwrap()
             .passive_scan
             .arm_timer(frame, 0);
-        sim.advance_live_object_turn(tank, &rules, super::techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(tank, &rules, &mut super::techno_ai::ObjectAiCtx::default())
             .unwrap();
         let entity = sim.substrate.entities.get(tank).unwrap();
         if !entity.is_object_alive() {
@@ -287,7 +287,14 @@ fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64,
     let existing = sim.substrate.entities.keys_sorted();
     sim.clear_lifecycle_test_events_for_test();
     remove_deck(sim);
-    blow_up_bridge_cell_fallout(sim, rules, CELL.0, CELL.1, None, FrameEffects::default());
+    blow_up_bridge_cell_fallout(
+        sim,
+        rules,
+        CELL.0,
+        CELL.1,
+        None,
+        &mut FrameEffects::default(),
+    );
     let transport = sim.substrate.entities.get(carrier).unwrap();
     assert!(transport.is_falling_down() && transport.was_dropped_as_bomb());
     assert!(!transport.on_bridge());
@@ -446,7 +453,7 @@ fn vanished_structural_deck_per_cell_arms_the_same_object_fall() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -495,7 +502,7 @@ fn a_transport_shot_mid_fall_kills_its_passenger_without_the_landing_force_flags
         CELL.0,
         CELL.1,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -523,7 +530,7 @@ fn a_transport_shot_mid_fall_kills_its_passenger_without_the_landing_force_flags
                 arg6: false,
             },
         ),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let passenger = sim.substrate.entities.get(passenger).unwrap();
     assert!(!passenger.lifecycle.object_alive());
@@ -594,7 +601,7 @@ fn attached_animation_retirement_releases_a_landed_paratrooper() {
         infantry,
         landing,
         0,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     let canopy = sim
@@ -638,7 +645,7 @@ fn attached_animation_retirement_releases_a_landed_paratrooper() {
         CELL.0,
         CELL.1,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let grid = sim.path_grid_snapshot().unwrap();
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);

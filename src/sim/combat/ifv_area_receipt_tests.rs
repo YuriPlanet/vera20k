@@ -195,6 +195,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(*id)
@@ -206,6 +207,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                     .entities
                     .get(receiver)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system()
                     .is_none()
@@ -438,7 +440,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 z_leptons: 624,
             }),
             6,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             world.scenario_rng.logical_state(),
@@ -461,12 +463,13 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 "{name}"
             );
         }
-        let (_, _, result) = commit_area_with_dispatch(
+        let (_, result) = commit_area_with_dispatch(
             &mut world,
             &mut ReceiverRun::default(),
             &collected.receivers,
             &rules,
             None,
+            &mut Vec::new(),
         );
         assert_eq!(
             i64::from(result as u8),

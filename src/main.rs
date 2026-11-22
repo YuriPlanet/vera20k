@@ -1,7 +1,7 @@
 //! VERA20k — entry point.
 //!
 //! Runs the CLI-only switches (replay verification, retail data check, language
-//! file check, the headless spawn probe and random-map file), then delegates
+//! file check, the version, the headless spawn probe and random-map file), then delegates
 //! start-up to [`vera20k::entry`], which owns the logging, panic reporting and
 //! event-loop work. Android has no `main`; its cdylib (the `vera20k-android` crate in
 //! `android/`) reaches the same start-up through `entry::run_with_loop`.
@@ -38,6 +38,10 @@ fn main() -> Result<()> {
     if let Some(result) =
         vera20k::app::frontend::launch::try_language_check(std::env::args_os().skip(1))
     {
+        std::process::exit(result?);
+    }
+    // docs/spawn.md "Version": this build's version; JSON on stdout.
+    if let Some(result) = vera20k::app::frontend::launch::try_version(std::env::args_os().skip(1)) {
         std::process::exit(result?);
     }
     // docs/spawn.md: headless launch compatibility probe; JSON on stdout.

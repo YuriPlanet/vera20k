@@ -28,12 +28,17 @@ use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 pub(crate) struct MatchPresentationState {
     /// Native Techno+3CA waterline cache, captured by drawing and retained in
     /// the snapshot presentation supplement rather than simulation authority.
+    /// A `RefCell`: the unit visitor writes it while the Display-order
+    /// visitors share `&AppState` (`build_world_instances`).
     pub(crate) sinking_waterlines: std::cell::RefCell<crate::render::sinking::SinkingWaterlines>,
     /// The original voxel image caches and UseBuffer flag every voxel draw
     /// replays: which style and barrel pitch each type's stored images hold.
+    /// A `RefCell`: the unit, debris, building and bullet visitors, all alive
+    /// at once over `&AppState`, render through it in Display order.
     pub(crate) voxel_images: std::cell::RefCell<crate::render::voxel_image_cache::VoxelImageCache>,
     /// The skip table of the building bodies the view's left edge cuts in
-    /// this picture, and the frames it decoded for them.
+    /// this picture, and the frames it decoded for them. A `RefCell`: the
+    /// building and fogged-object visitors fill it over `&AppState`.
     pub(crate) zshape_skips: std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     pub(crate) tile_atlas: Option<TileAtlas>,
     /// BUILDNGZ.SHA z-shape bound at group 2 of the Z-writing building draw.
@@ -69,6 +74,8 @@ pub(crate) struct MatchPresentationState {
     /// the same tactical slot as the retail banner. `None` keeps the native
     /// art; the player's Custom End Game Banner switch is read at draw time.
     pub(crate) end_game_banner: Option<crate::app::presentation::outcome_banner::EndGameBanner>,
+    pub(crate) outcome_banner_presentation:
+        crate::app::presentation::outcome_banner::OutcomeBannerPresentation,
     pub(crate) software_cursor: Option<crate::app::presentation::render::SoftwareCursor>,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     /// Overlay entries from map for per-frame instance generation.
@@ -111,6 +118,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) lighting: super::lighting::MatchLighting,
     pub(crate) line_trails: super::line_trails::LineTrails,
     pub(crate) lasers: super::lasers::Lasers,
+    /// Ares DisplayCredits labels. A `RefCell`: the tick admits them through
+    /// the `Fn` bounty sink its frame-effect boundary calls (`sim_tick`).
     pub(crate) flying_credits: std::cell::RefCell<super::flying_credits::FlyingCredits>,
     pub(crate) talk_bubble: super::talk_bubble::TalkBubble,
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
@@ -126,8 +135,11 @@ pub(crate) struct MatchPresentationState {
     pub(crate) placement_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     pub(crate) superweapon_range_pulse: crate::app::presentation::radial_indicators::RangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
+    /// A `RefCell`: the particle, overlay-anim and light draws step it while
+    /// they read the presentation through `&`.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
-    /// The water and ore sparkles' per-cell PixelFX and clock.
+    /// The water and ore sparkles' per-cell PixelFX and clock. A `RefCell`:
+    /// the sparkle draw steps it beside the world it reads through `&AppState`.
     pub(crate) pixel_fx: std::cell::RefCell<crate::render::pixel_fx_sparkles::PixelFxCells>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
     /// (`match_runtime::super_selection`): hidden anims, by id.
@@ -154,6 +166,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) commander_feedback: crate::app::commander_feedback::CommanderFeedback,
     pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
     pub(crate) scenario_pause: crate::app::match_runtime::scenario_pause::ScenarioPauseClock,
+    pub(crate) narrative_sync: crate::app::match_runtime::narrative_sync::NarrativeSync,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs
@@ -190,7 +203,8 @@ pub(crate) struct MatchPresentationState {
     /// the client half of the placement-time enhancer ring switch.
     #[cfg(feature = "phobos")]
     pub(crate) show_power_plant_enhancer_range: bool,
-    /// Phobos placement preview SHP cache for the current placing type.
+    /// Phobos placement preview SHP cache for the current placing type. A
+    /// `RefCell`: the placement-preview draw fills it over `&AppState`.
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_art:
         std::cell::RefCell<super::placement_preview::PlacementPreviewArt>,

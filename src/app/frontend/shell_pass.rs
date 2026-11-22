@@ -66,8 +66,15 @@ pub(crate) fn top_software_cursor(
         .match_presentation
         .software_cursor
         .as_ref()?;
+    // Shell screens (menu, skirmish setup, score) only ever show the default
+    // arrow, which is a single static frame.
     let sequence = cursor.get(crate::app::types::CursorId::Default)?;
-    let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
+    let frame = sequence.frames.get(
+        state
+            .match_state
+            .input
+            .software_cursor_frame_index(crate::app::types::CursorId::Default, sequence)?,
+    )?;
     if crate::app::input::hardware_cursor::takes_cursor(
         state,
         crate::app::types::CursorId::Default,

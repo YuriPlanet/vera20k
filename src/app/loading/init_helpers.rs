@@ -81,8 +81,8 @@ pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option
         "temperat.pal",
     ];
     for name in palette_names {
-        if let Some(data) = asset_manager.get_ref(name)
-            && let Ok(palette) = Palette::from_bytes(data)
+        if let Some(palette) =
+            crate::render::sidebar_cameo_atlas::load_cameo_palette(asset_manager, name)
         {
             log::info!("Sidebar cameos using palette {}", name);
             return Some(palette);
@@ -205,10 +205,6 @@ pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
 /// `terrain_deformation` is the scenario rules' `[CombatDamage]
 /// TerrainDeformation=`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "theater inputs, the grid, the GPU pair and the deformation switch"
-)]
 pub(crate) fn build_tile_atlas(
     asset_manager: &AssetManager,
     lookup: &theater::TilesetLookup,
@@ -442,7 +438,8 @@ pub(crate) struct PresentationManifest {
 
 /// Build the voxel and SHP sprite atlases, and the palette set, for a fully
 /// constructed simulation. A load builds them once; sprites the world needs
-/// later go onto the atlases' growth pages.
+/// later go onto the atlases' growth pages. Fails when the map's data cannot
+/// build the sprite atlas.
 pub(crate) fn build_presentation_manifest(
     sim: &Simulation,
     asset_manager: &AssetManager,
@@ -454,7 +451,7 @@ pub(crate) fn build_presentation_manifest(
     house_colors: &HouseColorMap,
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
-) -> PresentationManifest {
+) -> anyhow::Result<PresentationManifest> {
     prepare_presentation_manifest(
         sim,
         asset_manager,
@@ -576,10 +573,6 @@ fn read_match_layouts(asset_manager: &AssetManager) -> Option<crate::rules::ini_
 /// No simulation state, HVA metadata, AI registry or overlay frame is written.
 /// Optional missing assets retain the ordinary fresh-load fallback policy;
 /// all returned resources belong to the incoming world, never the outgoing one.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "combines prepared world projections without owning gameplay"
-)]
 pub(crate) fn finish_presentation_assets(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -637,6 +630,11 @@ pub(crate) fn finish_presentation_assets(
         asset_manager,
         rules,
         simulation.session().scenario_side(),
+        crate::app::presentation::sidebar_render::project_sidebar_side(
+            Some(simulation),
+            crate::app::match_runtime::state::scenario_local_owner(simulation),
+            rules.ares(),
+        ),
     )?;
     // `Game_LoadUI_LoadSideData` (0x1002F4A0) hands the local side's
     // `GraphicalText.Image=` / `.Palette=` to the overlay slot writer at
@@ -691,11 +689,7 @@ pub(crate) fn finish_presentation_assets(
             }
         }
     };
-    let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
-        crate::assets::fnt_file::FntFile::from_bytes(data)
-            .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
-            .ok()
-    });
+    let fnt_file = crate::render::shell_ui_style_assets::load_game_font(asset_manager);
     let building_zshape =
         crate::render::building_zshape::BuildingZShape::load(gpu, batch, asset_manager);
     if building_zshape.is_none() {

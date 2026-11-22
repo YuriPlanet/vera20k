@@ -90,10 +90,28 @@ fn reason(state: &AppState) -> Option<String> {
             Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         NetworkInterruption::FederationLost => Some(crate::i18n::tr("VERA:FederationLost")),
-        NetworkInterruption::StartMismatch => Some(crate::i18n::tr("VERA:MatchStartMismatch")),
+        NetworkInterruption::StartMismatch => Some(start_mismatch_text(state)),
         NetworkInterruption::StartCancelled => Some(crate::i18n::tr("VERA:MatchStartCancelled")),
         _ => None,
     }
+}
+
+/// VERA: a refused start also names what this game changes from the
+/// original game, or says it plays the original
+/// (`agreement::own_changes_text`), and a launcher's match points at the
+/// launcher, which compares every player's rules parts (docs/spawn.md).
+fn start_mismatch_text(state: &AppState) -> String {
+    use crate::app::shell_network_setup::agreement::own_changes_text;
+    let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
+    text.push_str("\n\n");
+    text.push_str(
+        &own_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
+    );
+    if state.frontend.external_launch {
+        text.push('\n');
+        text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));
+    }
+    text
 }
 
 fn online(state: &AppState) -> bool {

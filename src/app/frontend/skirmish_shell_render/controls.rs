@@ -375,12 +375,13 @@ fn swatch_hue(rgb: [u8; 3]) -> Option<i32> {
 }
 
 /// Each seat votes for the closest of the eight lobby swatch hues or grey.
-/// The caption takes the mean colour of the strict majority's swatches.
+/// The caption takes the mean colour of the strict majority's swatches or,
+/// with no majority, of every seat's.
 pub(super) fn team_caption_tint(rules: Option<&RuleSet>, colors: &[u8]) -> Option<[f32; 3]> {
     const GREY: usize = SKIRMISH_SWATCH_RGB.len();
     let hues = SKIRMISH_SWATCH_RGB.map(|rgb| swatch_hue(rgb).unwrap_or_default());
     let mut families = [(0usize, [0u32; 3]); GREY + 1];
-    let mut votes = 0;
+    let mut every = (0usize, [0u32; 3]);
     for &priority in colors {
         let Some(rgb) = lobby_swatch_rgb(rules, usize::from(priority)) else {
             continue;
@@ -393,14 +394,24 @@ pub(super) fn team_caption_tint(rules: Option<&RuleSet>, colors: &[u8]) -> Optio
                 })
             })
             .unwrap_or(GREY);
-        let (count, sum) = &mut families[family];
-        *count += 1;
-        for (channel, value) in sum.iter_mut().zip(rgb) {
-            *channel += u32::from(value);
+        for (count, sum) in [&mut families[family], &mut every] {
+            *count += 1;
+            for (channel, value) in sum.iter_mut().zip(rgb) {
+                *channel += u32::from(value);
+            }
         }
-        votes += 1;
     }
-    let (count, sum) = families.into_iter().find(|(count, _)| *count > votes / 2)?;
+    // Team Colors gives each player on a team a hue of its own from the
+    // team's range, so a team of two or more holds no majority: its caption
+    // mixes every seat's swatch, warm or cool as the range is.
+    let votes = every.0;
+    let (count, sum) = families
+        .into_iter()
+        .find(|(count, _)| *count > votes / 2)
+        .unwrap_or(every);
+    if count == 0 {
+        return None;
+    }
     let mut rgb = sum.map(|v| v as f32 / (255.0 * count as f32));
     // First raise the value of dark shades (such as navy) keeping their saturation.
     // Mix in white only when the hue itself is too dark for the small text.
@@ -836,8 +847,34 @@ mod tests {
         assert_eq!(Some(team), team_caption_tint(Some(&rules), &[2, 9]));
         let navy = team_caption_tint(Some(&rules), &[9]).expect("navy");
         assert!(navy[2] > 0.8 && navy[2] - navy[0] > 0.2);
-        assert_eq!(team_caption_tint(Some(&rules), &[9, 1]), None);
+        // Navy against red is a tie: the caption mixes both.
+        let mixed = team_caption_tint(Some(&rules), &[9, 1]).expect("a mix");
+        assert!(mixed[0] > navy[0] && mixed[0] > mixed[1], "{mixed:?}");
         assert_eq!(team_caption_tint(None, &[]), None);
+    }
+
+    /// Team Colors gives each player on a team a lobby colour of its own
+    /// from the team's range, so no colour family holds a majority: both
+    /// captions still take a colour, Team A's warm and Team B's cool.
+    #[test]
+    fn team_colors_tint_both_team_captions() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let listed = crate::ui::team_tools::listed_hues(&rules);
+        let colors = crate::ui::team_tools::colors_by_team(&listed, &[0, 1, 0, 1], 2);
+        let team = |team: usize| -> Vec<u8> {
+            colors
+                .iter()
+                .skip(team)
+                .step_by(2)
+                .flatten()
+                .copied()
+                .collect()
+        };
+        let warm = team_caption_tint(Some(&rules), &team(0)).expect("Team A's caption");
+        let cool = team_caption_tint(Some(&rules), &team(1)).expect("Team B's caption");
+        assert!(warm[0] > warm[2] && cool[2] > cool[0], "{warm:?} {cool:?}");
     }
 
     #[test]
@@ -1086,16 +1123,20 @@ mod tests {
                 (true, skirmish.static_rect(0x50C)),
                 (true, players),
             ];
-            // 640x480 fits Options to the window, so its rects map back first.
+            // 640x480 fits Options to the window, so its rects map back first
+            // and take the drawn frame lookup, as the paint does.
+            let mut drawn = Vec::new();
             for category in crate::ui::main_menu_dialogs::options::Category::ALL {
                 let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
-                windows.extend(
+                drawn.extend(
                     layout
                         .settings()
                         .filter_map(|(setting, rect)| match setting {
-                            crate::ui::main_menu_dialogs::options::Setting::Slider(id) => {
-                                Some((id.plaque_reserve() > 0, layout.scale.base_rect(rect)))
-                            }
+                            crate::ui::main_menu_dialogs::options::Setting::Slider(id) => Some((
+                                id.plaque_reserve() > 0,
+                                layout.scale.base_rect(rect),
+                                layout.scale,
+                            )),
                             _ => None,
                         }),
                 );
@@ -1124,12 +1165,11 @@ mod tests {
             windows.extend(internet.sliders.map(|rect| (true, rect)));
             use crate::ui::multiplayer_setup::{
                 DIFFICULTY, MultiplayerSetupLayout, ROOM_SIZE, SUPERWEAPON_LIMIT, SetupDialog,
-                SetupFlavor, TEAM_COUNT,
+                SetupFlavor, TEAM_COUNT, TECH_LEVEL,
             };
             // gamemd's setup dialogs and VERA's room, in a centred shell and
-            // one filling the window; only the room paints its Teams count
-            // and Superweapon Limit, and only its host Room size.
-            let mut drawn = Vec::new();
+            // one filling the window; only the room paints its Teams count,
+            // Superweapon Limit and Tech Level, and only its host Room size.
             for (dialog, fills) in [SetupFlavor::Lan, SetupFlavor::Wol]
                 .into_iter()
                 .flat_map(|flavor| {
@@ -1151,7 +1191,7 @@ mod tests {
                         .trackbars
                         .into_iter()
                         .filter(|(id, _)| match *id {
-                            TEAM_COUNT | SUPERWEAPON_LIMIT => dialog.modern,
+                            TEAM_COUNT | SUPERWEAPON_LIMIT | TECH_LEVEL => dialog.modern,
                             ROOM_SIZE => dialog.modern && dialog.host,
                             _ => true,
                         })

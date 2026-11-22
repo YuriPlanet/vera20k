@@ -179,7 +179,7 @@ pub(crate) fn destroy_connection(
             // (0x005DA898..0x005DA8F0); it kills the House on every peer.
             // VERA shared control: the lost participant's sender, which is
             // that index unless players share Houses.
-            let local = sim.session().current_house();
+            let local = sim.control_projection().local_command_house();
             let sender = source_house(session, sim, source_index);
             if let (Some(local), Some(sender)) = (local, sender) {
                 let local = sim.interner().resolve(local).to_string();
@@ -596,13 +596,17 @@ pub(crate) enum WaitPass {
 }
 
 pub(crate) fn local_source(session: &MatchSession) -> Option<usize> {
+    if session.local_connection_watches() {
+        return None;
+    }
     session
         .network_setup()
         .map(|launch| launch.local_player_index)
 }
 
 /// The connection nodes `[0x00A8DA78]` (count `[0x00A8DA84]`): the local
-/// player first, then the connected peers in participant order.
+/// player first, then the connected peers in participant order. A relay
+/// viewer has no local lockstep node.
 pub(crate) fn nodes(session: &MatchSession) -> Vec<usize> {
     let Some(local) = local_source(session) else {
         return Vec::new();
@@ -641,6 +645,11 @@ pub(crate) fn participant_name(session: &MatchSession, source_index: usize) -> S
 /// index. VERA shared control: while players share Houses, each sends as its
 /// own source instead.
 pub(crate) fn source_house(session: &MatchSession, sim: &Simulation, source: usize) -> Option<i32> {
+    if session.campaign_room().is_some() {
+        let sender = session.network_source_sender(source)?;
+        sim.session().network_source_house(sender)?;
+        return Some(i32::from(sender));
+    }
     let owner = sim.interner().get(&session.network_source_owner(source)?)?;
     let index = sim.houses().index_of(owner)?;
     if !sim.session().shares_houses() {
@@ -1352,10 +1361,10 @@ mod tests {
 
     #[test]
     fn initial_timeout_hands_the_retained_frame_to_the_existing_failure_tail() {
-        struct Waiting(std::cell::RefCell<crate::sim::command_queue::FrameChecksumState>);
+        struct Waiting(crate::sim::command_queue::FrameChecksumState);
         impl crate::sim::world::NetworkCommandBoundary for Waiting {
             fn exchange_commands(
-                &self,
+                &mut self,
                 _: crate::sim::world::NetworkQueueContext,
                 _: &mut crate::sim::world::NetworkCommandQueues<'_>,
             ) -> Result<
@@ -1365,8 +1374,12 @@ mod tests {
                 Ok(Some(crate::sim::world::NetworkQueuePass::Waiting))
             }
 
-            fn record_frame_checksum(&self, frame: u32, checksum: u32) {
-                self.0.borrow_mut().record_frame_checksum(frame, checksum);
+            fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
+                crate::sim::world::NetworkCommandBoundary::record_frame_checksum(
+                    &mut self.0,
+                    frame,
+                    checksum,
+                );
             }
 
             fn compare_frame_info(
@@ -1389,14 +1402,14 @@ mod tests {
             ));
         sim.session_mut_for_test().set_game_mode(SessionMode::Lan);
         let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-        let waiting = Waiting(Default::default());
+        let mut waiting = Waiting(Default::default());
         let output = sim
             .advance_app_frame(
                 &[],
                 rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::empty().with_network_commands(&waiting),
+                &mut crate::sim::world::FrameEffects::empty().with_network_commands(&mut waiting),
             )
             .unwrap();
         assert!(output.network_waiting);
@@ -1420,7 +1433,7 @@ mod tests {
             Some(crate::sim::world::NetworkInterruption::ConnectionFailed,)
         );
         let output = sim
-            .resume_after_network_failure(rules, crate::sim::world::FrameEffects::empty())
+            .resume_after_network_failure(rules, &mut crate::sim::world::FrameEffects::empty())
             .unwrap();
         assert!(output.tick.frame_committed);
         assert_eq!(sim.session().binary_frame(), 1);
@@ -1517,7 +1530,7 @@ mod tests {
         let name = session.network_setup().unwrap().humans[0].name.clone();
         session.bind_network_endpoint(&name, endpoint).unwrap();
         session.prepare_network_timing(2, || 0).unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         sim.session_mut_for_test().set_game_mode(SessionMode::Lan);
         let mut connections = LanConnections::new(
             LanConnectionConfig::default(),
@@ -1610,7 +1623,7 @@ mod tests {
             session
                 .bind_network_endpoint(&remote_name, endpoint)
                 .unwrap();
-            session.freeze_network_start(19).unwrap();
+            session.freeze_network_start(19, None).unwrap();
             let local = sim.houses().order()[0];
             let remote = sim.houses().order()[1];
             sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
@@ -1746,7 +1759,7 @@ mod tests {
         session
             .bind_network_endpoint(&remote_name, endpoint)
             .unwrap();
-        session.freeze_network_start(19).unwrap();
+        session.freeze_network_start(19, None).unwrap();
         let local = sim.houses().order()[0];
         sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
         sim.session_mut_for_test()
@@ -1936,7 +1949,7 @@ mod tests {
                     .unwrap();
             }
             session.prepare_wol_timing([0; 3], false).unwrap();
-            session.freeze_network_start(19).unwrap();
+            session.freeze_network_start(19, None).unwrap();
             sim.session_mut_for_test().set_game_mode(SessionMode::Wol);
             let local = *sim
                 .houses()

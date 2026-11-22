@@ -103,7 +103,7 @@ fn frame(
             commands,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap()
         .take_admitted_commands()
@@ -152,9 +152,9 @@ fn assert_type(runtime: &SimRuntime, id: u64, family: ObjectCategory, name: &str
         object
     ));
     assert_eq!(entity.health.current(), object.strength);
-    assert_eq!(entity.crushable_facts.crushable(), object.crushable);
+    assert_eq!(entity.seldom.crushable_facts.crushable(), object.crushable);
     assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(object.ammo));
-    assert_eq!(entity.type_facts.foundation(), &object.foundation);
+    assert_eq!(entity.seldom.type_facts.foundation(), &object.foundation);
     assert_eq!(
         entity
             .locomotor
@@ -805,6 +805,7 @@ fn name_only_compatibility_and_shared_creators_keep_their_native_type_families()
             .entities()
             .get(spawns[0])
             .unwrap()
+            .seldom
             .type_facts
             .spawned_non_missile_aircraft()
     );

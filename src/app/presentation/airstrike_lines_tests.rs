@@ -1,6 +1,5 @@
 use super::*;
 use crate::sim::rng::MainRng;
-use crate::util::save_codec;
 use serde_json::Value;
 
 fn native() -> &'static Value {
@@ -199,10 +198,7 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         reference.draws().ranged(745, 1000);
         assert_eq!(result.first(), Some(&opaque));
         assert_eq!(result.last(), Some(&opaque));
-        assert_eq!(
-            save_codec::serialize(&main).unwrap(),
-            save_codec::serialize(&reference).unwrap()
-        );
+        assert_eq!(main.logical_state(), reference.logical_state());
     }
 }
 

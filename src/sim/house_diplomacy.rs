@@ -261,8 +261,9 @@ impl HouseAlliances {
 /// every slot, most with no ally) and the row of each id the
 /// interner held at the build, by the same key ([`with_house_key`]) the
 /// by-name test uses. It cannot answer for an id interned later or from
-/// another interner, and is not built for more names than a mask has bits;
-/// those questions go to the graph by name.
+/// another interner; those questions go to the graph by name. A row's mask
+/// takes one `u64` per 64 names, so it covers every house of a 120-player
+/// match.
 #[derive(Debug, Clone)]
 struct AllyMatrix {
     /// The [`StringInterner::serial`] the id rows were read through.
@@ -270,19 +271,30 @@ struct AllyMatrix {
     /// Those house names in graph order; a name's index is its row.
     names: Vec<String>,
     /// By `InternedId::index`: the row of the id's name, or [`NO_ROW`].
-    rows: Vec<u8>,
-    /// Bit `c` of `allies[r]`: row `r`'s ally set holds row `c`'s name.
-    allies: [u64; MATRIX_ROWS],
+    rows: Vec<u16>,
+    /// `u64`s per row's mask.
+    words: usize,
+    /// Row `r`'s mask is `allies[r * words..][..words]`; its bit for row `c`
+    /// ([`row_bit`]) says whether row `r`'s ally set holds row `c`'s name.
+    allies: Vec<u64>,
 }
 
-const MATRIX_ROWS: usize = u64::BITS as usize;
+// A dense bitmap for 4,096 named houses uses 2 MiB. Larger scenario or
+// saved-game graphs keep their by-name queries instead of allocating quadratically.
+const MAX_MATRIX_ROWS: usize = 4096;
+const _: () = assert!(MAX_MATRIX_ROWS < NO_ROW as usize);
+
 /// An id whose name has no ally and is in no ally set: it is allied with
 /// nobody but itself, and nobody else is allied with it.
-const NO_ROW: u8 = u8::MAX;
+const NO_ROW: u16 = u16::MAX;
 
-/// Row `row`'s bit in a mask; none for [`NO_ROW`].
-fn row_bit(row: u8) -> u64 {
-    1u64.checked_shl(u32::from(row)).unwrap_or(0)
+/// Row `row`'s bit in a mask: its word and the bit in that word; no bit for
+/// [`NO_ROW`].
+fn row_bit(row: u16) -> (usize, u64) {
+    if row == NO_ROW {
+        return (0, 0);
+    }
+    (usize::from(row) / 64, 1 << (row % 64))
 }
 
 impl AllyMatrix {
@@ -292,14 +304,16 @@ impl AllyMatrix {
             .filter(|(_, allies)| !allies.is_empty())
             .flat_map(|(house, allies)| std::iter::once(house).chain(allies))
             .collect();
-        if names.len() > MATRIX_ROWS {
+        if names.len() > MAX_MATRIX_ROWS {
             return None;
         }
+        let words = names.len().div_ceil(64);
         let mut matrix = Self {
             interner: interner.serial(),
+            allies: vec![0; names.len() * words],
             names: names.into_iter().cloned().collect(),
             rows: Vec::new(),
-            allies: [0; MATRIX_ROWS],
+            words,
         };
         matrix.rows = (0..interner.len() as u32)
             .map(|index| {
@@ -332,15 +346,15 @@ impl AllyMatrix {
         Some(matrix)
     }
 
-    fn name_row(&self, name: &str) -> Option<u8> {
+    fn name_row(&self, name: &str) -> Option<u16> {
         self.names
             .binary_search_by(|probe| probe.as_str().cmp(name))
             .ok()
-            .map(|row| row as u8)
+            .map(|row| row as u16)
     }
 
     /// `id`'s row, when the matrix covers it.
-    fn row(&self, id: InternedId) -> Option<u8> {
+    fn row(&self, id: InternedId) -> Option<u16> {
         self.rows.get(id.index() as usize).copied()
     }
 
@@ -352,9 +366,14 @@ impl AllyMatrix {
 
     /// Whether `asker`'s ally set holds the name whose [`row_bit`] is `bit`,
     /// when `asker` is covered.
-    fn holds_bit(&self, asker: InternedId, bit: u64) -> Option<bool> {
-        let allies = self.allies.get(usize::from(self.row(asker)?)).copied();
-        Some(allies.is_some_and(|allies| allies & bit != 0))
+    fn holds_bit(&self, asker: InternedId, (word, mask): (usize, u64)) -> Option<bool> {
+        let row = self.row(asker)?;
+        let allies = if row == NO_ROW {
+            0
+        } else {
+            self.allies[usize::from(row) * self.words + word]
+        };
+        Some(allies & mask != 0)
     }
 
     /// Write the bit; false for a new ally without a row. A name without a
@@ -363,11 +382,12 @@ impl AllyMatrix {
         let (Some(owner), Some(other)) = (self.name_row(owner), self.name_row(other)) else {
             return !allied;
         };
-        let (owner, other) = (usize::from(owner), usize::from(other));
+        let (word, mask) = row_bit(other);
+        let allies = &mut self.allies[usize::from(owner) * self.words + word];
         if allied {
-            self.allies[owner] |= 1 << other;
+            *allies |= mask;
         } else {
-            self.allies[owner] &= !(1 << other);
+            *allies &= !mask;
         }
         true
     }
@@ -392,7 +412,7 @@ impl Simulation {
                     "ScenarioInit diplomacy precedes map objects"
                 );
                 assert!(
-                    !self.session.game_mode_nonzero(),
+                    self.session.uses_campaign_world(),
                     "this ScenarioInit admission is the campaign map-read family"
                 );
                 assert_eq!(
@@ -421,9 +441,9 @@ impl Simulation {
         // A live install uses the same map visitor as individual writes.
         // Campaign ScenarioInit reaches this before any Techno exists.
         let sight_changed = !changed.is_empty();
-        let context = crate::sim::world::UninitContext::new(rules);
+        let mut context = crate::sim::world::UninitContext::new(rules);
         if sight_changed {
-            self.release_alliance_sight(context);
+            self.release_alliance_sight(context.reborrow());
         }
         self.house_alliances.replace(alliances);
         self.reveal_viewers.forget();
@@ -441,7 +461,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
         // Only Cooperative's vt+4 (0x005C4EE0) answers true, so its
@@ -551,7 +571,7 @@ impl Simulation {
                                 other,
                                 rules,
                                 registry,
-                                FrameEffects::default(),
+                                &mut FrameEffects::default(),
                                 false,
                             );
                         }
@@ -571,7 +591,7 @@ impl Simulation {
         other: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
     ) {
         self.make_ally_with(owner, other, rules, registry, effects, announce, None);
@@ -579,14 +599,13 @@ impl Simulation {
 
     /// [`Self::make_ally`], within a Paranoid call walking only `paranoid`'s
     /// maps that may change.
-    #[allow(clippy::too_many_arguments)]
     fn make_ally_with(
         &mut self,
         owner: InternedId,
         other: InternedId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
         mut paranoid: Option<&mut ParanoidMaps>,
     ) {
@@ -594,7 +613,7 @@ impl Simulation {
         if !self.can_ally(owner, other, rules) {
             return;
         }
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         // 0x004F9B9A. Its write adds `other` to `owner`'s mask. Of the live
         // tail only Paranoid and Assign_Target write state the walks read.
         let quiet = paranoid.is_some()
@@ -604,7 +623,12 @@ impl Simulation {
                 .is_some_and(|house| house.is_controlled_by_human(self.session.rule_policy()))
             && !self.may_drop_targets(owner);
         let edge_maps = self.maps_keyed_like(other);
-        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, quiet, context);
+        let walks = self.open_alliance_walks(
+            paranoid.as_deref_mut(),
+            edge_maps,
+            quiet,
+            context.reborrow(),
+        );
         // 0x004F9B9F..0x004F9BB3, then the threat rebuild (0x004F9BB9).
         Self::set_ally_bit(
             &self.interner,
@@ -660,12 +684,15 @@ impl Simulation {
                     .get(&other)
                     .is_some_and(|house| !house.multiplay_passive())
             {
-                self.computer_paranoid(rules, registry, effects);
+                self.computer_paranoid(rules, registry, context.effects());
             }
             // 0x004F9C7F..0x004F9D48: in Logic order, each of the house's
             // Technos (As_Techno 0x0040DD70) out of limbo (+0x81) whose
             // target is a Techno of a house it now counts as friendly takes
-            // Assign_Target(NULL) (vt+0x3C8).
+            // Assign_Target(NULL) (vt+0x3C8). Walked over a copy: the setter
+            // runs through the whole simulation, and its callbacks may change
+            // Logic, so the walk keeps the order the alliance change saw. It
+            // runs only per alliance change.
             for id in self.logic_order().to_vec() {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     continue;
@@ -684,7 +711,7 @@ impl Simulation {
                         target_owner,
                     )
                 {
-                    let _ = self.assign_target_represented(id, None, rules, effects);
+                    let _ = self.assign_target_represented(id, None, rules, context.effects());
                 }
             }
             self.announce_alliance(owner, other, true, announce);
@@ -727,7 +754,7 @@ impl Simulation {
         owner: InternedId,
         other: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
     ) {
         self.make_enemy_with(owner, other, rules, effects, announce, None);
@@ -735,13 +762,12 @@ impl Simulation {
 
     /// [`Self::make_enemy`], within a Paranoid call walking only `paranoid`'s
     /// maps that may change.
-    #[allow(clippy::too_many_arguments)]
     fn make_enemy_with(
         &mut self,
         owner: InternedId,
         other: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         announce: bool,
         mut paranoid: Option<&mut ParanoidMaps>,
     ) {
@@ -753,12 +779,12 @@ impl Simulation {
             return;
         };
         // 0x004F9FA9..0x004F9FC9.
-        if self.session.game_mode_nonzero()
+        if !self.session.rule_policy().uses_campaign_diplomacy()
             && (other_house.multiplay_passive() || house.multiplay_passive())
         {
             return;
         }
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         // 0x004F9FD8. Breaking an alliance takes `other` from `owner`'s mask
         // and may take `owner` from `other`'s.
         let mut edge_maps = BTreeSet::new();
@@ -766,7 +792,8 @@ impl Simulation {
             edge_maps = self.maps_keyed_like(other);
             edge_maps.extend(self.maps_keyed_like(owner));
         }
-        let walks = self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context);
+        let walks =
+            self.open_alliance_walks(paranoid.as_deref_mut(), edge_maps, true, context.reborrow());
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
@@ -838,7 +865,7 @@ impl Simulation {
         formed: bool,
         voice: bool,
     ) {
-        let game_mode_nonzero = self.session.game_mode_nonzero();
+        let uses_match_diplomacy = !self.session.rule_policy().uses_campaign_diplomacy();
         let human = self
             .houses
             .get(&owner)
@@ -847,7 +874,7 @@ impl Simulation {
             .houses
             .get(&other)
             .is_some_and(|house| house.multiplay_passive());
-        let line = game_mode_nonzero && human && (!formed || !passive_target);
+        let line = uses_match_diplomacy && human && (!formed || !passive_target);
         let local = self.session.current_house();
         let allied = |asker, house| {
             is_ally_by_object(Some(&self.house_alliances), &self.interner, asker, house)
@@ -867,17 +894,15 @@ impl Simulation {
                 }
             }
             // 0x004F9E8A..0x004F9F35: one way, only the two Houses hear it.
-            (true, true, Some(local)) if game_mode_nonzero && local == owner => {
+            (true, true, Some(local)) if local == owner => {
                 Some(crate::sim::world::AllianceEva::Requesting)
             }
-            (true, true, Some(local)) if game_mode_nonzero && local == other => {
+            (true, true, Some(local)) if local == other => {
                 Some(crate::sim::world::AllianceEva::Requested)
             }
             (true, true, _) => None,
             // 0x004FA186..0x004FA1D5.
-            (true, false, Some(local))
-                if game_mode_nonzero && (local == owner || local == other) =>
-            {
+            (true, false, Some(local)) if local == owner || local == other => {
                 Some(crate::sim::world::AllianceEva::Broken)
             }
             (true, false, _) => None,
@@ -905,7 +930,9 @@ impl Simulation {
         };
         // 0x0050157C..0x0050159E: a house type of the `Civilian` side, in a
         // nonzero game mode.
-        if self.session.game_mode_nonzero() && self.house_type_is_civilian(other, rules) {
+        if !self.session.rule_policy().uses_campaign_diplomacy()
+            && self.house_type_is_civilian(other, rules)
+        {
             return false;
         }
         if self.object_placement_scope_active() {

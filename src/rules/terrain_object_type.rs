@@ -904,7 +904,7 @@ mod tests {
                 warhead,
                 true,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         };
         hit(&mut sim, &rules);

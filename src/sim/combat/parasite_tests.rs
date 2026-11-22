@@ -235,7 +235,7 @@ impl Arena {
             rules,
             None,
             event,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
 
@@ -495,7 +495,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
             RadioMessage::RepairTick,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         RadioResponse::InsufficientFunds
     );
@@ -516,7 +516,7 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
             RadioMessage::RepairTick,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -731,7 +731,7 @@ fn iron_curtain_strips_the_drone_and_kills_an_organic_vehicle() {
         10,
         sw,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let frame = arena.frame();
@@ -1028,13 +1028,14 @@ fn an_infected_unit_cannot_load_bunker_or_deploy() {
         .entities
         .get_mut(mcv)
         .unwrap()
+        .seldom
         .mcv_deploy_pending
         .set_for_test(true);
     assert!(!arena.sim.deploy_mcv(
         mcv,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(
         !arena
@@ -1043,6 +1044,7 @@ fn an_infected_unit_cannot_load_bunker_or_deploy() {
             .entities
             .get(mcv)
             .unwrap()
+            .seldom
             .mcv_deploy_pending
             .is_pending()
     );
@@ -1160,6 +1162,7 @@ fn the_reselect_memo_stays_out_of_the_peer_hash() {
             .entities
             .get_mut(dog)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(selected);
         arena.attack(dog, gi);
@@ -1408,7 +1411,7 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     // Unit73A0A5 refunds the tank300, then73A13E refunds the drone200.

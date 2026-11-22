@@ -37,7 +37,7 @@ impl Simulation {
         requested: RevealPosition,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_active: bool,
     ) -> Option<RevealOutcome> {
         let entity = self.substrate.entities.get(id)?;
@@ -172,7 +172,7 @@ impl Simulation {
                 rules,
                 registry,
                 crate::sim::overlay_mark_host::OverlayRecalc::Immediate,
-                effects,
+                effects.reborrow(),
             ),
             &request,
         ) {
@@ -223,7 +223,7 @@ impl Simulation {
             rules,
             effects,
         );
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         //44082D/440856 reread type/owner for the final0/final1 pair. No live
         //source, cached radius or567DA0 border belongs to this early arm.
         for final_pass in [false, true] {
@@ -256,7 +256,7 @@ impl Simulation {
                 Some(&heights),
                 final_pass,
                 &config,
-                context,
+                context.reborrow(),
                 crate::sim::vision::MapRevealProjection::Transient,
                 self.session.current_house(),
             );
@@ -291,7 +291,7 @@ impl Simulation {
         requested: RevealPosition,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_active: bool,
     ) {
         let Some((owner, ty)) =
@@ -386,7 +386,7 @@ impl Simulation {
         (rx, ry): (u16, u16),
         rules: &RuleSet,
         registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::build_site::{OVERLAY_GASAND, OVERLAY_GAWALL, OVERLAY_NAWALL};
         const TOWER_WALLS: &[Option<u8>] = &[Some(OVERLAY_GASAND), Some(OVERLAY_GAWALL)];
@@ -417,7 +417,7 @@ impl Simulation {
         } else if to_overlay[0].is_some() {
             (vec![(0, 0)], to_overlay.as_slice())
         } else if ty.gate {
-            (ty.foundation.cell_offsets(), GATE_WALLS)
+            (ty.foundation.cell_offsets().collect(), GATE_WALLS)
         } else {
             return;
         };

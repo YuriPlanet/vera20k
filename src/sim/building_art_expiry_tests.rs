@@ -157,7 +157,7 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
     sim.main_rng =
-        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     let building = case["building"].as_str().unwrap();
@@ -194,10 +194,10 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let count = case["contact_count"]
         .as_u64()
         .unwrap_or(contacts.as_array().unwrap().len() as u64) as usize;
-    entity.radio_contacts = crate::sim::radio::contacts::Contacts::with_capacity(count);
+    entity.seldom.radio_contacts = crate::sim::radio::contacts::Contacts::with_capacity(count);
     for (i, pointer) in contacts.as_array().unwrap().iter().take(count).enumerate() {
         if pointer.as_u64().unwrap() != 0 {
-            entity.radio_contacts.set_slot(i, contact);
+            entity.seldom.radio_contacts.set_slot(i, contact);
         }
     }
     // Negative native vector counts have no equivalent valid Rust vector;
@@ -365,7 +365,7 @@ fn original_64_slot_expiry_controls_and_actual_sprite_frame_histories() {
                     expired,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 let anim = sim.anim(expired).unwrap();

@@ -331,7 +331,7 @@ fn follow_clicked_goal(
                 &due,
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(output.tick.frame_committed, "the retail frame must commit");

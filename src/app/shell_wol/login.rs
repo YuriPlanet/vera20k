@@ -10,21 +10,19 @@ use super::{WolPage, WolVisit};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::{App, AppState};
 use crate::ui::shell::modal::WolAccountFormLayout;
-use crate::ui::wol_account::{AccountDone, POPUP, WolAccountForm};
+use crate::ui::wol_account::{AccountSuccess, POPUP, WolAccountForm};
 use crate::ui::wol_login::*;
 use winit::keyboard::KeyCode;
 
 pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
-    let online = state
+    // The page's own step: the legacy WOL page, or VERA online's entry
+    // chooser or account page.
+    let policy = state
         .frontend
         .wol
         .as_ref()
-        .is_some_and(|visit| visit.provider == super::WolProvider::Online);
-    let policy = if online {
-        LoginPolicy::Online
-    } else {
-        LoginPolicy::Legacy
-    };
+        .and_then(WolVisit::login)
+        .map_or(LoginPolicy::Legacy, |login| login.policy);
     shell_layout::on(state, |w, h, scale| {
         WolLoginLayout::new(w, h, scale, policy)
     })
@@ -174,7 +172,13 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
         WolLoginAction::Manage => {}
         WolLoginAction::ForgetSignIn => service::request(state, WolServiceRequest::ForgetSignIn),
         WolLoginAction::Send(request) => {
-            service::request(state, WolServiceRequest::Account(request))
+            if let Some(visit) = &mut state.frontend.wol {
+                visit.account_attempt = visit.account_attempt.wrapping_add(1);
+                visit.requests.push(WolServiceRequest::Account {
+                    attempt: visit.account_attempt,
+                    request,
+                });
+            }
         }
     }
 }
@@ -182,16 +186,11 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
 /// The lobby answered the account popup: a refusal shows in it, a sent code
 /// moves it on, a confirmed account or new password signs in, and a deleted
 /// account's popup says so.
-pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>) {
+pub(super) fn account_answered(state: &mut AppState, answer: Result<AccountSuccess, String>) {
     let action = with_login(state, |login, cx| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
-        match form.answered(cx.ui, answer)? {
-            AccountDone::SignIn(sign_in) => Some(login.signed_up(cx, sign_in)),
-            AccountDone::Deleted { name } => {
-                login.account_deleted(cx.ui, &name);
-                None
-            }
-        }
+        let sign_in = form.answered(cx.ui, answer)?;
+        Some(login.signed_up(cx, sign_in))
     });
     finish(state, action.flatten());
 }
@@ -243,6 +242,8 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 pub(super) fn cursor_moved(state: &mut AppState) {
     sync(state);
     leaf::pointer(state, Pointer::Move);
+    // VERA online's chooser: the button under the pointer takes the focus.
+    with_login(state, |login, cx| login.pointer_moved(cx.ui));
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {

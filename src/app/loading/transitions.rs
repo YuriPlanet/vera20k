@@ -595,6 +595,9 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
+    // Retiring Radar may record a service input after the outgoing frame.
+    // Publish that frame before the retire/reset sequence.
+    crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
     crate::app::match_runtime::scenario_pause::reset_clock(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
@@ -609,7 +612,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Only fresh startup cancels its outgoing scenario-owned request. Saved
     // loading preserves the process Theme state until ThemeLoad721040.
     state.audio.cancel_scenario_theme_request();
-    crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
     let returns_scenario_rng_to_multiplayer_shell = startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
@@ -620,6 +622,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
+    crate::app::reset_scenario_exit_runtime(state);
     let incoming = result.scenario.simulation.zip(result.scenario.rules);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
         // Every committed replacement retires outgoing sources, including a
@@ -825,6 +828,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         );
     }
 
+    let mut initial_replay_effects = Vec::new();
     let installation = match startup {
         crate::app::match_bootstrap::LoadingStartup::Campaign(prepared) => {
             let installed = state.match_state.startup.acknowledge_campaign(
@@ -878,7 +882,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             }
             installed.map_err(|error| error.to_string())
         }
-        crate::app::match_bootstrap::LoadingStartup::Replay { .. } => {
+        crate::app::match_bootstrap::LoadingStartup::Replay { .. }
+        | crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. } => {
             state.match_state.startup.clear();
             let playback = match (
                 state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle),
@@ -893,10 +898,17 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                     "replay loader did not install an authored world"
                 )),
             };
-            if let Err(error) = playback {
-                let message = format!("Replay startup failed: {error:#}");
-                log::error!("{message}");
-                state.frontend.external_launch_error = Some(message);
+            match playback {
+                Ok(effects) => initial_replay_effects = effects,
+                Err(error) => {
+                    log::error!("Replay startup failed: {error:#}");
+                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                        crate::i18n::tr("VERA:CampaignReplayUnavailable")
+                    } else {
+                        format!("Replay startup failed: {error:#}")
+                    };
+                    state.frontend.external_launch_error = Some(message);
+                }
             }
             // A rejected replay is a frozen inspection view, never a fresh
             // playable match. Its diagnostics owner blocks every tick/input.
@@ -918,6 +930,22 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             // Main_Game 0x0048CE7E: State_Machine's admission latch.
             state.match_state.match_presentation.modal_latch = true;
             state.frontend.screen = GameScreen::InGame;
+            // The skirmish shell's chrome atlas draws nothing in a match until
+            // the in-game menu or a network dialog opens: the menu's opening
+            // (`App::enter_in_game_menu_state`) and the frame loop build it
+            // again then, and the shell's return to its page builds it as
+            // every entry does (`App::ensure_skirmish_shell_chrome`).
+            state.frontend.skirmish_shell_chrome = None;
+            // The main menu's chrome atlas likewise: the first shell screen
+            // after the match builds it again
+            // (`App::ensure_main_menu_shell_chrome`).
+            state.frontend.main_menu_shell_chrome = None;
+            if !initial_replay_effects.is_empty() {
+                crate::app::match_runtime::sim_tick::apply_trigger_effects(
+                    state,
+                    &initial_replay_effects,
+                );
+            }
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             crate::web::match_started();
             if returns_scenario_rng_to_multiplayer_shell {
@@ -945,12 +973,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// is then a watcher's before its first frame: it sends nothing, also in the
 /// seat of the player it follows, whose sight it starts with, and Tab may
 /// change its view (`match_runtime::watching`).
+/// A launcher's watcher (docs/spawn.md "Watching") stands in source 0's seat
+/// only because a world needs a current House: it starts on the observer's
+/// sidebar (`watching::begin_on_observers_view`).
 fn install_watcher(state: &mut AppState) {
     if !crate::app::match_runtime::watching::active(state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime.simulation.install_watcher();
+    }
+    if state.frontend.external_launch {
+        crate::app::match_runtime::watching::begin_on_observers_view(state);
     }
 }
 

@@ -326,7 +326,7 @@ impl Simulation {
         target: TemporalShotTarget,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.substrate.entities.contains(firer) {
             return;
@@ -399,7 +399,7 @@ impl Simulation {
         target: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
@@ -430,7 +430,7 @@ impl Simulation {
         target: Option<u64>,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         // 0x0071AF2F..0x0071AF48: the target's spawns die and its captives
@@ -565,7 +565,7 @@ impl Simulation {
         target: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(target) else {
             return;
@@ -648,6 +648,7 @@ impl Simulation {
                 return false;
             }
             let naval_factory = entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|contact| self.substrate.entities.get(contact))
@@ -666,7 +667,7 @@ impl Simulation {
         head: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(link) = Self::temporal_link(&self.substrate, head).cloned() else {
             return;
@@ -803,7 +804,7 @@ impl Simulation {
         target: Option<u64>,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let ares = rules.ares_form();
         let Some(target) = target.filter(|&target| self.substrate.entities.contains(target)) else {
@@ -1104,7 +1105,12 @@ impl Simulation {
     /// `Enter_Idle_Mode(0, 1)` (vtable `+0x484`) on an attacker. Every stock
     /// Temporal firer is a Foot; a building or aircraft firer has no VERA
     /// idle selector.
-    fn temporal_owner_idle(&mut self, attacker: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn temporal_owner_idle(
+        &mut self,
+        attacker: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         #[cfg(any(test, feature = "test-support"))]
         IDLE_TRACE.with(|trace| trace.borrow_mut().push(attacker));
         if self.substrate.entities.get(attacker).is_some_and(|entity| {
@@ -1205,7 +1211,7 @@ impl Simulation {
         &mut self,
         attacker: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // A link without a target faults natively (`0x0071ADE9` writes
         // through it); VERA stops, which also ends any walk of a cycle.
@@ -1253,7 +1259,7 @@ impl Simulation {
         &mut self,
         attacker: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = Self::temporal_link(&self.substrate, attacker).map(|link| link.target)
         else {
@@ -1299,7 +1305,7 @@ impl Simulation {
         listener: u64,
         expired: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = Self::temporal_link(&self.substrate, listener).map(|link| link.target)
         else {
@@ -1402,7 +1408,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
         bridge_state_changed: &mut bool,
     ) -> bool {
         let registry = ctx.overlay_registry;
@@ -1433,7 +1439,7 @@ impl Simulation {
             .get(id)
             .and_then(|entity| entity.temporal.head)
         {
-            self.temporal_update_head(head, rules, registry, ctx.effects);
+            self.temporal_update_head(head, rules, registry, &mut ctx.effects);
         }
         if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
             self.warp_foot_sparkle(id, rules);
@@ -1500,7 +1506,7 @@ impl Simulation {
             // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
             // the Techno base write set. Its reached tail also clears a
             // Tesla Trooper's automatic charging intent at51B33F.
-            let _ = self.assign_target_represented(id, None, rules, ctx.effects);
+            let _ = self.assign_target_represented(id, None, rules, &mut ctx.effects);
         }
         let clears_destination = category != EntityCategory::Structure
             && self
@@ -1509,7 +1515,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.navigation.nav_com().is_some());
         if clears_destination {
-            self.assign_null_destination(id, rules, registry, ctx.effects);
+            self.assign_null_destination(id, rules, registry, &mut ctx.effects);
         }
         true
     }

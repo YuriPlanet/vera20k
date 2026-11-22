@@ -435,7 +435,7 @@ pub fn grip_tiles(thumb: RectPx, tile_h: i32) -> Vec<(i32, i32)> {
 /// only forwards as `LBN_DBLCLK` (`0x0061A904..0x0061A945`): no selection,
 /// no sound. A double-click ends the sequence, so the next press starts a
 /// new one.
-pub(crate) fn is_double_click(
+pub fn is_double_click(
     last_press: &mut Option<(Instant, i32, i32)>,
     now: Instant,
     x: i32,

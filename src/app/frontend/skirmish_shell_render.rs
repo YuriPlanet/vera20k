@@ -489,11 +489,8 @@ fn render_skirmish_shell_with_atlas(
     ensure_selected_preview_texture(state, preview_rect);
     let zoom_layout =
         ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
-    let selected_entry = state
-        .frontend
-        .scenario_catalog
-        .shell_maps()
-        .get(preview::preview_map_idx(state));
+    let selected_entry = preview::preview_map_idx(state)
+        .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
     // A generated preview carries its red squares (0x00641140) and also gets
     // the numbered markers from the last Generate's header: the setup dialog
     // paints them (0x00596ACD), and selecting the sentinel copies the header
@@ -578,9 +575,23 @@ fn render_skirmish_shell_with_atlas(
         };
         // The name box's caret holds steady while it has the focus.
         let caret_of = |node| gui.focus() == Some(node);
+        // VERA's Quick Team Setup and Bulk Seat Actions: a greyed item or
+        // heading in the disabled colour (packed `0x0000009F`).
+        let labels = skirmish_labels(state);
+        let menu_rows = |id: i32| {
+            let rows = crate::ui::skirmish_shell::page::menu_rows(
+                &state.frontend.skirmish_shell_state,
+                state.frontend.scenario_catalog.shell_maps(),
+                &labels,
+                u16::try_from(id).ok()?,
+            )?;
+            let packed = |pickable| if pickable { u32::MAX } else { 0x0000_009F };
+            Some(rows.into_iter().map(|(text, pickable)| (text, packed(pickable))).collect())
+        };
         let style = gui_paint::GuiStyle {
             buttons,
             caret_of: Some(&caret_of),
+            rows_of: Some(&menu_rows),
             ..Default::default()
         };
         gui_paint::paint_gui_with(state, atlas, gui, root, layout.scale, &[], style)

@@ -96,7 +96,8 @@ pub(crate) struct SimHost {
     /// instead of copying the world whole.
     spare: Option<crate::sim::world::Simulation>,
     /// Time spent capturing frames and bringing the world copy up to date,
-    /// and how many of each, since the last report.
+    /// and how many of each, since the last report. A diagnostic counter in a
+    /// `Cell`: the draws that capture frames hold the host through `&`.
     snapshot_costs: std::cell::Cell<SnapshotCosts>,
     /// What the last lent job cost this thread: copying the frame when the
     /// job left ([`Self::lend`]), kept in `copy_cost` meanwhile, then the
@@ -382,11 +383,14 @@ impl SimHost {
         let _ = self.frame();
         if world
             && self.presentation.is_none()
-            && let Some(runtime) = self.runtime.as_mut()
+            && let (Some(frame), Some(runtime)) = (self.frame.get(), self.runtime.as_mut())
         {
             let viewer = runtime.simulation.session().current_house();
             let reuse = self.spare.take();
             let started = Instant::now();
+            // Box selection (AddSelectable 0x006D9EF0) can ask for the order
+            // before drawing. Sort while the Ground objects are still attached.
+            frame.display_order(&runtime.simulation);
             self.presentation = Some(Box::new(runtime.presentation_copy(viewer, reuse)));
             let mut costs = self.snapshot_costs.get();
             costs.copy += started.elapsed();
@@ -529,7 +533,8 @@ impl SimHost {
 /// in `kept`, which the draws beside a lent tick read (docs/sim-thread.md).
 /// Each one is also asked before a tick leaves
 /// (`cursor::answer_kept_questions`), so a kept answer is one tick old at
-/// most even when every frame is lent.
+/// most even when every frame is lent. `kept` is a cell because the draws
+/// that ask hold the app state through `&`.
 pub(crate) fn home_answer<T: Clone>(
     host: &SimHost,
     kept: &std::cell::RefCell<T>,

@@ -624,7 +624,12 @@ pub(crate) fn render_wol_page(
                 .filter(|_| matches!(painted.body, Body::Lobby(_)))
                 .map(|lobby| &lobby.ui);
             let text_of = |id: i32| {
-                let button = painted.spec.button(u16::try_from(id).ok()?)?;
+                let id = u16::try_from(id).ok()?;
+                // VERA: the online page's view button names the view it shows next.
+                if let Some(ui) = lobby_ui.filter(|_| id == crate::ui::wol_lobby::VIEW) {
+                    return Some(ui.view_caption());
+                }
+                let button = painted.spec.button(id)?;
                 Some(state.csf_text(button.csf_key))
             };
             let enabled_of = |id: i32| Some(lobby_ui?.enabled(u16::try_from(id).ok()?));

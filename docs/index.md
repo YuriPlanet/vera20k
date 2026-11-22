@@ -57,6 +57,7 @@ simulation, session and network command owners.
 
 ## Feature docs
 
+- [Campaign manifests](campaign-manifest.md) covers stages, roles, carry-over, local checks and room setup.
 - [Auto Repair](auto-repair.md): tick it in Options and your damaged buildings start repairing by themselves.
 - [Colour-vision filter](color-vision-config.md): the `[VERA] ColorVisionMode=` whole-viewport daltonization option.
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
@@ -69,6 +70,7 @@ simulation, session and network command owners.
 - [Jumpjets land beside a taken cell](jumpjet-land-nearby.md): the `[JumpjetControls] LandNearby=` rules key that sends a Nighthawk refused its landing cell to the nearest clear one.
 - [Smooth Jumpjet facing](jumpjet-smooth-facing.md): the `[JumpjetControls] SmoothFacing=` rules key that stops a Nighthawk's body snapping at take-off and unload.
 - [Minimap beacons](minimap-beacons.md): tick it in Options, press B and click the minimap to place a beacon far away.
+- [Menu reference](menu-reference.md): every page and menu a player can open, in or out of a match, with where each setting is saved.
 - [Map format](map-format.md): bigger maps and maps for up to 30 players, for people who write map editors and tools.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.

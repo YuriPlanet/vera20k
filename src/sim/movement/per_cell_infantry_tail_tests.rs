@@ -71,7 +71,7 @@ fn send(sim: &mut Simulation, rules: &RuleSet, from: u64, to: u64, message: Radi
             message,
             RadioPayload::default(),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         RadioResponse::Roger
     );
@@ -83,7 +83,7 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         PerCellReason::Arrival,
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -133,7 +133,7 @@ fn a_tethered_arrival_that_fills_its_cell_scatters_the_men_there() {
         arrive(&mut sim, &rules, arriver);
 
         let arriver_entity = sim.substrate.entities.get(arriver).unwrap();
-        assert_eq!(arriver_entity.tether.partner(), None, "{case}");
+        assert_eq!(arriver_entity.seldom.tether.partner(), None, "{case}");
         assert_eq!(
             arriver_entity.navigation.nav_com(),
             Some(NavTargetRef::cell(CELL.0, CELL.1)),
@@ -201,7 +201,7 @@ fn a_computer_owned_tethered_arrival_plays_the_second_comment() {
         .sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules)),
             _ => None,
         })
         .collect();
@@ -289,7 +289,7 @@ fn a_capturer_with_no_destination_idles_and_scatters_off_a_building() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate

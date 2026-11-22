@@ -51,7 +51,7 @@ fn pulse(sim: &mut Simulation, rules: &RuleSet, source: u64, id: u64) {
         Some(source),
         rules.warhead("EMPWH").unwrap(),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -165,7 +165,7 @@ fn ares_emp_rides_out_of_a_repacking_yard_on_its_mcv() {
     let source = spawn(&mut sim, &rules, "MTNK", "Russians", 4, 4);
     let yard = building(&mut sim, &rules, "GACNST", 15, 8);
     // Sell_Back queues and commences Selling at once (0x0044717D..0x00447185).
-    assert!(sim.undeploy_building(yard, &rules, None, FrameEffects::default()));
+    assert!(sim.undeploy_building(yard, false, &rules, None, &mut FrameEffects::default()));
     assert_eq!(missions(&sim, yard).0, Some(MissionType::Selling));
     pulse(&mut sim, &rules, source, yard);
     assert!(emp(&sim, yard) > 0, "the repacking yard is hit");
@@ -330,6 +330,7 @@ fn ares_emp_takes_a_charging_prism_supporter_out_of_its_network() {
         sim.entities()
             .get(supporter)
             .unwrap()
+            .seldom
             .ares
             .ares_prism
             .support_target()

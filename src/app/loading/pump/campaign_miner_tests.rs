@@ -141,7 +141,7 @@ fn dispatch(runtime: &mut crate::sim::runtime::SimRuntime, miner: u64) -> Option
                 &[],
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let entity = runtime.simulation.entities().get(miner).unwrap();
@@ -170,6 +170,7 @@ fn miner(runtime: &crate::sim::runtime::SimRuntime) -> u64 {
         sim.entities()
             .get(id)
             .unwrap()
+            .seldom
             .discovery
             .owned_by_current_house(),
         sim.entities().get(id).unwrap().owner() == current,
@@ -205,7 +206,7 @@ fn keep_ore(runtime: &mut crate::sim::runtime::SimRuntime, keep: impl Fn(u16, u1
 
 #[test]
 #[ignore = "slow; requires retail assets, an X11 display and GPU for full campaign loading"]
-#[allow(
+#[expect(
     deprecated,
     reason = "test creates an X11 loading surface without an app event loop"
 )]
@@ -240,7 +241,14 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
             )
             .unwrap(),
     );
-    let gpu = GpuContext::new(window, events.owned_display_handle(), true).unwrap();
+    let gpu = GpuContext::new(
+        window,
+        events.owned_display_handle(),
+        true,
+        wgpu::Backends::PRIMARY,
+        |_| {},
+    )
+    .unwrap();
     let batch = BatchRenderer::new(&gpu);
     // Ask the production mission to select an actually reachable distant
     // stock ore cell; distance is fixture admission, not another scan port.

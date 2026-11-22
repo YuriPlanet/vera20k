@@ -8,6 +8,17 @@
 //! `HouseColorMap`. The roster keeps the original map order and the most useful
 //! ownership metadata for later simulation/UI work.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::rules::color_scheme::ColorSchemeEntry;
@@ -232,6 +243,26 @@ pub fn parse_house_roster(
         let Some(house_name) = houses_section.read_name(key, 0x14) else {
             continue;
         };
+        // gamemd's campaign reader, `HouseClass::Read_INI @ 0x005009B0`,
+        // constructs a House for every entry, a repeated name included: the
+        // copy is a whole House read from the same section, at the next
+        // array index, so it shifts the index and ally bit of every later
+        // House and takes part in every walk of the House array, though
+        // `FindIndexByName @ 0x0050C170` returns the first of a name. VERA
+        // keys Houses by their case-folded name id, so it keeps the first
+        // entry and drops the copy. Residual: that second House (and one
+        // whose name differs from an earlier one only in ASCII case, which
+        // native keeps as its own House) is not constructed, so such a map
+        // has one House fewer here than in gamemd. The map plays on without a
+        // notice, as in gamemd, which accepts the repeat silently: the player
+        // has nothing to fix, and the log names the entry for the mapper.
+        if houses
+            .iter()
+            .any(|house: &HouseDefinition| house.name.eq_ignore_ascii_case(house_name))
+        {
+            log::warn!("[Houses] {key}={house_name} repeats an earlier House; skipped");
+            continue;
+        }
         let house_name = house_name.to_string();
 
         // `HouseClass::Read_Scenario_INI @ 0x00500B40` reads the house's own
@@ -323,9 +354,20 @@ fn parse_scenario_base_plan(
         return ScenarioBasePlanDefinition::default();
     };
     let percent_built = section.read_int("PercentBuilt", 0);
+    // BaseClass::Read_INI loops to NodeCount as written; a map is outside
+    // data, and `NodeCount=2000000000` would read two billion keys and grow
+    // the node list past memory with no log line. Real base plans hold a few
+    // dozen nodes.
+    const MAX_NODES: i32 = 1024;
     let node_count = section.read_int("NodeCount", 0);
+    if node_count > MAX_NODES {
+        log::warn!(
+            "[{}] NodeCount={node_count} asks for more base nodes than the {MAX_NODES} read",
+            section.name
+        );
+    }
     let mut nodes = Vec::new();
-    for index in 0..node_count.max(0) {
+    for index in 0..node_count.clamp(0, MAX_NODES) {
         let value = section
             .read_name(&format!("{index:03}"), 0x80)
             .unwrap_or("");
@@ -357,6 +399,20 @@ fn parse_scenario_base_plan(
 
 #[cfg(all(test, tests_map))]
 mod tests {
+    /// `NodeCount=2000000000` must not read two billion keys.
+    #[test]
+    fn a_base_plan_reads_at_most_the_node_cap() {
+        let ini = IniFile::from_str(
+            "[Americans]\nNodeCount=2000000000\n000=GAPOWR,10,12\n001=GAREFN,14,12\n",
+        );
+        let plan = parse_scenario_base_plan(ini.section("Americans"), None);
+        assert_eq!(plan.nodes.len(), 1024);
+        assert_eq!(
+            plan.nodes[0].packed_cell,
+            pack_scenario_base_plan_cell(10, 12)
+        );
+    }
+
     use super::*;
 
     fn base_plan_rules() -> RuleSet {
@@ -394,6 +450,20 @@ mod tests {
                 hsv: *hsv,
             })
             .collect()
+    }
+
+    #[test]
+    fn repeated_house_name_keeps_first_entry_and_its_index() {
+        let ini: IniFile = IniFile::from_str(
+            "[Houses]\n0=GDI\n1=gdi\n2=Nod\n\
+             [GDI]\nCountry=America\n\
+             [Nod]\nCountry=Russia\nAllies=GDI\n",
+        );
+        let roster = parse_house_roster(&ini, &test_schemes(), None);
+        let names: Vec<_> = roster.houses.iter().map(|h| h.name.as_str()).collect();
+        assert_eq!(names, ["GDI", "Nod"]);
+        // Allies resolves against the de-duplicated roster: GDI stays index 0.
+        assert_eq!(roster.houses[1].allies, 1);
     }
 
     #[test]

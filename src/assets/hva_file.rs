@@ -13,9 +13,21 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use crate::assets::error::AssetError;
 use crate::assets::vxl_decode::read_null_string;
-use crate::util::read_helpers::{read_f32_le, read_u32_le};
+use crate::util::read_helpers::read_u32_le;
 
 /// Minimum file size: 16 (name) + 4 (frames) + 4 (sections) = 24 bytes.
 const HVA_MIN_SIZE: usize = 24;
@@ -25,6 +37,9 @@ const SECTION_NAME_SIZE: usize = 16;
 
 /// Floats per transform matrix (3×4 row-major).
 const MATRIX_FLOATS: usize = 12;
+
+/// Bytes per transform matrix.
+const MATRIX_BYTES: usize = MATRIX_FLOATS * 4;
 
 /// A parsed HVA animation file containing per-frame per-section transforms.
 #[derive(Debug)]
@@ -45,7 +60,12 @@ pub struct HvaFile {
 impl HvaFile {
     /// Parse an HVA file from raw bytes.
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        if data.len() < HVA_MIN_SIZE {
+        // Bytes 0-15: filename (skipped, not meaningful for parsing).
+        let (Some(frame_count), Some(section_count), Some(body)) = (
+            read_u32_le(data, 16),
+            read_u32_le(data, 20),
+            data.get(HVA_MIN_SIZE..),
+        ) else {
             return Err(AssetError::InvalidHvaFile {
                 reason: format!(
                     "File too small: {} bytes (need at least {})",
@@ -53,11 +73,7 @@ impl HvaFile {
                     HVA_MIN_SIZE
                 ),
             });
-        }
-
-        // Bytes 0-15: filename (skipped, not meaningful for parsing).
-        let frame_count: u32 = read_u32_le(data, 16);
-        let section_count: u32 = read_u32_le(data, 20);
+        };
 
         if section_count == 0 {
             return Err(AssetError::InvalidHvaFile {
@@ -65,50 +81,51 @@ impl HvaFile {
             });
         }
 
-        // Section names start at offset 24.
-        let names_end: usize = HVA_MIN_SIZE + SECTION_NAME_SIZE * section_count as usize;
-        if data.len() < names_end {
+        // Section names start at offset 24; the matrices follow them. Every
+        // size below is checked, so a count the file cannot hold is an error
+        // on any target instead of a wrapped product.
+        let Some((names, matrix_data)) = SECTION_NAME_SIZE
+            .checked_mul(section_count as usize)
+            .and_then(|names_size| body.split_at_checked(names_size))
+        else {
             return Err(AssetError::InvalidHvaFile {
                 reason: format!(
-                    "File too small for section names: {} bytes (need {})",
-                    data.len(),
-                    names_end
+                    "File too small for {} section names: {} bytes",
+                    section_count,
+                    data.len()
                 ),
             });
-        }
-
-        let mut section_names: Vec<String> = Vec::with_capacity(section_count as usize);
-        for i in 0..section_count as usize {
-            let off: usize = HVA_MIN_SIZE + i * SECTION_NAME_SIZE;
-            let name: String = read_null_string(&data[off..off + SECTION_NAME_SIZE]);
-            section_names.push(name);
-        }
+        };
+        let section_names: Vec<String> = names
+            .chunks_exact(SECTION_NAME_SIZE)
+            .map(read_null_string)
+            .collect();
 
         // Transform matrices: 12 f32 per section per frame.
-        let total_matrices: usize = frame_count as usize * section_count as usize;
-        let matrix_data_size: usize = total_matrices * MATRIX_FLOATS * 4;
-        let matrix_start: usize = names_end;
-
-        if data.len() < matrix_start + matrix_data_size {
+        let (all_matrices, _) = matrix_data.as_chunks::<MATRIX_BYTES>();
+        let Some(matrices) = (frame_count as usize)
+            .checked_mul(section_count as usize)
+            .and_then(|total_matrices| all_matrices.get(..total_matrices))
+        else {
             return Err(AssetError::InvalidHvaFile {
                 reason: format!(
-                    "File too small for matrices: {} bytes (need {})",
-                    data.len(),
-                    matrix_start + matrix_data_size
+                    "File too small for {} frames of {} matrices: {} bytes",
+                    frame_count,
+                    section_count,
+                    data.len()
                 ),
             });
-        }
-
-        let mut transforms: Vec<[f32; 12]> = Vec::with_capacity(total_matrices);
-        let mut pos: usize = matrix_start;
-        for _ in 0..total_matrices {
-            let mut matrix: [f32; 12] = [0.0; 12];
-            for (k, slot) in matrix.iter_mut().enumerate() {
-                *slot = read_f32_le(data, pos + k * 4);
-            }
-            transforms.push(matrix);
-            pos += MATRIX_FLOATS * 4;
-        }
+        };
+        let transforms: Vec<[f32; 12]> = matrices
+            .iter()
+            .map(|matrix| {
+                let mut floats = [0.0f32; MATRIX_FLOATS];
+                for (float, bytes) in floats.iter_mut().zip(matrix.as_chunks::<4>().0) {
+                    *float = f32::from_le_bytes(*bytes);
+                }
+                floats
+            })
+            .collect();
 
         Ok(HvaFile {
             frame_count,

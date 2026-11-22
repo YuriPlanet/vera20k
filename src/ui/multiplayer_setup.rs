@@ -36,18 +36,19 @@ pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// The offer's text, a static.
 pub(crate) const MAP_OFFER_BODY: u16 = 0x7F34;
 /// VERA-only, in the team bar under the roster: the Teams count and the
-/// host's Team Starts and Team Colors.
+/// host's Quick Team Setup and Bulk Seat Actions lists
+/// ([`crate::ui::team_tools`]).
 pub(crate) const TEAM_COUNT: u16 = 0x7F0D;
-pub(crate) const TEAM_STARTS: u16 = 0x7F0E;
-pub(crate) const TEAM_COLORS: u16 = 0x7F11;
-/// VERA-only, online: the team bar's Balance.
-pub(crate) const BALANCE: u16 = 0x7F0F;
+pub(crate) const TEAM_MENU: u16 = 0x7F0E;
+pub(crate) const SEAT_MENU: u16 = 0x7F0F;
 /// VERA-only, the host's, in the team bar: Room size, the most people the
 /// room holds, spectators too.
 pub(crate) const ROOM_SIZE: u16 = 0x7F10;
 /// VERA-only, in an online room: Lobby, to the public lobby while the room
 /// goes on hidden (docs/lobby-protocol.md "Visiting the lobby").
 pub(crate) const LOBBY: u16 = 0x7F16;
+pub(crate) const CAMPAIGN_SERIES: u16 = 0x7F17;
+pub(crate) const CAMPAIGN_STAGE: u16 = 0x7F18;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x40 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7000;
@@ -93,6 +94,11 @@ const ROSTER_BOX_MARGIN: (i32, i32) = (5, 3);
 /// when they do not all fit.
 const ROSTER_INSET: i32 = 5;
 const ROSTER_SPARE_W: i32 = 34;
+/// On a window wide enough that each half of the roster's width holds
+/// entries this wide (a 16:9 one, with the chat at its least), its groups
+/// stand two abreast, their boxes [`ROSTER_GROUP_GAP`] apart.
+const ROSTER_PAIR_MIN_W: i32 = 260;
+const ROSTER_PAIR_GAP: i32 = 2 * ROSTER_BOX_MARGIN.0 + ROSTER_GROUP_GAP;
 /// The roster's entries at their full width, from their left edge: a row's
 /// Player, Side, Colour, Start and Team cells, as left edge and width; a
 /// header's caption, the host's Add AI and, at the row's right end, its Join:
@@ -108,9 +114,10 @@ const ROSTER_JOIN_W: i32 = 91;
 const ROSTER_LIST_MARGIN: i32 = 3;
 const ROSTER_SWATCH_LIST_W: i32 = 40;
 /// VERA's team bar gives Teams and Room size one row each, followed
-/// by one row for the available buttons. The controls are authored at
+/// by a taller row for the host's two lists. Its trackbars are authored at
 /// 78% of the shell's size ([`MultiplayerSetupLayout::control_scale`]).
 const TEAM_BAR_ROW_H: i32 = 25;
+const TEAM_BAR_MENU_ROW_H: i32 = 30;
 const TEAM_BAR_INSET: i32 = 8;
 const TEAM_BAR_GAP: i32 = 12;
 const TEAM_BAR_LABEL: RectPx = RectPx::new(0, 3, 90, 18);
@@ -119,7 +126,9 @@ const TEAM_BAR_TRACKBAR: RectPx = RectPx::new(92, 4, 151, 17);
 /// its plaque the same, so its rail is longer. It has its own frame
 /// (`render::skirmish_shell_chrome::TRACKBAR_FRAMES`).
 const TEAM_BAR_TRACKBAR_WINDOW: (i32, i32) = (194, 21);
-const TEAM_BAR_BUTTON: RectPx = RectPx::new(0, 3, 97, 19);
+/// The host's lists at the shell's own size, on a face the shell has art
+/// for (`combo_face_150`).
+const TEAM_BAR_MENU: RectPx = RectPx::new(0, 3, 150, 24);
 /// The chat's log ends here, its edit line under it.
 const CHAT_LOG_BOTTOM: i32 = 529;
 
@@ -137,18 +146,59 @@ struct RosterColumns {
 }
 impl RosterColumns {
     fn new(column: RectPx) -> Self {
-        let w = column.w - ROSTER_SPARE_W;
+        Self::across(column.x + ROSTER_INSET, column.w - ROSTER_SPARE_W)
+    }
+    /// Entries `w` wide from `x`.
+    fn across(x: i32, w: i32) -> Self {
         let narrow = |length: i32| length * w.clamp(0, ROSTER_W) / ROSTER_W;
         let first = ROSTER_CELLS[0].0;
         let at = |dx: i32| first + narrow(dx - first);
         Self {
-            x: column.x + ROSTER_INSET,
+            x,
             w,
             cells: ROSTER_CELLS.map(|(dx, width)| (at(dx), narrow(width))),
             caption_w: narrow(ROSTER_CAPTION_W),
             add_ai: (at(ROSTER_ADD_AI.0), narrow(ROSTER_ADD_AI.1)),
             join_w: narrow(ROSTER_JOIN_W),
         }
+    }
+    fn half_w(self) -> i32 {
+        (self.w - ROSTER_PAIR_GAP) / 2
+    }
+    /// Whether the roster's groups stand two abreast here.
+    fn pairs(self) -> bool {
+        self.half_w() >= ROSTER_PAIR_MIN_W
+    }
+    /// The entries of `span`: the whole width, or one half of it.
+    fn span(self, span: RosterSpan) -> Self {
+        let half = self.half_w();
+        match span {
+            RosterSpan::Full => self,
+            RosterSpan::Left => Self::across(self.x, half),
+            RosterSpan::Right => Self::across(self.x + self.w - half, half),
+        }
+    }
+    /// The column labels over the cells. The narrow cells' (Colour, Start
+    /// and Team) centre on their cell over the step from one to the next,
+    /// so their words still read where the cells are narrower than them.
+    fn labels(self, scale: ShellScale) -> impl Iterator<Item = (&'static str, RectPx)> {
+        let step = self.cells[3].0 - self.cells[2].0;
+        [
+            "GUI:Players",
+            "GUI:Side",
+            "GUI:Color",
+            "GUI:StartPosition",
+            "GUI:Team",
+        ]
+        .into_iter()
+        .zip(self.cells)
+        .enumerate()
+        .map(move |(index, (key, (dx, w)))| {
+            let wide = if index < 2 { w } else { step.max(w) };
+            let x = self.x + dx - (wide - w) / 2;
+            let label = RectPx::new(x, ROSTER_LABEL_Y, wide, ROSTER_LABEL_H);
+            (key, scale.scale_rect(label))
+        })
     }
 }
 /// The roster's text, as a share of the shell's own size.
@@ -166,93 +216,190 @@ pub(crate) enum RosterItem {
     Row,
     Header(SetupGroup),
 }
-impl RosterItem {
-    const fn height(self) -> i32 {
-        match self {
-            Self::Row => ROSTER_ROW_H,
-            Self::Header(_) => ROSTER_HEADER_H,
-        }
-    }
+
+/// Which part of VERA's roster's width an entry takes: all of it, or where
+/// its groups stand two abreast ([`RosterFrame::pairs`]), one half.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RosterSpan {
+    Full,
+    Left,
+    Right,
 }
 
-/// Where an entry of VERA's roster stands: which entry, and its top at
-/// 800x600.
+/// Where an entry of VERA's roster stands: which entry, its top at 800x600,
+/// and its part of the roster's width.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RosterPlace {
     pub(crate) item: usize,
     pub(crate) y: i32,
     pub(crate) header: bool,
+    pub(crate) span: RosterSpan,
 }
 
-/// The entries VERA's roster shows from entry `top` down its one column,
-/// until one no longer fits above `bottom` (800x600 pixels: over the team
-/// bar in a room with one, [`MultiplayerSetupLayout::roster_bottom`]). When `top` is a player under
-/// a header above it, that header stays pinned first, so the group keeps
-/// its caption and Join. A header under another group leaves
+/// Where VERA's roster's entries fit: above `bottom` (800x600 pixels: over
+/// the team bar in a room with one), and whether the window is wide enough
+/// for its groups to stand two abreast
+/// ([`MultiplayerSetupLayout::roster_frame`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RosterFrame {
+    pub(crate) bottom: i32,
+    pub(crate) pairs: bool,
+}
+
+/// A line of VERA's roster: one entry across it, or, where its groups stand
+/// two abreast, a group's entry on each half, either missing beside a
+/// longer group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RosterLine {
+    entries: [Option<usize>; 2],
+    paired: bool,
+    header: bool,
+}
+impl RosterLine {
+    fn height(self) -> i32 {
+        if self.header {
+            ROSTER_HEADER_H
+        } else {
+            ROSTER_ROW_H
+        }
+    }
+    fn first(self) -> Option<usize> {
+        self.entries.into_iter().flatten().next()
+    }
+    fn places(self, y: i32) -> impl Iterator<Item = RosterPlace> {
+        let spans = if self.paired {
+            [RosterSpan::Left, RosterSpan::Right]
+        } else {
+            [RosterSpan::Full; 2]
+        };
+        self.entries
+            .into_iter()
+            .zip(spans)
+            .filter_map(move |(item, span)| {
+                Some(RosterPlace {
+                    item: item?,
+                    y,
+                    header: self.header,
+                    span,
+                })
+            })
+    }
+}
+
+/// VERA's roster's lines: with `pairs` and two groups or more, each group
+/// beside the next, the first on the left half, in pairs down the roster
+/// (Teams A and B, then C and D); otherwise one entry a line.
+fn roster_lines(items: &[RosterItem], pairs: bool) -> Vec<RosterLine> {
+    let line = |index: usize| RosterLine {
+        entries: [Some(index), None],
+        paired: false,
+        header: matches!(items[index], RosterItem::Header(_)),
+    };
+    let starts: Vec<usize> = (0..items.len())
+        .filter(|&index| matches!(items[index], RosterItem::Header(_)))
+        .collect();
+    if !pairs || starts.len() < 2 {
+        return (0..items.len()).map(line).collect();
+    }
+    // Rows before the first header stand alone; each group runs from its
+    // header to the next one.
+    let groups: Vec<std::ops::Range<usize>> = starts
+        .iter()
+        .zip(starts[1..].iter().chain([&items.len()]))
+        .map(|(&start, &end)| start..end)
+        .collect();
+    let mut lines: Vec<RosterLine> = (0..starts[0]).map(line).collect();
+    for pair in groups.chunks(2) {
+        let (left, right) = (&pair[0], pair.get(1));
+        let len = right.map_or(0, |group| group.len()).max(left.len());
+        lines.extend((0..len).map(|k| {
+            let at = |group: &std::ops::Range<usize>| {
+                Some(group.start + k).filter(|i| group.contains(i))
+            };
+            RosterLine {
+                entries: [at(left), right.and_then(at)],
+                paired: true,
+                header: k == 0,
+            }
+        }));
+    }
+    lines
+}
+
+/// The entries VERA's roster shows from entry `top` down, until a line no
+/// longer fits above the frame's bottom. When `top` is a player under a
+/// header above it, that header stays pinned first, so the group keeps its
+/// caption and Join. A header under another group leaves
 /// [`ROSTER_GROUP_GAP`] between their boxes, and none stands at the foot
 /// without its first row.
-pub(crate) fn roster_page(items: &[RosterItem], top: usize, bottom: i32) -> Vec<RosterPlace> {
-    let pinned = items
+pub(crate) fn roster_page(
+    items: &[RosterItem],
+    top: usize,
+    frame: RosterFrame,
+) -> Vec<RosterPlace> {
+    let lines = roster_lines(items, frame.pairs);
+    let top = lines
+        .iter()
+        .position(|line| line.entries.contains(&Some(top)))
+        .unwrap_or(lines.len());
+    lines_page(&lines, top, frame.bottom)
+}
+fn lines_page(lines: &[RosterLine], top: usize, bottom: i32) -> Vec<RosterPlace> {
+    let pinned = lines
         .get(top)
-        .filter(|item| **item == RosterItem::Row)
-        .and_then(|_| {
-            items[..top]
-                .iter()
-                .rposition(|item| matches!(item, RosterItem::Header(_)))
-        });
+        .filter(|line| !line.header)
+        .and_then(|_| lines[..top].iter().rposition(|line| line.header));
     let mut places = Vec::new();
     let mut y = ROSTER_TOP;
-    for index in pinned
-        .into_iter()
-        .chain(top..items.len())
-        .take(MODERN_SETUP_ROWS)
-    {
-        let item = items[index];
-        let header = matches!(item, RosterItem::Header(_));
-        if header && y > ROSTER_TOP {
+    for index in pinned.into_iter().chain(top..lines.len()) {
+        let line = lines[index];
+        if line.header && y > ROSTER_TOP {
             y += ROSTER_GROUP_GAP;
         }
-        let first_row = if header && items.get(index + 1) == Some(&RosterItem::Row) {
+        let first_row = if line.header && lines.get(index + 1).is_some_and(|next| !next.header) {
             ROSTER_ROW_H
         } else {
             0
         };
-        if y + item.height() + first_row > bottom {
+        let count = line.entries.iter().flatten().count();
+        if y + line.height() + first_row > bottom || places.len() + count > MODERN_SETUP_ROWS {
             break;
         }
-        places.push(RosterPlace {
-            item: index,
-            y,
-            header,
-        });
-        y += item.height();
+        places.extend(line.places(y));
+        y += line.height();
     }
     places
 }
 
 /// Where VERA's roster scrolls: the entries it can show first ([`roster_page`]'s
-/// `top`), and the first of them from which every entry to the last shows.
-/// Each player's row is one, its header pinned over it; a header only when
-/// no row is under it, as it would show the same as its first row.
+/// `top`), and the first of them from which every line to the last shows.
+/// Each line of players' rows is one, its headers pinned over it; a header
+/// only when no row is under it, as it would show the same as its first
+/// row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RosterScroll {
     pub(crate) stops: Vec<usize>,
     pub(crate) max_top: usize,
 }
-pub(crate) fn roster_scroll(items: &[RosterItem], bottom: i32) -> RosterScroll {
-    let stops: Vec<usize> = (0..items.len())
+pub(crate) fn roster_scroll(items: &[RosterItem], frame: RosterFrame) -> RosterScroll {
+    let lines = roster_lines(items, frame.pairs);
+    let tops: Vec<usize> = (0..lines.len())
         .filter(|&index| {
-            items[index] == RosterItem::Row || items.get(index + 1) != Some(&RosterItem::Row)
+            !lines[index].header || lines.get(index + 1).is_none_or(|next| next.header)
         })
         .collect();
-    let max_top = stops
+    let last = lines.last().copied();
+    let max_top = tops
         .iter()
         .position(|&top| {
-            roster_page(items, top, bottom)
+            lines_page(&lines, top, frame.bottom)
                 .last()
-                .is_some_and(|place| place.item + 1 == items.len())
+                .is_some_and(|place| {
+                    last.is_some_and(|line| line.entries.contains(&Some(place.item)))
+                })
         })
         .unwrap_or(0);
+    let stops = tops.iter().filter_map(|&top| lines[top].first()).collect();
     RosterScroll { stops, max_top }
 }
 
@@ -297,10 +444,37 @@ pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
 /// The room's Terrain Deformation ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const TERRAIN_DEFORMATION: u16 = 0x7F12;
+/// The room's Building Production Queue ([`HostRules`](crate::skirmish_launch::HostRules)).
+pub(crate) const BUILDING_QUEUE: u16 = 0x7F13;
 /// The room's Superweapon Limit, a trackbar in VERA's Game Options only
 /// ([`HostRules`](crate::skirmish_launch::HostRules)).
 pub(crate) const SUPERWEAPON_LIMIT: u16 = 0x7F14;
-pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
+/// The room's Tech Level, a trackbar in VERA's Game Options only; C2's proc
+/// reads no tech level from its dialog.
+pub(crate) const TECH_LEVEL: u16 = 0x7F15;
+/// Game Options' button to its other page.
+pub(crate) const GAME_OPTIONS_PAGE: u16 = 0x7F19;
+/// Four session checkboxes C2's proc (`Dialog0xC2__DlgProc`, 0x0078F7F0)
+/// handles though YR's room shows none of them: Bases (`0x0078FA51`), Fog of
+/// War (`0x0078FC07`), Multi-Engineer (`0x0078FB2B`) and Harvester Truce
+/// (`0x0078FBBB`). VERA's Game Options shows them beside the native five.
+pub(crate) const BASES: u16 = 0x54B;
+pub(crate) const FOG_OF_WAR: u16 = 0x599;
+pub(crate) const MULTI_ENGINEER: u16 = 0x551;
+pub(crate) const HARVESTER_TRUCE: u16 = 0x596;
+pub(crate) const SESSION_CHECKBOXES: [u16; 4] =
+    [BASES, FOG_OF_WAR, MULTI_ENGINEER, HARVESTER_TRUCE];
+/// Their labels in VERA's language files, as Skirmish's Game Options has them.
+pub(crate) const SESSION_CHECKBOX_LABELS: [&str; 4] = {
+    use crate::ui::skirmish_shell::game_options as labels;
+    [
+        labels::BASES_LABEL,
+        labels::FOG_OF_WAR_LABEL,
+        labels::MULTI_ENGINEER_LABEL,
+        labels::HARVESTER_TRUCE_LABEL,
+    ]
+};
+pub(crate) const ROOM_CHECKBOXES: [u16; 8] = [
     BRIDGES,
     ALLYING,
     NO_YURI,
@@ -308,10 +482,11 @@ pub(crate) const ROOM_CHECKBOXES: [u16; 7] = [
     NO_SPY,
     NO_STOLEN_TECH,
     TERRAIN_DEFORMATION,
+    BUILDING_QUEUE,
 ];
 /// Their labels in VERA's language files; the retail string table has none
 /// for them.
-pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 8] = [
     "VERA:DestroyableBridges",
     "VERA:InGameAllying",
     "VERA:NoYuri",
@@ -319,12 +494,15 @@ pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 7] = [
     "VERA:NoSpy",
     "VERA:NoStolenTech",
     "VERA:TerrainDeformation",
+    "VERA:BuildingProductionQueue",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
-/// The statics captioning [`OPTION_TRACKBARS`] and [`SUPERWEAPON_LIMIT`].
+/// The statics captioning [`OPTION_TRACKBARS`], [`SUPERWEAPON_LIMIT`] and
+/// [`TECH_LEVEL`].
 pub(crate) const OPTION_CAPTIONS: [u16; 3] = [0x7F30, 0x7F31, 0x7F32];
 pub(crate) const SUPERWEAPON_LIMIT_CAPTION: u16 = 0x7F33;
+pub(crate) const TECH_LEVEL_CAPTION: u16 = 0x7F35;
 /// [`CHECKBOXES`]' captions.
 const CHECKBOX_LABELS: [&str; 5] = [
     "GUI:ShortGame",
@@ -530,6 +708,9 @@ pub(crate) struct SetupChoice {
     pub(crate) value: i32,
     pub(crate) text: String,
     pub(crate) swatch: Option<usize>,
+    /// Listed grey, and picking it does nothing: a team bar menu's item
+    /// that cannot be had now.
+    pub(crate) greyed: bool,
 }
 #[derive(Debug, Clone)]
 pub(crate) struct SetupCombo {
@@ -586,7 +767,8 @@ pub(crate) struct SetupRowIcon {
     pub(crate) host: bool,
     pub(crate) accepted: bool,
     /// VERA's online room: the player's badge
-    /// ([`crate::ui::wol_lobby::badge`]), drawn at the right of their name.
+    /// ([`crate::ui::wol_lobby::badge`]), drawn in front of their name
+    /// ([`MultiplayerSetupLayout::badge_rect`]).
     pub(crate) badge: Option<&'static str>,
     /// The local player's own row, which VERA's roster marks.
     pub(crate) local: bool,
@@ -651,8 +833,72 @@ const ROW_DRAG_START: i32 = 6;
 /// is page row `row` is `GROUP_BOX + row`.
 pub(crate) const GROUP_BOX: u16 = 0x7F40;
 
+/// A page of VERA's Game Options box over the room.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum RoomBox {
+    /// Game Options: the match options gamemd's room keeps.
+    #[default]
+    GameOptions,
+    /// Its second page: VERA's own rules and bans.
+    MoreOptions,
+}
+
+impl RoomBox {
+    /// The Game Options page [`GAME_OPTIONS_PAGE`] turns to.
+    pub(crate) fn other_page(self) -> Self {
+        match self {
+            Self::GameOptions => Self::MoreOptions,
+            Self::MoreOptions => Self::GameOptions,
+        }
+    }
+    /// [`GAME_OPTIONS_PAGE`]'s caption: the page it turns to.
+    pub(crate) fn page_button_label(self) -> &'static str {
+        match self {
+            Self::GameOptions => "VERA:MoreOptions",
+            Self::MoreOptions => "VERA:MainOptions",
+        }
+    }
+}
+
+/// The options a Game Options page holds, besides its page button and OK.
+pub(crate) fn game_options_controls(page: RoomBox) -> Vec<u16> {
+    match page {
+        RoomBox::GameOptions => CHECKBOXES
+            .into_iter()
+            .chain(SESSION_CHECKBOXES)
+            .chain(OPTION_TRACKBARS)
+            .chain([TECH_LEVEL])
+            .collect(),
+        RoomBox::MoreOptions => ROOM_CHECKBOXES
+            .into_iter()
+            .chain([SUPERWEAPON_LIMIT])
+            .collect(),
+    }
+}
+
+/// Whether control `id` of the Game Options box shows on `page`: the
+/// page's options with their captions, the page button and OK. A campaign
+/// room's box holds only its speed (no page button).
+fn on_game_options_page(view: &SetupView, page: RoomBox, id: u16) -> bool {
+    if view.campaign {
+        return matches!(id, SPEED | GAME_OPTIONS_OK) || id == OPTION_CAPTIONS[0];
+    }
+    if let Some(index) = OPTION_CAPTIONS.iter().position(|caption| *caption == id) {
+        return page == RoomBox::GameOptions && view.trackbar_shows(OPTION_TRACKBARS[index]);
+    }
+    match id {
+        GAME_OPTIONS_OK | GAME_OPTIONS_PAGE => true,
+        TECH_LEVEL_CAPTION => page == RoomBox::GameOptions && view.trackbar_shows(TECH_LEVEL),
+        SUPERWEAPON_LIMIT_CAPTION => {
+            page == RoomBox::MoreOptions && view.trackbar_shows(SUPERWEAPON_LIMIT)
+        }
+        id => game_options_controls(page).contains(&id),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
+    pub(crate) campaign: bool,
     pub(crate) first_row: usize,
     pub(crate) row_count: usize,
     /// The first row of each page.
@@ -666,7 +912,7 @@ pub(crate) struct SetupView {
     pub(crate) roster_scroll: (usize, usize),
     pub(crate) dialog: SetupDialog,
     pub(crate) locked: bool,
-    /// C2's Short Game is held on in a tournament or clan room.
+    /// C2's Short Game and Bases are held on in a tournament or clan room.
     pub(crate) short_game_locked: bool,
     /// The team header `0x794`; hidden in a clan room.
     pub(crate) team_header: bool,
@@ -675,18 +921,14 @@ pub(crate) struct SetupView {
     pub(crate) combos: Vec<SetupCombo>,
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
+    /// [`SESSION_CHECKBOXES`]' states.
+    pub(crate) session_checks: [bool; 4],
     /// [`ROOM_CHECKBOXES`]' states.
-    pub(crate) room_checks: [bool; 7],
+    pub(crate) room_checks: [bool; 8],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// VERA's header rows, by the row on the page.
     pub(crate) headers: [Option<SetupHeader>; MODERN_SETUP_ROWS],
-    /// Team Starts: Teams is set and the map has starts to give.
-    pub(crate) team_starts_enabled: bool,
-    /// Team Colors: Teams is set.
-    pub(crate) team_colors_enabled: bool,
-    /// Online, the host's Balance: the room's mode seats players on teams.
-    pub(crate) balance_enabled: bool,
     /// Online, Lobby: the lobby offers visits to the public lobby.
     pub(crate) lobby_enabled: bool,
     /// The rows the host may drag to another box, in a room with teams.
@@ -707,6 +949,10 @@ impl SetupView {
     }
     pub(crate) fn page(&self) -> &'static MenuPageSpec {
         self.dialog.page()
+    }
+    /// Whether trackbar `id` shows.
+    pub(crate) fn trackbar_shows(&self, id: u16) -> bool {
+        self.trackbars.iter().any(|bar| bar.id == id && bar.visible)
     }
     pub(crate) fn combo(&self, id: u16) -> Option<&SetupCombo> {
         self.combos.iter().find(|combo| combo.id == id)
@@ -736,6 +982,8 @@ impl SetupView {
             id,
             CHAT | CHAT_LOG | GAME_OPTIONS_OK | MAP_OFFER_DOWNLOAD | MAP_OFFER_LEAVE
         ) || (id == EMOTE && self.dialog.wol())
+            // A campaign room's Game Options holds only its speed.
+            || (id == GAME_OPTIONS_PAGE && !self.campaign)
         {
             return true;
         }
@@ -745,16 +993,19 @@ impl SetupView {
         match id {
             BACK | CHAT | CHAT_LOG | GAME_OPTIONS => true,
             LOBBY => self.lobby_enabled,
-            START | CHOOSE_MAP => self.dialog.host,
-            TEAM_STARTS => self.team_starts_enabled,
-            TEAM_COLORS => self.team_colors_enabled,
-            BALANCE => self.balance_enabled,
+            START => self.dialog.host,
+            CHOOSE_MAP => self.dialog.host && !self.campaign,
             PAGE => self.dialog.wol(),
             PREVIOUS_ROWS => self.first_row > 0,
             NEXT_ROWS => self.first_row + self.page_len < self.row_count,
             ACCEPT => !self.dialog.host && self.accept_enabled,
-            0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.dialog.host,
+            0x54E | BASES if self.short_game_locked => false,
+            id if CHECKBOXES.contains(&id)
+                || SESSION_CHECKBOXES.contains(&id)
+                || ROOM_CHECKBOXES.contains(&id) =>
+            {
+                self.dialog.host && !self.campaign
+            }
             id if team_join_row(id).is_some() => self
                 .header_button(id)
                 .is_some_and(|header| header.join_enabled),
@@ -798,14 +1049,9 @@ pub(crate) enum SetupAction {
     RosterPage {
         forward: bool,
     },
-    /// VERA's Game Options box over the room opens, or closes.
-    GameOptions(bool),
-    /// The host's Team Starts in the Teams box.
-    TeamStarts,
-    /// The host's Team Colors in the Teams box.
-    TeamColors,
-    /// The host's Balance in the team bar, online.
-    Balance,
+    /// VERA's Game Options box over the room opens on, or turns to, a page,
+    /// or closes (`None`).
+    GameOptions(Option<RoomBox>),
     /// Lobby in an online room: the public lobby, the room keeping this
     /// player's place.
     Lobby,
@@ -826,7 +1072,8 @@ pub(crate) enum SetupAction {
 pub(crate) struct MapOffer {
     pub(crate) name: String,
     pub(crate) message: String,
-    /// Download was pressed; the map transfer takes it from here.
+    /// The primary button offers Download or Retry.
+    pub(crate) button_key: &'static str,
     pub(crate) downloading: bool,
     /// When it opened: keys typed for the chat just before do not answer it.
     pub(crate) opened: Instant,
@@ -867,6 +1114,8 @@ pub(crate) struct MultiplayerSetupState {
     /// VERA's Game Options box is open over the room; it takes the room's
     /// input.
     pub(crate) game_options: bool,
+    /// The page the Game Options box shows.
+    pub(crate) game_options_page: RoomBox,
     /// VERA's missing-map offer; open until its map arrives, it takes the
     /// room's input.
     pub(crate) map_offer: Option<MapOffer>,
@@ -887,6 +1136,7 @@ impl Default for MultiplayerSetupState {
             shown: false,
             accept_flash_started: None,
             game_options: false,
+            game_options_page: RoomBox::GameOptions,
             map_offer: None,
             briefings_checked: Vec::new(),
         }
@@ -972,8 +1222,11 @@ impl MultiplayerSetupState {
         self.briefings_checked.push(file.to_owned());
         true
     }
-    pub(crate) fn show_game_options(&mut self, open: bool) {
-        self.game_options = open;
+    /// Opens the Game Options box on `page`, turns it to `page`, or closes
+    /// it (`None`).
+    pub(crate) fn show_game_options(&mut self, page: Option<RoomBox>) {
+        self.game_options = page.is_some();
+        self.game_options_page = page.unwrap_or_default();
     }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
         if !enabled {
@@ -991,6 +1244,8 @@ impl MultiplayerSetupState {
 pub(crate) struct GameOptionsLayout {
     pub(crate) dialog: RectPx,
     pub(crate) ok: RectPx,
+    /// [`GAME_OPTIONS_PAGE`], left of OK.
+    pub(crate) page: RectPx,
 }
 
 /// The roster's column captions (ids `0xFF00..`) and the option trackbars'
@@ -1044,19 +1299,23 @@ pub(crate) struct MultiplayerSetupLayout {
     /// In the room, or in [`Self::game_options`] when it is `Some`, with
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
-    /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
-    pub(crate) room_checkboxes: [RectPx; 7],
-    /// [`SUPERWEAPON_LIMIT`]'s label, placed only in [`Self::game_options`].
+    /// [`SESSION_CHECKBOXES`], on Game Options' first page.
+    pub(crate) session_checkboxes: [RectPx; 4],
+    /// [`ROOM_CHECKBOXES`], on Game Options' second page.
+    pub(crate) room_checkboxes: [RectPx; 8],
+    /// [`TECH_LEVEL`]'s label, on Game Options' first page.
+    pub(crate) tech_level_label: RectPx,
+    /// [`SUPERWEAPON_LIMIT`]'s label, on Game Options' second page.
     pub(crate) superweapon_limit_label: RectPx,
     /// VERA's team bar under the roster, with the Teams count's label, the
-    /// host's Room size's, Team Starts and Team Colors and, online, Balance.
+    /// host's Room size's, and the host's Quick Team Setup, in a room with
+    /// teams, and Bulk Seat Actions.
     pub(crate) team_bar: Option<RectPx>,
     pub(crate) teams_label: RectPx,
     pub(crate) room_size_label: RectPx,
-    pub(crate) team_starts: Option<RectPx>,
-    pub(crate) team_colors: Option<RectPx>,
-    pub(crate) balance: Option<RectPx>,
-    pub(crate) trackbars: [(u16, RectPx); 7],
+    pub(crate) team_menu: Option<RectPx>,
+    pub(crate) seat_menu: Option<RectPx>,
+    pub(crate) trackbars: [(u16, RectPx); 8],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
@@ -1138,14 +1397,15 @@ impl MultiplayerSetupLayout {
             chat: at(CHAT),
             chat_log: at(CHAT_LOG),
             checkboxes: CHECKBOXES.map(at),
-            room_checkboxes: [RectPx::new(0, 0, 0, 0); 7],
+            session_checkboxes: [RectPx::new(0, 0, 0, 0); 4],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 8],
+            tech_level_label: RectPx::new(0, 0, 0, 0),
             superweapon_limit_label: RectPx::new(0, 0, 0, 0),
             team_bar: None,
             teams_label: RectPx::new(0, 0, 0, 0),
             room_size_label: RectPx::new(0, 0, 0, 0),
-            team_starts: None,
-            team_colors: None,
-            balance: None,
+            team_menu: None,
+            seat_menu: None,
             trackbars: [
                 (SPEED, at(SPEED)),
                 (CREDITS, at(CREDITS)),
@@ -1153,6 +1413,7 @@ impl MultiplayerSetupLayout {
                 (DIFFICULTY, at(DIFFICULTY)),
                 (TEAM_COUNT, RectPx::new(0, 0, 0, 0)),
                 (SUPERWEAPON_LIMIT, RectPx::new(0, 0, 0, 0)),
+                (TECH_LEVEL, RectPx::new(0, 0, 0, 0)),
                 (ROOM_SIZE, RectPx::new(0, 0, 0, 0)),
             ],
             labels: LABELS
@@ -1186,7 +1447,14 @@ impl MultiplayerSetupLayout {
         let left = window.x + ROOM_FRAME_W + ROOM_GAP;
         let right = window.x + window.w - ROOM_RIGHT_PANEL_W - ROOM_MARGIN;
         let width = right - left;
-        let chat_w = (width * CHAT_SHARE.0 / CHAT_SHARE.1).clamp(CHAT_W.0, CHAT_W.1);
+        // Where the roster's groups can stand two abreast with the chat at
+        // its least, the chat takes no more.
+        let narrow_chat = width - ROOM_GAP - CHAT_W.0;
+        let chat_w = if RosterColumns::new(RectPx::new(left, 0, narrow_chat, 0)).pairs() {
+            CHAT_W.0
+        } else {
+            (width * CHAT_SHARE.0 / CHAT_SHARE.1).clamp(CHAT_W.0, CHAT_W.1)
+        };
         let roster_w = width - ROOM_GAP - chat_w;
         let chat_x = right - chat_w;
         // Where the shell's menu boxes sit on the 800x600 page, centred
@@ -1201,37 +1469,55 @@ impl MultiplayerSetupLayout {
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
             *label = scale.scale_rect(form_row(index).0);
         }
+        // The first page: Tech Level under Unit Count; the second: the
+        // Superweapon Limit at the top.
+        let tech_level = form_row(OPTION_TRACKBARS.len());
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
                 *bar = scale.scale_rect(form_row(index).1);
             }
-            // Superweapon Limit under Unit Count.
-            if *id == SUPERWEAPON_LIMIT {
-                *bar = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).1);
+            match *id {
+                TECH_LEVEL => *bar = scale.scale_rect(tech_level.1),
+                SUPERWEAPON_LIMIT => *bar = scale.scale_rect(form_row(0).1),
+                _ => {}
             }
         }
-        self.superweapon_limit_label = scale.scale_rect(form_row(OPTION_TRACKBARS.len()).0);
-        // Two columns of six under the trackbars and Superweapon Limit, the
-        // left one over the art: the native five and Destroyable Bridges,
-        // then In-game Allying, the four bans and Terrain Deformation.
-        let row = |index: i32| 154 + 22 * index;
-        let left_option = |index| popup(24, row(index), 185, 17);
-        let right_option = |index| popup(215, row(index), 226, 17);
+        self.tech_level_label = scale.scale_rect(tech_level.0);
+        self.superweapon_limit_label = scale.scale_rect(form_row(0).0);
+        // Two columns of checkboxes on each page, the left one over the art.
+        // The first page has the native five, then beside them the four
+        // C2 keeps hidden, Bases next to Short Game, which it ties to it.
+        let column = |left: bool, top: i32, index: i32| {
+            let y = top + 22 * index;
+            if left {
+                popup(24, y, 185, 17)
+            } else {
+                popup(215, y, 226, 17)
+            }
+        };
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
-            *checkbox = left_option(index as i32);
+            *checkbox = column(true, 154, index as i32);
         }
+        for (index, checkbox) in self.session_checkboxes.iter_mut().enumerate() {
+            *checkbox = column(false, 154, index as i32);
+        }
+        // The second page: Destroyable Bridges, In-game Allying, Terrain
+        // Deformation and Building Production Queue, then the four bans.
+        let more = |left, index| column(left, 70, index);
         self.room_checkboxes = [
-            left_option(5),
-            right_option(0),
-            right_option(1),
-            right_option(2),
-            right_option(3),
-            right_option(4),
-            right_option(5),
+            more(true, 0),
+            more(true, 1),
+            more(false, 0),
+            more(false, 1),
+            more(false, 2),
+            more(false, 3),
+            more(true, 2),
+            more(true, 3),
         ];
         self.game_options = Some(GameOptionsLayout {
             dialog: popup(0, 0, options.w, options.h),
             ok: popup(276, 292, 124, 24),
+            page: popup(51, 292, 124, 24),
         });
         // The roster's column: the labels over its cells, the area it
         // scrolls in and, at its foot, the team bar.
@@ -1246,12 +1532,8 @@ impl MultiplayerSetupLayout {
         );
         self.roster_area = scale.scale_rect(area);
         self.roster_columns = columns;
-        self.labels = LABELS
-            .into_iter()
-            .zip(columns.cells)
-            .map(|(key, (dx, w))| (key, base(columns.x + dx, ROSTER_LABEL_Y, w, ROSTER_LABEL_H)))
-            .collect();
-        self.arrange_team_bar(true, online, host, host);
+        self.labels = columns.labels(scale).collect();
+        self.arrange_team_bar(true, host, host);
         // The chat's column: the log from as high as the roster's area,
         // then the edit line, and online the emote button at its right end.
         self.chat_log = base(chat_x + 1, area.y, chat_w, CHAT_LOG_BOTTOM - area.y);
@@ -1270,12 +1552,13 @@ impl MultiplayerSetupLayout {
     }
     /// The frame follows the roster's width. Only visible rows reserve
     /// height at its foot; widening the window keeps the controls in place.
-    fn arrange_team_bar(&mut self, teams: bool, online: bool, host: bool, room_size: bool) {
+    fn arrange_team_bar(&mut self, teams: bool, host: bool, room_size: bool) {
         let scale = self.page.scale;
         let (mx, my) = ROSTER_BOX_MARGIN;
         let slider_rows = i32::from(teams) + i32::from(room_size);
-        let rows = slider_rows + i32::from(teams && (host || online));
-        let bar_h = rows * TEAM_BAR_ROW_H;
+        let menus = host && slider_rows > 0;
+        let rows = slider_rows + i32::from(menus);
+        let bar_h = slider_rows * TEAM_BAR_ROW_H + i32::from(menus) * TEAM_BAR_MENU_ROW_H;
         let bar = RectPx::new(
             self.roster_columns.x - mx,
             ROSTER_BOTTOM + my - bar_h,
@@ -1317,31 +1600,44 @@ impl MultiplayerSetupLayout {
                 (*label, *window) = (zero, zero);
             }
         }
-        let button = |column| {
-            let part = TEAM_BAR_BUTTON.translate(column * (TEAM_BAR_BUTTON.w + TEAM_BAR_GAP), 0);
+        let menu = |column| {
+            let part = TEAM_BAR_MENU.translate(column * (TEAM_BAR_MENU.w + TEAM_BAR_GAP), 0);
             at(part, slider_rows)
         };
-        self.team_starts = (teams && host).then(|| button(0));
-        self.team_colors = (teams && host).then(|| button(1));
-        self.balance = (teams && online).then(|| button(if host { 2 } else { 0 }));
+        self.team_menu = (menus && teams).then(|| menu(0));
+        self.seat_menu = menus.then(|| menu(i32::from(teams)));
+    }
+    /// Where VERA's roster's entries fit ([`roster_page`]).
+    pub(crate) fn roster_frame(&self) -> RosterFrame {
+        RosterFrame {
+            bottom: self.roster_bottom,
+            pairs: self.roster && self.roster_columns.pairs(),
+        }
     }
     /// VERA's team bar for the room: with or without teams, and with or
     /// without the host's Room size ([`Self::arrange_team_bar`]).
     pub(crate) fn fit_team_bar(&mut self, dialog: SetupDialog, teams: bool, room_size: bool) {
         if self.roster {
-            self.arrange_team_bar(teams, dialog.wol(), dialog.host, room_size);
+            self.arrange_team_bar(teams, dialog.host, room_size);
         }
     }
     /// VERA's roster: each entry showing where [`roster_page`] puts it, a
     /// header's caption, Add AI and Join along its band, and a row's cells
-    /// along its line.
+    /// along its line. Groups standing two abreast have the column labels
+    /// over each half.
     pub(crate) fn arrange_roster(&mut self, places: &[RosterPlace]) {
         let scale = self.page.scale;
         let rect = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        let columns = self.roster_columns;
-        let x = columns.x;
+        if places.iter().any(|place| place.span != RosterSpan::Full) {
+            let halves = [RosterSpan::Left, RosterSpan::Right];
+            self.labels = halves
+                .into_iter()
+                .flat_map(|span| self.roster_columns.span(span).labels(scale))
+                .collect();
+        }
         for (position, place) in places.iter().enumerate().take(MODERN_SETUP_ROWS) {
-            let y = place.y;
+            let columns = self.roster_columns.span(place.span);
+            let (x, y) = (columns.x, place.y);
             if place.header {
                 self.combos[position][0] = rect(x, y, columns.caption_w, ROSTER_HEADER_H);
                 let (dx, w) = columns.add_ai;
@@ -1362,24 +1658,58 @@ impl MultiplayerSetupLayout {
                 self.roster_rows[position] = rect(x, y, columns.w, ROSTER_ROW_H);
             }
         }
-        // Each header's group: it and the rows under it.
+        // Each header's group: it and the rows under it, the entries up to
+        // the next header's.
         for (position, place) in places.iter().enumerate().take(MODERN_SETUP_ROWS) {
             if !place.header {
                 continue;
             }
-            let last = places[position + 1..]
+            let end = places
                 .iter()
-                .take_while(|next| !next.header)
-                .last()
-                .map_or(place.y + ROSTER_HEADER_H, |row| row.y + ROSTER_ROW_H);
+                .filter(|next| next.header && next.item > place.item)
+                .map(|next| next.item)
+                .min()
+                .unwrap_or(usize::MAX);
+            let last = places
+                .iter()
+                .filter(|row| (place.item + 1..end).contains(&row.item))
+                .map(|row| row.y + ROSTER_ROW_H)
+                .max()
+                .unwrap_or(place.y + ROSTER_HEADER_H);
+            let columns = self.roster_columns.span(place.span);
             let (mx, my) = ROSTER_BOX_MARGIN;
             self.group_boxes[position] = Some(rect(
-                x - mx,
+                columns.x - mx,
                 place.y - my,
                 columns.w + 2 * mx,
                 last - place.y + 2 * my,
             ));
         }
+    }
+    /// VERA's roster: where the badge ([`SetupRowIcon::badge`]) of the
+    /// player in Player cell `control` stands, in front of the name: the
+    /// row's margin left of the cell, so names line up with or without one
+    /// and keep their whole cell. `None` for a row without a badge.
+    pub(crate) fn badge_rect(&self, view: &SetupView, control: u16) -> Option<RectPx> {
+        let (SetupColumn::Player, row) = SetupColumn::decode(control)? else {
+            return None;
+        };
+        view.row_icons.get(row)?.as_ref()?.badge?;
+        let name = self.control_rect(control)?;
+        let band = self.roster_rows[row];
+        (self.roster && name.x > band.x)
+            .then(|| RectPx::new(band.x, name.y, name.x - band.x, name.h))
+    }
+    /// VERA's roster: the Player cell whose badge stands at `x`, `y`; the
+    /// badge is painted art, no control, and only names its player in the
+    /// status help.
+    pub(crate) fn badge_at(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
+        (0..MODERN_SETUP_ROWS)
+            .map(|row| SetupColumn::Player.control(row))
+            .find(|&id| {
+                self.badge_rect(view, id)
+                    .is_some_and(|rect| rect.contains(x, y))
+            })
     }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
@@ -1414,6 +1744,12 @@ impl MultiplayerSetupLayout {
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
         }
+        if let Some(index) = SESSION_CHECKBOXES
+            .iter()
+            .position(|candidate| *candidate == id)
+        {
+            return Some(self.session_checkboxes[index]);
+        }
         if let Some(index) = OPTION_CAPTIONS
             .iter()
             .position(|candidate| *candidate == id)
@@ -1440,10 +1776,13 @@ impl MultiplayerSetupLayout {
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            GAME_OPTIONS_PAGE => self.game_options.map(|popup| popup.page),
             SUPERWEAPON_LIMIT_CAPTION => self.game_options.map(|_| self.superweapon_limit_label),
-            TEAM_STARTS => self.team_starts,
-            TEAM_COLORS => self.team_colors,
-            BALANCE => self.balance,
+            TECH_LEVEL_CAPTION => self.game_options.map(|_| self.tech_level_label),
+            CAMPAIGN_SERIES => Some(self.mode_label),
+            CAMPAIGN_STAGE => Some(self.map_label),
+            TEAM_MENU => self.team_menu,
+            SEAT_MENU => self.seat_menu,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.button(0)),
             MAP_OFFER_BODY => Some(self.map_offer.body),
             crate::ui::shell::modal::control::OK => Some(self.notice_ok),
@@ -1459,15 +1798,10 @@ impl MultiplayerSetupLayout {
             .map(|_| (window.w * 78 / 100, window.h * 78 / 100))
     }
     /// The scale `id`'s art draws and takes the pointer at: the team bar's
-    /// controls at 78% of the shell's.
+    /// trackbars at 78% of the shell's.
     pub(crate) fn control_scale(&self, id: u16) -> ShellScale {
         match self.team_bar_screen() {
-            Some((w, h))
-                if matches!(
-                    id,
-                    TEAM_COUNT | ROOM_SIZE | TEAM_STARTS | TEAM_COLORS | BALANCE
-                ) =>
-            {
+            Some((w, h)) if matches!(id, TEAM_COUNT | ROOM_SIZE) => {
                 crate::ui::shell::geom::shell_scale(w, h)
             }
             _ => self.page.scale,
@@ -1485,6 +1819,13 @@ impl MultiplayerSetupLayout {
         let text_w = scale.scale_rect(RectPx::new(0, 0, combo.list_w, 0)).w;
         let bar_w = popup.scrollbar().map_or(0, |bar| bar.w);
         popup.rect.w = popup.rect.w.max(text_w + bar_w);
+        // The team bar's lists would run past the status line under it, so
+        // they open upward.
+        if matches!(id, TEAM_MENU | SEAT_MENU)
+            && popup.rect.y + popup.rect.h > self.page.status_help.y
+        {
+            popup.rect.y = face.y - 1 - popup.rect.h;
+        }
         Some(popup)
     }
     /// The chat's text, as a share of the shell's own size: the roster's
@@ -1516,10 +1857,10 @@ impl MultiplayerSetupLayout {
 /// VERA's roster's scrollbar: a list whose rows are the places it scrolls
 /// to ([`RosterScroll`]), hit only on its bar. Its `Top` is the place the
 /// roster shows: the bar, the wheel and parking move it, the view reads it.
-pub(crate) const ROSTER_SCROLL: u16 = 0x7F17;
+pub(crate) const ROSTER_SCROLL: u16 = 0x7F1A;
 /// VERA's roster's whole area, a static that only says the pointer is over
 /// the roster (the wheel scrolls it there), behind its cells.
-pub(crate) const ROSTER_AREA: u16 = 0x7F18;
+pub(crate) const ROSTER_AREA: u16 = 0x7F1B;
 /// The boxes over VERA's room in the shell controller, which take the
 /// room's input while they are open.
 pub(crate) const GAME_OPTIONS_BOX: DialogResourceId = DialogResourceId(GAME_OPTIONS);
@@ -1545,16 +1886,14 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
             .into_iter()
             .chain(add_ai)
     });
+    // VERA's room: the host's team bar lists and a campaign room's series
+    // and stage lists ([`SetupView::combos`]).
+    let lists = [TEAM_MENU, SEAT_MENU, CAMPAIGN_SERIES, CAMPAIGN_STAGE]
+        .into_iter()
+        .filter(move |_| dialog.modern);
     let buttons = rows
         .map(team_join)
-        .chain([
-            TEAM_STARTS,
-            TEAM_COLORS,
-            BALANCE,
-            PREVIOUS_ROWS,
-            NEXT_ROWS,
-            EMOTE,
-        ])
+        .chain([PREVIOUS_ROWS, NEXT_ROWS, EMOTE])
         .chain(dialog.page().buttons().map(|button| button.id));
     let list = |id| {
         node(NodeKind::List, id)
@@ -1572,7 +1911,7 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
     let native = move |ids: &'static [u16]| ids.iter().copied().filter(move |_| !modern);
     let trackbars = native(&OPTION_TRACKBARS).chain([DIFFICULTY, TEAM_COUNT, ROOM_SIZE]);
     NodeSpec::new(NodeKind::Dialog)
-        .children(combos.map(|id| {
+        .children(combos.chain(lists).map(|id| {
             node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern))
         }))
         .children(option_spec(native(&CHECKBOXES), trackbars))
@@ -1608,8 +1947,10 @@ fn option_spec(
 ) -> impl Iterator<Item = NodeSpec> {
     let label = |id| {
         let native = CHECKBOXES.iter().zip(CHECKBOX_LABELS);
+        let session = SESSION_CHECKBOXES.iter().zip(SESSION_CHECKBOX_LABELS);
         let room = ROOM_CHECKBOXES.iter().zip(ROOM_CHECKBOX_LABELS);
         native
+            .chain(session)
             .chain(room)
             .find(|(known, _)| **known == id)
             .map_or("", |(_, key)| key)
@@ -1623,13 +1964,26 @@ fn option_spec(
     checkboxes.chain(trackbars)
 }
 
-/// VERA's Game Options box: the room's options and its OK.
+/// VERA's Game Options box: both pages' options, its page button and its
+/// OK; [`on_game_options_page`] shows one page's.
 fn game_options_spec() -> NodeSpec {
-    let checkboxes = CHECKBOXES.into_iter().chain(ROOM_CHECKBOXES);
-    let trackbars = OPTION_TRACKBARS.into_iter().chain([SUPERWEAPON_LIMIT]);
-    let superweapon_limit = crate::ui::skirmish_shell::game_options::SUPERWEAPON_LIMIT_LABEL;
+    use crate::ui::skirmish_shell::game_options as labels;
+    let checkboxes = CHECKBOXES
+        .into_iter()
+        .chain(SESSION_CHECKBOXES)
+        .chain(ROOM_CHECKBOXES);
+    let trackbars = OPTION_TRACKBARS
+        .into_iter()
+        .chain([TECH_LEVEL, SUPERWEAPON_LIMIT]);
+    let caption = |id, key| {
+        node(NodeKind::Text, id)
+            .label(key)
+            .with(Prop::Align, Value::Int(0))
+    };
     NodeSpec::new(NodeKind::Dialog)
         .children(option_spec(checkboxes, trackbars))
+        // Its caption names the page it turns to (`props`).
+        .child(node(NodeKind::Button, GAME_OPTIONS_PAGE))
         // VERA's box closes on Enter or Escape as on OK.
         .child(
             node(NodeKind::Button, GAME_OPTIONS_OK)
@@ -1638,11 +1992,11 @@ fn game_options_spec() -> NodeSpec {
                 .with(Prop::Cancel, Value::Bool(true)),
         )
         .children(option_captions(OPTION_CAPTIONS.into_iter()))
-        .child(
-            node(NodeKind::Text, SUPERWEAPON_LIMIT_CAPTION)
-                .label(superweapon_limit)
-                .with(Prop::Align, Value::Int(0)),
-        )
+        .child(caption(TECH_LEVEL_CAPTION, labels::TECH_LEVEL_LABEL))
+        .child(caption(
+            SUPERWEAPON_LIMIT_CAPTION,
+            labels::SUPERWEAPON_LIMIT_LABEL,
+        ))
 }
 
 /// VERA's missing-map offer: its text, Download (greyed in [0xAC1CB4]
@@ -1655,9 +2009,9 @@ fn map_offer_spec() -> NodeSpec {
         .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
 }
 
-/// Control `id`'s rect while it shows: a combo for a shown row, a trackbar
-/// the view shows, a header's Join while it has one, the team bar's buttons
-/// with the bar, Previous and Next on a roster of pages while they lead to
+/// Control `id`'s rect while it shows: a combo for a shown row (the team
+/// bar's lists too), a trackbar the view shows, a header's Join while it has
+/// one, Previous and Next on a roster of pages while they lead to
 /// one, and VERA's roster's scrollbar.
 fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> Option<RectPx> {
     let shows = match id {
@@ -1666,7 +2020,6 @@ fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> O
             return layout.group_boxes[usize::from(id - GROUP_BOX)];
         }
         MAP_PREVIEW => return Some(layout.map_preview),
-        TEAM_STARTS | TEAM_COLORS | BALANCE => view.team_bar(),
         PREVIOUS_ROWS | NEXT_ROWS => view.pages.len() > 1 && view.enabled(id),
         id if team_join_row(id).is_some() => view.header_button(id).is_some(),
         id if view.combo(id).is_some() => view.combo(id).is_some_and(|combo| combo.visible),
@@ -1732,7 +2085,12 @@ pub(crate) fn sync(
         controller.set_scale_in(dialog, scale);
         let gui = controller.gui_mut();
         let built = page_nodes::ensure_built(gui, root, spec);
-        page_nodes::sync_rects(gui, root, |id| control_rect(view, layout, id));
+        // The Game Options box shows its page's controls.
+        let box_page = (dialog == GAME_OPTIONS_BOX).then_some(ui.game_options_page);
+        page_nodes::sync_rects(gui, root, |id| {
+            control_rect(view, layout, id)
+                .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))
+        });
         let nodes: Vec<(NodeId, u16)> = gui
             .tree()
             .children(root)
@@ -1791,6 +2149,9 @@ fn props(
         let cap = match SetupColumn::decode(id) {
             Some((SetupColumn::Player, _)) if view.dialog.modern => 0,
             Some((column, _)) => column.visible_rows(),
+            None if matches!(id, CAMPAIGN_SERIES | CAMPAIGN_STAGE) => {
+                SetupColumn::Country.visible_rows()
+            }
             None => 0,
         };
         props.extend([
@@ -1810,8 +2171,10 @@ fn props(
         props.push((Prop::Swatches, Value::Items(swatches.collect())));
         // VERA's roster draws no faces: a press anywhere on a cell opens its
         // list while it has something else to choose; any other press goes
-        // through to its group's box.
-        if layout.roster {
+        // through to its group's box. The team bar's and a campaign's lists
+        // have faces.
+        let face = matches!(id, TEAM_MENU | SEAT_MENU | CAMPAIGN_SERIES | CAMPAIGN_STAGE);
+        if layout.roster && !face {
             let opens = view.enabled(id) && roster_cell_opens(combo);
             props.push((Prop::PressThrough, Value::Bool(!opens)));
             // The host carries a draggable row from a press that opens a
@@ -1821,15 +2184,19 @@ fn props(
                 (Prop::Draggable, Value::Bool(drags)),
                 (Prop::DragThreshold, Value::Int(ROW_DRAG_START)),
             ]);
-            if let Some(list) = layout.roster_list(id, combo, cap) {
-                props.extend([
-                    (Prop::RowHeight, Value::Int(list.row_height)),
-                    (Prop::PopupRect, Value::Rect(list.rect)),
-                ]);
-            }
+        }
+        if layout.roster
+            && let Some(list) = layout.roster_list(id, combo, cap)
+        {
+            props.extend([
+                (Prop::RowHeight, Value::Int(list.row_height)),
+                (Prop::PopupRect, Value::Rect(list.rect)),
+            ]);
         }
     } else if let Some(index) = CHECKBOXES.iter().position(|check| *check == id) {
         props.push((Prop::Checked, Value::Bool(view.checks[index])));
+    } else if let Some(index) = SESSION_CHECKBOXES.iter().position(|check| *check == id) {
+        props.push((Prop::Checked, Value::Bool(view.session_checks[index])));
     } else if let Some(index) = ROOM_CHECKBOXES.iter().position(|check| *check == id) {
         props.push((Prop::Checked, Value::Bool(view.room_checks[index])));
     } else if let Some(bar) = view.trackbars.iter().find(|bar| bar.id == id) {
@@ -1852,6 +2219,9 @@ fn props(
             (Prop::Selected, Value::Int(-1)),
             (Prop::RowHeight, Value::Int(row_h)),
         ]);
+    } else if id == GAME_OPTIONS_PAGE {
+        let label = ui.game_options_page.page_button_label();
+        props.push((Prop::Label, Value::Text(label.into())));
     } else if id == ROSTER_SCROLL {
         let (count, max_top) = view.roster_scroll;
         let bar = layout
@@ -2010,8 +2380,9 @@ pub(crate) fn look(
     look
 }
 
-/// What the session is asked to do for the room's widget event `event`.
-pub(crate) fn action(view: &SetupView, event: PageEvent) -> Option<SetupAction> {
+/// What the session is asked to do for the room's widget event `event`,
+/// with the Game Options box on `page`.
+pub(crate) fn action(view: &SetupView, page: RoomBox, event: PageEvent) -> Option<SetupAction> {
     Some(match event {
         PageEvent::Activated(control) => match control {
             START => SetupAction::Start,
@@ -2022,11 +2393,9 @@ pub(crate) fn action(view: &SetupView, event: PageEvent) -> Option<SetupAction> 
             PAGE => SetupAction::Page,
             PREVIOUS_ROWS => SetupAction::RosterPage { forward: false },
             NEXT_ROWS => SetupAction::RosterPage { forward: true },
-            GAME_OPTIONS => SetupAction::GameOptions(true),
-            GAME_OPTIONS_OK => SetupAction::GameOptions(false),
-            TEAM_STARTS => SetupAction::TeamStarts,
-            TEAM_COLORS => SetupAction::TeamColors,
-            BALANCE => SetupAction::Balance,
+            GAME_OPTIONS => SetupAction::GameOptions(Some(RoomBox::GameOptions)),
+            GAME_OPTIONS_OK => SetupAction::GameOptions(None),
+            GAME_OPTIONS_PAGE => SetupAction::GameOptions(Some(page.other_page())),
             LOBBY => SetupAction::Lobby,
             MAP_OFFER_DOWNLOAD => SetupAction::MapOffer { download: true },
             MAP_OFFER_LEAVE => SetupAction::MapOffer { download: false },
@@ -2176,6 +2545,7 @@ mod tests {
     /// VERA's online room for its host, with nothing in it.
     fn vera_room_view() -> SetupView {
         SetupView {
+            campaign: false,
             first_row: 0,
             row_count: 8,
             pages: vec![0],
@@ -2191,12 +2561,10 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
-            room_checks: [false; 7],
+            session_checks: [false; 4],
+            room_checks: [false; 8],
             row_icons: std::array::from_fn(|_| None),
             headers: std::array::from_fn(|_| None),
-            team_starts_enabled: true,
-            team_colors_enabled: true,
-            balance_enabled: true,
             lobby_enabled: false,
             drag_rows: Vec::new(),
             mode_label: String::new(),
@@ -2224,12 +2592,12 @@ mod tests {
         let wide = MultiplayerSetupLayout::new(host, 1600, 600, true);
         let controls = |layout: &MultiplayerSetupLayout| {
             let bar = layout.team_bar.unwrap();
-            [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE]
+            [TEAM_COUNT, ROOM_SIZE, TEAM_MENU, SEAT_MENU]
                 .map(|id| layout.control_rect(id).unwrap().translate(-bar.x, -bar.y))
         };
-        let [teams, size, starts, colors, balance] = controls(&regular);
-        assert!(teams.y + teams.h <= size.y && size.y + size.h <= starts.y);
-        assert!(starts.y == colors.y && colors.y == balance.y);
+        let [teams, size, team_menu, seat_menu] = controls(&regular);
+        assert!(teams.y + teams.h <= size.y && size.y + size.h <= team_menu.y);
+        assert!(team_menu.y == seat_menu.y && team_menu.x + team_menu.w < seat_menu.x);
         assert_eq!(controls(&wide), controls(&regular));
         let (bar, wide_bar) = (regular.team_bar.unwrap(), wide.team_bar.unwrap());
         assert!(wide_bar.w > bar.w);
@@ -2255,36 +2623,39 @@ mod tests {
             .collect();
         let mut layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
-        let bottom = layout.roster_bottom;
+        let frame = layout.roster_frame();
+        assert!(!frame.pairs);
         let team_bar = layout.team_bar.unwrap();
         let area = layout.roster_area;
         assert!(area.y + area.h < team_bar.y && team_bar.x == area.x);
-        let scroll = roster_scroll(&full, bottom);
+        let scroll = roster_scroll(&full, frame);
         // Each player's row and the empty spectators' header.
         assert_eq!(scroll.stops.len(), 46);
-        let top = roster_page(&full, scroll.stops[0], bottom);
+        let top = roster_page(&full, scroll.stops[0], frame);
         assert_eq!(
             top[..2],
             [
                 RosterPlace {
                     item: 0,
                     y: ROSTER_TOP,
-                    header: true
+                    header: true,
+                    span: RosterSpan::Full,
                 },
                 RosterPlace {
                     item: 1,
                     y: ROSTER_TOP + ROSTER_HEADER_H,
-                    header: false
+                    header: false,
+                    span: RosterSpan::Full,
                 }
             ]
         );
         assert!(top.last().unwrap().item < full.len() - 1);
-        let last = roster_page(&full, scroll.stops[scroll.max_top], bottom);
+        let last = roster_page(&full, scroll.stops[scroll.max_top], frame);
         assert_eq!(last.last().unwrap().item, full.len() - 1);
-        let before = roster_page(&full, scroll.stops[scroll.max_top - 1], bottom);
+        let before = roster_page(&full, scroll.stops[scroll.max_top - 1], frame);
         assert!(before.last().unwrap().item < full.len() - 1);
         // Scrolled into Team B, its header stays on top.
-        let into_b = roster_page(&full, 20, bottom);
+        let into_b = roster_page(&full, 20, frame);
         assert_eq!((into_b[0].item, into_b[0].header), (16, true));
         assert_eq!(into_b[1].item, 20);
 
@@ -2367,6 +2738,7 @@ mod tests {
             value,
             text: String::new(),
             swatch: None,
+            greyed: false,
         };
         for (row, enabled, choices) in [(1, false, 1), (2, true, 1), (3, true, 2)] {
             view.combos.push(SetupCombo {
@@ -2425,14 +2797,121 @@ mod tests {
         // Fifteen teams of two: from every place, the column ends above
         // its bottom with no header left without its first row.
         let many: Vec<_> = (0..15).flat_map(|index| team(index, 2)).collect();
-        let scroll = roster_scroll(&many, bottom);
+        let scroll = roster_scroll(&many, frame);
         assert_eq!(scroll.stops.len(), 30);
         for top in scroll.stops {
-            let places = roster_page(&many, top, bottom);
+            let places = roster_page(&many, top, frame);
             let foot = places.last().unwrap();
             assert!(!foot.header);
-            assert!(foot.y + ROSTER_ROW_H <= bottom);
+            assert!(foot.y + ROSTER_ROW_H <= frame.bottom);
         }
+    }
+
+    /// On a 16:9 window VERA's roster stands its groups two abreast, Team A
+    /// beside Team B and the next two under them, with the column labels
+    /// over each half and both headers pinned over a line of their rows; a
+    /// 16:10 window keeps one group under another.
+    #[test]
+    fn vera_roster_pairs_its_groups_on_a_wide_window() {
+        use RosterItem::{Header, Row};
+        use RosterSpan::{Left, Right};
+        let room =
+            |w, h| MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), w, h, true);
+        assert!(!room(1920, 1200).roster_frame().pairs);
+        let mut layout = room(1920, 1080);
+        let frame = layout.roster_frame();
+        assert!(frame.pairs);
+        let team = |team: u8, rows: usize| {
+            std::iter::once(Header(SetupGroup::Team(team))).chain(std::iter::repeat_n(Row, rows))
+        };
+        let items: Vec<_> = team(0, 5)
+            .chain(team(1, 5))
+            .chain(team(2, 6))
+            .chain([Header(SetupGroup::Spectators)])
+            .collect();
+        let places = roster_page(&items, 0, frame);
+        assert_eq!(places.len(), items.len());
+        let at = |item| places.iter().find(|place| place.item == item).unwrap();
+        assert_eq!((at(0).span, at(6).span), (Left, Right));
+        assert_eq!((at(12).span, at(19).span), (Left, Right));
+        assert_eq!((at(6).y, at(19).y), (at(0).y, at(12).y));
+        assert_eq!(at(12).y, at(5).y + ROSTER_ROW_H + ROSTER_GROUP_GAP);
+        // Team C's sixth row stands beside no other.
+        assert_eq!(at(18).y, at(17).y + ROSTER_ROW_H);
+        assert_eq!(roster_scroll(&items, frame).stops.len(), 11);
+
+        layout.arrange_roster(&places);
+        let group_box = |item| {
+            let position = places.iter().position(|place| place.item == item);
+            layout.group_boxes[position.unwrap()].unwrap()
+        };
+        let (a, b) = (group_box(0), group_box(6));
+        assert_eq!((a.y, a.h), (b.y, b.h));
+        assert!((a.w - b.w).abs() <= 1, "{a:?} {b:?}");
+        let area = layout.roster_area;
+        assert!(a.x >= area.x && a.x + a.w < b.x && b.x + b.w <= area.x + area.w);
+        let players: Vec<i32> = layout
+            .labels
+            .iter()
+            .filter(|(key, _)| *key == "GUI:Players")
+            .map(|(_, rect)| rect.x)
+            .collect();
+        assert_eq!(players.len(), 2);
+        assert!(players[0] < b.x && players[1] > b.x);
+        // Scrolled to a line of Team A's and B's rows, both headers stay on
+        // top.
+        let into_b = roster_page(&items, 9, frame);
+        let firsts: Vec<_> = into_b[..4]
+            .iter()
+            .map(|place| (place.item, place.header))
+            .collect();
+        assert_eq!(firsts, [(0, true), (6, true), (3, false), (9, false)]);
+    }
+
+    /// VERA's online room puts a player's badge in front of the name, in
+    /// the row's margin left of the Player cell, where the pointer finds
+    /// it; a row without a badge has none.
+    #[test]
+    fn a_room_players_badge_stands_in_front_of_the_name() {
+        let mut layout =
+            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
+        let place = |item, y, header| RosterPlace {
+            item,
+            y,
+            header,
+            span: RosterSpan::Full,
+        };
+        layout.arrange_roster(&[
+            place(0, ROSTER_TOP, true),
+            place(1, ROSTER_TOP + ROSTER_HEADER_H, false),
+            place(2, ROSTER_TOP + ROSTER_HEADER_H + ROSTER_ROW_H, false),
+        ]);
+        let mut view = vera_room_view();
+        let icon = |badge| {
+            Some(SetupRowIcon {
+                country: None,
+                host: false,
+                accepted: false,
+                badge,
+                local: false,
+            })
+        };
+        view.row_icons[1] = icon(Some("major.pcx"));
+        view.row_icons[2] = icon(None);
+        let name = SetupColumn::Player.control(1);
+        let cell = layout.control_rect(name).unwrap();
+        let badge = layout.badge_rect(&view, name).unwrap();
+        assert!(
+            badge.w > 0 && badge.x + badge.w <= cell.x,
+            "{badge:?} {cell:?}"
+        );
+        assert_eq!((badge.y, badge.h), (cell.y, cell.h));
+        let (x, y) = (badge.x + badge.w / 2, badge.y + badge.h / 2);
+        assert_eq!(layout.badge_at(&view, x, y), Some(name));
+        assert_eq!(
+            layout.badge_rect(&view, SetupColumn::Player.control(2)),
+            None
+        );
     }
 
     /// On a window wider than the shell, VERA's room stands the shell at its
@@ -2578,25 +3057,31 @@ mod tests {
         let popup_layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         let popup = popup_layout.game_options.unwrap();
-        // The checkboxes may cover the art; the trackbars and OK stay right of it.
-        for id in CHECKBOXES
-            .into_iter()
-            .chain(ROOM_CHECKBOXES)
-            .chain(OPTION_TRACKBARS)
-            .chain([GAME_OPTIONS_OK])
-        {
-            let rect = popup_layout.control_rect(id).unwrap();
-            let left = if OPTION_TRACKBARS.contains(&id) || id == GAME_OPTIONS_OK {
-                215
-            } else {
-                0
-            };
-            assert!(
-                rect.x >= popup.dialog.x + left
-                    && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
-                    && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
-                "{id:#x} at {rect:?}"
-            );
+        // The checkboxes may cover the art; the trackbars and OK stay right
+        // of it, and no page's controls overlap each other or its buttons.
+        let overlap = |a: RectPx, b: RectPx| {
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+        };
+        for page in [RoomBox::GameOptions, RoomBox::MoreOptions] {
+            let rects: Vec<(u16, RectPx)> = game_options_controls(page)
+                .into_iter()
+                .chain([GAME_OPTIONS_PAGE, GAME_OPTIONS_OK])
+                .map(|id| (id, popup_layout.control_rect(id).unwrap()))
+                .collect();
+            for (index, &(id, rect)) in rects.iter().enumerate() {
+                let bar = OPTION_TRACKBARS.contains(&id)
+                    || matches!(id, TECH_LEVEL | SUPERWEAPON_LIMIT | GAME_OPTIONS_OK);
+                let left = if bar { 215 } else { 0 };
+                assert!(
+                    rect.x >= popup.dialog.x + left
+                        && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
+                        && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
+                    "{id:#x} at {rect:?}"
+                );
+                for &(other, beside) in &rects[index + 1..] {
+                    assert!(!overlap(rect, beside), "{id:#x} overlaps {other:#x}");
+                }
+            }
         }
         let mut view = vera_room_view();
         let mut ui = MultiplayerSetupState {
@@ -2610,10 +3095,31 @@ mod tests {
             Some(CHECKBOXES[0])
         );
         assert_eq!(hit(&controller, center(popup_layout.chat), false), None);
-        // The team bar under the roster holds the Teams count, the host's
-        // Room size, Team Starts and Team Colors and, online, Balance; a LAN
-        // room has no Balance, a guest no Team Starts.
-        ui.game_options = false;
+        // Each page takes presses on its own options only.
+        let more = center(popup_layout.room_checkboxes[0]);
+        assert_eq!(hit(&controller, more, false), None);
+        ui.show_game_options(Some(RoomBox::MoreOptions));
+        sync(&mut controller, &ui, &view, &popup_layout, true);
+        assert_eq!(hit(&controller, more, false), Some(ROOM_CHECKBOXES[0]));
+        assert_ne!(
+            hit(&controller, center(popup_layout.checkboxes[0]), false),
+            Some(CHECKBOXES[0])
+        );
+        // The team bar under the roster holds the Teams count, and the
+        // host's Room size, Quick Team Setup and Bulk Seat Actions; a guest
+        // has neither list.
+        ui.show_game_options(None);
+        for id in [TEAM_MENU, SEAT_MENU] {
+            view.combos.push(SetupCombo {
+                id,
+                row: u8::MAX,
+                enabled: true,
+                visible: true,
+                selected: Some(0),
+                choices: Vec::new(),
+                list_w: 0,
+            });
+        }
         for (id, range) in [
             (TEAM_COUNT, TrackbarRange::new(1, 15, 1)),
             (ROOM_SIZE, TrackbarRange::new(2, 30, 1)),
@@ -2635,7 +3141,7 @@ mod tests {
                 && bar.x + bar.w < chat_log.x
                 && chat_log.y < bar.y
         );
-        for id in [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE] {
+        for id in [TEAM_COUNT, ROOM_SIZE, TEAM_MENU, SEAT_MENU] {
             let rect = popup_layout.control_rect(id).unwrap();
             assert!(
                 rect.x >= bar.x
@@ -2648,10 +3154,9 @@ mod tests {
             assert_eq!(hit(&controller, center(rect), false), Some(id));
         }
         // At 800x600 Room size stacks under the Teams count, the two
-        // trackbars in one column, and the buttons stand evenly apart.
-        let [teams, room, starts, colors, balance] =
-            [TEAM_COUNT, ROOM_SIZE, TEAM_STARTS, TEAM_COLORS, BALANCE]
-                .map(|id| popup_layout.control_rect(id).unwrap());
+        // trackbars in one column, and the lists stand side by side.
+        let [teams, room, team_menu, seat_menu] = [TEAM_COUNT, ROOM_SIZE, TEAM_MENU, SEAT_MENU]
+            .map(|id| popup_layout.control_rect(id).unwrap());
         assert!(teams.y < room.y && teams.x == room.x);
         // Their windows are half again as wide as the room's, with a frame.
         let small = popup_layout.control_scale(TEAM_COUNT);
@@ -2663,19 +3168,14 @@ mod tests {
                 )
                 .is_some()
         );
-        assert_eq!(
-            colors.x - (starts.x + starts.w),
-            balance.x - (colors.x + colors.w)
-        );
+        assert!(team_menu.y == seat_menu.y && team_menu.x + team_menu.w < seat_menu.x);
         // Its art draws at 78% of the shell's size.
         assert_eq!(popup_layout.control_scale(TEAM_COUNT).factor(), 0.78);
         assert_eq!(popup_layout.control_scale(SPEED).factor(), 1.0);
-        let lan =
-            MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Lan, true), 800, 600, false);
-        assert_eq!(lan.control_rect(BALANCE), None);
         let mut guest =
             MultiplayerSetupLayout::new(dialog(false, SetupFlavor::Wol, true), 800, 600, false);
-        assert_eq!(guest.control_rect(TEAM_STARTS), None);
+        assert_eq!(guest.control_rect(TEAM_MENU), None);
+        assert_eq!(guest.control_rect(SEAT_MENU), None);
         // Without teams the host's bar keeps only Room size, on one line;
         // a guest's roster then reaches the column's foot.
         let mut no_teams = popup_layout.clone();
@@ -2683,7 +3183,8 @@ mod tests {
         let room = no_teams.control_rect(ROOM_SIZE).unwrap();
         assert!(room.w > 0 && no_teams.team_bar.unwrap().y < room.y);
         assert_eq!(no_teams.control_rect(TEAM_COUNT).unwrap().w, 0);
-        assert_eq!(no_teams.control_rect(TEAM_STARTS), None);
+        assert_eq!(no_teams.control_rect(TEAM_MENU), None);
+        assert!(no_teams.control_rect(SEAT_MENU).is_some());
         assert!(no_teams.team_bar.unwrap().h < popup_layout.team_bar.unwrap().h);
         guest.fit_team_bar(dialog(false, SetupFlavor::Wol, true), false, false);
         assert_eq!(guest.team_bar, None);
@@ -2692,6 +3193,7 @@ mod tests {
         ui.map_offer = Some(MapOffer {
             name: String::new(),
             message: String::new(),
+            button_key: "VERA:Download",
             downloading: false,
             opened: Instant::now(),
         });

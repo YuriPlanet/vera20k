@@ -16,7 +16,7 @@ use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::WolChatLine;
-use crate::ui::wol_lobby::{WolChannel, WolMember};
+use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 use crate::ui::wol_login::WolCredential;
 use crate::ui::wol_shell::{WolMode, WolWaitBox};
 
@@ -109,10 +109,14 @@ pub(crate) enum WolServiceRequest {
         password: String,
         changed: bool,
         remember: bool,
+        generated_guest: bool,
     },
     /// VERA online: a lobby account request; the answer is
     /// [`WolServiceEvent::Account`].
-    Account(crate::ui::wol_account::AccountRequest),
+    Account {
+        attempt: u64,
+        request: crate::ui::wol_account::AccountRequest,
+    },
     /// VERA online: Remember password was unticked for the remembered
     /// account; this computer forgets its sign-in, here and at the lobby.
     ForgetSignIn,
@@ -285,6 +289,7 @@ pub(crate) struct WolMatch {
     pub(crate) max_watchers: u32,
     /// The playing humans.
     pub(crate) names: Vec<String>,
+    pub(crate) summary: Option<WolRoomSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,7 +388,7 @@ pub(crate) enum WolServiceEvent {
     PageResult(Result<(), u32>),
     /// VERA online: the lobby's answer to a
     /// [`WolServiceRequest::Account`], or the message to show.
-    Account(Result<(), String>),
+    Account(Result<crate::ui::wol_account::AccountSuccess, String>),
     /// A chat or action line from another user: the chat sinks
     /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
     /// action), `0x007AAFB0` (private action) and, without `ansi`, their
@@ -397,6 +402,9 @@ pub(crate) enum WolServiceEvent {
         /// VERA: the lobby's own line, `text` from its phrases in the
         /// interface language.
         localized: bool,
+        /// VERA: the lobby's warning that a player's game differs from the
+        /// host's, shown red.
+        warning: bool,
         private: bool,
         action: bool,
         ansi: bool,
@@ -746,6 +754,24 @@ impl WolVisit {
         }
     }
 
+    /// Expire a connect or locale wait. A connect queued behind the previous
+    /// logout can be withdrawn here; cancel a dispatched online connect so
+    /// its worker also retires a late session and stops retrying names.
+    fn expire_wait(&mut self) -> WolStep {
+        match std::mem::take(&mut self.awaiting) {
+            Awaiting::Connect { .. } => {
+                let queued = self.requests.len();
+                self.requests
+                    .retain(|request| !matches!(request, WolServiceRequest::Connect { .. }));
+                if self.provider == WolProvider::Online && self.requests.len() == queued {
+                    self.requests.push(WolServiceRequest::CancelWait);
+                }
+                self.connect_failed()
+            }
+            _ => WolStep::LocaleDecided,
+        }
+    }
+
     /// `0xC4`'s Disconnect while it shows.
     pub(super) fn disconnect(&mut self) -> WolStep {
         match std::mem::take(&mut self.awaiting) {
@@ -829,6 +855,7 @@ fn connect(state: &mut AppState, server: WolServer, auto: bool, remember_locale:
         password,
         changed,
         remember,
+        generated_guest: online && globals.generated_guest,
     });
     visit.awaiting = Awaiting::Connect {
         deadline: Instant::now() + WAIT_LIMIT,
@@ -984,6 +1011,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             from,
             text,
             localized,
+            warning,
             private,
             action,
             ansi,
@@ -996,6 +1024,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning,
                     private,
                     action,
                     ansi,
@@ -1020,6 +1049,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                     from,
                     text,
                     localized,
+                    warning: false,
                     private,
                     action,
                     ansi: false,
@@ -1497,17 +1527,7 @@ fn poll_deadline(state: &mut AppState) -> Option<Instant> {
     if Instant::now() < deadline {
         return Some(deadline);
     }
-    let step = match std::mem::take(&mut visit.awaiting) {
-        // 0x007866E4: no box from the wait itself. A sign-in still queued
-        // behind an old logout must not start after the wait gave up.
-        Awaiting::Connect { .. } => {
-            visit
-                .requests
-                .retain(|request| !matches!(request, WolServiceRequest::Connect { .. }));
-            visit.connect_failed()
-        }
-        _ => WolStep::LocaleDecided,
-    };
+    let step = visit.expire_wait();
     apply(state, step);
     state.platform.window.request_redraw();
     None
@@ -1593,12 +1613,12 @@ mod tests {
         };
         visit.page = WolPage::Login(Box::new(WolLoginState::open_online(cx, None, None)));
         let modern = visit.login().unwrap().policy.page_spec();
-        assert_eq!(modern, LoginPolicy::Online.page_spec());
+        assert_eq!(modern, LoginPolicy::ChooseEntry.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
         assert_eq!(
             (column.top_buttons, column.bottom_button),
-            (4, true),
-            "Play and the three account buttons"
+            (0, true),
+            "the chooser has its two actions in the popup and Back on the rail"
         );
         ui.reset_to(crate::ui::wol_login::DIALOG);
         let cx = &mut LoginCx {
@@ -1877,6 +1897,20 @@ mod tests {
                 then: WolBoxThen::Welcome
             }
         );
+    }
+
+    #[test]
+    fn an_online_connect_timeout_retires_the_in_flight_session_request() {
+        let mut visit = visit();
+        visit.provider = WolProvider::Online;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now(),
+        };
+        visit.expire_wait();
+        assert!(matches!(
+            visit.requests.as_slice(),
+            [WolServiceRequest::CancelWait]
+        ));
     }
 
     #[test]

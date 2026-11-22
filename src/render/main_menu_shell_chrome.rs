@@ -17,7 +17,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::chrome_atlas::{
     ChromeArt, ChromeAtlasEntry, ChromePiece, Need, load_palette, pack_chrome_atlas, pcx_piece,
-    read_palette, shp_file_piece, shp_piece,
+    read_palette, read_ui_shp, shp_file_piece, shp_piece,
 };
 use crate::render::gpu::GpuContext;
 
@@ -227,16 +227,14 @@ fn read_main_menu_button_palette(assets: &AssetManager) -> Result<Palette> {
 }
 
 fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
-    let bytes = assets
-        .get_ref("SDBTNANM.SHP")
-        .context("Required game-menu artwork SDBTNANM.SHP is missing or unreadable")?;
-    let shp = ShpFile::from_bytes(bytes).context("Could not parse SDBTNANM.SHP")?;
-    anyhow::ensure!(
-        shp.frames.len() >= 5,
-        "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
-        shp.frames.len()
-    );
-    Ok(shp)
+    read_ui_shp(assets, "SDBTNANM.SHP", |shp| {
+        anyhow::ensure!(
+            shp.frames.len() >= 5,
+            "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
+            shp.frames.len()
+        );
+        Ok(shp)
+    })
 }
 
 fn render_main_menu_button_frames(shp: &ShpFile, palette: &Palette) -> Result<Vec<ChromePiece>> {
@@ -588,6 +586,35 @@ mod tests {
         assert_eq!(frames.len(), 5, "extra reveal frames remain optional");
         assert_eq!(frames[4].label, "sdbtnanm.shp:wave#4");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn menu_buttons_try_a_compatible_mod_shape_before_stock() {
+        use crate::assets::asset_manager::MediaArchiveMode;
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let shape = |count: u16| {
+            let mut bytes = vec![0u8; 8 + usize::from(count) * 24];
+            bytes[2..4].copy_from_slice(&1u16.to_le_bytes());
+            bytes[4..6].copy_from_slice(&1u16.to_le_bytes());
+            bytes[6..8].copy_from_slice(&count.to_le_bytes());
+            bytes
+        };
+        let install = audio_test_install("shell-button-install");
+        let mod_dir = TestDirectory::new("shell-button-mod");
+        install.write_mix("langmd.mix", "SDBTNANM.SHP", &shape(5));
+        mod_dir.write_mix("expandmd99.mix", "SDBTNANM.SHP", &shape(4));
+        mod_dir.write_mix("expandmd98.mix", "SDBTNANM.SHP", &shape(6));
+        std::fs::write(install.path().join("SDBTNANM.PAL"), [0u8; 768]).unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let frames = load_main_menu_button_frames(&assets).unwrap();
+        assert_eq!(frames.len(), 6);
     }
 
     #[test]

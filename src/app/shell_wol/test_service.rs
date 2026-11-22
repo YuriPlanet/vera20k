@@ -548,8 +548,18 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::LocaleCount => {
             WolServiceEvent::LocaleCount(crate::ui::wol_persona::LOCALE_COUNT)
         }
-        // VERA online's account requests: the stand-in lobby accepts each.
-        WolServiceRequest::Account(_) => WolServiceEvent::Account(Ok(())),
+        // This stand-in has no registered email index.
+        WolServiceRequest::Account { request, .. } => {
+            use crate::ui::wol_account::{AccountRequest, AccountSuccess, valid_name};
+            let answer = match request {
+                AccountRequest::Delete { identifier, .. } if valid_name(&identifier) => {
+                    Ok(AccountSuccess::Deleted(identifier))
+                }
+                AccountRequest::Delete { .. } => Err(crate::i18n::tr("VERA:DeleteUseUsername")),
+                _ => Ok(AccountSuccess::Accepted),
+            };
+            WolServiceEvent::Account(answer)
+        }
         // Nobody plays, so no match can be watched.
         WolServiceRequest::ListMatches => WolServiceEvent::Matches(Vec::new()),
         WolServiceRequest::Watch { .. } => {
@@ -582,6 +592,7 @@ fn lobby_greeting(state: &mut AppState) {
         from,
         text: text.encode_utf16().collect(),
         localized: false,
+        warning: false,
         private: false,
         action: false,
         ansi: false,
@@ -793,6 +804,7 @@ fn match_requested(state: &mut AppState) {
         from: member(MATCHBOT, MEMBER_OPERATOR),
         text: text.encode_utf16().collect(),
         localized: false,
+        warning: false,
         private,
         action: false,
         ansi: true,

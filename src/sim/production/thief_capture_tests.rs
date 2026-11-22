@@ -49,7 +49,7 @@ fn approach(sim: &mut Simulation, rules: &RuleSet, actor: u64, target: u64) {
         actor,
         Some(NavTargetRef::object(target)),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -85,14 +85,14 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
     assert_eq!([to.x - from.x, to.y - from.y, to.z - from.z], [70, 0, 0]);
     let rng = sim.scenario_rng.state();
 
-    sim.infantry_action_turn(actor, &rules, None, FrameEffects::default())
+    sim.infantry_action_turn(actor, &rules, None, &mut FrameEffects::default())
         .unwrap();
 
     let car = sim.substrate.entities.get(target).unwrap();
     assert_eq!(sim.interner.resolve(car.owner()), "Americans");
     assert_eq!(car.health.current(), 300);
     assert_eq!(
-        car.capture_infantry_type_index.get(),
+        car.seldom.capture_infantry_type_index.get(),
         rules
             .type_array_index(crate::rules::object_type::ObjectCategory::Infantry, "THIEF",)
             .unwrap()
@@ -109,7 +109,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
             .owned_count(EntityCategory::Infantry, thief),
         1
     );
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, true);
+    sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, true);
     assert!(!sim.substrate.entities.contains(actor));
     assert_eq!(
         sim.houses[&owner]
@@ -147,7 +147,7 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
         );
     }
     let other = sim.interner.get("Russians").unwrap();
-    sim.change_owner_with_rules(target, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, other, &rules, None, &mut FrameEffects::default());
     // Under its limit again; Ares 10024F80 (hook 0x50B370) still wants a
     // usable factory, and this house owns none.
     assert_eq!(
@@ -189,7 +189,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     let target = spawn(&mut sim, &rules, "CAR", "Russians", 16);
     approach(&mut sim, &rules, actor, target);
     assert!(
-        !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
+        !sim.infantry_try_thief_capture(actor, &rules, None, &mut FrameEffects::default())
             .unwrap()
             .consumed
     );
@@ -204,7 +204,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     let target = spawn(&mut sim, &rules, "CAR", "Americans", 16);
     approach(&mut sim, &rules, actor, target);
     assert!(
-        !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
+        !sim.infantry_try_thief_capture(actor, &rules, None, &mut FrameEffects::default())
             .unwrap()
             .consumed
     );
@@ -257,7 +257,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
         }));
     let rng = sim.scenario_rng.state();
     assert!(
-        !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
+        !sim.infantry_try_thief_capture(actor, &rules, None, &mut FrameEffects::default())
             .unwrap()
             .consumed
     );

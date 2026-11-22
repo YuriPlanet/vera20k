@@ -42,13 +42,17 @@ pub(super) fn completed_walk_head(
     position: &Position,
     locomotor: &Option<LocomotorState>,
 ) -> Option<crate::sim::components::DriveCoord> {
-    let loco = locomotor
-        .as_ref()
-        .filter(|l| l.active_kind() == LocomotorKind::Walk)?;
+    let loco = locomotor.as_ref()?;
+    // Walk 75BD70 accepts distance through 16; Mech 5B11DD through 15.
+    let threshold = match loco.active_kind() {
+        LocomotorKind::Walk => 17,
+        LocomotorKind::Mech => 16,
+        _ => return None,
+    };
     let head = loco.step_head()?;
     let [x, y] = super::ground_pose::position_world_xy(position);
     (crate::util::native_x87::sqrt_approx_length([x.wrapping_sub(head.x), y.wrapping_sub(head.y)])
-        < 17)
+        < threshold)
         .then_some(head)
 }
 

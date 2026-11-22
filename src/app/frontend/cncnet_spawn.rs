@@ -49,19 +49,6 @@ pub(crate) struct SpawnRequest {
     text: String,
 }
 
-/// The stock Battle row, `GameMode`'s default; `--probe` digests the rules
-/// through its mode file.
-pub(crate) fn spawn_battle_mode() -> SkirmishLaunchMode {
-    SkirmishLaunchMode::stock(crate::skirmish_launch::BATTLE_MODE_ID).expect("stock Battle row")
-}
-
-/// The stock rows a network spawn may select. A Cooperative launch is one mission: it
-/// holds no campaign progress record for its Start (`0x005C1D80`) to bind, so
-/// `+0xA0` (`0x005C3710`) records nothing and no next mission follows.
-pub(crate) fn spawn_modes() -> impl Iterator<Item = SkirmishLaunchMode> {
-    (1..=9).filter_map(SkirmishLaunchMode::stock)
-}
-
 /// One MPModesMD.ini row by id, or none.
 type ModeRow<'a> = &'a dyn Fn(i32) -> Option<SkirmishLaunchMode>;
 
@@ -142,10 +129,15 @@ impl SpawnExpectations {
         }
         if let Some(expected) = &self.rules_digest {
             let actual = rules_digest()?;
-            ensure!(
-                *expected == actual,
-                "ExpectedRulesDigest {expected} does not match the local rules digest {actual}"
-            );
+            if *expected != actual {
+                return Err(RulesMismatch {
+                    message: format!(
+                        "ExpectedRulesDigest {expected} does not match the local rules digest {actual}"
+                    ),
+                    parts: None,
+                }
+                .into());
+            }
         }
         if let Some(expected) = &self.map_digest {
             let actual = map_digest()?;
@@ -157,6 +149,24 @@ impl SpawnExpectations {
         Ok(())
     }
 }
+
+/// The launch's rules differ from the `ExpectedRulesDigest` the launcher
+/// probed: the launch report names the failure and this game's parts
+/// (docs/spawn.md, "Rules parts").
+#[derive(Debug)]
+pub(crate) struct RulesMismatch {
+    message: String,
+    /// This game's rules parts for the launched mode, once read.
+    pub(crate) parts: Option<crate::app::rules_parts::RulesParts>,
+}
+
+impl std::fmt::Display for RulesMismatch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RulesMismatch {}
 
 #[derive(Debug)]
 pub(crate) enum SpawnGame {
@@ -193,8 +203,12 @@ pub(crate) struct RelaySpawn {
     /// (WSS origin, loopback WS allowed); without it, the compiled one. Desktop
     /// sends UDP to `address` and does not use it.
     pub(crate) gateway_url: Option<String>,
-    /// Bearer for `service_url`.
+    /// Bearer for `service_url`. A watcher's only polls for its renewals.
     pub(crate) token: String,
+    /// `[Relay] Ticket` is a watch ticket (docs/spawn.md "Watching"): this
+    /// game watches the match from its first frame, controls nothing and
+    /// sends the match service nothing but its renewal polls.
+    pub(crate) watch: bool,
     /// The launch speed the ordering certificate's fixed clock names.
     pub(crate) game_speed: i32,
     /// `[Relay] AdmissionTimeout`: each admission barrier's client deadline.
@@ -224,6 +238,7 @@ impl std::fmt::Debug for RelaySpawn {
             .field("game_speed", &self.game_speed)
             .field("admission_timeout", &self.admission_timeout)
             .field("resume", &self.resume)
+            .field("watch", &self.watch)
             .finish_non_exhaustive()
     }
 }
@@ -721,14 +736,10 @@ fn skirmish(
         "AIPlayers={ai_count} does not match {} active HouseHandicaps entries",
         opponents.len()
     );
-    // The lobby's start admission (docs/lobby-protocol.md): spectators
-    // exclude AI, and at least two participants play. Each spectator takes
-    // an observer House (`ScenarioSession::observer_houses`).
+    // The lobby's start admission (docs/lobby-protocol.md): at least two
+    // participants play; spectators may watch AI play too. Each spectator
+    // takes an observer House (`ScenarioSession::observer_houses`).
     let spectators = humans.iter().filter(|human| human.is_observer()).count();
-    ensure!(
-        spectators == 0 || ai_count == 0,
-        "games with spectators cannot include AI players"
-    );
     ensure!(
         !multiplayer || humans.len() - spectators + ai_count >= 2,
         "a multiplayer launch needs at least two playing participants"
@@ -842,7 +853,7 @@ fn skirmish(
                 session.humans[source].role = role;
             }
         }
-        // No progress record to bind the partners into (see `spawn_modes`).
+        // External Cooperative launches have no campaign progress record to bind partners into.
         Ok(ModeStartEffect::None | ModeStartEffect::CooperativePartners) => {}
         Err(_) => bail!(
             "GameMode={} cannot start with these settings",
@@ -1092,24 +1103,51 @@ fn transport(
             .map_err(|_| anyhow!("[Relay] Address must be IPv4:port"))?;
         let match_id = text(relay, "MatchId")?;
         let player_id = text(relay, "PlayerId")?;
-        // The lobby's decoder checks the ticket's match, player and source
-        // (RelayGrant.source_index is SourceIndex) and the key widths.
-        let grant = crate::app::shell_wol::decode_external_relay_grant(
-            address,
-            text(relay, "Ticket")?,
-            text(relay, "PacketKey")?,
-            text(relay, "PayloadKey")?,
-            text(relay, "OrderingCertificate")?,
-            // RelayGrant.federation: present when the service homes the match
-            // on several regional relays.
-            relay
-                .is_present("Federation")
-                .then(|| text(relay, "Federation"))
-                .transpose()?,
-            session.local_player_index as u8,
-            &match_id,
-            &player_id,
-        )
+        let ticket = text(relay, "Ticket")?;
+        // docs/spawn.md "Watching": a watch ticket makes this game a watcher
+        // of the match, nothing else does.
+        let watch = crate::app::shell_wol::relay_ticket_is_watch(&ticket);
+        let grant = if watch {
+            // A watcher joins one relay, never a federation, and is no
+            // returning player.
+            ensure!(
+                !relay.is_present("Federation"),
+                "[Relay] Federation cannot go with a watch ticket"
+            );
+            ensure!(
+                !relay.is_present("ResumePings") && !relay.is_present("ResumeCursor"),
+                "[Relay] ResumePings and ResumeCursor cannot go with a watch ticket"
+            );
+            // The lobby's watch decoder checks the ticket's and certificate's
+            // match and the key widths; a watch ticket names no source.
+            crate::app::shell_wol::decode_external_watch_grant(
+                address,
+                ticket,
+                text(relay, "PacketKey")?,
+                text(relay, "PayloadKey")?,
+                text(relay, "OrderingCertificate")?,
+                &match_id,
+            )
+        } else {
+            // The lobby's decoder checks the ticket's match, player and source
+            // (RelayGrant.source_index is SourceIndex) and the key widths.
+            crate::app::shell_wol::decode_external_relay_grant(
+                address,
+                ticket,
+                text(relay, "PacketKey")?,
+                text(relay, "PayloadKey")?,
+                text(relay, "OrderingCertificate")?,
+                // RelayGrant.federation: present when the service homes the
+                // match on several regional relays.
+                relay
+                    .is_present("Federation")
+                    .then(|| text(relay, "Federation"))
+                    .transpose()?,
+                session.local_player_index as u8,
+                &match_id,
+                &player_id,
+            )
+        }
         .context("invalid [Relay] grant")?;
         let certificate = crate::net::udp::OrderingCertificate::parse(&grant.ordering_certificate)
             .map_err(|_| anyhow!("invalid [Relay] OrderingCertificate"))?;
@@ -1147,6 +1185,7 @@ fn transport(
                 .then(|| gateway_origin(&text(relay, "GatewayUrl")?))
                 .transpose()?,
             token,
+            watch,
             game_speed,
             admission_timeout: crate::util::time::Duration::from_secs(admission_timeout as u64),
             resume,

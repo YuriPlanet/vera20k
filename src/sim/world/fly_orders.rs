@@ -47,7 +47,7 @@ impl Simulation {
         id: u64,
         requested: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(requested) = requested else {
             self.foot_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
@@ -146,7 +146,7 @@ impl Simulation {
         id: u64,
         building: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> ControlFlow<(), Option<NavTargetRef>> {
         let dock = NavTargetRef::object(building);
         let Some(object) = self
@@ -168,9 +168,9 @@ impl Simulation {
         ) else {
             return ControlFlow::Continue(Some(dock));
         };
-        let in_contact = !aircraft.radio_contacts.is_empty();
-        let has_slot = target.radio_contacts.has_free_or(id);
-        let holds_aircraft = target.radio_contacts.contains(id);
+        let in_contact = !aircraft.seldom.radio_contacts.is_empty();
+        let has_slot = target.seldom.radio_contacts.has_free_or(id);
+        let holds_aircraft = target.seldom.radio_contacts.contains(id);
         let archive = |sim: &mut Self, target: Option<NavTargetRef>| {
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.set_archive_target(target.map(TargetKind::from));
@@ -293,7 +293,7 @@ impl Simulation {
         id: u64,
         destination: Option<NavTargetRef>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let entity = self
             .substrate
@@ -327,7 +327,7 @@ impl Simulation {
         if !locomotor.is_powered() {
             locomotor.power_on();
         }
-        if entity.radio_contacts.slot(0) == Some(pad)
+        if entity.seldom.radio_contacts.slot(0) == Some(pad)
             && destination != Some(NavTargetRef::object(pad))
         {
             radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
@@ -578,7 +578,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -607,7 +607,7 @@ impl Simulation {
             let cell = ground_pose::position_world_coord(&entity.position);
             let contact = self
                 .fly_building_at(cell)
-                .is_some_and(|building| entity.radio_contacts.contains(building));
+                .is_some_and(|building| entity.seldom.radio_contacts.contains(building));
             if !contact {
                 crate::sim::aircraft::enter_idle_mode_for(self, id, rules, frame_effects);
                 return false;
@@ -636,7 +636,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let order = self.fly_stop_order(id, rules);
         #[cfg(any(test, feature = "test-support"))]

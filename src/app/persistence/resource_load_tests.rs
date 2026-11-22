@@ -206,14 +206,10 @@ fn bound_saved_world(
     let overlay_registry = rules.overlay_registry();
     let mut simulation = super::super::tests::load_fixture_simulation(false);
     let terrain = {
-        let main_rng = simulation.main_rng().draws();
+        let (mut fill_rng, main_rng) = simulation.terrain_load_draws();
         let mut main_draw = || main_rng.next_u32();
         let mut selector = cache.begin_load(&mut main_draw);
-        let mut fill_draw = |min, max| {
-            simulation
-                .scenario_rng_mut_for_test()
-                .next_range_u32_inclusive(min, max)
-        };
+        let mut fill_draw = |min, max| fill_rng.next_range_u32_inclusive(min, max);
         ResolvedTerrainGrid::build_with_variant_selector(
             &map,
             Some(&theater),
@@ -1194,6 +1190,60 @@ fn retail_saved_resources_prepare_cold() {
 }
 
 #[test]
+fn cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff() {
+    use crate::app::match_bootstrap::OrdinaryMatchSeedClock;
+    use crate::app::persistence::commands::resume_menu_saved_game_rng;
+    use crate::rules::rule_policy::AllowWinTagsPolicy;
+
+    let Some(mut save) = incoming_save("TEMPERATE", "") else {
+        return;
+    };
+    let sim = &mut save.incoming.simulation;
+    let mode = sim.session().game_mode();
+    let policy = mode
+        .stock_rule_policy(None)
+        .with_allow_win_tags(AllowWinTagsPolicy::Ignore);
+    sim.install_session_admission(mode, None, policy);
+    sim.scenario_rng_mut_for_test().next_u32();
+    let saved_seed = sim.session().seed();
+    let saved_rng = sim.rng_state();
+    let bytes = snapshot_bytes(
+        &save.incoming,
+        &save.owner,
+        &save.map,
+        None,
+        save.rules_hash,
+    );
+
+    let frontend = frontend_main();
+    let owner = retail_rules_owner(&save.assets);
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &owner,
+        tile_cache: &TileVariantSelectorCache::default(),
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &|| LOAD_CLOCK_MS,
+    };
+    let loaded = save
+        .assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    let (mut sim, _) = loaded
+        .world
+        .into_committed(SharedCellDummy::fresh(), &frontend);
+    assert_eq!(sim.session().rule_policy(), policy);
+    assert_eq!(sim.rng_state().scenario, saved_rng.scenario);
+    let committed_rng = sim.rng_state();
+
+    resume_menu_saved_game_rng(&mut sim, &mut OrdinaryMatchSeedClock);
+
+    assert_eq!(sim.session().seed(), saved_seed);
+    assert_eq!(sim.rng_state(), committed_rng);
+}
+
+#[test]
 fn saved_infantry_sequence_bank_survives_image_without_sequence() {
     let Some(mut save) = incoming_save("TEMPERATE", "[SLAV]\nImage=MONEY\n") else {
         return;
@@ -1795,7 +1845,7 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         .simulation
         .initialize_random_number_system(0xA123_4567);
     for _ in 0..7 {
-        outgoing.simulation.main_rng().next_u32();
+        outgoing.simulation.main_rng_mut_for_test().next_u32();
     }
     for _ in 0..11 {
         outgoing.simulation.mapgen_rng_mut_for_test().next_u32();

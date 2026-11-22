@@ -5,6 +5,7 @@
 //! its actual slot emitter against the genuine GAPOWR_A original corpus.
 
 use super::*;
+use crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject;
 use crate::headless_scenario::HeadlessScenario;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
@@ -57,7 +58,8 @@ impl SlotScene {
                 .object("GAPOWR")
                 .unwrap()
                 .foundation
-                .cell_offsets();
+                .cell_offsets()
+                .collect::<Vec<_>>();
             let mut levels = std::collections::BTreeMap::new();
             for tile in terrain.cells().iter().filter(|tile| {
                 crate::sim::cell_rect::cell_is_in_playfield_height_aware(
@@ -204,7 +206,7 @@ impl SlotScene {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound frame");
         if !commands.is_empty() || !output.tick.frame_committed {
@@ -334,7 +336,7 @@ impl SlotScene {
                 actor.attack_target,
                 actor.navigation,
                 actor.locomotor,
-                actor.rearm_timer,
+                actor.seldom.rearm_timer,
                 actor.last_fire_frame.frame(),
                 actor.body_facing_byte(sim.session().binary_frame()),
                 actor.infantry_sprite_pose()
@@ -603,13 +605,14 @@ impl SlotScene {
         light: &crate::map::lighting::CellLightGrid,
         viewport: [f32; 4],
         anim_word: &dyn Fn(u64) -> u16,
-    ) -> Vec<PlannedObjectInstance> {
+    ) -> Vec<OwnedPlannedObject> {
         let sim = self.scene.sim();
         let rules = &self.scene.runtime.resources.rules;
         let building = sim.entities().get(self.plant).unwrap();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.scene.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();
@@ -643,7 +646,7 @@ impl SlotScene {
         let attached_palette =
             crate::app::presentation::lighting::body_palette_light(light, cell, extra);
         let before = (sim.state_hash(), sim.rng_state());
-        let mut output = Vec::new();
+        let mut output = PlannedObjects::default();
         emit_building_anims(
             &mut output,
             &NativeDisplayOrder::from_world(&sim, None),
@@ -670,6 +673,7 @@ impl SlotScene {
             0,
             2,
         );
+        let output = output.into_owned();
         assert_eq!((sim.state_hash(), sim.rng_state()), before);
         output
     }

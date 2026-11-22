@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 
 use super::{LinkState, OrderingGap};
 use crate::envelope::PACK_LIMIT;
+use crate::sequenced::ClientOrdering;
 use crate::{CONTROL, ClientSession, OrderPace, RelayError};
 
 const UPLINK_HEARTBEAT_MS: u64 = 250;
@@ -107,30 +108,61 @@ fn since(at: Option<u64>, now_ms: u64) -> u64 {
     at.map_or(u64::MAX, |at| now_ms.saturating_sub(at))
 }
 
-impl ClientSession {
-    /// Whether this session may send UPLINKs: ready, started, not left, and
-    /// a player's: a watcher only pulls (README "Watchers").
-    fn uplink_open(&self) -> bool {
-        self.ready
-            && !self.is_watching()
-            && self
-                .ordering
-                .as_ref()
-                .is_some_and(|ordering| ordering.link.schedule.started && ordering.leave.is_none())
+fn ack_interval(schedule: &Schedule, state: LinkState) -> u64 {
+    match state {
+        LinkState::Lossy => u64::from(schedule.turn_ms),
+        LinkState::Congested => ACK_INTERVAL_CONGESTED_MS,
+        _ => ACK_INTERVAL_GOOD_MS,
     }
+}
 
-    fn ack_interval(&self, state: LinkState) -> u64 {
-        let schedule = &self.ordering.as_ref().expect("ordering").link.schedule;
-        match state {
-            LinkState::Lossy => u64::from(schedule.turn_ms),
-            LinkState::Congested => ACK_INTERVAL_CONGESTED_MS,
-            _ => ACK_INTERVAL_GOOD_MS,
+/// The batches an UPLINK may carry, from `accepted_through + 1`
+/// (spec §6.2): their first ID and contents, at most four.
+/// `encode_uplink` keeps those that fit.
+fn fitting_batches(ordering: &ClientOrdering) -> (u64, Vec<Vec<u8>>) {
+    let first = ordering.accepted_through + 1;
+    let mut batches = Vec::new();
+    for id in first..ordering.next_batch {
+        let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == id) else {
+            break;
+        };
+        if batches.len() == MAX_BATCHES {
+            break;
         }
+        batches.push(batch.opaque.clone());
+    }
+    (first, batches)
+}
+
+/// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` (spec §7.7), with
+/// the §4.6 defaults srtt 100 and rttvar 50 before any sample.
+fn pull_grace(link: &super::ClientLink) -> u64 {
+    let (srtt, rttvar) = link.rtt.srtt.map_or((100, 50), |srtt| {
+        (u64::from(srtt), u64::from(link.rtt.rttvar))
+    });
+    (srtt + 4 * rttvar + u64::from(link.schedule.turn_ms)).clamp(PULL_GRACE_MIN, PULL_GRACE_MAX)
+}
+
+impl ClientSession {
+    /// The ordering of a session that may send UPLINKs: ready, started, not
+    /// left, and a player's: a watcher only pulls (README "Watchers").
+    fn open_uplink(&self) -> Option<&ClientOrdering> {
+        let open = self.ready && !self.is_watching();
+        self.ordering
+            .as_ref()
+            .filter(|ordering| open && ordering.link.schedule.started && ordering.leave.is_none())
     }
 
-    /// The §6.3 decision at `now_ms`, or none.
-    fn due_uplink(&self, now_ms: u64) -> Option<Due> {
-        let ordering = self.ordering.as_ref().expect("ordering");
+    /// [`Self::open_uplink`], to change.
+    fn open_uplink_mut(&mut self) -> Option<&mut ClientOrdering> {
+        let open = self.ready && !self.is_watching();
+        self.ordering
+            .as_mut()
+            .filter(|ordering| open && ordering.link.schedule.started && ordering.leave.is_none())
+    }
+
+    /// The §6.3 decision at `now_ms` for the open `ordering`, or none.
+    fn due_uplink(&self, ordering: &ClientOrdering, now_ms: u64) -> Option<Due> {
         let link = &ordering.link;
         let schedule = &link.schedule;
         let state = link.clock.state;
@@ -177,7 +209,7 @@ impl ClientSession {
                     }
             })
             || (schedule.recv_next > schedule.acked_recv_next
-                && since_last >= self.ack_interval(state))
+                && since_last >= ack_interval(schedule, state))
             || schedule
                 .checksums
                 .as_ref()
@@ -218,7 +250,7 @@ impl ClientSession {
     /// Returns false before the start, after Leave, when the hop is not
     /// ready, or if the hop counter is exhausted.
     pub fn poll_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        if !self.uplink_open() {
+        if self.open_uplink().is_none() {
             return false;
         }
         self.clock_ms = now_ms;
@@ -226,39 +258,25 @@ impl ClientSession {
         if self.hop.last_service_ms == Some(now_ms) {
             return false;
         }
-        let Some(due) = self.due_uplink(now_ms) else {
+        let Some(due) = self
+            .open_uplink()
+            .and_then(|ordering| self.due_uplink(ordering, now_ms))
+        else {
             return false;
         };
         if self.send_uplink(due.kind, due.copy, now_ms, out).is_err() {
             return false;
         }
         self.hop.last_service_ms = Some(now_ms);
-        let link = &mut self.ordering.as_mut().expect("ordering").link;
-        if due.timeout {
+        if due.timeout
+            && let Some(ordering) = self.ordering.as_mut()
+        {
+            let link = &mut ordering.link;
             link.rto_backoff += 1;
             link.rto_backoff_max = link.rto_backoff_max.max(link.rto_backoff);
             link.rto_timeouts += 1;
         }
         true
-    }
-
-    /// The batches an UPLINK may carry, from `accepted_through + 1`
-    /// (spec §6.2): their first ID and contents, at most four.
-    /// `encode_uplink` keeps those that fit.
-    fn fitting_batches(&self) -> (u64, Vec<Vec<u8>>) {
-        let ordering = self.ordering.as_ref().expect("ordering");
-        let first = ordering.accepted_through + 1;
-        let mut batches = Vec::new();
-        for id in first..ordering.next_batch {
-            let Some(batch) = ordering.sealed.iter().find(|batch| batch.id == id) else {
-                break;
-            };
-            if batches.len() == MAX_BATCHES {
-                break;
-            }
-            batches.push(batch.opaque.clone());
-        }
-        (first, batches)
     }
 
     /// Encodes and logs one UPLINK of `kind` at `now_ms` (spec §3.2, §6.2,
@@ -273,14 +291,14 @@ impl ClientSession {
     ) -> Result<(), RelayError> {
         // Copies of acknowledged batches go first, so the copy found
         // below is the one booked after the send.
-        let ordering = self.ordering.as_mut().expect("ordering");
+        let ordering = self.ordering.as_mut().ok_or(RelayError::Unregistered)?;
         let accepted = ordering.accepted_through;
         ordering
             .link
             .schedule
             .copies
             .retain(|copies| copies.batch > accepted);
-        let ordering = self.ordering.as_ref().expect("ordering");
+        let ordering = &*ordering;
         let link = &ordering.link;
         let schedule = &link.schedule;
         let served = copy
@@ -318,7 +336,7 @@ impl ClientSession {
         let (first_batch, mut batches) = if kind == Kind::Probe {
             (0, Vec::new())
         } else {
-            self.fitting_batches()
+            fitting_batches(ordering)
         };
         let recv_next = schedule.recv_next.max(1);
         self.encode_uplink(
@@ -331,7 +349,7 @@ impl ClientSession {
             out,
         )?;
         self.hop.uplinks += 1;
-        let ordering = self.ordering.as_mut().expect("ordering");
+        let ordering = self.ordering.as_mut().ok_or(RelayError::Unregistered)?;
         // A stream transport delivers the original first, so it takes no copies.
         let lossy = !self.stream_transport && ordering.link.clock.state == LinkState::Lossy;
         let severe = ordering.link.loss.severe;
@@ -391,7 +409,6 @@ impl ClientSession {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn encode_uplink(
         &mut self,
         flags: u8,
@@ -402,7 +419,7 @@ impl ClientSession {
         batches: &mut Vec<Vec<u8>>,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
-        let link = &self.ordering.as_ref().expect("ordering").link;
+        let link = &self.ordering.as_ref().ok_or(RelayError::Unregistered)?.link;
         let saturate = |value: Option<u32>| value.map_or(0, |value| value.min(65535) as u16);
         let uplink = Uplink {
             flags,
@@ -438,12 +455,14 @@ impl ClientSession {
     /// UPLINK yet, or after Leave. A heartbeat counts as an UPLINK for every
     /// later interval.
     pub fn heartbeat_uplink(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        if !self.uplink_open() || self.hop.uplinks == 0 {
+        if self.open_uplink().is_none() || self.hop.uplinks == 0 {
             return false;
         }
         self.clock_ms = now_ms;
         self.evaluate_uplink(now_ms);
-        let ordering = self.ordering.as_ref().expect("ordering");
+        let Some(ordering) = self.open_uplink() else {
+            return false;
+        };
         let schedule = &ordering.link.schedule;
         if since(schedule.last_uplink_ms, now_ms) < UPLINK_HEARTBEAT_MS {
             return false;
@@ -455,7 +474,7 @@ impl ClientSession {
             return self.send_uplink(Kind::Probe, false, now_ms, out).is_ok();
         };
         // Batches as §6.2 packs them now; the checksum segment repeats.
-        let (first_batch, mut batches) = self.fitting_batches();
+        let (first_batch, mut batches) = fitting_batches(ordering);
         if self
             .encode_uplink(
                 last.flags,
@@ -471,10 +490,12 @@ impl ClientSession {
             return false;
         }
         self.hop.uplinks += 1;
-        let schedule = &mut self.ordering.as_mut().expect("ordering").link.schedule;
-        schedule.last_uplink_ms = Some(now_ms);
-        if !batches.is_empty() {
-            schedule.batches_carried_ms = Some(now_ms);
+        if let Some(ordering) = self.ordering.as_mut() {
+            let schedule = &mut ordering.link.schedule;
+            schedule.last_uplink_ms = Some(now_ms);
+            if !batches.is_empty() {
+                schedule.batches_carried_ms = Some(now_ms);
+            }
         }
         true
     }
@@ -483,10 +504,7 @@ impl ClientSession {
     /// any further input (receive, content or gap report); it may already be
     /// past. `None` before the start or after Leave.
     pub fn next_uplink_deadline(&self) -> Option<u64> {
-        if !self.uplink_open() {
-            return None;
-        }
-        let ordering = self.ordering.as_ref().expect("ordering");
+        let ordering = self.open_uplink()?;
         let link = &ordering.link;
         let schedule = &link.schedule;
         let state = link.clock.state;
@@ -521,7 +539,7 @@ impl ClientSession {
             consider(after(GAP_UPLINK_SPACING_MS).max(grace));
         }
         if schedule.recv_next > schedule.acked_recv_next {
-            consider(after(self.ack_interval(state)));
+            consider(after(ack_interval(schedule, state)));
         }
         if let Some((_, at)) = &schedule.checksums {
             consider(at + CHECKSUM_SEND_MS);
@@ -669,16 +687,6 @@ impl ClientSession {
         }
     }
 
-    /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` (spec §7.7), with
-    /// the §4.6 defaults srtt 100 and rttvar 50 before any sample.
-    fn pull_grace(&self) -> u64 {
-        let link = &self.ordering.as_ref().expect("ordering").link;
-        let (srtt, rttvar) = link.rtt.srtt.map_or((100, 50), |srtt| {
-            (u64::from(srtt), u64::from(link.rtt.rttvar))
-        });
-        (srtt + 4 * rttvar + u64::from(link.schedule.turn_ms)).clamp(PULL_GRACE_MIN, PULL_GRACE_MAX)
-    }
-
     /// Encodes the fallback PULL (request 2, `next_seq = recv_next`) into
     /// `out` when a gap reported through `set_ordering_gap` has lasted
     /// `G = clamp(srtt + 4 * rttvar + turn_ms, 100, 1000)` ms without the
@@ -689,11 +697,14 @@ impl ClientSession {
     /// before the start or while RESTORING, where the sequencing layer pulls
     /// itself. Returns whether it encoded one.
     pub fn poll_repair_pull(&mut self, now_ms: u64, out: &mut Vec<u8>) -> bool {
-        if !self.uplink_open() || self.ordering.as_ref().expect("ordering").restoring {
+        let Some(ordering) = self
+            .open_uplink_mut()
+            .filter(|ordering| !ordering.restoring)
+        else {
             return false;
-        }
-        let grace = self.pull_grace();
-        let schedule = &mut self.ordering.as_mut().expect("ordering").link.schedule;
+        };
+        let grace = pull_grace(&ordering.link);
+        let schedule = &mut ordering.link.schedule;
         let recv_next = schedule.recv_next.max(1);
         let far = schedule.status_next_seq > recv_next + FAR_BEHIND;
         let due = if far {
@@ -720,18 +731,20 @@ impl ClientSession {
         if self.pull_ordering(recv_next, out).is_err() {
             return false;
         }
-        let link = &mut self.ordering.as_mut().expect("ordering").link;
-        link.repair_pulls += 1;
-        let schedule = &mut link.schedule;
-        if far {
-            schedule.far_pull_ms = Some(now_ms + grace);
-        } else if let Some(gap) = schedule.gap.as_mut() {
-            gap.pulls += 1;
-            let backoff = grace
-                .checked_shl(gap.pulls)
-                .unwrap_or(PULL_GRACE_MAX)
-                .min(PULL_GRACE_MAX);
-            gap.next_pull_ms = Some(now_ms + backoff);
+        if let Some(ordering) = self.ordering.as_mut() {
+            let link = &mut ordering.link;
+            link.repair_pulls += 1;
+            let schedule = &mut link.schedule;
+            if far {
+                schedule.far_pull_ms = Some(now_ms + grace);
+            } else if let Some(gap) = schedule.gap.as_mut() {
+                gap.pulls += 1;
+                let backoff = grace
+                    .checked_shl(gap.pulls)
+                    .unwrap_or(PULL_GRACE_MAX)
+                    .min(PULL_GRACE_MAX);
+                gap.next_pull_ms = Some(now_ms + backoff);
+            }
         }
         true
     }
@@ -792,7 +805,12 @@ impl ClientSession {
             &mut batches,
             out,
         )?;
-        let schedule = &mut self.ordering.as_mut().expect("ordering").link.schedule;
+        let schedule = &mut self
+            .ordering
+            .as_mut()
+            .ok_or(RelayError::Unregistered)?
+            .link
+            .schedule;
         schedule.checksums = None;
         schedule.pace = None;
         Ok(())

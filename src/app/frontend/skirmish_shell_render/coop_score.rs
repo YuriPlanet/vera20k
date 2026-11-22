@@ -194,6 +194,7 @@ pub(crate) fn render_coop_score(
             value: 0,
             text: slot.name.clone(),
             swatch: None,
+            greyed: false,
         };
         // 0x0046DCC0 disables the other human's combos; the name combo has
         // no handler and stays disabled for both.

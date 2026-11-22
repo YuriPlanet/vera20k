@@ -4,6 +4,12 @@
 //! We preserve the raw field list and also expose normalized action entries so
 //! runtime code can stop guessing at the original payload shape.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use std::collections::{BTreeSet, HashMap};
 
 use crate::rules::ini_parser::IniFile;

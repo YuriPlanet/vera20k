@@ -431,12 +431,17 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
 /// (the loop callback `0x005E66F0` reloads the preview for every new
 /// highlight and restores the session's map afterwards); otherwise the
 /// committed one.
-pub(super) fn preview_map_idx(state: &AppState) -> usize {
+pub(super) fn preview_map_idx(state: &AppState) -> Option<usize> {
     let shell = &state.frontend.skirmish_shell_state;
-    shell
+    let chooser = shell
         .choose_map_modal
         .as_ref()
-        .filter(|_| shell.random_map_setup_modal.is_none() && shell.saved_seed_browser.is_none())
+        .filter(|_| shell.random_map_setup_modal.is_none() && shell.saved_seed_browser.is_none());
+    // A saved seed has no picture until the generator runs.
+    if chooser.is_some_and(|modal| modal.random_maps_selected()) {
+        return None;
+    }
+    chooser
         .and_then(|modal| modal.selected_record_index())
         .and_then(|record| state.frontend.scenario_catalog.records().get(record))
         .and_then(|record| {
@@ -447,14 +452,17 @@ pub(super) fn preview_map_idx(state: &AppState) -> usize {
                 .iter()
                 .position(|map| map.file_name.eq_ignore_ascii_case(&record.file_name))
         })
-        .unwrap_or(shell.selected_map_idx)
+        .or(Some(shell.selected_map_idx))
 }
 
 pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box: RectPx) {
     if ensure_random_map_setup_preview_texture(state) {
         return;
     }
-    let selected_map_idx = preview_map_idx(state);
+    let Some(selected_map_idx) = preview_map_idx(state) else {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    };
     ensure_map_preview_texture(state, selected_map_idx, preview_box);
 }
 

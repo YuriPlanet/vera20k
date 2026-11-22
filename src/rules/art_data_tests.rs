@@ -155,6 +155,15 @@ fn test_object_shp_candidates_no_new_theater() {
 }
 
 #[test]
+fn object_shp_candidates_take_an_image_whose_second_byte_is_high() {
+    // INI byte 0xE9 widens to `é`, two UTF-8 bytes: the prefix test must not
+    // cut it.
+    let reg = ArtRegistry::empty();
+    let candidates = object_shp_candidates(Some(&reg), "A\u{e9}X", "tem", "TEMPERATE");
+    assert_eq!(candidates, ["A\u{c9}X.SHP", "A\u{c9}X.TEM"]);
+}
+
+#[test]
 fn test_object_shp_candidates_with_new_theater() {
     let reg: ArtRegistry = ArtRegistry::empty();
     let candidates: Vec<String> = object_shp_candidates(Some(&reg), "GAPOWR", "tem", "TEMPERATE");
@@ -1058,6 +1067,56 @@ fn a_theater_only_tile_anim_binds_as_an_unread_type_and_spawns() {
     assert!(ids.iter().all(|&id| sim.anim(id).is_some()));
 }
 
+/// A theater `Tile%02dAnim=` whose own ART makes it a `Bouncer=` with a
+/// launch velocity outside the x87 domain VERA models does not construct; the
+/// map still loads and its other tile anims spawn.
+#[test]
+fn a_tile_anim_that_cannot_construct_is_skipped() {
+    use crate::rules::{native_processing::RulesLayerStack, ruleset::RuleSet};
+
+    let root = AnimDimTestRoot::new();
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let art_ini =
+        IniFile::from_str("[BAD_BOUNCE]\nBouncer=yes\nMaxXYVel=1000000000000000000000000000000\n");
+    let processed = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art(&art_ini)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules.bind_scheduler_anim_assets(
+        &["BAD_BOUNCE".into(), "THEATER_ONLY".into()],
+        &assets,
+        "TEM",
+        "TEMPERATE",
+    );
+    assert!(
+        rules
+            .art()
+            .anim_runtime_config("BAD_BOUNCE")
+            .unwrap()
+            .bouncer
+    );
+
+    let mut sim = crate::sim::world::Simulation::new();
+    let tile = |anim_name: &str| crate::map::resolved_terrain::TerrainTileAnimation {
+        rx: 1,
+        ry: 1,
+        anim_name: anim_name.to_string(),
+        world_x: 384,
+        world_y: 384,
+        world_z: 0,
+        z_adjust: 0,
+    };
+    let ids = crate::sim::runtime::spawn_terrain_tile_animations(
+        &mut sim,
+        &rules,
+        &[tile("BAD_BOUNCE"), tile("THEATER_ONLY")],
+    );
+    assert_eq!(ids.len(), 1);
+    let type_id = sim.anim(ids[0]).expect("tile anim spawned").type_id();
+    assert_eq!(type_id, sim.intern("THEATER_ONLY"));
+}
+
 /// A `DamageFireOffset%d=` far past any building converts through the one
 /// `IsometricPixelToWorld` port (`0x0043C152` calls `0x006D2070`), so it no
 /// longer stops the map's animations binding (issue 4493).
@@ -1596,14 +1655,14 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     assert!(sim.anim(anim).is_some(), "constructor first-AI guard");
     sim.session.set_binary_frame_for_test(1 << 16); // expire any u16 rate timer
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     // AI UnInit conceals and queues the physical receiver. The ordinary
     // end-of-frame deletion owner, rather than AI itself, releases storage.
@@ -1695,6 +1754,43 @@ fn ares_art_palettes_keep_the_named_file() {
 }
 
 #[test]
+fn presentation_only_follows_a_long_next_chain_through_the_rules_processor() {
+    // Twenty thousand anims, each `Next=` the one after; the last marks the
+    // map, and a second chain ends back at its own start.
+    const LINKS: usize = 20_000;
+    let mut art_text = String::new();
+    let mut animations = String::from("[Animations]\n");
+    for index in 0..LINKS {
+        let next = if index + 1 == LINKS {
+            "Scorch=yes".to_owned()
+        } else {
+            format!("Next=A{}", index + 1)
+        };
+        art_text.push_str(&format!("[A{index}]\nRate=1\n{next}\n"));
+        animations.push_str(&format!("{index}=A{index}\n"));
+    }
+    for (index, next) in [(0, 1), (1, 0)] {
+        art_text.push_str(&format!("[LOOP{index}]\nRate=1\nNext=LOOP{next}\n"));
+        animations.push_str(&format!("{}=LOOP{index}\n", LINKS + index));
+    }
+    let art = IniFile::from_str(&art_text);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&animations),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert!(
+        !rules.art().anim_presentation_only("a0"),
+        "its chain ends in Scorch="
+    );
+    assert!(
+        rules.art().anim_presentation_only("LOOP0"),
+        "a plain cycle of Next="
+    );
+}
+
+#[test]
 fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
         "[GUNFIRE]\nRate=900\n[EXPLOSML]\nScorch=yes\nCrater=yes\n\
@@ -1709,6 +1805,7 @@ fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     refer("PUFF", "PUFF2", "");
     refer("PUFF2", "PUFF", "");
     refer("SMOKE", "", "EXPLOSML");
+    art.refresh_anim_types_affecting_play();
     assert!(art.anim_presentation_only("gunfire"), "a plain flash");
     assert!(art.anim_presentation_only("PUFF"), "a plain cycle of Next=");
     assert!(

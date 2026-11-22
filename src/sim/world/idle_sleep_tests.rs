@@ -204,7 +204,7 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) {
         rules,
         33,
         super::TickLane::Ordinary,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     )
     .expect("an ordinary frame");
 }
@@ -289,6 +289,7 @@ fn a_building_in_a_sleeping_gis_cell_wakes_it() {
                 .entities
                 .get(prop)
                 .unwrap()
+                .seldom
                 .type_facts
                 .building_hidden_occupancy()
                 .is_none_or(|profile| !profile.can_hide_things),

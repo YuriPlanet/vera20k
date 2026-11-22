@@ -12,7 +12,7 @@
 
 use super::super::passability::is_passable_for_zone;
 use super::super::zone_hierarchy::{
-    ZONE_PRECHECK_LEVELS, ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions,
+    ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckResult,
 };
 use super::super::zone_map::{ZONE_INVALID, ZoneGrid, ZoneId};
 use super::super::{SearchEntryCandidate, SearchEntryQuery, SearchFootEntry};
@@ -59,13 +59,13 @@ impl RetryInputs<'_> {
 /// [`invalidate_zone_edge`] clears).
 pub(super) fn update_hierarchical_edges(
     inputs: &RetryInputs<'_>,
-    routes: &[Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
+    routes: &ZonePrecheckResult,
     cell: (u16, u16),
     exclusions: &mut ZonePrecheckExclusions,
 ) -> Result<bool, PathSearchFailure> {
     let cell = (cell.0 as i16, cell.1 as i16);
     let mut hierarchy_usable = true;
-    for (level, route) in routes.iter().enumerate() {
+    for (level, route) in routes.routes().into_iter().enumerate() {
         let zone = inputs.zone_at(level, cell)?;
         match flood_fill_reachable_zones(inputs, cell, level, zone)? {
             // 0x0042CDD8..0x0042CE5A, from the vector's last entry.

@@ -283,6 +283,8 @@ impl App {
         detail: String,
     ) {
         use crate::ui::score_shell::{ScorePage, ScoreTexts, format_elapsed, format_game_number};
+        // The page draws the main menu's chrome, dropped for the match.
+        Self::ensure_main_menu_shell_chrome(state);
         let texts = ScoreTexts {
             game: format_game_number(&model, &state.csf_text("TXT_GAME")),
             time: format_elapsed(&model, &state.csf_text("TXT_TIME_FORMAT_HOURS")),
@@ -531,6 +533,7 @@ impl App {
     /// The teardown every finished scenario shares, the co-op continuation
     /// included, which never reaches Main_Game's shell return.
     pub(crate) fn retire_finished_scenario(state: &mut AppState) {
+        crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
@@ -545,6 +548,49 @@ impl App {
         state.match_state.scenario_elapsed_clock.reset();
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
+    }
+
+    /// The main menu's chrome atlas: built at startup, dropped when a match
+    /// starts (`loading::transitions`) and built again here before a shell
+    /// screen reads it (the score page as it opens, the frame loop for the
+    /// menu). `false` when it cannot be built: the error card
+    /// (`main_menu_shell_error`) keeps the words a startup failure gets, and
+    /// no frame tries again.
+    pub(crate) fn ensure_main_menu_shell_chrome(state: &mut AppState) -> bool {
+        if state.frontend.main_menu_shell_chrome.is_some() {
+            return true;
+        }
+        if state.frontend.main_menu_shell_error.is_some() {
+            return false;
+        }
+        let Some(assets) = state.process_assets.manager() else {
+            log::warn!(
+                "Could not prepare the main menu shell chrome: process asset manager is unavailable"
+            );
+            return false;
+        };
+        let started = crate::util::time::Instant::now();
+        let built = crate::render::main_menu_shell_chrome::build_main_menu_shell_chrome_atlas(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            assets,
+        );
+        match built {
+            Ok(atlas) => {
+                log::info!(
+                    "Main-menu shell chrome built in {:.0} ms",
+                    started.elapsed().as_secs_f64() * 1e3
+                );
+                state.frontend.main_menu_shell_chrome = Some(atlas);
+                true
+            }
+            Err(error) => {
+                log::warn!("{error:#}");
+                state.frontend.main_menu_shell_error =
+                    Some(super::initialize::describe_startup_error(&error));
+                false
+            }
+        }
     }
 
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
@@ -607,6 +653,16 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+        if state.process_assets.uses_client_catalog()
+            && (state.frontend.skirmish_modes.is_empty()
+                || state.frontend.scenario_catalog.shell_maps().is_empty())
+        {
+            Self::open_shell_notice(
+                state,
+                "No playable skirmish maps were found in this mod's client catalog. Check that the full mod folder was extracted.".into(),
+            );
+            return;
+        }
         if !Self::prepare_multiplayer_settings(
             state,
             crate::app::match_runtime::session::SessionMode::Skirmish,
@@ -712,7 +768,7 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.settings_dir().to_path_buf());
-        if crate::i18n::poll_language_files(settings_dir.as_deref()) {
+        if state.frontend.language_files.poll(settings_dir.as_deref()) {
             state.refresh_string_key_labels();
             state.platform.window.request_redraw();
         }
@@ -860,14 +916,18 @@ impl App {
             dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {
-            // 0x0055FD06 tears D5 down before every continuation, including
-            // Keyboard and the final Main Menu return. VERA's Mods leaves the
+            // Retail slides D5 out before its Keyboard page (0x0055FD06);
+            // VERA's Options window is its own layout, and its Keyboard page
+            // opens in place like its other pages: no slide, no cue
+            // (`shell_transition::moves_in_place`).
+            Some(LauncherParentResult::Keyboard) => {
+                state.frontend.options_dialog = Some(dialog);
+                Self::commit_launcher_options_result(state, LauncherParentResult::Keyboard);
+            }
+            // 0x0055FD06 tears D5 down before every other continuation,
+            // including the final Main Menu return. VERA's Mods leaves the
             // same way.
-            Some(
-                result @ (LauncherParentResult::Back
-                | LauncherParentResult::Keyboard
-                | LauncherParentResult::Mods),
-            ) => {
+            Some(result @ (LauncherParentResult::Back | LauncherParentResult::Mods)) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
                     App::commit_launcher_options_result(state, result)
@@ -1038,10 +1098,24 @@ impl App {
         enabled: &[(u16, bool)],
         event: vera20k_gui::InputEvent,
     ) -> Option<u16> {
+        Self::page_input_cued(state, dialog, nodes, rect_of, enabled, event, true)
+    }
+
+    /// [`Self::page_input`]; a list row's GenericClick plays only with
+    /// `list_click`.
+    pub(crate) fn page_input_cued(
+        state: &mut AppState,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
+        nodes: impl FnOnce() -> vera20k_gui::NodeSpec,
+        rect_of: impl Fn(u16) -> Option<crate::ui::shell::geom::RectPx>,
+        enabled: &[(u16, bool)],
+        event: vera20k_gui::InputEvent,
+        list_click: bool,
+    ) -> Option<u16> {
         let controller = &mut state.frontend.shell_controller;
         crate::ui::shell::menu_page::sync_nodes(controller, dialog, nodes, rect_of, enabled);
         controller.on_input(event);
-        let events = Self::shell_page_events(state, true);
+        let events = Self::shell_page_events(state, list_click);
         events.into_iter().rev().find_map(|event| match event {
             crate::ui::shell::page::PageEvent::Activated(id) => Some(id),
             _ => None,
@@ -1157,12 +1231,24 @@ impl App {
         if Self::shell_menu_pointer(state, Some(down)) && down {
             return;
         }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        super::shell_mod_import::sync(state);
         let parts = shell_layout::shell_box_parts(state, &shell_box);
-        if let Some(answer) = Self::shell_box_pointer(state, &shell_box, &parts, Some(down))
-            .and_then(|id| shell_box.answer(id))
+        let id = Self::shell_box_pointer(state, &shell_box, &parts, Some(down));
+        // Add Mod's More and reorder buttons act inside the box.
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if let Some(id) = id
+            && super::shell_mod_import::is_preview_button(id)
         {
-            Self::resolve_shell_message_box(state, answer);
+            Self::activate_mod_import_button(state, id);
+            return;
         }
+        if let Some(answer) = id.and_then(|id| shell_box.answer(id)) {
+            Self::resolve_shell_message_box(state, answer);
+            return;
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        super::shell_mod_import::follow_list(state);
     }
 
     /// A pointer message (`down`, or `None` for a move) on `shell_box`, open
@@ -1190,7 +1276,14 @@ impl App {
         let nodes = || shell_box.nodes();
         let rect_of = |id| parts.rect_of(id);
         let enabled = shell_box.enabled();
-        Self::page_input(state, shell_box.dialog, nodes, rect_of, &enabled, event)
+        // Add Mod's parts list selects a row without a sound.
+        let list_click = !state
+            .frontend
+            .shell_message_box
+            .as_ref()
+            .is_some_and(|message_box| message_box.is_mod_import());
+        let dialog = shell_box.dialog;
+        Self::page_input_cued(state, dialog, nodes, rect_of, &enabled, event, list_click)
     }
 
     /// The box's answer (the button's index: callback `0x005D36A0` writes 0
@@ -1209,6 +1302,9 @@ impl App {
             Purpose::ExitGame | Purpose::Notice => state.platform.window.request_redraw(),
             Purpose::CampaignReplay(retry) => Self::answer_campaign_replay(state, retry, answer),
             Purpose::CampaignVictory(victory) => Self::advance_campaign_victory(state, *victory),
+            Purpose::AuthoredCampaignResult(choice) => {
+                crate::app::match_runtime::stage_result::answer(state, choice, answer)
+            }
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             Purpose::UpdateOffer(_) => crate::app::updater::answer_offer(state, answer),
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -1218,6 +1314,8 @@ impl App {
             Purpose::ModRestart(folder) => Self::answer_mod_restart(state, folder, yes),
             Purpose::ModFiles(which) => Self::answer_mod_files(state, which, yes),
             Purpose::ModMade(dir) => Self::answer_mod_made(state, &dir, yes),
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            Purpose::ModImport(dialog) => Self::answer_mod_import(state, *dialog, answer),
         }
     }
 
@@ -1351,7 +1449,11 @@ impl App {
                 .shell_message_box
                 .as_ref()
                 .map(|message| &message.purpose),
-            Some(Purpose::CampaignReplay(_) | Purpose::CampaignVictory(_))
+            Some(
+                Purpose::CampaignReplay(_)
+                    | Purpose::CampaignVictory(_)
+                    | Purpose::AuthoredCampaignResult(_)
+            )
         ) {
             return;
         }
@@ -1497,6 +1599,12 @@ impl App {
             Action::SinglePlayer => Self::open_single_player_shell(state),
             Action::Options => Self::open_launcher_options_dialog(state),
             Action::MoviesAndCredits => Self::open_movies_credits_page(state),
+            Action::Network | Action::WwOnline if state.process_assets.uses_client_catalog() => {
+                Self::open_shell_notice(
+                    state,
+                    "This mod's client catalog is available in Skirmish. Choose No mod under Options, Mods to play online or on a network.".into(),
+                );
+            }
             // Both lead to a pre-match check, which compares a mod's files.
             Action::Network | Action::WwOnline => {
                 state.process_assets.read_mod_files_ahead();
@@ -1594,6 +1702,17 @@ impl App {
             return;
         };
         Self::raise_shell_message_box(state);
+        // Add Mod's boxes keep Enter from cancelling the choice or a running
+        // import: it answers OK, or nothing while the import prepares.
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if key == vera20k_gui::Key::Enter
+            && let Some(activate) = super::shell_mod_import::enter(state)
+        {
+            if activate {
+                Self::resolve_shell_message_box(state, 0);
+            }
+            return;
+        }
         let parts = shell_layout::shell_box_parts(state, &shell_box);
         let event = vera20k_gui::InputEvent::Key(key);
         if let Some(answer) = Self::shell_box_input(state, &shell_box, &parts, event)

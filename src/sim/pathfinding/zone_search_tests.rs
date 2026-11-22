@@ -106,9 +106,7 @@ fn wrapper_rejection_precedes_the_marker_transaction() {
         ) -> Result<crate::util::native_x87::NativeF64Bits, String> {
             Ok(crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO)
         }
-        fn prepare_search_markers(
-            &self,
-        ) -> Result<Option<(u8, std::cell::Ref<'_, SearchMarkerOverlay>)>, String> {
+        fn prepare_search_markers(&self) -> Result<Option<(u8, &SearchMarkerOverlay)>, String> {
             Err("reached429C1A".into())
         }
     }
@@ -278,16 +276,18 @@ fn caller_count_bridge_detour(
         start,
         MovementLayer::Ground,
         goal,
-        Some(HierarchyGate {
-            level0_zones: level0,
-            marked_level0: &precheck.marked[0],
-            blocker_neighbor_counts: &zero_counts,
-            level0_route: &precheck.paths[0],
-            progress: &Cell::new(RouteProgress {
+        Some((
+            HierarchyGate {
+                level0_zones: level0,
+                marked_level0: precheck.marked(0),
+                blocker_neighbor_counts: &zero_counts,
+                level0_route: precheck.route(0),
+            },
+            &mut RouteProgress {
                 index: 0,
                 cell: start,
-            }),
-        }),
+            },
+        )),
         Some(&terrain),
         None,
         MoverSearchFacts {

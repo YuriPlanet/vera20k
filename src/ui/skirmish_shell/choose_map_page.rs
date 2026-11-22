@@ -19,8 +19,8 @@ use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
 use crate::skirmish_modes::SkirmishGameMode;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
-use vera20k_gui::shell::list::ListScrollPart;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
+use vera20k_gui::shell::list::ListScrollPart;
 
 /// The chooser's dialog in the shell controller.
 pub const DIALOG: DialogResourceId = DialogResourceId(0x006B);
@@ -150,7 +150,7 @@ pub fn sync_page(
         (
             MAP_LIST,
             layout.map_list,
-            modal.filtered_record_indices.len(),
+            modal.map_row_count(),
             modal.map_top_index,
             modal.highlighted_filtered_index,
         ),
@@ -349,7 +349,10 @@ pub fn hover_target(
         MAP_LIST => ChooseMapHoverTarget::MapList0x553,
         MODE_LIST => {
             // The game-type row the list has under the pointer.
-            match gui.list_row_at(node, x, y).and_then(|row| modal.mode_rows().get(row)) {
+            match gui
+                .list_row_at(node, x, y)
+                .and_then(|row| modal.mode_rows().get(row))
+            {
                 Some(mode) => ChooseMapHoverTarget::ModeListRow0x6eb { mode: *mode },
                 None => ChooseMapHoverTarget::ModeList0x6eb,
             }

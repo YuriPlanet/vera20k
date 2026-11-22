@@ -79,7 +79,7 @@ fn actual_computer_yard_retasks_existing_starting_force_through_move() {
                 &[],
                 CLIENT_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -133,7 +133,7 @@ fn actual_computer_yard_retasks_existing_starting_force_through_move() {
                 &[],
                 CLIENT_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();

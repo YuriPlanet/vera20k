@@ -121,11 +121,33 @@ pub const TITLE_STATIC: u16 = 0x694;
 pub const GAME_TYPE_STATIC: u16 = 0x6EC;
 pub const MAP_LABEL_STATIC: u16 = 0x5A8;
 pub const HEADINGS: u16 = 0x7500;
+/// VERA's Quick Team Setup and Bulk Seat Actions lists under the options
+/// ([`place_menus`]); gamemd's `0x102` has neither.
+pub const TEAM_MENU: u16 = 0x7105;
+pub const SEAT_MENU: u16 = 0x7106;
 /// The options under the player rows, which a longer list moves down: the
-/// option boxes, the sliders and the sliders' headings.
-const OPTIONS: [u16; 11] = [
-    0x54E, 0x693, 0x696, 0x69A, 0x69D, 0x529, 0x511, 0x50C, 0x7505, 0x7506, 0x7507,
+/// option boxes, the sliders and the sliders' headings, and VERA's two lists.
+const OPTIONS: [u16; 13] = [
+    0x54E, 0x693, 0x696, 0x69A, 0x69D, 0x529, 0x511, 0x50C, 0x7505, 0x7506, 0x7507, TEAM_MENU,
+    SEAT_MENU,
 ];
+
+/// VERA's two lists under the options: their top, in DLU, the options'
+/// next line past Build Off Ally (227 DLU), and each one's width in pixels,
+/// one the shell has face art for (`combo_face_207`).
+const MENU_TOP_DLU: i32 = 242;
+const MENU_W: i32 = 207;
+
+/// Quick Team Setup and Bulk Seat Actions on the options' next line, one
+/// under each of their columns: Quick Team Setup under Short Game's, Bulk
+/// Seat Actions under Build Off Ally's.
+fn place_menus(statics: &mut crate::ui::shell::layout::RectTable) {
+    let top = dlu_rect(0, MENU_TOP_DLU, 0, 0).y;
+    for (menu, under) in [(TEAM_MENU, 0x54E), (SEAT_MENU, 0x69D)] {
+        let x = statics.get(under).map_or(0, |rect| rect.x);
+        statics.insert(menu, RectPx::new(x, top, MENU_W, COMBO_FACE_H));
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SkirmishRowRects {
@@ -501,12 +523,13 @@ pub fn compute_layout_for_rows(
         start_combos: row_column(0, 324, 25, 73),
         team_combos: row_column(0, 364, 25, 73),
     };
-    let statics = layout_data::place(
+    let mut statics = layout_data::place(
         "0x102",
         crate::ui::shell::geom::RETAIL_SCALE,
         screen_w,
         screen_h,
     );
+    place_menus(&mut statics);
     let at = |id| statics.get(id).unwrap_or_default();
     SkirmishShellLayout {
         scale: crate::ui::shell::geom::RETAIL_SCALE,

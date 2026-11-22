@@ -294,7 +294,7 @@ impl CommandExchange {
             });
         }
         loop {
-            let sending = self.sending.expect("retained frame");
+            let mut sending = self.sending.expect("set above, or already this frame's");
             if sending.remaining > queues.mirror_allowance() {
                 return Ok(SendPoll::Backpressure);
             }
@@ -319,14 +319,15 @@ impl CommandExchange {
                 .sent_commands
                 .checked_add(count as u64)
                 .ok_or(CommandExchangeError::CounterOverflow)?;
-            self.sending.as_mut().unwrap().remaining -= count;
+            sending.remaining -= count;
+            self.sending = Some(sending);
             if let Some(reason) = encoded
                 .blocked
                 .filter(|reason| *reason != EncodeBlock::Capacity)
             {
                 return Err(CommandExchangeError::UnsupportedLocalEvent(reason));
             }
-            if self.sending.as_ref().unwrap().remaining == 0 {
+            if sending.remaining == 0 {
                 self.sending = None;
                 return Ok(SendPoll::Complete {
                     commands: sending.total,

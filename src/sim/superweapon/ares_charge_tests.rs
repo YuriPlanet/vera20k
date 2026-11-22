@@ -66,7 +66,7 @@ fn ares_initial_ready_is_first_shot_only_and_virtual_charge_survives_restore_and
         sw,
         (20, 20),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.super_weapons[&owner][&sw].ares_launch_count, 1);

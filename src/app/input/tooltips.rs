@@ -312,7 +312,7 @@ fn tactical_world_tip_text_for_viewer(
     // The shared picker already checked cloak/sensors. TypeInvisible
     // refuses that winner; never pick another object behind it.
     // The bypass reads retained Techno+41A, not a human/control/alliance flag.
-    if !entity.discovery.owned_by_current_house() && object.invisible {
+    if !entity.seldom.discovery.owned_by_current_house() && object.invisible {
         return String::new();
     }
     let ares = rules.ares();
@@ -330,7 +330,11 @@ fn tactical_world_tip_text_for_viewer(
         // GetDisguise(1) @522640 supplies a default when retained +518 is null.
         // Source: `tools.native_inspect disasm 0x51F2C0 --bytes 0x65`.
         EntityCategory::Infantry
-            if entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
+            if entity
+                .seldom
+                .disguise
+                .as_ref()
+                .is_some_and(|d| d.is_disguised())
                 && !crate::sim::combat::combat_weapon::is_ally_by_object(
                     Some(sim.house_alliances()),
                     view.interner(),
@@ -404,14 +408,12 @@ fn ares_enemy_ui_name<'r>(
     viewer: crate::sim::intern::InternedId,
 ) -> Option<&'r str> {
     object.enemy_ui_name().filter(|_| {
-        entity.owner() != viewer
-            && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(sim.house_alliances()),
-                sim.interner(),
-                entity.owner(),
-                viewer,
-            )
-            && !entity.shows_production_to(viewer)
+        !crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(sim.house_alliances()),
+            sim.interner(),
+            entity.owner(),
+            viewer,
+        ) && !entity.shows_production_to(viewer)
     })
 }
 
@@ -496,6 +498,8 @@ fn tactical_tip_text(state: &AppState) -> String {
     )
 }
 
+/// The last tactical tip answered with the world home (`sim_host::home_answer`),
+/// in a cell because the tooltip draw asks through `&AppState`.
 pub(crate) type TacticalTipAnswer = std::cell::RefCell<((i32, i32), String)>;
 
 /// Display::GetTooltipText (0x004AE4F0) picks live entities. The answer
@@ -700,11 +704,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
     // 4AE580, before the ordinary object/shroud tooltip lookup.
-    regions.push(region(
-        ID_TACTICAL_TIP,
-        tactical_tip_rect(state),
-        &|| dynamic_tip_text(cursor, || tactical_tip_text(state)),
-    ));
+    regions.push(region(ID_TACTICAL_TIP, tactical_tip_rect(state), &|| {
+        dynamic_tip_text(cursor, || tactical_tip_text(state))
+    }));
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
     // Gadget idle republishes these retained House values each unlocked pump.
@@ -1377,6 +1379,7 @@ mod tests {
         let viewer = sim.intern("British");
         sim.entity_mut_for_test(fixture.entity_id)
             .unwrap()
+            .seldom
             .disguise
             .as_mut()
             .unwrap()
@@ -1426,6 +1429,7 @@ mod tests {
                 .simulation
                 .entity_mut_for_test(fixture.entity_id)
                 .unwrap()
+                .seldom
                 .disguise
                 .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(0))
                 .acquire(0, kind, house);
@@ -1635,7 +1639,10 @@ mod tests {
             .unwrap();
         let entity = sim.entities().get(entity_id).unwrap();
         assert_eq!(entity.owner(), owner);
-        assert_eq!(entity.discovery.owned_by_current_house(), owner == viewer);
+        assert_eq!(
+            entity.seldom.discovery.owned_by_current_house(),
+            owner == viewer
+        );
         assert!(
             !entity
                 .cloak

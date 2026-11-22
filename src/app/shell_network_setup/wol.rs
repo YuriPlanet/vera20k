@@ -349,15 +349,18 @@ fn quick_match_start(state: &mut AppState, name: &str) {
         .network_setup()
         .and_then(|launch| launch.humans.get(1))
         .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
-    let users = crate::app::shell_wol::lobby::member_names(state);
-    if !session.host() || !second || users.len() != 2 {
+    if !session.host() || !second || crate::app::shell_wol::lobby::member_count(state) != 2 {
         return;
     }
+    let users = crate::app::shell_wol::lobby::member_names(state)
+        .rev()
+        .map(str::to_owned)
+        .collect();
     if state
         .frontend
         .network_setup_protocol
         .as_mut()
-        .is_some_and(|protocol| protocol.submit_start(users.into_iter().rev().collect()))
+        .is_some_and(|protocol| protocol.submit_start(users))
     {
         crate::app::shell_wol::quick_match::start_requested(state);
     }
@@ -380,7 +383,7 @@ pub(super) fn quick_match_accept(state: &mut AppState) {
             let slot = &launch.local_player().slot;
             !slot.country_random && !slot.color_random
         });
-    if !assigned || crate::app::shell_wol::lobby::member_names(state).len() != 2 {
+    if !assigned || crate::app::shell_wol::lobby::member_count(state) != 2 {
         return;
     }
     queue(state, NetworkSetupRequest::Ready(true));
@@ -733,11 +736,6 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
                 .expect("setup owns protocol");
             if !back_to_room {
                 protocol.requests.push(NetworkSetupRequest::Leave);
-            }
-            if let Some(visit) = state.frontend.wol.as_mut() {
-                visit.back_to_room = back_to_room;
-                // A new match voids an earlier BC6 resume no room took.
-                visit.cooperative_resume = None;
             }
             state.frontend.skirmish_preview_texture = None;
             if quick_match {

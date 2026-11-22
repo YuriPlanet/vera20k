@@ -24,7 +24,7 @@ fn ordinary_frame(scene: &mut HeadlessScenario, payload: Option<Command>) {
             &commands,
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
 }
@@ -270,7 +270,7 @@ fn present(
                     view.fog(),
                     view.house_alliances(),
                     true,
-                    view.session().native_player_identity(),
+                    view.control_projection(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),

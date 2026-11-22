@@ -76,7 +76,7 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
 
 fn seeded_rngs(sim: &mut Simulation, data: &Value) {
     let seeds = &data["rng_seed_states"];
-    sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
 }
@@ -204,12 +204,12 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         &mut sim,
                         &rules,
                         owner,
-                        Default::default(),
+                        &mut Default::default(),
                     )
                 }
                 "npc_ai_fire" => {
                     ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
-                    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+                    ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
                     let log = ai_fire::AI_FIRE_LOG.take().unwrap();
                     let calls: Vec<Value> = log.into_iter().filter_map(|event| match event {
                         ai_fire::AiFireEvent::Fire(fired, target) => Some(json!({
@@ -277,7 +277,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                         &mut Vec::new(),
                         &rules,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                     assert_eq!(i32::from(returned), int(&row["returned"]), "{stage}");
                 }
@@ -383,7 +383,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(

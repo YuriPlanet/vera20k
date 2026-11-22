@@ -78,7 +78,7 @@ pub(crate) fn update_strategy(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
@@ -111,7 +111,7 @@ fn building_strategy(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let policy = sim.session.rule_policy();
     pick_enemy(
@@ -185,7 +185,7 @@ fn sell_off_and_hunt(
     owner: InternedId,
     why: &str,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     log::debug!(
         "{} sells off and hunts ({why})",
@@ -205,7 +205,7 @@ fn last_legs_actions(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if rules.phobos() {
         phobos_last_legs_actions(sim, rules, owner, registry, frame_effects);
@@ -219,7 +219,7 @@ fn phobos_last_legs_actions(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if rules.general.ai_fire_sale {
         let frame = sim.session.binary_frame() as i32;
@@ -386,7 +386,7 @@ pub(crate) fn fire_sale(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
@@ -434,7 +434,7 @@ pub(crate) fn all_to_hunt(
     rules: &RuleSet,
     owner: InternedId,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     // Steam gamemd:501400 captures count once;50141D/501423
     // re-read the array and its indexed object after callbacks. Storage
@@ -453,7 +453,7 @@ pub(crate) fn all_to_hunt(
         {
             continue;
         }
-        let dominated_strength = (techno.mind_control.permanent() && !human)
+        let dominated_strength = (techno.seldom.mind_control.permanent() && !human)
             .then(|| sim.interner.object_type(techno.type_ref(), rules))
             .flatten()
             .filter(|object| object.insignificant)
@@ -518,7 +518,6 @@ pub(crate) fn all_to_hunt(
 /// VERA `[General] AINearestEnemy=` (`nearest_enemy`, off by default): among
 /// peers of equal anger the one whose base centre is nearer wins, instead of
 /// the earlier house.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAlliances,

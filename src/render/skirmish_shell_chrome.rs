@@ -13,10 +13,11 @@ use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::chrome_atlas::{
-    ChromeArt, ChromeAtlasEntry, ChromePiece, Need, load_palette, shp_file_piece, shp_piece,
-    solid_piece,
+    ChromeArt, ChromeAtlasEntry, ChromePiece, Need, load_palette, read_ui_shp, shp_file_piece,
+    shp_piece, solid_piece,
 };
 use crate::render::gpu::GpuContext;
+use crate::render::shell_ui_style_assets::{decode_ui_shp, mod_art_candidates, read_client_png};
 use crate::ui::sidebar::SidebarTheme;
 
 /// Original 72B060/72B0D0: neutral, Allied, Soviet, Yuri mode-2 assets.
@@ -47,15 +48,28 @@ fn render_side_dialog_art(
     )
 }
 
-/// Red Alert 2's own neutral mode-2 background, a Tesla Trooper in a burning city:
-/// `PUDLGBGN.SHP` through `DIALOG.PAL`, both from `ra2.mix -> local.mix`. Yuri's
-/// Revenge's copies of the name win the ordinary lookup. VERA's updater boxes
-/// draw it; gamemd has no updater.
+/// VERA's neutral dialog background. The selected mod can supply the image
+/// and its palette. The fallback is Red Alert 2's original pair, which uses
+/// a different palette from the regular mode-2 background.
 fn render_ra2_dialog_art(assets: &AssetManager) -> Option<ChromePiece> {
-    let (_, archive) = assets.archive_with_source("ra2.mix -> local.mix")?;
-    let palette = Palette::from_bytes(archive.get_by_name("DIALOG.PAL")?).ok()?;
-    let shp = ShpFile::from_bytes(archive.get_by_name("PUDLGBGN.SHP")?).ok()?;
-    shp_piece(&shp, "pudlgbgn.shp#ra2", &palette, 0).ok()
+    const SHAPE: &str = "PUDLGBGN.SHP";
+    const PALETTE: &str = "DIALOG.PAL";
+    const LABEL: &str = "pudlgbgn.shp#ra2";
+    let stock = assets.archive_with_source("ra2.mix -> local.mix");
+    let palette = mod_art_candidates(assets, PALETTE)
+        .find_map(|candidate| Palette::from_bytes(candidate.bytes).ok())
+        .or_else(|| Palette::from_bytes(stock?.1.get_by_name(PALETTE)?).ok())?;
+    mod_art_candidates(assets, SHAPE)
+        .find_map(|candidate| {
+            let shape = decode_ui_shp(candidate.bytes).ok()?;
+            let art = shp_piece(&shape, LABEL, &palette, 0).ok()?;
+            log::debug!("UI art {SHAPE} from {}", candidate.source);
+            Some(art)
+        })
+        .or_else(|| {
+            let shp = ShpFile::from_bytes(stock?.1.get_by_name(SHAPE)?).ok()?;
+            shp_piece(&shp, LABEL, &palette, 0).ok()
+        })
 }
 
 /// The atlas label of each mode-2 dialog background slot: the stock art, or
@@ -164,6 +178,8 @@ pub struct SkirmishShellChromeAtlas {
     /// `0xBB/0xBC/0xBD/0xC2/0xC9`. YR style selects the Cooperative setup art
     /// and palette, RA2 style the shared MNSCRN pair through SHELL.PAL.
     pub setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
+    /// The client theme backdrop used by offline Skirmish only.
+    pub client_skirmish_background: Option<SkirmishShellChromeEntry>,
     lan_icons: [Option<SkirmishShellChromeEntry>; 4],
     wol_setup_icons: [Option<SkirmishShellChromeEntry>; 2],
     /// VERA's online room: the lobby's badge PCX images by file name.
@@ -457,7 +473,17 @@ pub fn build_skirmish_shell_chrome_atlas(
     // Original SDWRNANM header supplies 91 frames; keep the runtime sequence
     // bounded by the available retail frames, without stretching the canvas.
     art.shp_run("SDWRNANM.SHP", &shell2, "sdwrnanm.shp", 91);
-    art.shp("SDTP.SHP", &shell, 0..2, "sdtp.shp", Need::Required)?;
+    // Both frames, from one copy that has them.
+    shp_frames(
+        &mut art,
+        assets,
+        "SDTP.SHP",
+        &shell,
+        0..2,
+        "sdtp.shp",
+        Need::Required,
+        2,
+    )?;
     art.shp(
         "SDBTNBKGD.SHP",
         &shell2,
@@ -470,17 +496,33 @@ pub fn build_skirmish_shell_chrome_atlas(
     // Group B uses 0/11..=16) plus the idle frames 2/3/4 and overlay 10; a
     // missing frame is not substituted.
     if let Some(palette) = load_palette(assets, "SDBTNANM.PAL") {
-        art.shp(
-            "SDBTNANM.SHP",
+        let min = if assets.mod_selected() { 5 } else { 1 };
+        let file = "SDBTNANM.SHP";
+        shp_frames(
+            &mut art,
+            assets,
+            file,
             &palette,
             0..17,
             "sdbtnanm.shp",
             Need::Optional,
+            min,
         );
     }
     // Without MNBTTN the validation modal falls back to generic button art.
     if let Some(palette) = load_palette(assets, "MAINBTTN.PAL") {
-        art.shp("MNBTTN.SHP", &palette, 0..3, "mnbttn.shp", Need::Optional);
+        let min = if assets.mod_selected() { 3 } else { 1 };
+        let file = "MNBTTN.SHP";
+        shp_frames(
+            &mut art,
+            assets,
+            file,
+            &palette,
+            0..3,
+            "mnbttn.shp",
+            Need::Optional,
+            min,
+        );
     }
     // Original loaders 72B060/72B0D0 and getters 72AFF0/72B010/72B030.
     // AssetManager retains the mounted retail winner and the SHP's dimensions.
@@ -545,6 +587,24 @@ pub fn build_skirmish_shell_chrome_atlas(
             "mnscrnlcoopgamesetup.shp",
             Need::Optional,
         );
+    }
+    for (small, label) in [(true, "mod-setup-small"), (false, "mod-setup-large")] {
+        if let Some(piece) = render_mod_setup_background(assets, yr_original_style, small, label) {
+            art.push(piece);
+        }
+    }
+    if let Some(path) = assets
+        .client_install()
+        .and_then(|install| install.theme.skirmish_background.as_deref())
+        && let Some(image) = read_client_png(path)
+    {
+        log::info!("Skirmish client background from {}", path.display());
+        art.push(ChromePiece {
+            label: "client-skirmish-background".into(),
+            width: image.width(),
+            height: image.height(),
+            rgba: image.into_raw(),
+        });
     }
     if let Some(palette) = load_palette(assets, "MnScrnLCustomizeBattle.PAL") {
         let shape = "MnScrnLCustomizeBattle.shp";
@@ -653,7 +713,8 @@ pub fn build_skirmish_shell_chrome_atlas(
     Some(SkirmishShellChromeAtlas {
         texture,
         yr_original_style,
-        setup_backgrounds: setup_background_pair(yr_original_style, first),
+        setup_backgrounds: setup_background_pair(yr_original_style, first, get),
+        client_skirmish_background: get("client-skirmish-background"),
         launcher_warning_frames: labels.run("sdwrnanm.shp"),
         right_panel_top_sdtp: first("sdtp.shp"),
         right_panel_top_highlight_sdtp_frame1: labels.frame("sdtp.shp", 1),
@@ -739,6 +800,62 @@ pub fn build_skirmish_shell_chrome_atlas(
 /// login's 213.
 const COMBO_FACE_WIDTHS: [u32; 12] = [150, 180, 207, 249, 117, 44, 38, 151, 118, 42, 39, 213];
 
+/// Replace the preferred setup family when the mod supplies the other one.
+/// Consider a replaced background before a palette-only change, since the
+/// generic shell palette can also be replaced for buttons and borders. At
+/// 640 the shared image alone cannot select the other palette.
+fn render_mod_setup_background(
+    assets: &AssetManager,
+    yr_original_style: bool,
+    small: bool,
+    label: &str,
+) -> Option<ChromePiece> {
+    if !assets.mod_selected() {
+        return None;
+    }
+    let select_family = |require_mod_shape: bool| {
+        [yr_original_style, !yr_original_style]
+            .into_iter()
+            .find_map(|yr| {
+                let (shape_name, palette_name) = match (small, yr) {
+                    (true, false) => ("MNSCRNS.SHP", "SHELL.PAL"),
+                    (true, true) => ("MNSCRNS.SHP", COOP_SETUP_PALETTE),
+                    (false, false) => ("MNSCRNL.SHP", "SHELL.PAL"),
+                    (false, true) => (COOP_SETUP_SHAPE, COOP_SETUP_PALETTE),
+                };
+                let mod_palette = mod_art_candidates(assets, palette_name).find_map(|candidate| {
+                    Palette::from_bytes(candidate.bytes)
+                        .ok()
+                        .map(|palette| (palette, candidate.source))
+                });
+                if !require_mod_shape {
+                    let (palette, source) = mod_palette?;
+                    let art = shp_file_piece(assets, shape_name, label, &palette, 0)?;
+                    log::debug!(
+                        "Setup background {shape_name} with UI palette {palette_name} from {source}"
+                    );
+                    return Some((yr, art));
+                }
+                if small && yr != yr_original_style && mod_palette.is_none() {
+                    return None;
+                }
+                let mut candidates = mod_art_candidates(assets, shape_name).peekable();
+                candidates.peek()?;
+                let palette = mod_palette
+                    .map(|(palette, _)| palette)
+                    .or_else(|| load_palette(assets, palette_name))?;
+                candidates.find_map(|candidate| {
+                    let shape = decode_ui_shp(candidate.bytes).ok()?;
+                    let art = shp_piece(&shape, label, &palette, 0).ok()?;
+                    log::debug!("Setup background {shape_name} from {}", candidate.source);
+                    Some((yr, art))
+                })
+            })
+    };
+    let (yr, art) = select_family(true).or_else(|| select_family(false))?;
+    (yr != yr_original_style).then_some(art)
+}
+
 /// The setup-family background pair for the selected style: YR's Cooperative
 /// setup art, or RA2's shared MNSCRN pair. Shared by offline Skirmish `0x102`
 /// and the LAN/WOL pages. A YR entry that failed to load falls back per slot,
@@ -746,15 +863,57 @@ const COMBO_FACE_WIDTHS: [u32; 12] = [150, 180, 207, 249, 117, 44, 38, 151, 118,
 fn setup_background_pair(
     yr_original_style: bool,
     first: impl Fn(&str) -> Option<SkirmishShellChromeEntry>,
+    get: impl Fn(&str) -> Option<SkirmishShellChromeEntry>,
 ) -> [Option<SkirmishShellChromeEntry>; 2] {
     let ra2 = [first("mnscrns.shp:shell"), first("mnscrnl.shp:shell")];
-    if !yr_original_style {
-        return ra2;
+    let stock = if yr_original_style {
+        [
+            first("mnscrns.shp:offline-setup").or(ra2[0]),
+            first("mnscrnlcoopgamesetup.shp").or(ra2[1]),
+        ]
+    } else {
+        ra2
+    };
+    // A mod's replacement for the other family wins
+    // ([`render_mod_setup_background`]).
+    std::array::from_fn(|slot| get(["mod-setup-small", "mod-setup-large"][slot]).or(stock[slot]))
+}
+
+/// `frames` of SHP `file` through `palette` onto `art`, each labelled
+/// `label#frame` as [`ChromeArt::shp`] labels them, from the first copy
+/// with at least `min_frames` frames: a selected mod's copy with fewer (a
+/// series it cut short, or a broken file) falls through to the next copy,
+/// so outside data never leaves a half animation. `None` when any frame is
+/// missing.
+#[allow(clippy::too_many_arguments)]
+fn shp_frames(
+    art: &mut ChromeArt<'_>,
+    assets: &AssetManager,
+    file: &str,
+    palette: &Palette,
+    frames: std::ops::Range<usize>,
+    label: &str,
+    need: Need,
+    min_frames: usize,
+) -> Option<()> {
+    let shp = read_ui_shp(assets, file, |shp| {
+        anyhow::ensure!(
+            shp.frames.len() >= min_frames,
+            "{file} requires {min_frames} frames"
+        );
+        Ok(shp)
+    })
+    .map_err(|error| log::debug!("{error:#}"))
+    .ok();
+    let mut complete = true;
+    for frame in frames {
+        let piece = shp
+            .as_ref()
+            .and_then(|shp| shp_piece(shp, &format!("{label}#{frame}"), palette, frame).ok());
+        complete &= piece.is_some();
+        art.push_or(piece, &format!("{file} frame {frame}"), need);
     }
-    [
-        first("mnscrns.shp:offline-setup").or(ra2[0]),
-        first("mnscrnlcoopgamesetup.shp").or(ra2[1]),
-    ]
+    complete.then_some(())
 }
 
 /// The skirmish preview's start marker, drawn by `DrawStartPositions 0x00640710`.
@@ -1089,6 +1248,36 @@ mod tests {
         let active = render_shp_entry(&assets, "PUDLGBGN.SHP", &palette, 0).unwrap();
         assert_eq!((ra2.width, ra2.height), (451, 326));
         assert_ne!(ra2.rgba, active.rgba);
+    }
+
+    #[test]
+    fn setup_looks_for_the_mods_alternate_style_image_and_palette() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+
+        let install = audio_test_install("setup-art-install");
+        let mod_dir = TestDirectory::new("setup-art-mod");
+        let mut image = [0u8; 33];
+        for offset in [2, 4, 6, 12, 14] {
+            image[offset..offset + 2].copy_from_slice(&1u16.to_le_bytes());
+        }
+        image[28..32].copy_from_slice(&32u32.to_le_bytes());
+        image[32] = 1;
+        let mut palette = [0u8; 768];
+        palette[3] = 11;
+        install.write_mix("language.mix", "MNSCRNL.SHP", &image);
+        std::fs::write(mod_dir.path().join("SHELL.PAL"), [0u8; 768]).unwrap();
+        mod_dir.write_mix("expandmd98.mix", COOP_SETUP_SHAPE, &image);
+        mod_dir.write_mix("expandmd99.mix", COOP_SETUP_PALETTE, &palette);
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(mod_dir.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let art = super::render_mod_setup_background(&assets, false, false, "test").unwrap();
+        assert_eq!(art.rgba, [44, 0, 0, 255]);
+        assert!(super::render_mod_setup_background(&assets, false, true, "test").is_none());
     }
 
     #[test]
@@ -1452,15 +1641,19 @@ mod tests {
         };
 
         assert_eq!(
-            widths(setup_background_pair(false, |label| by_label
-                .get(label)
-                .copied())),
+            widths(setup_background_pair(
+                false,
+                |label| by_label.get(label).copied(),
+                |_| None
+            )),
             [Some(1.0), Some(2.0)]
         );
         assert_eq!(
-            widths(setup_background_pair(true, |label| by_label
-                .get(label)
-                .copied())),
+            widths(setup_background_pair(
+                true,
+                |label| by_label.get(label).copied(),
+                |_| None
+            )),
             [Some(3.0), Some(4.0)]
         );
     }
@@ -1475,7 +1668,7 @@ mod tests {
             background_labeled(3.0),
         );
 
-        let selected = setup_background_pair(true, |label| by_label.get(label).copied());
+        let selected = setup_background_pair(true, |label| by_label.get(label).copied(), |_| None);
         assert_eq!(
             selected.map(|entry| entry.map(|entry| entry.pixel_size[0])),
             [Some(3.0), Some(2.0)]

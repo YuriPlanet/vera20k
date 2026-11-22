@@ -3,11 +3,15 @@
 //
 //   node tools/spawn/spawn-e2e.mjs relay  --out DIR --ra2 RETAIL [--players 2] [--port 8787]
 //                                         [--relay 127.0.0.1:5000] [--key HEX] [--cors ORIGIN]
-//                                         [--pacing on|off] (a VO2C certificate; default VO1C)
+//                                         [--pacing on|off|continuous] (a VO2C certificate; default VO1C)
 //                                         [--gateway ws://localhost:8788] (browser players)
+//                                         [--watchers N] (DIR/w0.. watch as the lowest source; docs/spawn.md "Watching")
+//                                         [--alone on] (a VO2C certificate the relay orders with one source,
+//                                         OrderingCertificate::ordered_alone; for --players 1 --ai N)
 //   node tools/spawn/spawn-e2e.mjs direct --out DIR --ra2 RETAIL [--players 2] [--base-port 1300]
 //                                         [--ips A,B,...]
-// Both accept --spectators S,T (SourceIndex list, [IsSpectator]) and --speed N
+// Both accept --ai N (computer houses after every human; relay mode admits
+// --players 1 with them), --spectators S,T (SourceIndex list, [IsSpectator]) and --speed N
 // (GameSpeed, default 2; one of the selectable speeds, 8 included).
 // --ips gives each source's address in the other files (default 127.0.0.1).
 // --cors ORIGIN answers the browser's CORS preflight for that page origin.
@@ -23,7 +27,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { base64url, relayGrant } from './relay_grant.mjs';
+import { base64url, relayGrant, watchGrant } from './relay_grant.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 // The rate the lobby signs as `tick_hz` for each selectable GameSpeed, as the
@@ -37,14 +41,18 @@ const GRANT_SECONDS = 300;
 function options(argv) {
   const [mode, ...rest] = argv;
   const parsed = { mode, players: 2, port: 8787, relay: '127.0.0.1:5000', basePort: 1300,
-    speed: 2, map: join(ROOT, 'tests/maps/match.map'), seed: 4242, spectators: '', ips: '' };
+    speed: 2, map: join(ROOT, 'tests/maps/match.map'), seed: 4242, spectators: '', ips: '', watchers: 0, ai: 0 };
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i].replace(/^--/, '').replace(/-(.)/g, (_, c) => c.toUpperCase());
-    parsed[key] = ['players', 'port', 'basePort', 'speed', 'seed'].includes(key) ? Number(rest[i + 1]) : rest[i + 1];
+    parsed[key] = ['players', 'port', 'basePort', 'speed', 'seed', 'watchers', 'ai'].includes(key) ? Number(rest[i + 1]) : rest[i + 1];
   }
   if (!['relay', 'direct'].includes(parsed.mode) || !parsed.out || !parsed.ra2)
     throw new Error('usage: spawn-e2e.mjs relay|direct --out DIR --ra2 RETAIL_DIR [options]');
-  if (!(parsed.players >= 2 && parsed.players <= 30)) throw new Error('--players must be 2..30');
+  const least = parsed.mode === 'relay' && parsed.ai > 0 ? 1 : 2;
+  if (!(parsed.players >= least && parsed.players + parsed.ai <= 30 && parsed.players <= 30))
+    throw new Error(`--players must be ${least}..30, with --ai, 30 houses in all`);
+  if (parsed.alone && !(parsed.players === 1 && parsed.mode === 'relay'))
+    throw new Error('--alone is for one relay player against AI');
   if (!LAUNCH_HZ.has(parsed.speed)) throw new Error(`--speed must be one of ${[...LAUNCH_HZ.keys()].join(', ')}`);
   parsed.spectatorSet = new Set(String(parsed.spectators).split(',').filter(Boolean).map(Number));
   parsed.ipList = String(parsed.ips).split(',').filter(Boolean);
@@ -57,7 +65,8 @@ function spawnIni(opts, local, extraSettings, otherKeys, relaySection) {
   const name = (source) => `Player${source}`;
   let text = `[Settings]\nName=${name(local)}\nSide=${local % 2}\nColor=${local % 8}\n` +
     `PlayerCount=${opts.players}\nSourceIndex=${local}\nSeed=${opts.seed}\nGameSpeed=${opts.speed}\n` +
-    `Scenario=spawnmap.ini\nSpecialHouseIsAlly=No\nCredits=10000\n${extraSettings}`;
+    `Scenario=spawnmap.ini\nSpecialHouseIsAlly=No\nCredits=10000\n` +
+    `${opts.ai ? `AIPlayers=${opts.ai}\n` : ''}${extraSettings}`;
   let other = 0;
   // [IsSpectator] names houses by this file's own numbering: local Multi1,
   // [OtherK] Multi{K+1} (docs/spawn.md).
@@ -71,11 +80,18 @@ function spawnIni(opts, local, extraSettings, otherKeys, relaySection) {
       `SourceIndex=${source}\n${otherKeys(source)}`;
   }
   if (spectators.length) text += `[IsSpectator]\n${spectators.join('\n')}\n`;
+  // AI houses follow every human: Multi{PlayerCount+1}.. (docs/spawn.md).
+  if (opts.ai) {
+    const keys = Array.from({ length: opts.ai }, (_, index) => `Multi${opts.players + index + 1}`);
+    text += `[HouseHandicaps]\n${keys.map((key) => `${key}=1`).join('\n')}\n`;
+    text += `[HouseCountries]\n${keys.map((key, index) => `${key}=${(opts.players + index) % 2}`).join('\n')}\n`;
+    text += `[HouseColors]\n${keys.map((key, index) => `${key}=${(opts.players + index) % 8}`).join('\n')}\n`;
+  }
   return text + (relaySection ?? '');
 }
 
-function playerDirectory(opts, source, ini) {
-  const directory = resolve(opts.out, `p${source}`);
+function playerDirectory(opts, source, ini, prefix = 'p') {
+  const directory = resolve(opts.out, `${prefix}${source}`);
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, 'spawn.ini'), ini);
   copyFileSync(opts.map, join(directory, 'spawnmap.ini'));
@@ -100,7 +116,11 @@ async function relay(opts) {
   if (!/^[0-9a-f]{64}$/i.test(key ?? '')) throw new Error('--key or VERA_RELAY_TICKET_KEY must be 64 hex digits');
   const matchId = randomUUID();
   const payloadKey = base64url(randomBytes(32));
-  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ.get(opts.speed), pacing: opts.pacing };
+  const alone = opts.alone === 'on';
+  // The relay orders a one-source match only from a VO2C certificate marked
+  // ordered alone.
+  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ.get(opts.speed),
+    pacing: opts.pacing ?? (alone ? 'on' : undefined), alone };
   const now = () => Math.floor(Date.now() / 1000);
   const users = Array.from({ length: opts.players }, (_, source) => ({
     source, player_id: randomUUID(), token: base64url(randomBytes(32)),
@@ -109,13 +129,30 @@ async function relay(opts) {
   const grant = (user, lifetime) => relayGrant(key, opts.relay, matchId, user.source, now(),
     user.player_id, 1, payloadKey, lifetime, ordering);
   const service = `http://127.0.0.1:${opts.port}`;
+  let certificate = null;
   for (const user of users) {
     const relayGrantValue = await grant(user, BOOTSTRAP_GRANT_SECONDS);
+    certificate ??= relayGrantValue.ordering_certificate;
     const section = `[Relay]\nAddress=${opts.relay}\nMatchId=${matchId}\nPlayerId=${user.player_id}\n` +
       `Ticket=${relayGrantValue.ticket}\nPacketKey=${relayGrantValue.packet_key}\nPayloadKey=${payloadKey}\n` +
       `OrderingCertificate=${relayGrantValue.ordering_certificate}\nServiceUrl=${service}\n` +
       `Token=${user.token}\nAdmissionTimeout=60\n${opts.gateway ? `GatewayUrl=${opts.gateway}\n` : ''}`;
     console.log(`wrote ${playerDirectory(opts, user.source, spawnIni(opts, user.source, '', () => '', section))}`);
+  }
+  // A watcher's file is the lowest source's with a watch ticket and a watch
+  // token, which only renews (docs/spawn.md "Watching").
+  const watchers = Array.from({ length: opts.watchers }, (_, index) => ({
+    index, watcher_id: randomUUID(), token: base64url(randomBytes(32)), renewals: 0,
+  }));
+  const watch = (watcher) => watchGrant(key, opts.relay, matchId, now(), watcher.watcher_id, payloadKey,
+    GRANT_SECONDS, certificate);
+  for (const watcher of watchers) {
+    const value = watch(watcher);
+    const section = `[Relay]\nAddress=${opts.relay}\nMatchId=${matchId}\nPlayerId=${watcher.watcher_id}\n` +
+      `Ticket=${value.ticket}\nPacketKey=${value.packet_key}\nPayloadKey=${payloadKey}\n` +
+      `OrderingCertificate=${certificate}\nServiceUrl=${service}\nToken=${watcher.token}\nAdmissionTimeout=60\n` +
+      `${opts.gateway ? `GatewayUrl=${opts.gateway}\n` : ''}`;
+    console.log(`wrote ${playerDirectory(opts, watcher.index, spawnIni(opts, 0, '', () => '', section), 'w')}`);
   }
   const log = (...args) => console.log(new Date().toISOString(), ...args);
   const emit = (user, kind, payload) => {
@@ -179,6 +216,26 @@ async function relay(opts) {
     }
     try {
       const token = /^Bearer (.+)$/.exec(request.headers.authorization ?? '')?.[1];
+      const watcher = watchers.find((candidate) => candidate.token === token);
+      if (watcher) {
+        // The lobby's watch token: its events are one fresh watch grant;
+        // everything else is refused.
+        const url = new URL(request.url, service);
+        if (url.pathname === '/v1/events' && request.method === 'GET') {
+          // An ended match is the lobby's `unknown_match`.
+          if (users.every((user) => user.finished !== null || user.left)) {
+            log(`watch renewal refused for watcher ${watcher.index}: the match ended`);
+            return reply(409, { code: 'unknown_match' });
+          }
+          const sequence = Number(url.searchParams.get('after') ?? 0) + 1;
+          watcher.renewals += 1;
+          log(`watch renewal ${watcher.renewals} for watcher ${watcher.index}`);
+          return reply(200, { events: [{ sequence, kind: 'watch_renewed',
+            payload: { match_id: matchId, relay: watch(watcher) } }], cursor: sequence });
+        }
+        log(`refused ${request.method} ${url.pathname} from watcher ${watcher.index}`);
+        return reply(403, { code: 'forbidden' });
+      }
       const user = users.find((candidate) => candidate.token === token);
       if (!user) return reply(401, { code: 'unauthorized' });
       const url = new URL(request.url, service);

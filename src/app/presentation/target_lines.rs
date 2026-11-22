@@ -112,7 +112,6 @@ impl TargetLineState {
 
 /// Build selected unit action-line strokes from live simulation state.
 /// The psychic detection line's dashed stroke carries its A gate for the GPU.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_target_line_strokes(
     line_state: &TargetLineState,
     planning_active: bool,
@@ -722,7 +721,7 @@ mod tests {
         let mut unit = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
         unit.set_owner_for_test(sim.intern("Americans"));
         unit.set_type_ref_for_test(sim.intern("MTNK"));
-        unit.selection.set_selected_for_test(true);
+        unit.seldom.selection.set_selected_for_test(true);
         sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );

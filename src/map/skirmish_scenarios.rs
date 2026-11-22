@@ -46,7 +46,9 @@ pub enum SkirmishScenarioSource {
     MissionsMdPkt,
     LoosePkt(String),
     LooseYro(String),
-    LooseYrm(String),
+    LooseMap(String),
+    /// A map listed by the selected mod's client catalog.
+    ClientCatalog,
     /// VERA: a map only in the lobby's online map library, by SHA-256. Its
     /// row comes from the library's copy of the map's header; Choose Map
     /// downloads the map into VERA's own Maps folder before using it.
@@ -208,7 +210,7 @@ fn source_for_file_name(file_name: &str) -> SkirmishScenarioSource {
         .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some("yro") => SkirmishScenarioSource::LooseYro(file_name.to_string()),
-        Some("yrm") => SkirmishScenarioSource::LooseYrm(file_name.to_string()),
+        Some("yrm" | "mpr") => SkirmishScenarioSource::LooseMap(file_name.to_string()),
         Some("pkt") => SkirmishScenarioSource::LoosePkt(file_name.to_string()),
         _ => SkirmishScenarioSource::Synthetic,
     }
@@ -273,6 +275,14 @@ pub fn record_matches_mode(record: &SkirmishScenarioRecord, mode: &SkirmishGameM
         SkirmishScenarioKind::ConcreteMap if record.game_modes.is_empty() => {
             mode.map_filter == "standard"
         }
+        SkirmishScenarioKind::ConcreteMap
+            if record.source == SkirmishScenarioSource::ClientCatalog =>
+        {
+            record
+                .game_modes
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&mode.map_filter))
+        }
         SkirmishScenarioKind::ConcreteMap => record
             .game_modes
             .iter()
@@ -335,7 +345,7 @@ mod tests {
         ));
         SkirmishScenarioRecord::concrete_from_ini(
             source_ordinal,
-            SkirmishScenarioSource::LooseYrm(format!("{name}.yrm")),
+            SkirmishScenarioSource::LooseMap(format!("{name}.yrm")),
             &format!("{name}.yrm"),
             &ini,
         )
@@ -530,7 +540,7 @@ mod tests {
             i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
         );
         stale.file_name = "Wrong.yrm".to_string();
-        stale.source = SkirmishScenarioSource::LooseYrm("Wrong.yrm".to_string());
+        stale.source = SkirmishScenarioSource::LooseMap("Wrong.yrm".to_string());
         stale.multiplayer_start_waypoints = vec![Waypoint {
             index: 0,
             rx: 11,

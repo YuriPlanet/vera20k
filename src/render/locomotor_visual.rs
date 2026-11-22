@@ -84,7 +84,11 @@ impl Placed for crate::sim::game_entity::GameEntity {
 
 /// `[graphics] high_terrain_building_lift`, set once at startup from the
 /// loaded config ([`set_high_terrain_building_lift`]). Presentation only:
-/// the simulation never reads it.
+/// the simulation never reads it. A copy of the config option in a global
+/// because its readers, [`building_terrain_correction`]'s callers (the
+/// building, overlay, fogged, placement-preview and selection-bracket draws
+/// and this module's own placed-object offsets), are handed entities and
+/// cells, not the config; an atomic because a `static` must be `Sync`.
 static HIGH_TERRAIN_BUILDING_LIFT: AtomicBool = AtomicBool::new(false);
 
 /// Installs the player's `high_terrain_building_lift` choice.

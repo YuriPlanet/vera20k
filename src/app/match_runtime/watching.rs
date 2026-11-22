@@ -14,11 +14,7 @@ use winit::keyboard::KeyCode;
 
 /// Whether this game watches its match instead of playing in it.
 pub(crate) fn active(state: &AppState) -> bool {
-    state
-        .match_state
-        .live_network
-        .as_ref()
-        .is_some_and(|live| live.watching())
+    state.match_state.session.local_connection_watches() && state.match_state.live_network.is_some()
 }
 
 /// Whether this game watches and sees the whole map: on the observer's
@@ -35,12 +31,10 @@ pub(crate) fn whole_map(state: &AppState) -> bool {
 /// A watcher still catching up to the match plays minutes of it at speed:
 /// its sounds stay off meanwhile, as a returning player's do.
 pub(crate) fn catching_up(state: &AppState, now_ms: u32) -> bool {
-    let Some(live) = state
-        .match_state
-        .live_network
-        .as_ref()
-        .filter(|live| live.watching())
-    else {
+    if !active(state) {
+        return false;
+    }
+    let Some(live) = state.match_state.live_network.as_ref() else {
         return false;
     };
     let frame = state
@@ -142,6 +136,21 @@ fn follow_next(state: &mut AppState) {
     else {
         return;
     };
+    switch_view(state, next);
+}
+
+/// A launcher's watcher (docs/spawn.md "Watching") is none of the players: it
+/// starts on the observer's sidebar, with the whole map, as Tab's stop after
+/// the last player, and Tab goes on from there.
+pub(crate) fn begin_on_observers_view(state: &mut AppState) {
+    switch_view(state, View::Observer);
+    log::info!(
+        "Watching from the observer's view: whole map {}",
+        whole_map(state)
+    );
+}
+
+fn switch_view(state: &mut AppState, next: View) {
     let Some(runtime) = state
         .match_state
         .sim_runtime

@@ -115,6 +115,76 @@ pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape
     }
 }
 
+/// `[VERA] GraphicsAPI=` selects the renderer at startup. With `auto`, the
+/// Windows startup record can switch between Vulkan and DirectX 12 after a
+/// failed start (`app::persistence::startup_backend`). `opengl` requests the
+/// desktop OpenGL compatibility renderer. wgpu's `WGPU_BACKEND` environment
+/// variable takes precedence. The Options window's Display page lists it
+/// where it chooses anything ([`HAS_GRAPHICS_API`]); a pick applies at the
+/// next start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum GraphicsApi {
+    #[default]
+    Auto,
+    Vulkan,
+    DirectX12,
+    OpenGl,
+}
+
+impl GraphicsApi {
+    /// The list's rows, top to bottom; the first is the default. DirectX 12
+    /// stands before Vulkan as the one a Windows player reaches for.
+    const ALL: [Self; 4] = [Self::Auto, Self::DirectX12, Self::Vulkan, Self::OpenGl];
+
+    pub(crate) fn from_ini_value(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "vulkan" | "vk" => Self::Vulkan,
+            "dx12" | "directx12" | "directx 12" | "d3d12" => Self::DirectX12,
+            "opengl" => Self::OpenGl,
+            _ => Self::Auto,
+        }
+    }
+
+    pub(crate) fn ini_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vulkan => "vulkan",
+            Self::DirectX12 => "dx12",
+            Self::OpenGl => "opengl",
+        }
+    }
+
+    /// The API asked for alone, when the key names one.
+    pub(crate) fn backend(self) -> Option<wgpu::Backend> {
+        match self {
+            Self::Auto => None,
+            Self::Vulkan => Some(wgpu::Backend::Vulkan),
+            Self::DirectX12 => Some(wgpu::Backend::Dx12),
+            Self::OpenGl => Some(wgpu::Backend::Gl),
+        }
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Auto => "VERA:GraphicsApiAuto",
+            Self::DirectX12 => "VERA:GraphicsApiDirectX12",
+            Self::Vulkan => "VERA:GraphicsApiVulkan",
+            Self::OpenGl => "VERA:GraphicsApiOpenGl",
+        })
+    }
+}
+
+/// The Graphics API list is on the Display page where the key chooses
+/// anything: Windows, with Vulkan and DirectX 12 to choose between and an
+/// OpenGL compatibility mode. Metal and the browser have one renderer each.
+pub(crate) const HAS_GRAPHICS_API: bool = cfg!(target_os = "windows");
+
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherButton {
@@ -572,6 +642,9 @@ pub(crate) enum LauncherComboId {
     /// The Ares extension setting, from the next start
     /// (`util::ares_launch::AresSetting`).
     Ares,
+    /// The `[VERA] GraphicsAPI=` list: the renderer, from the next start;
+    /// on the page where it chooses anything ([`HAS_GRAPHICS_API`]).
+    GraphicsApi,
 }
 
 /// The retail captions of [`LAUNCHER_LABEL_SPECS`], read from the string table
@@ -672,10 +745,12 @@ impl LauncherTrackbarId {
     }
 
     /// The value plaque's reserve; Detail, Difficulty and Scroll turn the
-    /// plaque off (`0x4AC` with 0).
+    /// plaque off (`0x4AC` with 0). VERA's Team Color Strength has none
+    /// either, so it matches Visual Details beside it and prints its level
+    /// where Visual Details prints its step.
     pub(crate) const fn plaque_reserve(self) -> i32 {
         match self {
-            Self::Score | Self::Sound | Self::Voice | Self::HouseColorStrength => 50,
+            Self::Score | Self::Sound | Self::Voice => 50,
             _ => 0,
         }
     }
@@ -736,6 +811,9 @@ pub(crate) enum LauncherCheckboxId {
     /// The online client's enlarged art draws lightly smoothed.
     SmoothOnlineMenus,
     VSync,
+    /// Battles draw at the monitor's refresh rate where draw time allows
+    /// (`[VERA] HighRefreshRateInBattle=`), with either VSync setting.
+    HighRefreshRateInBattle,
     /// The setup screens' map preview shows VERA's drawing of the whole map.
     HdMapPreviews,
     /// The window's FPS readout: live state no profile stores.
@@ -761,10 +839,14 @@ pub(crate) enum LauncherCheckboxId {
     BuildingProductionQueue,
     /// The super weapon timer list shows six lines and pages the rest.
     CompactSuperTimers,
+    /// VERA's box: the super weapon timer list shows one line per team and
+    /// super weapon type instead of one per Super. Default off; the next
+    /// timer draw reads it.
+    GroupedSuperTimers,
 }
 
 impl LauncherCheckboxId {
-    pub(crate) const COUNT: usize = Self::CompactSuperTimers as usize + 1;
+    pub(crate) const COUNT: usize = Self::GroupedSuperTimers as usize + 1;
 
     /// Whether a toggle publishes: retail's three apply with the accepted
     /// pack (`0x0055FAA0`); VERA's publish each change.
@@ -790,11 +872,14 @@ impl Setting {
             .map_or(("", ""), |row| (row.caption, row.help))
     }
 
-    /// Whether this build has it: the browser's has no VSync or HD Map
-    /// Previews.
+    /// Whether this build has it: the browser's has no VSync, High Refresh
+    /// Rate or HD Map Previews, and only Windows has a Graphics API to pick.
     const fn available(self) -> bool {
         match self {
-            Self::Checkbox(LauncherCheckboxId::VSync) => HAS_VSYNC,
+            Self::Checkbox(
+                LauncherCheckboxId::VSync | LauncherCheckboxId::HighRefreshRateInBattle,
+            ) => HAS_VSYNC,
+            Self::List(LauncherComboId::GraphicsApi) => HAS_GRAPHICS_API,
             Self::Checkbox(LauncherCheckboxId::HdMapPreviews) => HAS_HD_MAP_PREVIEWS,
             _ => true,
         }
@@ -833,9 +918,12 @@ macro_rules! row {
 
 /// Every setting, page by page, top to bottom. Retail `0xD5` lays its
 /// controls out in four bands whose headings name the first four pages; VERA
-/// adds Controls and General. On Display the sliders stand above VSync, which
-/// the browser build lacks, so both builds put them in the same place: at
-/// 640x480's 0.8 fit a slider's place decides whether it keeps its frame art.
+/// adds Controls and General. Display groups its kinds: the lists (Windows
+/// adds Graphics API after Display, with the other lists about where and how
+/// the game draws), the two sliders, then the boxes. The sliders stand above
+/// VSync, which the browser build lacks, so both builds put them in the same
+/// place: at 640x480's 0.8 fit a slider's place decides whether it keeps its
+/// frame art.
 pub(crate) const ROWS: &[Row] = {
     use LauncherCheckboxId as Checkbox;
     use LauncherComboId as List;
@@ -843,8 +931,9 @@ pub(crate) const ROWS: &[Row] = {
     &[
         row!(Display, List(Zoom), "Zoom"),
         row!(Display, List(Display), "Display"),
-        row!(Display, Slider(HouseColorStrength), "HouseColorStrength"),
+        row!(Display, List(GraphicsApi), "GraphicsApi"),
         row!(Display, List(ColorVision), "ColorVision"),
+        row!(Display, Slider(HouseColorStrength), "HouseColorStrength"),
         row!(
             Display,
             Slider(Detail),
@@ -853,6 +942,11 @@ pub(crate) const ROWS: &[Row] = {
         ),
         row!(Display, Checkbox(FullScreen), "FullScreen"),
         row!(Display, Checkbox(VSync), "VSync"),
+        row!(
+            Display,
+            Checkbox(HighRefreshRateInBattle),
+            "HighRefreshRateInBattle"
+        ),
         row!(Display, Checkbox(OriginalShape), "OriginalShape"),
         row!(Display, Checkbox(PerformanceStats), "PerformanceStats"),
         row!(
@@ -904,6 +998,11 @@ pub(crate) const ROWS: &[Row] = {
             Interface,
             Checkbox(CompactSuperTimers),
             "CompactSuperTimers"
+        ),
+        row!(
+            Interface,
+            Checkbox(GroupedSuperTimers),
+            "GroupedSuperTimers"
         ),
         row!(Interface, Checkbox(DetailedEvaText), "DetailedEvaText"),
         row!(Interface, Checkbox(ConvenienceHelp), "ConvenienceHelp"),
@@ -1053,6 +1152,8 @@ pub(crate) enum LauncherOptionsEvent {
     HealthBarModeSelected(HealthBarMode),
     /// Played from the next start.
     AresSelected(crate::util::ares_launch::AresSetting),
+    /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
+    GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
     DisplaySelected(DisplayTarget),
     /// A language tag.
@@ -1113,6 +1214,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar_columns: SidebarColumns,
     pub(crate) health_bars: HealthBarMode,
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    /// The Graphics API list's choice; it applies from the next start.
+    pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
 }
 
@@ -1136,6 +1239,7 @@ impl Default for LauncherOptionsValues {
             sidebar_columns: SidebarColumns::default(),
             health_bars: HealthBarMode::default(),
             ares: Default::default(),
+            graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
         }
     }
@@ -1467,6 +1571,7 @@ impl OptionsDialogState {
             E::SidebarColumnsSelected(columns) => v.sidebar_columns = *columns,
             E::HealthBarModeSelected(mode) => v.health_bars = *mode,
             E::AresSelected(setting) => v.ares = *setting,
+            E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
             E::DisplaySelected(display) if *display == self.display => return,
             E::DisplaySelected(display) => self.display = display.clone(),
@@ -1538,6 +1643,13 @@ impl OptionsDialogState {
             check_for_updates: std::mem::take(&mut self.pending_update_check),
         }
     }
+
+    /// VERA's team-colour strength as the level the profile stores: the
+    /// slider's position lifted onto the [`crate::rules::house_colors`] scale.
+    pub(crate) fn house_color_strength(&self) -> u8 {
+        self.values[LauncherTrackbarId::HouseColorStrength]
+            + crate::rules::house_colors::STRENGTH_MIN
+    }
 }
 
 #[cfg(test)]
@@ -1553,13 +1665,6 @@ impl OptionsDialogState {
     /// The screens the Display list offers, in the window layer's order.
     pub(crate) fn displays(&self) -> &[DisplayChoice] {
         &self.displays
-    }
-
-    /// VERA's team-colour strength as the level the profile stores: the
-    /// slider's position lifted onto the [`crate::rules::house_colors`] scale.
-    pub(crate) fn house_color_strength(&self) -> u8 {
-        self.values[LauncherTrackbarId::HouseColorStrength]
-            + crate::rules::house_colors::STRENGTH_MIN
     }
 }
 
@@ -1929,6 +2034,47 @@ mod tests {
         );
     }
 
+    /// The Graphics API list publishes its pick for the profile, as the Ares
+    /// list does: the game reads it at its next start. Its rows are the
+    /// key's four values, Auto first, each naming its own value.
+    #[test]
+    fn graphics_api_list_publishes_its_pick_for_the_next_start() {
+        let values: Vec<&str> = GraphicsApi::choices()
+            .iter()
+            .map(|api| api.ini_value())
+            .collect();
+        assert_eq!(values, ["auto", "dx12", "vulkan", "opengl"]);
+        for api in GraphicsApi::choices() {
+            assert_eq!(GraphicsApi::from_ini_value(api.ini_value()), api);
+        }
+        if !HAS_GRAPHICS_API {
+            return;
+        }
+        use LauncherComboId::GraphicsApi as GraphicsApiList;
+        let mut state = state(true);
+        let display = page(Category::Display);
+        let press = |state: &mut OptionsDialogState, layout: &LauncherOptionsLayout, x, y| {
+            state.shell_mouse_down(x, y, layout);
+            state.shell_mouse_up(x, y, layout);
+        };
+        let face = display.combo_rect(GraphicsApiList).unwrap();
+        press(&mut state, &display, face.x + 4, face.y + 5);
+        assert_eq!(state.shell_open_list(), Some(GraphicsApiList));
+        let dx12 = state.shell_popup(&display).unwrap().row_rect(1);
+        press(&mut state, &display, dx12.x + 10, dx12.y + 5);
+        assert_eq!(state.shell_open_list(), None);
+        assert_eq!(state.values.graphics_api, GraphicsApi::DirectX12);
+        assert_eq!(
+            drained(&mut state),
+            (
+                vec![PageCue::ComboOpen, PageCue::ComboClose],
+                vec![LauncherOptionsEvent::GraphicsApiSelected(
+                    GraphicsApi::DirectX12
+                )]
+            )
+        );
+    }
+
     #[test]
     fn sidebar_sizes_need_a_640x480_frame_at_that_size() {
         use SidebarSize::{ExtraLarge, Large, Normal};
@@ -2195,15 +2341,20 @@ mod tests {
             .flat_map(|page| page.settings())
             .collect();
         let count = |kind: fn(&Setting) -> bool| placed.iter().filter(|s| kind(s)).count();
-        let boxes =
-            LauncherCheckboxId::COUNT - usize::from(!HAS_VSYNC) - usize::from(!HAS_HD_MAP_PREVIEWS);
+        let boxes = LauncherCheckboxId::COUNT
+            - 2 * usize::from(!HAS_VSYNC)
+            - usize::from(!HAS_HD_MAP_PREVIEWS);
         assert_eq!(count(|s| matches!(s, Setting::Checkbox(_))), boxes);
-        // Every slider but Game Speed; all eight lists.
+        // Every slider but Game Speed; all eight lists, and Graphics API
+        // where the build has it.
         assert_eq!(
             count(|s| matches!(s, Setting::Slider(_))),
             LauncherTrackbarId::COUNT - 1
         );
-        assert_eq!(count(|s| matches!(s, Setting::List(_))), 8);
+        assert_eq!(
+            count(|s| matches!(s, Setting::List(_))),
+            8 + usize::from(HAS_GRAPHICS_API)
+        );
         for (index, setting) in placed.iter().enumerate() {
             assert!(!placed[index + 1..].contains(setting), "{setting:?}");
         }

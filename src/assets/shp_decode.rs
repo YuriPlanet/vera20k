@@ -12,6 +12,17 @@
 //! ## Dependency rules
 //! - Part of assets/ - no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
 
 fn parse_error(detail: impl Into<String>) -> AssetError {
@@ -39,7 +50,12 @@ pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<
             data.len()
         )));
     }
-    let mut pixels = Vec::with_capacity(pixel_count);
+    // Reserve for a plausible frame and let a larger one grow: a garbage
+    // frame rectangle in a large file passes the payload bound above and
+    // would otherwise reserve hundreds of megabytes before its first row
+    // fails, which a low-memory machine or the browser cannot give.
+    const RESERVED_PIXELS: usize = 1 << 22;
+    let mut pixels = Vec::with_capacity(pixel_count.min(RESERVED_PIXELS));
     let mut offset = 0usize;
 
     for row in 0..height {

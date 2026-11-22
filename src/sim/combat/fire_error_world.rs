@@ -269,18 +269,24 @@ impl<'a> FireSubject<'a> {
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
         let radio_link = firer
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| self.world.substrate.entities.get(id));
         let firer_facts = FirerFacts {
-            enslaved: firer.slave.owner().is_some(),
+            enslaved: firer.seldom.slave.owner().is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
             weapons_disabled: self.rules.ares()
-                && firer.ares.ares_disable_weapons.start_frame()
+                && firer.seldom.ares.ares_disable_weapons.start_frame()
                     != crate::sim::timer::PAUSED_START_FRAME
-                && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
+                && firer
+                    .seldom
+                    .ares
+                    .ares_disable_weapons
+                    .remaining(frame as i32)
+                    > 0,
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
             on_bridge: firer.on_bridge(),
@@ -315,13 +321,14 @@ impl<'a> FireSubject<'a> {
                 }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
-            fire_particles_live: firer.fire_particle_system.system().is_some(),
+            fire_particles_live: firer.seldom.fire_particle_system.system().is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
-            spark_particles_live: firer.spark_particle_system.system().is_some(),
+            spark_particles_live: firer.seldom.spark_particle_system.system().is_some(),
             // FireError reads the actual Techno+314 Railgun pointer too.
-            railgun_particles_live: firer.railgun_particle_system.system().is_some(),
+            railgun_particles_live: firer.seldom.railgun_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
+                .seldom
                 .rearm_timer
                 .remaining(self.world.session.binary_frame() as i32)
                 != 0,
@@ -380,7 +387,7 @@ impl<'a> FireSubject<'a> {
             navcom: firer.navigation.nav_com().is_some(),
             moving_faster_than_tenth: firer.foot_speed.above_tenth(),
             deploying: firer.unit_deploying(),
-            tethered: firer.tether.partner().is_some(),
+            tethered: firer.seldom.tether.partner().is_some(),
             radio_link: match radio_link {
                 None => RadioLink::None,
                 Some(contact) if contact.category() == EntityCategory::Structure => {
@@ -499,7 +506,7 @@ impl<'a> FireSubject<'a> {
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker.link().installed_in().is_some(),
                         // T18 reads the target's `+0x418` tether latch.
-                        tethered: entity.tether.partner().is_some(),
+                        tethered: entity.seldom.tether.partner().is_some(),
                         health: entity.health,
                         parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),

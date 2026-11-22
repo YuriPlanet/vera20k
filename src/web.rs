@@ -11,6 +11,12 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm-threads")]
 pub use wasm_bindgen_rayon::init_thread_pool;
 
+// Thread-locals because the JS host reaches the game only through the
+// `#[wasm_bindgen]` exports below, free functions with no receiver, and the
+// values they hand over (the canvas, JS callbacks, the audio players built on
+// Web Audio nodes, the winit proxy) are `!Send` JS handles that live on the
+// browser's main thread, the only thread that runs these exports and `App`.
+// `App` and the audio code take them from here; nothing else holds them.
 thread_local! {
     static CANVAS: RefCell<Option<web_sys::HtmlCanvasElement>> = const { RefCell::new(None) };
     static STATUS: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
@@ -38,6 +44,18 @@ pub(crate) fn canvas() -> web_sys::HtmlCanvasElement {
             .expect("browser canvas installed before App")
             .clone()
     })
+}
+
+#[wasm_bindgen(module = "/src/web/screenshot.js")]
+extern "C" {
+    #[wasm_bindgen(js_name = downloadCanvasScreenshot)]
+    fn download_canvas_screenshot(canvas: &web_sys::HtmlCanvasElement);
+}
+
+/// The Web equivalent of the retail screenshot hotkey: download the actual
+/// composed canvas as PNG; the desktop's synchronous PCX readback is separate.
+pub(crate) fn download_screenshot() {
+    download_canvas_screenshot(&canvas());
 }
 
 pub(crate) fn status(message: &str) {
@@ -332,6 +350,10 @@ struct PendingImport {
 /// file comes near.
 const MAX_IMPORT_BYTES: f64 = 2_147_483_647.0;
 
+/// Room beside an import's bytes for what `Arc<[u8]>` allocates with them:
+/// its two counters and the allocator's rounding.
+const IMPORT_ARC_SLACK: usize = 64;
+
 /// Begin importing a file in parts, so a large one need not be held whole in
 /// the page as well: `kind` is "retail" (as `import_file`), "spawn" (as
 /// `import_spawn_file`) or "mod:<folder>" (as `import_mod_file`). The engine
@@ -364,6 +386,17 @@ pub fn import_begin(kind: &str, name: &str, length: f64) -> Result<(), JsValue> 
         }
     };
     PENDING.with(|slot| *slot.borrow_mut() = None);
+    // Stable Rust has no fallible `Arc` slice, and an infallible one that
+    // cannot grow memory aborts the page. So reserve the slice first through
+    // the fallible `Vec` call and free it: wasm memory never shrinks, so the
+    // slice below reuses that space unless a worker thread of a threads build
+    // takes it in between. The probe asks for the slice with its `Arc`
+    // counters, so a length within that of the address space is refused here
+    // and not by a panic in the slice's layout.
+    (length as usize)
+        .checked_add(IMPORT_ARC_SLACK)
+        .and_then(|bytes| Vec::<u8>::new().try_reserve_exact(bytes).ok())
+        .ok_or_else(|| JsValue::from_str("Not enough memory for this file"))?;
     let pending = PendingImport {
         path,
         bytes: std::sync::Arc::new_uninit_slice(length as usize),
@@ -571,6 +604,15 @@ fn read_spawn(
         .map_err(|error| JsValue::from_str(&format!("{error:#}")))
 }
 
+/// docs/spawn.md "Version": the same JSON line as desktop `vera20k --version`
+/// (the build's `version` and `build_identity`). It needs no retail files and
+/// no running engine.
+#[wasm_bindgen]
+pub fn version() -> String {
+    serde_json::to_string(&crate::app::spawn_probe::version_report())
+        .expect("a version report serializes")
+}
+
 /// docs/spawn.md "Probe": the same report as desktop `vera20k --probe`, as a
 /// JSON string, from the retail files imported with `import_file` and, when
 /// `map_name` is given, the launch file imported with `import_spawn_file`.
@@ -601,7 +643,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         crate::app::frontend::startup_options::RetailStartupOptions::default().media_archive_mode,
         map.as_deref(),
         // The mod `set_mod` chose, as config.toml names it on the desktop.
-        crate::app::mods::launch_dir(&config.paths, None),
+        crate::app::mods::launch_mod(&config.paths, None)
+            .map_err(|message| JsValue::from_str(&message))?,
         // The Ares setting the browser's VERA.INI holds, as its start reads it.
         crate::app::spawn_probe::existing_ares_setting(config.paths.settings_dir()),
     )

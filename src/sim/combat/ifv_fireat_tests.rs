@@ -105,6 +105,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             0,
         ));
         firer
+            .seldom
             .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(0, 0));
     }
@@ -123,10 +124,10 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
         world.session.set_binary_frame_for_test(frame);
         let firer = world.substrate.entities.get(firer_id).unwrap();
         assert_eq!(
-            firer.weapon_burst.index(),
+            firer.seldom.weapon_burst.index(),
             row["launch"]["burst_before"].as_i64().unwrap() as i32
         );
-        assert!(firer.rearm_timer.timer().expired(frame as i32));
+        assert!(firer.seldom.rearm_timer.timer().expired(frame as i32));
         let snapshot = build_attacker_snapshot(firer, target, None);
         assert_eq!(
             world.scenario_rng.native_state_hex(),
@@ -176,7 +177,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             frame,
             &mut emitted,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let new_bullets: Vec<_> = world
             .projectiles
@@ -212,8 +213,8 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
         let firer = world.substrate.entities.get(firer_id).unwrap();
         assert_eq!(
             [
-                firer.rearm_timer.start_frame(),
-                firer.rearm_timer.duration()
+                firer.seldom.rearm_timer.start_frame(),
+                firer.seldom.rearm_timer.duration()
             ],
             [
                 row["launch"]["rearm"][0].as_i64().unwrap() as i32,
@@ -221,7 +222,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
             ]
         );
         assert_eq!(
-            firer.weapon_burst.index(),
+            firer.seldom.weapon_burst.index(),
             row["launch"]["next_burst"].as_i64().unwrap() as i32
         );
         assert_eq!(

@@ -163,8 +163,7 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             )
             .unwrap();
         }
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
@@ -570,7 +569,7 @@ fn the_try_fire_arms_match_native() {
             &rules,
             computer,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let log = AI_FIRE_LOG.take().unwrap();
 
@@ -724,7 +723,7 @@ fn the_genetic_mutator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
                 sim.substrate
                     .entities
@@ -735,7 +734,7 @@ fn the_genetic_mutator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if extra["limbo"].as_bool().unwrap_or(false) {
@@ -939,7 +938,7 @@ fn retail_walk_reads_each_object() {
         flying,
         600,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_ne!(
         sim.entity_display_layer(flying, &rules),
@@ -1275,7 +1274,7 @@ fn the_psychic_dominator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
                 sim.substrate
                     .entities
@@ -1286,7 +1285,7 @@ fn the_psychic_dominator_target_matches_native() {
                     id,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             if fact("limbo") {

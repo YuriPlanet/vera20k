@@ -210,7 +210,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(i32::from(returned), number(&row["returned_al"]), "{name}");

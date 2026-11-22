@@ -35,6 +35,7 @@ fn stored_box(profile: &mut RetailOptionsProfile, id: C) -> Option<&mut bool> {
         C::SmoothSidebar => &mut profile.smooth_sidebar,
         C::SmoothOnlineMenus => &mut profile.smooth_online_menus,
         C::VSync => &mut profile.vsync,
+        C::HighRefreshRateInBattle => &mut profile.high_refresh_rate_in_battle,
         C::HdMapPreviews => &mut profile.hd_map_previews,
         C::SkipIntro => &mut profile.skip_intro,
         C::ShowStringKeys => &mut profile.show_string_keys,
@@ -46,6 +47,7 @@ fn stored_box(profile: &mut RetailOptionsProfile, id: C) -> Option<&mut bool> {
         C::ConvenienceHelp => &mut profile.convenience_help,
         C::BuildingProductionQueue => &mut profile.building_production_queue,
         C::CompactSuperTimers => &mut profile.compact_super_timers,
+        C::GroupedSuperTimers => &mut profile.grouped_super_timers,
     })
 }
 
@@ -64,6 +66,7 @@ pub(crate) fn launcher_values_from_profile(
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
         ares: profile.ares,
+        graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
         ..Default::default()
     };
@@ -136,6 +139,9 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
         // Read at start, as the mod is: this launch keeps the setting it
         // opened its files with.
         E::AresSelected(setting) => profile.ares = setting,
+        // Read at the next start (`startup_backend`): this launch keeps the
+        // API it draws through.
+        E::GraphicsApiSelected(api) => profile.graphics_api = api,
         // The final-frame pass reads the profile every frame; no atlas or
         // ramp has to be rebuilt.
         E::ColorVisionModeSelected(mode) => profile.color_vision = mode,

@@ -211,12 +211,12 @@ impl Simulation {
                 .count();
             return found >= count as usize;
         }
-        let houses = match house {
-            Some(house) => vec![house],
-            None => self.houses.order().to_vec(),
+        let houses = match house.as_ref() {
+            Some(house) => std::slice::from_ref(house),
+            None => self.houses.order(),
         };
         let mut remaining = count;
-        for house in houses {
+        for &house in houses {
             let owned = self
                 .houses
                 .get(&house)
@@ -260,7 +260,7 @@ impl Simulation {
         source: AresEventSource,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         self.raise_house_tags_forward(
             owner,
@@ -285,7 +285,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<bool> {
         let value = action.value;
         Some(match action.entry.kind {
@@ -373,7 +373,7 @@ impl Simulation {
         value: Option<i32>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(live) = context.live_index else {
             return false;

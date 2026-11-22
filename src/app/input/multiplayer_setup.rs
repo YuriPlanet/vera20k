@@ -21,17 +21,21 @@ fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     )
 }
 
-/// Where VERA's roster's entries end in this window, in 800x600 pixels:
-/// over the team bar, which holds the Teams count in a room with teams and
-/// the host's Room size.
-pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i32 {
+/// Where VERA's roster's entries fit in this window: over the team bar,
+/// which holds the Teams count in a room with teams and the host's Room
+/// size, and two groups abreast on a wide one.
+pub(crate) fn roster_frame(
+    state: &AppState,
+    teams: bool,
+    room_size: bool,
+) -> crate::ui::multiplayer_setup::RosterFrame {
     let mut layout = page_layout(state);
     layout.fit_team_bar(
         crate::app::shell_network_setup::dialog(state),
         teams,
         room_size,
     );
-    layout.roster_bottom
+    layout.roster_frame()
 }
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
@@ -407,8 +411,28 @@ fn handle_events(state: &mut AppState, view: &SetupView) {
                     );
                 }
             }
+            // A team bar list stays open on an item it cannot have now
+            // (the caption, a grey item); the session ignores the pick.
+            PageEvent::Picked(control @ (TEAM_MENU | SEAT_MENU), row)
+                if view.combo(control).is_some_and(|combo| {
+                    usize::try_from(row)
+                        .ok()
+                        .and_then(|row| combo.choices.get(row))
+                        .is_none_or(|choice| choice.greyed)
+                }) =>
+            {
+                let controller = &mut state.frontend.shell_controller;
+                if let Some(list) = controller.control(view.page().dialog, control) {
+                    let _ = controller.gui_mut().open_popup(list, 0);
+                }
+            }
             event => {
-                if let Some(action) = action(view, event) {
+                let page = state
+                    .frontend
+                    .multiplayer_setup
+                    .as_ref()
+                    .map_or_else(RoomBox::default, |ui| ui.game_options_page);
+                if let Some(action) = action(view, page, event) {
                     crate::app::shell_network_setup::apply_action(state, action)
                 }
             }
@@ -430,9 +454,13 @@ fn hovered_help(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLay
     let over_preview =
         over.is_none() && layout.map_preview.contains(x, y) && preview_box_shows(state, view);
     // VERA's online room names the badge, rank and OS of the player whose
-    // name is under the pointer.
-    let player =
-        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, view, id));
+    // name or painted badge (no control) is under the pointer.
+    let badge = (controller.top_id() == Some(view.page().dialog))
+        .then(|| layout.badge_at(view, x, y))
+        .flatten();
+    let player = badge
+        .or(over)
+        .and_then(|id| crate::app::shell_network_setup::view::player_help(state, view, id));
     let help = player
         .or_else(|| {
             over.or(over_preview.then_some(MAP_PREVIEW))

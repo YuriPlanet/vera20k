@@ -34,7 +34,7 @@ pub use state::{
     ADVANCED_RANGE, AcceptOutcome, CUSTOM_PRESET_SLOTS, ChooseMapContext, ChooseMapHoverTarget,
     ChooseMapModalState, ChooseMapPrompt, ChooseMapPromptAnswer, ChooseMapPromptButton,
     ChooseMapPromptKind, ChooseMapSelection, DropdownScrollbarPart, EXTRAS_ROWS, ExtrasAction,
-    ExtrasOutcome, ExtrasRow, ExtrasValue, FAVORITES_ROW, MainRngRanged, ONLINE_MAPS_ROW,
+    ExtrasOutcome, ExtrasRow, ExtrasValue, FAVORITES_ROW, MainRngRanged, ONLINE_MAPS_ROW, RANDOM_MAPS_ROW,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PLAYERS_RANGE, RandomMapPreset,
     RandomMapSetupModalState, SAVED_SEED_DESCRIPTION_MAX_UNITS, SEARCH_MAX_CHARS, SETUP_COMBO_ROWS,
@@ -50,7 +50,9 @@ pub use state::{
     opponent_scroll_rows, pack_launch_session_without_start_validation, player_name_from_profile,
     player_row_visible, repair_teams_for_selected_mode,
     selected_combo_item, selected_combo_item_index, selected_player_rows, setup_combo_items,
-    starts_by_team, status_help_key_for_choose_map_hover,
+    starts_by_team, MenuPick, apply_seat_action, apply_team_colors, apply_team_preset,
+    apply_team_starts, balance_teams_by_strength, team_start_seats, skirmish_session_options,
+    status_help_key_for_choose_map_hover,
     status_help_key_for_hover, status_help_key_for_random_map_setup, team_choices,
 };
 

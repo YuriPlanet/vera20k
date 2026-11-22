@@ -161,6 +161,11 @@ pub struct SkirmishShellState {
     pub build_off_ally: bool,
     pub crates: bool,
     pub mcv_redeploy: bool,
+    /// The session options VERA's Game Options box shows, which override
+    /// [`Self::launch_options_base`]'s at Start: the rules' Tech Level and
+    /// Bases, and Fog of War, Multi-Engineer and Harvester Truce off, as
+    /// SkirmishDialog's Start forces them ([`skirmish_session_options`]).
+    pub session: crate::skirmish_launch::SessionOptions,
     /// Player rows 1.. : the retail seven, then VERA's rows up to thirty
     /// players for maps with more starts.
     pub opponents: Vec<SkirmishShellOpponent>,
@@ -179,6 +184,9 @@ pub struct SkirmishShellState {
     pub saved_seed_browser: Option<super::SavedSeedBrowserState>,
     /// VERA's Setups page over the Skirmish page, its rows named by setup.
     pub setups_browser: Option<super::SavedSeedBrowserState<String>>,
+    /// The item last picked from Quick Team Setup or Bulk Seat Actions,
+    /// which the app carries out ([`super::MenuPick`]).
+    pub menu_pick: Option<super::MenuPick>,
     pub validation_modal: Option<crate::ui::shell::modal::ShellBox>,
     /// VERA's Game Options box, open over the page: it takes every press
     /// and key until OK, Enter or Esc closes it.
@@ -205,6 +213,22 @@ impl SkirmishShellState {
     pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
         self.country_catalog = CountryMenuCatalog::from_rules(rules);
         self.lobby_colors = rules.skirmish_colors();
+    }
+
+    /// VERA's shared profile can remember a country from another mod. Keep
+    /// each restored row on a choice the current rules actually offer.
+    pub(crate) fn repair_country_selections(&mut self) {
+        let available = |country| {
+            self.country_catalog
+                .items()
+                .contains(&super::SkirmishComboItem::Country(
+                    super::SkirmishCountryChoice::Country(country),
+                ))
+        };
+        self.player_country_random |= !available(self.player_country);
+        for opponent in &mut self.opponents {
+            opponent.country_random |= !available(opponent.country);
+        }
     }
 
     /// The colours this shell's lobbies list.
@@ -236,6 +260,22 @@ impl SkirmishShellState {
     }
 }
 
+/// The session options a Skirmish game gets with nothing turned on: the
+/// rules' Tech Level and Bases, and the three SkirmishDialog's Start/Back
+/// packing (`0x006AD88F..0x006AD8A4`) forces off whatever the rules default:
+/// Fog of War (`0x00A8B31F`), Harvester Truce (`0x00A8B31D`) and
+/// MultiEngineer (`0x00A8B26C`).
+pub fn skirmish_session_options(
+    base: &SkirmishLaunchOptions,
+) -> crate::skirmish_launch::SessionOptions {
+    crate::skirmish_launch::SessionOptions {
+        fog_of_war: false,
+        multi_engineer: false,
+        harvester_truce: false,
+        ..base.session_options()
+    }
+}
+
 impl Default for SkirmishShellState {
     fn default() -> Self {
         let options = SkirmishLaunchOptions::default();
@@ -263,6 +303,7 @@ impl Default for SkirmishShellState {
             build_off_ally: options.build_off_ally,
             crates: options.crates,
             mcv_redeploy: options.mcv_redeploy,
+            session: skirmish_session_options(&options),
             opponents: default_opponents(LaunchCountry::Russia),
             first_opponent: 0,
             selected_mode_allies_allowed: true,
@@ -271,6 +312,7 @@ impl Default for SkirmishShellState {
             random_map_setup_modal: None,
             saved_seed_browser: None,
             setups_browser: None,
+            menu_pick: None,
             validation_modal: None,
             game_options: None,
             statics: SkirmishStatics::default(),
@@ -295,6 +337,7 @@ impl SkirmishShellState {
         self.crates = options.crates;
         self.mcv_redeploy = options.mcv_redeploy;
         self.launch_options_base = SkirmishLaunchOptions::from_game_options(options);
+        self.session = skirmish_session_options(&self.launch_options_base);
     }
 
     /// The row slot (`0..shown`, [`SkirmishShellLayout::shown_rows`])

@@ -867,6 +867,11 @@ impl RandomMapSetupModalState {
         self.generating = false;
         self.generated = false;
         self.generated_preview = None;
+        self.exported = false;
+        self.extras_note = Some((
+            "VERA:RandomMapGenerateFailed",
+            "Could not generate this map. Try again or choose another map.",
+        ));
     }
 
     /// Show the map as it stands part-way through the generate block.

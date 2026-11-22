@@ -149,11 +149,11 @@ fn enabled(state: &AppState, name: &str, control: u16) -> bool {
 /// The player's clan, as the card's Clan row shows it.
 fn clan(state: &AppState, name: &str) -> Option<String> {
     let member = super::lobby::members(state)
-        .into_iter()
+        .iter()
         .find(|member| member.name == name)?;
     match (member.clan_name.is_empty(), member.clan_tag.is_empty()) {
         (true, true) => None,
-        (false, true) => Some(member.clan_name),
+        (false, true) => Some(member.clan_name.clone()),
         (true, false) => Some(format!("[{}]", member.clan_tag)),
         (false, false) => Some(format!("{} [{}]", member.clan_name, member.clan_tag)),
     }

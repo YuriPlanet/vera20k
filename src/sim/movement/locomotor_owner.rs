@@ -55,7 +55,8 @@ pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: 
 }
 
 /// The active locomotor's END gate (`IPiggyback::Is_Ok_To_End`). VERA
-/// installs three piggybacks, each over whatever is active: a Drive (the
+/// installs four piggybacks, each over the displaced locomotor: a Walk for
+/// a grounded JumpJet infantryman, behind its gate at 0x0075C8E0, a Drive (the
 /// Unit setter's Teleporter arm), behind the Drive's own gate, the Chrono
 /// Warp's Teleport (`SuperClass::Launch @ 0x006CCB4A`), behind Teleport's
 /// ([`teleport_end_admitted`]), and the Magnetron's Jumpjet
@@ -63,7 +64,14 @@ pub(crate) fn begin_drive_for_teleporter(entity: &mut GameEntity, binary_frame: 
 /// ([`jumpjet_end_admitted`]). Each END restores the next object of the
 /// chain.
 pub(crate) fn piggyback_end_admitted(entity: &GameEntity) -> bool {
-    drive_end_admitted(entity) || teleport_end_admitted(entity) || jumpjet_end_admitted(entity)
+    drive_end_admitted(entity)
+        || teleport_end_admitted(entity)
+        || jumpjet_end_admitted(entity)
+        || (!entity.lift.swap_active()
+            && entity
+                .locomotor
+                .as_ref()
+                .is_some_and(|loco| loco.walk_can_end()))
 }
 
 /// `JumpjetLocomotionClass::Is_Ok_To_End @ 0x0054DB00`: not moving (its
@@ -141,7 +149,7 @@ fn end_piggyback(entity: &mut GameEntity) -> PiggybackEnd {
     };
     let lift_ended = kind == LocomotorKind::Jumpjet && entity.lift.end();
     if matches!(kind, LocomotorKind::Jumpjet | LocomotorKind::Teleport) {
-        entity.drop_credit.forget();
+        entity.seldom.drop_credit.forget();
     }
     let restored = entity
         .locomotor
@@ -212,7 +220,7 @@ impl crate::sim::world::Simulation {
 
     /// The active locomotor's `Mark_All_Occupation_Bits(mode)` (ILocomotion
     /// `+0x9C`): Drive `0x004B48D0` / Ship `0x006A3F00` release their track
-    /// occupation, Hover `0x005171C0`, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet
+    /// occupation. Hover `0x005171C0`, Mech `0x005B1A50`, Walk `0x0075CA30`, Teleport `0x0071A090` and Jumpjet
     /// `0x0054D930` clear the owner's raw occupation at their head; Fly and
     /// Rocket take the empty base (`0x004B6620`). Foot Limbo calls it on the
     /// first Limbo (`0x004DB324`), the Chrono Warp on a Unit it arms
@@ -220,12 +228,12 @@ impl crate::sim::world::Simulation {
     /// live callers skip an object already in Limbo. Drive/Ship share their
     /// existing Apply_Track_Occupation_Mode owner for both modes.
     ///
-    /// Hover's mode1 is an empty return. Mode1 for Walk/Teleport/Jumpjet
+    /// Hover and Mech return immediately for mode1. Mode1 for Walk/Teleport/Jumpjet
     /// remains unported: selected retail MCV and
     /// Slave Miner Deploy use Drive; modded other-class Deploy failure can
     /// miss that class's head claim before its ordinary Foot Mark(DOWN).
-    /// Hover5171C0 delegates to the shared Head_To getter514D10, which
-    /// substitutes Location for a null head and has no power/limbo gate.
+    /// Hover5171C0 and Mech5B1A50 call their Head_To slot (514D10 / 5AFFE0),
+    /// then the Foot owner’s +F4. Both getters fall back to Location.
     /// `ares` is the game's `RuleSet::ares_form`, for the Unit's raw mark
     /// (`Self::track_raw_mark_at`).
     pub(crate) fn locomotor_mark_all_occupation_bits(&mut self, id: u64, put: bool, ares: bool) {
@@ -257,15 +265,25 @@ impl crate::sim::world::Simulation {
                     ares,
                 );
             }
-            Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
-                Self::hover_mark_all_occupation_bits(
-                    &mut self.substrate,
-                    &self.path_grid,
-                    &self.resolved_terrain,
-                    id,
-                    put,
-                    ares,
-                );
+            Some(
+                crate::rules::locomotor_type::LocomotorKind::Hover
+                | crate::rules::locomotor_type::LocomotorKind::Mech,
+            ) => {
+                if !put && let Some(entity) = self.substrate.entities.get(id) {
+                    let coord = super::foot_coordinate::head_or_current(
+                        super::foot_coordinate::stored_head(entity),
+                        super::foot_coordinate::current_coordinate(entity),
+                    );
+                    Self::object_raw_receiver_at(
+                        &mut self.substrate,
+                        &self.path_grid,
+                        &self.resolved_terrain,
+                        id,
+                        coord,
+                        false,
+                        ares,
+                    );
+                }
             }
             Some(
                 crate::rules::locomotor_type::LocomotorKind::Fly

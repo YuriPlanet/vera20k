@@ -160,6 +160,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .has_been_captured
         .set_for_test(input["captured"] == true);
     building
+        .seldom
         .selection
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
@@ -175,7 +176,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                     0,
                     0,
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("absorbed infantry");
             sim.substrate
@@ -197,7 +198,12 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .board_forced_chain(&[(id, 1.0)]);
         }
     }
-    production::begin_selling(sim, rules, refinery, false);
+    production::begin_selling(
+        sim,
+        rules,
+        refinery,
+        crate::sim::building_construction::BuildingDown::commenced(0, false),
+    );
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     assert!(building.building_down(), "the sale commenced");
     building.mission.set_handler_state(1);
@@ -281,7 +287,7 @@ fn replay_crew_row(row: &Value) {
         rules,
         Some(super::harvest_field_oracle_tests::registry()),
         refinery,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     // The crew in construction order; a deleted crewman left nothing.
@@ -326,7 +332,7 @@ fn replay_crew_row(row: &Value) {
             } => {
                 let index = SOUNDS
                     .iter()
-                    .find(|(_, name)| name == sound_id)
+                    .find(|(_, name)| *name == sound_id.name_in(&rules))
                     .map(|(index, _)| *index)?;
                 assert_eq!(*audible_to, Some([owner, owner]), "{context}: the owner's");
                 Some(json!([
@@ -483,7 +489,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
                     building,
                     production::SellOrder::Player,
                     Some(overlay),
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ));
             }
             let grid = s.sim.path_grid_snapshot();
@@ -608,9 +614,11 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         building.lifecycle.set_in_limbo_for_test(false);
         building.set_in_playfield(true);
         building
+            .seldom
             .ai_sell_repair
             .set_was_attacked_by_enemy_for_test(input["attacked"] == true);
         building
+            .seldom
             .ai_sell_repair
             .set_ai_sellable_for_test(input["ai_sellable"] == true);
         if input["mission"] == "construction" || input["queued"] == "construction" {
@@ -674,7 +682,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             &rules,
             1,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             cursors(&sim),

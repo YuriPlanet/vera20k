@@ -9,12 +9,13 @@
 
 use super::chrome::*;
 use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
-use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::text::rect_to_text_rect;
+use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::wol_lobby::*;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
@@ -51,6 +52,10 @@ const GREYED_RGB: [f32; 3] = [128.0 / 255.0; 3];
 
 /// VERA: the modern game list's gap between a room's name and its tag.
 const GAME_TAG_GAP: i32 = 8;
+
+/// VERA: a match's Watch tag, light blue to set it apart from the rooms'
+/// yellow.
+const WATCH_TAG_RGB: [f32; 3] = [0.45, 0.80, 1.0];
 
 /// Sprites on the skirmish atlas, sprites on the lobby art and texts.
 #[derive(Default)]
@@ -134,25 +139,25 @@ pub(crate) fn paint_wol_lobby_children(
     };
     // The modern list centres a ping under its Ping header, in the row's
     // base pixels.
+    let games = ShellListGeometry::new(rect_of(GAMES), 0, 0, ListMetrics::scaled(scale));
+    let row = scale.base_rect(games.row(0));
     let ping_x = layout.control_rect(SORT_PING).map(|header| {
-        let games = ShellListGeometry::new(rect_of(GAMES), 0, 0, ListMetrics::scaled(scale));
-        (
-            scale.base_rect(header).x - scale.base_rect(games.row(0)).x,
-            scale.base_rect(header).w,
-        )
+        let header = scale.base_rect(header);
+        (header.x - row.x, header.w)
     });
     let cells_of = |id: i32| match u16::try_from(id).ok()? {
-        GAMES => Some(game_cells(ui, font, ping_x)),
+        GAMES => Some(game_cells(ui, font, ping_x, row.w)),
         PLAYERS => Some(player_cells(ui)),
         _ => None,
     };
     // The headings, the Observe caption and the text sort buttons'
-    // captions; the modern lists sort by name.
+    // captions; the modern games sort by name.
     let text_of = |id: i32| {
-        let name = modern && [SORT_ALPHA, PLAYER_SORT_ALPHA].map(i32::from).contains(&id);
+        let name = modern && id == i32::from(SORT_ALPHA);
         name.then(|| crate::i18n::tr("VERA:SortName"))
     };
-    let caret_of = |_| ui.caret_visible();
+    // The edit that takes the keys: the chat's, or VERA's room search.
+    let caret_of = |node| ui.caret_visible() && ui.node(ui.view_edit()) == Some(node);
     let style = GuiStyle {
         text_of: Some(&text_of),
         buttons: ButtonArt::Caption,
@@ -167,7 +172,20 @@ pub(crate) fn paint_wol_lobby_children(
         .map(|(id, _)| id)
         .into_iter()
         .chain([OBSERVER_CAPTION]);
-    let lists = [OBSERVER_TOGGLE, CHAT, LOBBIES, GAMES, PLAYERS, CHAT_LOG];
+    // The online page's view hides the other view's children: they have no
+    // window ([`crate::ui::wol_lobby::LobbyView`]); hidden nodes paint
+    // nothing. VERA's filter row follows the games.
+    let lists = [
+        OBSERVER_TOGGLE,
+        CHAT,
+        LOBBIES,
+        GAMES,
+        PLAYERS,
+        CHAT_LOG,
+        SEARCH,
+        HIDE_FULL,
+        HIDE_LOCKED,
+    ];
     let texts = SORT_BUTTONS.iter().map(|(id, _)| *id);
     for node in (captions.chain(texts).chain(lists))
         .filter(|id| !IMAGE_BUTTONS.iter().any(|(image, ..)| image == id))
@@ -177,6 +195,25 @@ pub(crate) fn paint_wol_lobby_children(
         paint.controls.extend(widget.controls);
         paint.icons.extend(widget.icons);
         paint.texts.extend(widget.texts);
+    }
+    // VERA's room search names itself while empty, as the map search does.
+    if let Some(search) = layout.control_rect(SEARCH)
+        && ui.edit(SEARCH).units.is_empty()
+        && state.platform.ime.open_composition().is_none()
+    {
+        let hint = scale.derive_rect(search, |rect| {
+            RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
+        });
+        paint.texts.push(shell_text::draw_in_rect_scaled(
+            font,
+            &crate::i18n::tr("VERA:LobbySearchHint"),
+            rect_to_text_rect(hint),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::V_CENTER,
+            [0.0; 2],
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale.factor(),
+        ));
     }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
         push_flag_entry_clipped_centered(
@@ -193,16 +230,20 @@ pub(crate) fn paint_wol_lobby_children(
 /// The game list's cells (`0x00781480`): the name, the ping and the type,
 /// password and limit icons; a full game's row greys. The modern list keeps
 /// one retail icon, a password game's lock, in the first icon column, and
-/// that row's name starts at the next one; a tag ends the name cell against
-/// the Ping column, the name stopping a gap before it. A -1 ping is the
-/// text "???"; the modern list centres it under its Ping header (`ping_x`)
-/// instead of starting it at the retail column, and a match to watch has
-/// none.
+/// that row's name starts at the next one. A -1 ping is the text "???"; the
+/// modern list centres it under its Ping header (`ping_x`, base pixels into
+/// a row `row_w` wide) instead of starting it at the retail column, and a
+/// match to watch shows its tag there instead, light blue. A room's tag ends
+/// the name cell, which stops a gap before the column's centred text; a
+/// heading too wide even at the tightest font fit is cut at the font's own
+/// width and ends in three dots (GAME.FNT has no "…").
 fn game_cells(
     ui: &WolLobbyState,
     font: &crate::render::bit_font::BitFont,
     ping_x: Option<(i32, i32)>,
+    row_w: i32,
 ) -> Vec<CellRow> {
+    use crate::render::bit_font::Fit;
     let modern = ui.is_modern();
     let ping_x = ping_x.filter(|_| modern);
     let v = ShellAlign::V_CENTER;
@@ -217,30 +258,53 @@ fn game_cells(
                 true => GAME_PASSWORD_X,
                 false => GAME_TYPE_X,
             };
-            let name_end = GAME_PING_X - 2;
+            let ping = match game.ping {
+                -1 => "???".to_owned(),
+                ping => ping.to_string(),
+            };
             let tag = game.tag.as_deref().filter(|_| modern);
+            let (column, tag) = match game.watch {
+                true => (tag.unwrap_or_default(), None),
+                false => (ping.as_str(), tag),
+            };
+            let name_end = match ping_x {
+                Some((x, w)) => {
+                    let column_w = font.text_width(column) as i32;
+                    (x + (w - column_w) / 2 - GAME_TAG_GAP).min(row_w - 2)
+                }
+                None => GAME_PING_X - 2,
+            };
             let tag_w = tag.map_or(0, |tag| (font.text_width(tag) as i32).min(name_end - start));
             let (name_x, name_w) = match (modern, tag) {
                 (false, _) => (GAME_NAME_X, GAME_NAME_W),
                 (true, None) => (start, name_end - start),
                 (true, Some(_)) => (start, name_end - start - tag_w - GAME_TAG_GAP),
             };
-            row.text(name_x, name_w.max(1), &game.text, v, rgb);
+            let mut caption = std::borrow::Cow::Borrowed(game.text.as_str());
+            if modern {
+                let width = name_w.max(1) as u32;
+                if !font.fitted(Fit::TIGHTEST, |font| font.text_width(&game.text) <= width) {
+                    caption = font.fitted(Fit::NONE, |font| {
+                        let cut = width.saturating_sub(font.text_width("..."));
+                        let end = font.truncate_to_width(&game.text, cut);
+                        std::borrow::Cow::Owned(format!("{end}..."))
+                    });
+                }
+            }
+            row.text(name_x, name_w.max(1), &caption, v, rgb);
             if let Some(tag) = tag {
                 let (x, right) = (name_end - tag_w, ShellAlign::H_RIGHT | v);
                 row.text(x, tag_w.max(1), tag, right, rgb);
             }
-            let ping = match game.ping {
-                -1 => "???".to_owned(),
-                ping => ping.to_string(),
-            };
             let (x, w, align) = match ping_x {
                 Some((x, w)) => (x, w, ShellAlign::H_CENTER | v),
                 None => (GAME_PING_X, 0, v),
             };
-            if !game.watch {
-                row.text(x, w, &ping, align, rgb);
-            }
+            let column_rgb = match game.watch && !game.greyed {
+                true => WATCH_TAG_RGB,
+                false => rgb,
+            };
+            row.text(x, w, column, align, column_rgb);
             if modern {
                 if game.keyed {
                     row.icons.push((GAME_TYPE_X, "wolpriv.pcx"));

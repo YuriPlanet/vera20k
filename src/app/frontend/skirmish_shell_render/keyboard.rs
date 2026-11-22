@@ -46,10 +46,14 @@ pub(crate) fn render_keyboard_shell(
         (state.render_width() as i32, state.render_height() as i32),
         |shell| (shell.width, shell.height),
     );
-    // The front-end page slides like its family: the teardown slide repaints
-    // the dialog and pumps no messages until it ends, so every child stays
-    // blank; the entry slide suppresses the heading, status line and Back
-    // (`0x00606800`) while the left-side controls paint.
+    // Retail slides the front-end page like its family: the teardown slide
+    // repaints the dialog and pumps no messages until it ends, so every child
+    // stays blank, and the entry slide suppresses the heading, status line
+    // and Back (`0x00606800`) while the left-side controls paint. VERA opens
+    // and closes the page in place, like a page of its Options window
+    // (`shell_transition::moves_in_place`, `ShellExitThen::in_place`), so no
+    // wave reaches this draw from Options; the handling stays with the
+    // retail path it describes.
     let exit_wave = (!active)
         .then(|| {
             crate::app::frontend::shell_transition::shell_exit_wave(state, ShellSlideKind::Keyboard)

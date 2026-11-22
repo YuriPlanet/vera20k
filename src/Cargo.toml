@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.3.8"
+version = "0.4.1"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
@@ -175,6 +175,9 @@ num-bigint = "0.4"
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 memmap2 = "0.9.12"
 rayon = "1.11"
+# Desktop mod packages accept ZIPs with Stored and DEFLATE entries.
+tempfile = "=3.27.0"
+zip = { version = "=9.8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 web-time = { version = "1", optional = true }

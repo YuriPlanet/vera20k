@@ -92,7 +92,7 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(
@@ -112,7 +112,7 @@ fn hunter_seeker_launch_uses_side_and_global_fallbacks_and_normal_lifecycle() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.houses[&owner].economy().available_money(), 50);
@@ -179,7 +179,7 @@ fn hunter_seeker_seeds_from_the_foundation_centre_and_guards_with_harvesters() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     let harvester = sim
@@ -227,7 +227,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
     let target = sim
         .spawn_object("TARGET", "Russians", 16, 16, 0, &rules)
         .unwrap();
-    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()));
+    assert!(sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()));
     assert_eq!(
         sim.substrate
             .entities
@@ -238,7 +238,7 @@ fn hunter_seeker_acquisition_filters_ignored_types_and_does_not_redraw_held_targ
         Some(TargetKind::Entity(target))
     );
     let rng = sim.scenario_rng.logical_state();
-    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()));
+    assert!(!sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()));
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
@@ -281,7 +281,7 @@ fn computer_hunter_seeker_designated_enemy_rule_controls_the_candidate_pool() {
             .spawn_object("TARGET", "Other", 16, 16, 0, &rules)
             .unwrap();
         assert_eq!(
-            sim.acquire_hunter_seeker_target(hunter, &rules, FrameEffects::default()),
+            sim.acquire_hunter_seeker_target(hunter, &rules, &mut FrameEffects::default()),
             acquires,
             "{mode:?}"
         );
@@ -315,7 +315,7 @@ fn hunter_seeker_is_not_admitted_without_ares() {
         sw_type,
         (0, 0),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(sim.state_hash(), before);

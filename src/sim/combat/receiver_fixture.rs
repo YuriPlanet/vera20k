@@ -119,6 +119,7 @@ pub(crate) fn substitute_building_fire(
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .rearm_timer
                 .start(session.binary_frame() as i32, rof);
         }
@@ -293,7 +294,7 @@ fn with_world<R>(
         world.houses = std::mem::take(houses);
     }
     if let Some(rng) = main_rng.as_deref() {
-        world.main_rng = rng.clone().into();
+        world.main_rng = rng.clone();
     }
     world.scenario_rng = scenario_rng.clone();
     world.overlay_grid = overlay_grid.as_deref().cloned();
@@ -361,7 +362,7 @@ fn with_world<R>(
         *houses = world.houses;
     }
     if let Some(rng) = main_rng {
-        *rng = world.main_rng.into_rng_for_test();
+        *rng = world.main_rng;
     }
     *scenario_rng = world.scenario_rng;
     if let Some(grid) = overlay_grid {
@@ -578,14 +579,17 @@ pub(crate) fn commit_damage_events(
             *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
-            world_receiver::commit_entities(
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_entities(
                 world,
                 run,
                 damage_events,
                 None,
                 rules,
                 overlay_registry,
-            )
+                &mut pings,
+            );
+            (effects, pings)
         },
     )
 }
@@ -630,7 +634,16 @@ pub(crate) fn commit_area_damage_receivers(
             *world.house_alliances_mut_for_test() = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
             world.session.set_binary_frame_for_test(current_tick as u32);
-            world_receiver::commit_area(world, run, receivers, rules, overlay_registry)
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_area(
+                world,
+                run,
+                receivers,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
+            (effects, pings)
         },
     )
 }
@@ -803,7 +816,7 @@ pub(crate) fn resolve_attacker_fire(
                 binary_frame,
                 has_active_wave,
                 out,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         },
     )
@@ -925,7 +938,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                 first_tail_id,
                 rules,
                 overlay_registry,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             for (mut effects, under_attack_events) in
                 std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().tail_effects)

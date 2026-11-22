@@ -367,7 +367,8 @@ impl ResolvedTerrainGrid {
                     .ok_or(LoadCellRecalcError::MissingOverlayType { overlay_id })
             })
             .transpose()?;
-        let early_overlay_branch = source_flags.is_some_and(uses_early_recalc_land_branch);
+        let early_flags = source_flags.filter(|&flags| uses_early_recalc_land_branch(flags));
+        let early_overlay_branch = early_flags.is_some();
         let mut finalized = overlay;
         let mut current_land_ground_blocked;
         let mut current_cliff_eligible;
@@ -380,8 +381,7 @@ impl ResolvedTerrainGrid {
         let mut sparse_entry = false;
         let mut retained_height_in_pixels = snapshot.height_in_pixels;
 
-        if early_overlay_branch {
-            let flags = source_flags.expect("early branch has OverlayType flags");
+        if let Some(flags) = early_flags {
             apply_load_land_to_cell(
                 &mut self.cells[index],
                 flags.land,
@@ -435,10 +435,9 @@ impl ResolvedTerrainGrid {
                 .as_ref()
                 .is_some_and(|metadata| metadata.subtile_entry_valid == Some(false));
             valid_entry = registered.is_some() && !sparse_entry;
-            let metadata = if valid_entry {
-                registered.expect("valid registered tile metadata")
-            } else {
-                state.clear_land_metadata()
+            let metadata = match registered {
+                Some(metadata) if valid_entry => metadata,
+                _ => state.clear_land_metadata(),
             };
             let tile_id = u16::try_from(current_tile).ok();
             if valid_entry {

@@ -88,9 +88,13 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
+    pub(crate) in_tube: bool,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
+    /// Copied as the object keeps it: only a Structure that wrote its art
+    /// copies the allocation, and every other record carries one pointer
+    /// instead of the art inline.
     pub(crate) building_art: crate::util::sparse::Sparse<crate::sim::building_art::BuildingArt>,
     pub(crate) animation: Option<crate::sim::animation::Animation>,
     pub(crate) miner: Option<Miner>,
@@ -313,6 +317,8 @@ pub(crate) struct Place {
     pub(crate) contact0: Option<Contact>,
     /// `presentation::lighting::body_extra_light`.
     pub(crate) extra_light: i32,
+    /// Infantry5192C9 reads the navigation cell for top lighting.
+    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
@@ -346,7 +352,7 @@ pub(crate) struct AirstrikeDesignation {
 impl AirstrikeDesignation {
     fn of(entity: &GameEntity, at: &Capture<'_>) -> Option<Self> {
         let id = entity.stable_id();
-        if !entity.airstrike.links_to(id) {
+        if !entity.seldom.airstrike.links_to(id) {
             return None;
         }
         Some(Self {
@@ -368,6 +374,7 @@ pub(crate) struct Contact {
 /// A Structure's `sim::building_art` answers for its own type.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StructureArt {
+    pub(crate) invisible_in_game: bool,
     /// `building_image` without and with a Buildup.
     pub(crate) image: [crate::sim::building_art::BuildingImage; 2],
     /// `current_body_frame` at its type's tech level.
@@ -391,6 +398,7 @@ impl StructureArt {
             .gate
             .then(|| art.map_or(9, |entry| entry.building_gate_stages));
         Some(Self {
+            invisible_in_game: object.invisible_in_game,
             image: [
                 building_art::building_image(entity, false),
                 building_art::building_image(entity, true),
@@ -431,7 +439,8 @@ impl Place {
         // attack line of a `TargetLaser=` Unit, selected or not, are drawn
         // (`target_lines`, `target_laser_draws`).
         let draws_action_line = psychically_detected
-            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure)
+            || (entity.seldom.selection.is_selected()
+                && entity.category() != EntityCategory::Structure)
             || (entity.category() == EntityCategory::Unit
                 && entity.attack_target.target().is_some()
                 && at
@@ -461,6 +470,15 @@ impl Place {
             ),
             moving: crate::sim::movement::motion_query::is_moving(entity),
             center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
+            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
+                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
+                .flatten()
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
@@ -499,6 +517,7 @@ impl Place {
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
             contact0: entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|id| sim.entities().get(id))
@@ -538,7 +557,7 @@ impl Seen {
         let visual_character = entity.visual_character(
             observer.cloaking_stages,
             observer.invisible,
-            entity.discovery.owned_by_current_house(),
+            entity.seldom.discovery.owned_by_current_house(),
             crate::sim::cloak_disguise::VisualCharacterQuery::screen(
                 true,
                 observer.observer_present,
@@ -596,14 +615,14 @@ impl ObjectRecord {
             is_voxel: entity.is_voxel(),
             on_bridge: entity.on_bridge(),
             ion_blast_lift: entity.ion_blast_lift_pixels(),
-            position: entity.position.clone(),
-            body_facing: entity.body_facing.clone(),
-            body_frame_counter: entity.body_frame_counter.clone(),
-            unit_firing_counter: entity.unit_firing_counter.clone(),
+            position: entity.position,
+            body_facing: entity.body_facing,
+            body_frame_counter: entity.body_frame_counter,
+            unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
-            turret_anim_frame: entity.turret_anim_frame.clone(),
-            health: entity.health.clone(),
-            veterancy: entity.veterancy.clone(),
+            turret_anim_frame: entity.turret_anim_frame,
+            health: entity.health,
+            veterancy: entity.veterancy,
             flashing: Flashing {
                 frames: entity.flashing.frames(),
             },
@@ -613,7 +632,8 @@ impl ObjectRecord {
             repairing: Repairing {
                 on: entity.building.repairing.is_on(),
             },
-            lifecycle: entity.lifecycle.clone(),
+            lifecycle: entity.lifecycle,
+            in_tube: entity.low_bridge_tube_state.is_some(),
             locomotor: entity.locomotor.as_ref().map(|locomotor| {
                 LocomotorView::of(locomotor, || {
                     let type_name = at.sim.interner().resolve(entity.type_ref());
@@ -623,9 +643,11 @@ impl ObjectRecord {
             navigation: Navigation {
                 nav_com: entity.navigation.nav_com(),
             },
-            last_fire_frame: entity.last_fire_frame.clone(),
+            last_fire_frame: entity.last_fire_frame,
+            // The frame owns what it draws: the simulation moves on before
+            // the frame reaches the screen. Only a Structure holds art.
             building_art: entity.building_art.clone(),
-            animation: entity.animation.clone(),
+            animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
                 harvesting: miner.harvesting(),
             }),
@@ -637,8 +659,8 @@ impl ObjectRecord {
             spawn_manager: entity.spawn_manager.as_deref().map(|manager| SpawnManager {
                 docked: manager.count_docked_spawns(),
             }),
-            invulnerability: entity.invulnerability.clone(),
-            airstrike_tint: entity.airstrike_tint.clone(),
+            invulnerability: entity.invulnerability,
+            airstrike_tint: entity.airstrike_tint,
             temporal: Temporal {
                 warped: entity.temporal.is_warped(),
             },
@@ -655,13 +677,13 @@ impl ObjectRecord {
             rocking: entity.rocking.as_ref().map(|_| ()),
             mission: Mission::of(&entity.mission),
             tether: Tether {
-                partner: entity.tether.partner().is_some(),
+                partner: entity.seldom.tether.partner().is_some(),
             },
-            disguise: entity.disguise.clone(),
+            disguise: entity.seldom.disguise,
             display_type_override: DisplayTypeOverride {
-                image: entity.display_type_override.image(),
+                image: entity.seldom.display_type_override.image(),
             },
-            selection: entity.selection.clone(),
+            selection: entity.seldom.selection,
             applied_fraction: entity.foot_speed.native_applied_fraction(),
             // Only an Aircraft can be a Carryall.
             drawn_cargo: (entity.category() == EntityCategory::Aircraft)
@@ -1168,7 +1190,7 @@ pub(crate) struct PresentationFrame {
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
-    /// the first draw that asks ([`Self::display_order`]). The frame is
+    /// the first live-world read or before publishing a detached copy. The frame is
     /// dropped before that world can change, so every later draw of it reads
     /// the same order.
     display_order: crate::util::sync::OnceLock<
@@ -1406,6 +1428,16 @@ impl PresentationFrame {
     /// The frame of `sim` under `rules`, for a test that draws a world it
     /// built without a `SimHost`.
     pub(crate) fn of_test(sim: &Simulation, rules: &crate::rules::ruleset::RuleSet) -> Self {
+        Self::of_test_with_status_rows(sim, rules, false)
+    }
+
+    /// [`Self::of_test`], capturing VERA's Convenience Help rows when
+    /// `status_rows`.
+    pub(crate) fn of_test_with_status_rows(
+        sim: &Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        status_rows: bool,
+    ) -> Self {
         let mut simulation = sim.clone();
         // A fixture may have interned its objects' names elsewhere: give the
         // world's interner as many names, so capture can resolve their ids.
@@ -1426,7 +1458,7 @@ impl PresentationFrame {
             simulation,
             resources: std::sync::Arc::new(crate::sim::runtime::SimResources::new(rules.clone())),
         };
-        Self::capture(&runtime, &types, false)
+        Self::capture(&runtime, &types, status_rows)
     }
 }
 

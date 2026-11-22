@@ -66,7 +66,7 @@ impl<'a> LoadingNetworkService<'a> {
         self.pump(rows, now)?;
         self.service
             .as_deref_mut()
-            .unwrap()
+            .expect("the service was present at the top")
             .defer_loading_drain(now);
         // The browser cannot block its event loop: the loading pump calls
         // `resume` on later turns in place of these 20 ms waits (69B05E).
@@ -74,7 +74,7 @@ impl<'a> LoadingNetworkService<'a> {
         while !self
             .service
             .as_deref_mut()
-            .unwrap()
+            .expect("the service was present at the top")
             .finish_loading_drain(loading_bucket())
         {
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -98,7 +98,7 @@ impl<'a> LoadingNetworkService<'a> {
         Ok(self
             .service
             .as_deref_mut()
-            .unwrap()
+            .expect("the drain check found the service")
             .finish_loading_drain(now))
     }
 
@@ -426,7 +426,7 @@ mod tests {
         let host_endpoint = relay_peer_endpoint(0).unwrap();
         session.bind_network_endpoint(long, host_endpoint).unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(77).unwrap();
+        session.freeze_network_start(77, None).unwrap();
 
         // The long-named player's own report must encode, not fail the load.
         let mut sender = setup;
@@ -483,7 +483,7 @@ mod tests {
             .bind_network_endpoint("Host", relay_peer_endpoint(0).unwrap())
             .unwrap();
         session.prepare_wol_timing([0; 2], false).unwrap();
-        session.freeze_network_start(77).unwrap();
+        session.freeze_network_start(77, None).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

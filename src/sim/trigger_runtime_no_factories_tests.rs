@@ -62,7 +62,7 @@ fn seed_native(sim: &mut Simulation, state: &Value) {
         }
     };
     sim.scenario_rng = restore("scenario");
-    sim.main_rng = restore("main").into();
+    sim.main_rng = restore("main");
     sim.mapgen_rng = restore("mapgen");
     assert_rng_state(sim, state);
 }
@@ -311,7 +311,7 @@ fn fire_sale_action_matches_original_selector_state_and_unchanged_timer() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(actual, int(&case["result"]) != 0, "{case}");
         for (index, owner) in houses.iter().enumerate() {
@@ -443,17 +443,17 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         .unwrap();
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     // Both list and accounting move through the real ChangeOwner owner.
-    sim.change_owner_with_rules(factory, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(factory, other, &rules, None, &mut FrameEffects::default());
     assert!(
         !sim.houses[&house]
             .base_projection()
             .buildings()
             .contains(&factory)
     );
-    sim.change_owner_with_rules(factory, house, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(factory, house, &rules, None, &mut FrameEffects::default());
     assert!(
         sim.houses[&house]
             .base_projection()
@@ -461,12 +461,12 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
             .contains(&factory)
     );
     sim.session.set_binary_frame_for_test(16);
-    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     sim.techno_limbo_with_context(factory, UninitContext::new(&rules));
     assert_eq!(sim.houses[&house].tracking().buildings(), 3);
     sim.session.set_binary_frame_for_test(24);
-    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, &mut FrameEffects::default());
     assert!(sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     assert_eq!(sim.houses[&house].strategy_emergency().mode(), 0);
     sim.houses
@@ -480,7 +480,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     let timer = *sim.houses[&house].strategy_timer();
     for (frame, mode) in [(698, 0), (700, 4)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.advance_triggers(&rules, None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, &mut FrameEffects::default());
         assert_eq!(sim.houses[&house].strategy_emergency().mode(), mode);
         assert_eq!(*sim.houses[&house].strategy_timer(), timer);
         assert!(
@@ -497,7 +497,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         &rules,
         house,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_rng_state(&sim, &native["native_rng"]["before"]);
     assert!(!sim.houses[&house].strategy_emergency().all_to_hunt_bias());
@@ -508,7 +508,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
             &rules,
             house,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert_eq!(

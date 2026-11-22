@@ -71,12 +71,12 @@ impl DistributedFireState {
 
 impl GameEntity {
     pub(crate) fn distributed_fire_candidates(&self) -> &[DistributedFireCandidate] {
-        &self.distributed_fire.candidates
+        &self.seldom.distributed_fire.candidates
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn distributed_fire_history(&self) -> &[Option<TargetKind>] {
-        &self.distributed_fire.history
+        &self.seldom.distributed_fire.history
     }
 
     /// GreatestThreat6F8F80..6F8FA5 replaces only candidates/scores, never history.
@@ -84,30 +84,32 @@ impl GameEntity {
         &mut self,
         candidates: Vec<DistributedFireCandidate>,
     ) {
-        self.distributed_fire.candidates = candidates;
+        self.seldom.distributed_fire.candidates = candidates;
     }
 
     pub(crate) fn select_distributed_fire_target(&mut self) -> Option<Option<TargetKind>> {
-        self.distributed_fire.select()
+        self.seldom.distributed_fire.select()
     }
 
     /// FireAt6FF872..6FF8EB appends its argument before the class null setter.
     pub(crate) fn remember_distributed_fire_target(&mut self, target: TargetKind) {
-        self.distributed_fire.history.push(Some(target));
+        self.seldom.distributed_fire.history.push(Some(target));
     }
 
     /// Outside PointerExpired's control/sensor gate, after the Techno forwards.
     pub(crate) fn distributed_fire_pointer_expired(&mut self, expired: u64) {
-        self.distributed_fire
+        self.seldom
+            .distributed_fire
             .pointer_expired(Some(TargetKind::Entity(expired)));
     }
 
     pub(crate) fn distributed_fire_references(&self) -> impl Iterator<Item = u64> + '_ {
-        self.distributed_fire
+        self.seldom
+            .distributed_fire
             .candidates
             .iter()
             .map(|entry| entry.target)
-            .chain(self.distributed_fire.history.iter().copied())
+            .chain(self.seldom.distributed_fire.history.iter().copied())
             .filter_map(|target| match target {
                 Some(TargetKind::Entity(id)) => Some(id),
                 _ => None,
@@ -119,17 +121,18 @@ impl GameEntity {
     /// Raw saved vector headers have no element swizzles. Clear BEFORE strong
     /// reference restoration; mechanical serde/Clone does not call this.
     pub(crate) fn clear_distributed_fire_after_load(&mut self) {
-        self.distributed_fire = DistributedFireState::default();
+        self.seldom.distributed_fire = DistributedFireState::default();
     }
 
     /// Native CRC70C51A..70C599 includes paired order/scores and fired history.
     pub(crate) fn hash_distributed_fire(&self, hasher: &mut impl Hasher) {
         // Preserve existing idle streams; nonempty runtime state is independent.
-        if !self.distributed_fire.candidates.is_empty() || !self.distributed_fire.history.is_empty()
+        if !self.seldom.distributed_fire.candidates.is_empty()
+            || !self.seldom.distributed_fire.history.is_empty()
         {
             0x0070_9550u32.hash(hasher);
-            self.distributed_fire.candidates.hash(hasher);
-            self.distributed_fire.history.hash(hasher);
+            self.seldom.distributed_fire.candidates.hash(hasher);
+            self.seldom.distributed_fire.history.hash(hasher);
         }
     }
 }

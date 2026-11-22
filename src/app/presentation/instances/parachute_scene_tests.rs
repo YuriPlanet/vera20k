@@ -127,14 +127,14 @@ impl RetailParachuteScene {
                     let terrain = sim.resolved_terrain().unwrap();
                     let ty = rules.object(type_id).unwrap();
                     let level = terrain.cell(x, y)?.level;
-                    let level_foundation = ty.foundation.cell_offsets().iter().all(|&(dx, dy)| {
+                    let level_foundation = ty.foundation.cell_offsets().all(|(dx, dy)| {
                         let xy = (i32::from(x) + i32::from(dx), i32::from(y) + i32::from(dy));
                         cell_is_in_playfield_height_aware(xy, sim.playfield_bounds(), Some(terrain))
                             && terrain
                                 .cell(xy.0 as u16, xy.1 as u16)
                                 .is_some_and(|cell| cell.level == level && cell.slope_type == 0)
                     });
-                    let clear_foundation = ty.foundation.cell_offsets().iter().all(|&(dx, dy)| {
+                    let clear_foundation = ty.foundation.cell_offsets().all(|(dx, dy)| {
                         clear_ground_rect(
                             sim,
                             CellRect::new(
@@ -191,7 +191,7 @@ impl RetailParachuteScene {
                 &due,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound frame");
         assert!(

@@ -1,7 +1,7 @@
 //! VERA's Game Options box over the skirmish page
 //! (`ui::skirmish_shell::game_options`), drawn as the room draws its own
 //! (`multiplayer_setup.rs`): the online lobby's box art with its type-3 OK,
-//! then the Superweapon Limit slider and the skirmish checkboxes.
+//! then its sliders and checkboxes.
 
 use super::SkirmishShellChromeAtlas;
 use super::chrome::type3_button_frames;
@@ -31,7 +31,7 @@ pub(super) fn push_game_options_box(
     };
     let gui = state.frontend.shell_controller.gui();
     let ok_pressed = gui
-        .find_id(root, GameOptionsControl::Ok as i32)
+        .find_id(root, GameOptionsControl::Ok.id())
         .is_some_and(|ok| gui.pressed() == Some(ok));
     let scale = layout.scale;
     let ok = PaintLabel {

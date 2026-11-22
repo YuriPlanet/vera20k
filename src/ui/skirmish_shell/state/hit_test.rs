@@ -168,6 +168,8 @@ fn status_help_key_for_combo(id: SkirmishComboId) -> Option<&'static str> {
         SkirmishComboId::Color(_) => Some("STT:SkirmishComboColor"),
         SkirmishComboId::Start(_) => Some("STT:HostComboStart"),
         SkirmishComboId::Team(_) => Some("STT:HostComboTeam"),
+        SkirmishComboId::TeamMenu => Some("VERA:QuickTeamSetupHelp"),
+        SkirmishComboId::SeatMenu => Some("VERA:BulkSeatActionsHelp"),
     }
 }
 

@@ -535,9 +535,11 @@ pub(super) fn register_bridge_hierarchy_edges_with_lookup(
         let (Some(side_tube), Some(opposite_tube)) = (side_tube, opposite_tube) else {
             return;
         };
-        let far =
-            hierarchy_walk_tube_path(terrain, side, &side_tube.path_steps).and_then(|far_side| {
-                hierarchy_walk_tube_path(terrain, opposite, &opposite_tube.path_steps)
+        let far = terrain
+            .walk_native_path(side, &side_tube.path_steps)
+            .and_then(|far_side| {
+                terrain
+                    .walk_native_path(opposite, &opposite_tube.path_steps)
                     .map(|far_opposite| (far_side, far_opposite))
             });
         let (far_side, far_opposite) = match far {
@@ -564,61 +566,6 @@ fn hierarchy_side_coord(coord: (u16, u16), direction: i32) -> (u16, u16) {
         coord.0.wrapping_add(dx as u16),
         coord.1.wrapping_add(dy as u16),
     )
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum HierarchyPathReadError {
-    DirectionData { raw_token: i32, native_address: u32 },
-    TubeIndex(i16),
-}
-
-pub(super) fn hierarchy_walk_tube_path(
-    terrain: &ResolvedTerrainGrid,
-    mut coord: (u16, u16),
-    steps: &[i32],
-) -> Result<(u16, u16), HierarchyPathReadError> {
-    for &step in steps {
-        if step == 8 {
-            let index = terrain.raw_tube_index_at_native_coord(coord);
-            coord = if index == -1 {
-                (0, 0)
-            } else {
-                terrain
-                    .tube(crate::map::tube_facts::TubeId(index as u16))
-                    .filter(|_| index >= 0)
-                    .ok_or(HierarchyPathReadError::TubeIndex(index))?
-                    .exit
-            };
-        } else {
-            // x86 effective address89F688 + step*4 wraps in32 bits. Exact8
-            // above is special; address aliases of slot8 are ordinary reads.
-            let slot = step as u32 & 0x3fff_ffff;
-            let (dx, dy) = match slot {
-                0..=7 => crate::util::direction::DIRECTION_DELTAS[slot as usize],
-                // Original49F2D0/49F280 initialize slots8..12 to0; slot13
-                // is zero BSS with no direct xrefs in the examined image.
-                8..=13 => (0, 0),
-                // Original startup49F0E0/49F190 at captured FPCW0xE7F.
-                // Their initialized bytes match the unpatched process capture
-                // (tube_startup_capture.json); arbitrary neighboring data stays open.
-                14 => (0, 0x6000),
-                15 => (-24418, 16502),
-                0x3fff_fffe => (11544, 21572),
-                0x3fff_ffff => (8699, 16377),
-                _ => {
-                    return Err(HierarchyPathReadError::DirectionData {
-                        raw_token: step,
-                        native_address: 0x0089_f688u32.wrapping_add((step as u32).wrapping_mul(4)),
-                    });
-                }
-            };
-            coord = (
-                coord.0.wrapping_add(dx as u16),
-                coord.1.wrapping_add(dy as u16),
-            );
-        }
-    }
-    Ok(coord)
 }
 
 pub(super) fn register_native_hierarchy_pair(

@@ -221,7 +221,6 @@ impl WolMyInfoPage {
     /// nickname fill and the enables by slot alone. The colour and country
     /// start at row 0 (`0x14E` 0); `0x7896A0`'s server pick is redone by
     /// `0x77A9F0`. `unknown` is `GUI:UnknownStats`.
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn open(
         gui: &mut Gui,
         root: NodeId,

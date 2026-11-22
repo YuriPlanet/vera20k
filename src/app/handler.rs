@@ -123,6 +123,8 @@ impl App {
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
+        // VERA right-click orders: a double-click cannot span a focus change.
+        state.match_state.input.last_selection_click = None;
         // VERA formation line: a line being drawn goes with the band box.
         state.match_state.input.formation_line.cancel();
         state.match_state.input.cancel_minimap_press();
@@ -568,16 +570,25 @@ impl App {
                     Input::Move => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::cursor_moved(state);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::cursor_moved(state);
                         Self::shell_menu_pointer(state, None);
                     }
                     Input::Button(MouseButton::Left, edge) => {
                         Self::raise_shell_message_box(state);
+                        // Add Mod's parts list takes its own presses.
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        if super::shell_mod_import::pointer_button(state, edge.is_pressed()) {
+                            return;
+                        }
                         Self::handle_shell_message_box_mouse(state, edge.is_pressed());
                     }
                     Input::Button(..) => {}
                     Input::Wheel(_lines) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::wheel(state, _lines);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::wheel(state, _lines);
                     }
                 }
                 return;
@@ -1021,28 +1032,40 @@ impl App {
             }
             Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
+                // Startup built every renderer and its shaders on this device:
+                // its API works here, and a loss from now on is play's
+                // (`persistence::startup_backend`).
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                crate::app::persistence::startup_backend::start_finished();
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
                 if let Some(request) = self.replay_request.take() {
-                    let loading = crate::app::loading::pump::LoadingRequest::replay(
-                        request
-                            .replay
-                            .standalone_startup()
-                            .expect("validated replay request"),
-                        request.map_beside.as_deref(),
-                    );
-                    state.match_state.match_diagnostics.begin_playback(
-                        request.replay,
-                        request.capture_output,
-                        request.replay_sha256,
-                    );
-                    crate::app::loading::pump::begin_loading(&mut state, loading);
+                    let loading = request.replay.standalone_startup().and_then(|startup| {
+                        crate::app::loading::pump::LoadingRequest::replay(
+                            startup,
+                            request.map_beside.as_deref(),
+                        )
+                    });
+                    match loading {
+                        Ok(loading) => {
+                            state.match_state.match_diagnostics.begin_playback(
+                                request.replay,
+                                request.capture_output,
+                                request.replay_sha256,
+                            );
+                            crate::app::loading::pump::begin_loading(&mut state, loading);
+                        }
+                        Err(error) => log::error!("The diagnostic replay cannot start: {error:#}"),
+                    }
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 let mut browser_spawn_failure = None;
                 if let Some(request) = self.spawn_request.take()
                     && let Err(error) = Self::start_spawn_session(&mut state, request)
                 {
+                    let rules_mismatch = error
+                        .downcast_ref::<crate::app::frontend::cncnet_spawn::RulesMismatch>()
+                        .and_then(|mismatch| mismatch.parts.clone());
                     let error = format!("CnCNet startup failed: {error:#}");
                     log::error!("{error}");
                     // docs/spawn.md: the page keeps its engine and may start
@@ -1050,6 +1073,7 @@ impl App {
                     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                     {
                         crate::web::status(&error);
+                        state.frontend.external_rules_mismatch = rules_mismatch;
                         browser_spawn_failure = Some(error);
                     }
                     #[cfg(not(all(
@@ -1059,6 +1083,7 @@ impl App {
                     )))]
                     {
                         self.startup_failure = Some(error);
+                        self.spawn_rules_mismatch = rules_mismatch;
                         event_loop.exit();
                         return;
                     }
@@ -1081,7 +1106,7 @@ impl App {
                 for event in events {
                     self.window_event(event_loop, window_id, event);
                 }
-                if let Some(state) = self.state.as_ref() {
+                if let Some(state) = self.state.as_mut() {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -1726,6 +1751,8 @@ impl ApplicationHandler for App {
                     // the next tap into a two-finger pan.
                     crate::app::input::cursor::release_cursor_confinement(state);
                     Self::release_in_game_pointer_state(state);
+                    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                    super::shell_mod_import::pointer_button(state, false);
                     if let Some(browser) = state
                         .frontend
                         .skirmish_shell_state
@@ -1858,6 +1885,8 @@ impl ApplicationHandler for App {
                 };
                 Self::route_input(state, Input::Wheel(lines));
             }
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            WindowEvent::DroppedFile(path) => Self::mod_import_drop(state, path),
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
                 let state = {
@@ -1997,6 +2026,8 @@ impl ApplicationHandler for App {
                 crate::app::input::sound::poll_scroll_repeat,
                 Self::poll_route_page,
                 Self::poll_mod_files,
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                Self::poll_mod_import,
                 Self::poll_choose_map_scroll,
                 Self::poll_skirmish_opponent_scroll,
                 Self::poll_language_files,

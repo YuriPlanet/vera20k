@@ -7,7 +7,7 @@ use crate::skirmish_launch::{
     SKIRMISH_PLAYER_SLOT_COUNT,
 };
 
-use super::super::layout::{RectPx, SkirmishShellLayout};
+use super::super::layout::{RectPx, SEAT_MENU, SkirmishShellLayout, TEAM_MENU};
 use super::{
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
     SkirmishShellOpponent, SkirmishShellState, inactive_ai_team_default, player_row_visible,
@@ -20,13 +20,19 @@ pub fn combo_rect(
     state: &SkirmishShellState,
     id: SkirmishComboId,
 ) -> Option<RectPx> {
-    let slot = state.row_slot(combo_player_row(id), layout.shown_rows)?;
+    match id {
+        SkirmishComboId::TeamMenu => return layout.statics.get(TEAM_MENU),
+        SkirmishComboId::SeatMenu => return layout.statics.get(SEAT_MENU),
+        _ => {}
+    }
+    let slot = state.row_slot(combo_player_row(id)?, layout.shown_rows)?;
     match id {
         SkirmishComboId::AiType(_) => layout.rows.ai_type_combos.get(slot.checked_sub(1)?),
         SkirmishComboId::Side(_) => layout.rows.side_combos.get(slot),
         SkirmishComboId::Color(_) => layout.color_combos.get(slot),
         SkirmishComboId::Start(_) => layout.rows.start_combos.get(slot),
         SkirmishComboId::Team(_) => layout.rows.team_combos.get(slot),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
     .copied()
 }
@@ -35,7 +41,10 @@ pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
-        SkirmishComboId::AiType(_) | SkirmishComboId::Team(_) => 0,
+        SkirmishComboId::AiType(_)
+        | SkirmishComboId::Team(_)
+        | SkirmishComboId::TeamMenu
+        | SkirmishComboId::SeatMenu => 0,
     }
 }
 
@@ -96,6 +105,8 @@ pub fn combo_items(
             )
         }
         SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
+        SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
+        SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
 }
 
@@ -226,6 +237,8 @@ pub fn selected_combo_item(
             .opponents
             .get(row - 1)
             .map(|opponent| SkirmishComboItem::Team(opponent.team)),
+        // A menu shows its caption, not a choice.
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -240,13 +253,15 @@ pub fn selected_combo_item_index(
         .position(|item| *item == selected)
 }
 
-fn combo_player_row(id: SkirmishComboId) -> usize {
+/// The player row `id` belongs to; none for VERA's menus under the rows.
+pub(super) fn combo_player_row(id: SkirmishComboId) -> Option<usize> {
     match id {
-        SkirmishComboId::AiType(idx) => idx + 1,
+        SkirmishComboId::AiType(idx) => Some(idx + 1),
         SkirmishComboId::Side(row)
         | SkirmishComboId::Color(row)
         | SkirmishComboId::Start(row)
-        | SkirmishComboId::Team(row) => row,
+        | SkirmishComboId::Team(row) => Some(row),
+        SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => None,
     }
 }
 
@@ -255,7 +270,8 @@ pub fn combo_enabled(
     maps: &[MapMenuEntry],
     id: SkirmishComboId,
 ) -> bool {
-    player_row_visible(state, maps, combo_player_row(id)) && combo_open(state, id)
+    combo_player_row(id).is_none_or(|row| player_row_visible(state, maps, row))
+        && combo_open(state, id)
 }
 
 /// Whether the combo takes a pick wherever its row shows: the row's player
@@ -287,6 +303,9 @@ pub(crate) fn combo_open(state: &SkirmishShellState, id: SkirmishComboId) -> boo
                     .get(row.saturating_sub(1))
                     .is_some_and(SkirmishShellOpponent::is_active)
         }
+        // Teams follow the same gate; the seats are always the player's.
+        SkirmishComboId::TeamMenu => state.selected_mode_allies_allowed,
+        SkirmishComboId::SeatMenu => true,
     }
 }
 
@@ -469,6 +488,24 @@ pub(crate) fn apply_combo_selection(
             if let Some(opponent) = state.opponents.get_mut(row - 1) {
                 opponent.team = team;
             }
+        }
+        (
+            SkirmishComboId::TeamMenu,
+            SkirmishComboItem::TeamTool {
+                tool,
+                refusal: None,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Team(tool));
+        }
+        (
+            SkirmishComboId::SeatMenu,
+            SkirmishComboItem::SeatAction {
+                action,
+                enabled: true,
+            },
+        ) => {
+            state.menu_pick = Some(super::MenuPick::Seats(action));
         }
         _ => {}
     }

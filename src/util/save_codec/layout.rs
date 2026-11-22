@@ -22,6 +22,17 @@
 //! it returns a placeholder once its wire form is read. An impl that branches
 //! on a decoded value is described along the branch its made-up value takes.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::any::type_name;
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,6 +99,12 @@ impl de::Error for Error {
     }
 }
 
+// A thread-local because serde gives a `Deserialize` impl no context: the
+// impls that check a decoded value (`control_authority`, `zone_map` and the
+// others that call [`describing`]) sit under derived parents, and a
+// `DeserializeSeed` would have to be forwarded by every one of those parents.
+// [`Describing`] sets it for one [`describe`] on this thread and restores it on
+// return and unwind, so a save decoded anywhere else always reads `false`.
 thread_local! {
     static DESCRIBING: Cell<bool> = const { Cell::new(false) };
 }

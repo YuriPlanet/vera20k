@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::app::presentation::instances::build_unit_instances;
-use crate::app::presentation::render::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture};
+use crate::app::presentation::render::draw_plan_lowering::{
+    NativeDisplayOrder, ObjectTexture, PlannedObjects,
+};
 use crate::render::batch::{InstanceBufferPool, SpriteInstance};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 
@@ -16,7 +18,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         .runtime()
         .context("aircraft runtime absent")?
         .simulation;
-    let mut objects = Vec::new();
+    let mut objects = PlannedObjects::default();
     build_unit_instances(
         state,
         &mut objects,
@@ -35,7 +37,8 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
                 "limbo": entity.lifecycle.in_limbo(), "passenger": entity.passenger_role().is_inside_transport(),
                 "atlas_frames": frames})
         }).collect::<Vec<_>>();
-    for object in objects {
+    for object in objects.iter() {
+        let pieces = objects.pieces(object);
         let Some(entity) = sim.entities().get(object.parent.id) else {
             continue;
         };
@@ -43,8 +46,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             continue;
         }
         let mut pool = InstanceBufferPool::new();
-        let instances: Vec<SpriteInstance> =
-            object.pieces.iter().map(|piece| piece.instance).collect();
+        let instances: Vec<SpriteInstance> = pieces.iter().map(|piece| piece.instance).collect();
         pool.upload_on_device(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
@@ -56,7 +58,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             ("z-read", RenderZPolicy::ReadOnly),
             ("z-bypass", RenderZPolicy::None),
         ] {
-            let pixels = raster(state, &pool, &object.pieces, policy)?;
+            let pixels = raster(state, &pool, pieces, policy)?;
             let count = pixels
                 .chunks_exact(4)
                 .filter(|pixel| *pixel != CLEAR_PIXEL)
@@ -94,7 +96,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         observations.push(json!({
             "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
             "display_layer": object.parent.layer.0,
-            "pieces": object.pieces.iter().map(|piece| {
+            "pieces": pieces.iter().map(|piece| {
                 let sprite = &piece.instance;
                 let [x,y] = [sprite.position[0] + sprite.size[0] / 2., sprite.position[1] + sprite.size[1] / 2.];
                 json!({"texture": format!("{:?}",piece.target), "position": sprite.position,

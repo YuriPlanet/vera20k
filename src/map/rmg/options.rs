@@ -68,8 +68,9 @@ pub struct RmgOptions {
     /// tech buildings the generator seats.
     pub tech_building_amount: i32,
     /// VERA extension: derelict combat buildings, 0 = none. A 0..100 slider
-    /// that scatters neutral, unpowered military buildings (radar, lab,
-    /// refinery, war factory, barracks, power, yard) over open ground.
+    /// that scatters neutral, unpowered military buildings (`[Extras]
+    /// Derelicts=`, else the Rules' `[AI]` construction yard, barracks, battle
+    /// lab and war factory lists) over open ground.
     pub derelict_amount: i32,
     /// VERA extension: damage level, 0 = leave building health as generated.
     /// A 0..100 slider that randomly damages every neutral building on the map

@@ -38,7 +38,7 @@ fn frame(scene: &mut HeadlessScenario, building: u64) -> (SimFrameOutput, Option
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound-resource frame")
     });
@@ -167,7 +167,7 @@ fn authored_tag_keeps_a_hostile_damaged_low_credit_building_from_auto_sale() {
             let before = scene.sim().entities().get(building).unwrap();
             let red_before = before.health.current() > 0
                 && before.health.current() < 125
-                && before.ai_sell_repair.was_attacked_by_enemy();
+                && before.seldom.ai_sell_repair.was_attacked_by_enemy();
             let (output, roll) = frame(&mut scene, building);
             shots += output
                 .fire_events
@@ -185,7 +185,7 @@ fn authored_tag_keeps_a_hostile_damaged_low_credit_building_from_auto_sale() {
             assert!(target.health.current() > 0);
             assert_eq!(scene.sim().object_has_trigger_tag(building), tagged);
             let red = target.health.current() < 125;
-            let hit = target.ai_sell_repair.was_attacked_by_enemy();
+            let hit = target.seldom.ai_sell_repair.was_attacked_by_enemy();
             selling = target.mission.effective().known() == Some(MissionType::Selling);
             if red {
                 assert!(

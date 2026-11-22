@@ -641,7 +641,7 @@ mod tests {
                     },
                     22,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             let sim = scene.sim();
@@ -674,7 +674,12 @@ mod tests {
         );
         scene
             .runtime
-            .advance_frame(&[stop], 22, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &[stop],
+                22,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         for _ in 0..3 {
             assert_native_radar_camera_case(
@@ -685,7 +690,7 @@ mod tests {
             );
             scene
                 .runtime
-                .advance_frame(&[], 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(&[], 22, TickLane::Ordinary, &mut FrameEffects::default())
                 .unwrap();
         }
         assert_native_radar_camera_case(
@@ -974,6 +979,7 @@ mod tests {
             crate::map::entities::EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("4x3".to_string().into());
         building

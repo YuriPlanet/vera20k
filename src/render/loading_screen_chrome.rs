@@ -15,7 +15,8 @@ use crate::render::batch::{BatchRenderer, BatchTexture};
 /// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
 pub(crate) use crate::render::chrome_atlas::load_palette as load_named_ui_palette;
 use crate::render::chrome_atlas::{
-    ChromeAtlasEntry, ChromePiece, load_palette, pack_chrome_atlas, pcx_piece, shp_file_piece,
+    ChromeAtlasEntry, ChromePiece, load_palette, load_shp, pack_chrome_atlas, pcx_piece,
+    shp_file_piece, shp_piece,
 };
 use crate::render::gpu::GpuContext;
 
@@ -558,12 +559,12 @@ fn append_optional_composition_entries(
     if composition.marker_remaps.is_empty() {
         return (Some(preview_label), Vec::new());
     }
-    if assets.load_file_from_mix(MMPB_ASSET_NAME).is_none() {
+    let Some(marker) = load_shp(assets, MMPB_ASSET_NAME) else {
         log::warn!(
             "Missing optional standard Skirmish loading marker asset {MMPB_ASSET_NAME}; preview remains available"
         );
         return (Some(preview_label), Vec::new());
-    }
+    };
 
     let mut distinct_remaps = BTreeMap::new();
     for remap in composition.marker_remaps {
@@ -575,8 +576,7 @@ fn append_optional_composition_entries(
     let mut marker_labels = Vec::with_capacity(distinct_remaps.len());
     for (color_key, ramp) in distinct_remaps {
         let palette = remap_base_palette.with_house_colors(ramp);
-        let Some(mut marker_entry) =
-            shp_file_piece(assets, MMPB_ASSET_NAME, MMPB_ASSET_NAME, &palette, 0)
+        let Some(mut marker_entry) = shp_piece(&marker, MMPB_ASSET_NAME, &palette, 0).ok()
         else {
             log::warn!(
                 "Could not prepare optional standard Skirmish loading marker color {color_key}"
@@ -687,6 +687,31 @@ mod tests {
         file: &str,
     ) -> Option<crate::render::chrome_atlas::ChromePiece> {
         crate::render::chrome_atlas::pcx_piece(assets, file, true)
+    }
+
+    #[test]
+    fn loading_insignia_decodes_mod_art_ahead_of_stock_language() {
+        use crate::assets::asset_manager::test_support::{TestDirectory, audio_test_install};
+        use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+        use crate::assets::pcx_file::encode_direct_rgb;
+
+        let install = audio_test_install("stock-loading-insignia");
+        let addon = TestDirectory::new("mod-loading-insignia");
+        let name = LoadingArtVariant::Americans.side_icon_pcx();
+        let stock = encode_direct_rgb(2, 1, &[32, 32, 32, 32, 32, 32]).unwrap();
+        let replacement = encode_direct_rgb(2, 1, &[255, 0, 0, 255, 0, 0]).unwrap();
+        install.write_mix("language.mix", name, &stock);
+        addon.write_mix("expandmd01.mix", name, &replacement);
+        std::fs::write(addon.path().join(name), b"broken PCX").unwrap();
+        let assets = AssetManager::with_mod(
+            install.path(),
+            Some(addon.path()),
+            MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+
+        let insignia = render_pcx_entry(&assets, name).unwrap();
+        assert_eq!(insignia.rgba, [255, 0, 0, 255, 255, 0, 0, 255]);
     }
 
     #[test]

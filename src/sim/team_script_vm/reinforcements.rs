@@ -27,6 +27,14 @@ use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 use crate::util::native_x87::NativeF64Bits;
 
+/// VERA's bound on the members one TaskForce entry gives a reinforcement.
+/// CreateMembers (`0x0065DD30`) constructs the entry's count (`N,TYPE`,
+/// `sscanf("%d")` with no upper bound, from AIMD.INI or the map), so a count
+/// near `i32::MAX` constructs until the tick hangs. The bound applies only to
+/// this loop; recruitment and full strength still compare the raw count.
+/// Retail TaskForces ask for far fewer.
+const REINFORCEMENT_ENTRY_LIMIT: i32 = 1024;
+
 impl Simulation {
     /// GetHouse6F2070: fixed Country attachment, otherwise the native
     /// Scenario1180 start-slot mapping used by Player@A..H510ED0 (VERA
@@ -125,7 +133,7 @@ impl Simulation {
         team_type: InternedId,
         rules: &RuleSet,
         _registry: Option<&OverlayTypeRegistry>,
-        _effects: FrameEffects<'_>,
+        _effects: &mut FrameEffects<'_>,
     ) -> Option<u64> {
         self.with_object_placement_scope(|sim| sim.create_team(team_type, None, rules))
     }
@@ -140,7 +148,7 @@ impl Simulation {
         waypoint_override: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
         if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
@@ -162,7 +170,7 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         //65D90F..65D970: an empty referenced program gains Guard(0), in
         //that same ScriptType owner. No duplicate fallback Script instance.
@@ -321,7 +329,7 @@ impl Simulation {
         waypoint_override: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
         if rules.ares_form() && !self.ares_reinforcement_house_valid(team_type, rules) {
             return (false, None);
@@ -341,7 +349,7 @@ impl Simulation {
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         let Some(script) = self.team_script_vm.scripts.get_mut(&definition.script_id) else {
             // A missing ScriptType allocation is outside the installed VM's
@@ -411,9 +419,9 @@ impl Simulation {
                 self.substrate
                     .entities
                     .get_mut(member)
-                    .unwrap()
+                    .expect("constructed member")
                     .ammo_mut()
-                    .unwrap()
+                    .expect("concrete Foot constructor retains Ammo")
                     .add(-1);
             }
             let mut cell = (initial.x / 256, initial.y / 256);
@@ -488,7 +496,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(member)
-                .unwrap()
+                .expect("placed reinforcement member")
                 .locomotor
                 .as_mut()
                 .expect("a placed Foot has its constructed locomotor");
@@ -499,15 +507,20 @@ impl Simulation {
             {
                 log::warn!("Chrono reinforcement Move_To: {error}");
             }
-            let entity = self.substrate.entities.get_mut(member).unwrap();
+            let entity = self
+                .substrate
+                .entities
+                .get_mut(member)
+                .expect("placed reinforcement member");
             entity
                 .locomotor
                 .as_mut()
-                .unwrap()
+                .expect("a placed Foot has its constructed locomotor")
                 .teleport_runtime_mut()
-                .unwrap()
+                .expect("begin_piggyback installed the Teleport locomotor")
                 .arm_chrono(ChronoWarp::reinforcement(coord, frame));
             entity
+                .seldom
                 .chrono_warp_delay
                 .store(rules.general.chrono_reinf_delay);
             successes.push(member);
@@ -524,14 +537,14 @@ impl Simulation {
             self.substrate
                 .entities
                 .get_mut(member)
-                .unwrap()
+                .expect("placed reinforcement member")
                 .locomotor
                 .as_mut()
-                .unwrap()
+                .expect("a placed Foot has its constructed locomotor")
                 .teleport_runtime_mut()
-                .unwrap()
+                .expect("begin_piggyback installed the Teleport locomotor")
                 .chrono_mut()
-                .unwrap()
+                .expect("arm_chrono armed the reinforcement warp")
                 .set_pending_state(3);
             let _ = self.substrate.mission_commence_exact(member, frame);
         }
@@ -561,7 +574,7 @@ impl Simulation {
         target: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::rules::object_type::ObjectCategory;
         use crate::sim::components::DriveCoord;
@@ -595,18 +608,8 @@ impl Simulation {
             log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
             return false;
         }
-        let owner_name = self.interner.resolve(owner).to_string();
         let plane = self.with_object_placement_scope(|sim| {
-            sim.construct_object_limbo_at_height(
-                plane_type,
-                &owner_name,
-                0,
-                0,
-                0,
-                0,
-                rules,
-                effects,
-            )
+            sim.construct_object_limbo_at_height(plane_type, owner, 0, 0, 0, 0, rules, effects)
         });
         let Some(plane) = plane else {
             return false;
@@ -614,14 +617,15 @@ impl Simulation {
         self.substrate
             .entities
             .get_mut(plane)
-            .unwrap()
+            .expect("constructed carrier plane")
+            .seldom
             .mission_only
             .mark();
         let metadata = self
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
         let spawn_cell = if metadata.use_transport_origin {
             // GetTransportWaypoint6F18E0: -1 produces the shared zero cell;
@@ -690,7 +694,10 @@ impl Simulation {
                     .entities
                     .get(member)
                     .expect("constructed Team member");
-                let size = self.object_type(entity.type_ref(), rules).unwrap().size;
+                let size = self
+                    .object_type(entity.type_ref(), rules)
+                    .expect("resolved member type")
+                    .size;
                 (member, size)
             })
             .collect();
@@ -722,21 +729,17 @@ impl Simulation {
         &mut self,
         team_type: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<Vec<u64>> {
         let definition = *self.team_script_vm.team_types.get(&team_type)?;
         let metadata = self
             .team_script_vm
             .team_type_ini
             .get(&team_type)
-            .cloned()
+            .copied()
             .unwrap_or_default();
-        let entries = self
-            .team_script_vm
-            .task_forces
-            .get(&definition.task_force_id)?
-            .entries
-            .clone();
+        let task_force_id = definition.task_force_id;
+        let entries = &self.team_script_vm.task_forces.get(&task_force_id)?.entries;
         let full_cargo = metadata
             .full
             .then(|| {
@@ -783,6 +786,7 @@ impl Simulation {
         // using the existing aircraft-transport decision6EF470. When any
         // type is Naval, only naval transports enter the carrier chain.
         let air_transports = self.team_air_transports(team, rules);
+        let entries = self.team_script_vm.task_force_entries_of(task_force_id);
         let any_naval = entries.iter().any(|entry| {
             rules
                 .object_in_category(
@@ -796,13 +800,19 @@ impl Simulation {
             .scripts
             .get(&definition.script_id)
             .is_some_and(|script| script.actions.iter().any(|action| action.action_id == 8));
-        let owner_name = self.interner.resolve(owner).to_string();
         let mut members = Vec::new();
         let mut transports = Vec::new();
-        for entry in entries {
-            let type_name = self.interner.resolve(entry.member_type.id).to_string();
-            let Some(object) = rules.object_in_category(entry.member_type.category, &type_name)
-            else {
+        // Walked by index: the constructors and AddMember below take the
+        // whole simulation, and nothing they run writes TaskForce
+        // definitions (only the registry install does).
+        for index in 0..entries.len() {
+            let Some(entry) = self.team_script_vm.task_force_entry(task_force_id, index) else {
+                break;
+            };
+            let Some(object) = rules.object_in_category(
+                entry.member_type.category,
+                self.interner.resolve(entry.member_type.id),
+            ) else {
                 continue;
             };
             let full_storage = if metadata.full {
@@ -810,19 +820,12 @@ impl Simulation {
             } else {
                 0
             };
-            for _ in 0..entry.count {
+            for _ in 0..entry.count.min(REINFORCEMENT_ENTRY_LIMIT) {
                 // CreateMembers65DE36 calls the retained TaskForce Type's
                 // CreateObject virtual, shared with the existing typed ctor.
                 let member = self.with_object_placement_scope(|sim| {
                     sim.construct_resolved_object_limbo_at_height(
-                        object,
-                        &owner_name,
-                        0,
-                        0,
-                        0,
-                        0,
-                        rules,
-                        effects,
+                        object, owner, 0, 0, 0, 0, rules, effects,
                     )
                 });
                 let Some(member) = member else {
@@ -895,8 +898,15 @@ impl Simulation {
                 let cargo_members: Vec<_> = members
                     .iter()
                     .map(|&member| {
-                        let entity = self.substrate.entities.get(member).unwrap();
-                        let size = self.object_type(entity.type_ref(), rules).unwrap().size;
+                        let entity = self
+                            .substrate
+                            .entities
+                            .get(member)
+                            .expect("constructed Team member");
+                        let size = self
+                            .object_type(entity.type_ref(), rules)
+                            .expect("resolved member type")
+                            .size;
                         (member, size)
                     })
                     .collect();
@@ -916,7 +926,8 @@ impl Simulation {
                     self.substrate
                         .entities
                         .get_mut(transport)
-                        .unwrap()
+                        .expect("constructed transport")
+                        .seldom
                         .mission_only
                         .mark();
                 }
@@ -937,7 +948,6 @@ impl Simulation {
     /// gate65E554: only OUTSIDE Size candidates reach class admission. Original
     /// execution on an already placed Unit pins all8 XY candidates and scalar
     /// cleanup; that control is not a fresh-reinforcement refusal claim.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn place_reinforcement_members(
         &mut self,
         members: &[u64],
@@ -946,7 +956,7 @@ impl Simulation {
         nearby: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let edge = self
             .houses
@@ -1105,7 +1115,6 @@ impl Simulation {
     /// the raw cell's centre at Z 0. The Tunnel, idle under the ground, leaves
     /// the cell (Mark(UP)) and digs out there. A refused Unlimbo takes the
     /// Normal arm's retry (65E506).
-    #[allow(clippy::too_many_arguments)]
     fn place_tunnel_reinforcement(
         &mut self,
         member: u64,
@@ -1115,7 +1124,7 @@ impl Simulation {
         facing: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let below = DriveCoord {
             z: coord.z.wrapping_sub(0x190),

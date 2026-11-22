@@ -1,16 +1,17 @@
 //! The shared saved-file browser (driver 0x00558DD0): its rows and message
 //! box, with the list 0x525, the description edit 0x526 and the buttons as
 //! `vera20k-gui` widgets, which own the selection, top, text, caret, press,
-//! scroll and double-click. File identities stay opaque; SED callers retain
-//! the NativeFileName default. List rebuild 5596A0 keeps filenames separate
-//! from text.
+//! scroll and double-click. SED identities carry the save folder and native
+//! filename. List rebuild 5596A0 keeps filenames separate from text.
 
 use super::super::layout::{RectPx, SavedSeedMode};
-use crate::map::rmg::{SeedDescription, saved_seeds::SavedSeed};
+use crate::map::rmg::{
+    SeedDescription,
+    saved_seeds::{SavedSeed, SavedSeedFile},
+};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::page;
-use crate::util::native_file_name::NativeFileName;
 use vera20k_gui::{NodeId, NodeKind, NodeSpec, Prop, Value};
 
 pub const SAVED_SEED_DESCRIPTION_MAX_UNITS: usize = 79;
@@ -31,7 +32,7 @@ pub const YES: u16 = 1;
 pub const NO: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SavedSeedOutcome<I = NativeFileName> {
+pub enum SavedSeedOutcome<I = SavedSeedFile> {
     Load(I),
     Save {
         file_name: Option<I>,
@@ -42,7 +43,7 @@ pub enum SavedSeedOutcome<I = NativeFileName> {
 }
 
 #[derive(Debug, Clone)]
-pub enum SavedSeedPromptPurpose<I = NativeFileName> {
+pub enum SavedSeedPromptPurpose<I = SavedSeedFile> {
     EmptyDescription,
     /// Acknowledge an operation failure without changing the selected row.
     Error,
@@ -57,7 +58,7 @@ pub enum SavedSeedPromptPurpose<I = NativeFileName> {
 }
 
 #[derive(Debug, Clone)]
-pub struct SavedSeedPrompt<I = NativeFileName> {
+pub struct SavedSeedPrompt<I = SavedSeedFile> {
     pub purpose: SavedSeedPromptPurpose<I>,
     pub body: String,
     pub affirmative: String,
@@ -89,7 +90,7 @@ impl<I> SavedSeedPrompt<I> {
 
 /// A visible or not-yet-filtered native metadata row. None identifies New.
 #[derive(Debug, Clone)]
-pub struct SavedSeedBrowserRow<I = NativeFileName> {
+pub struct SavedSeedBrowserRow<I = SavedSeedFile> {
     pub file_name: Option<I>,
     pub description: SeedDescription,
     pub last_write_time: u64,
@@ -113,7 +114,7 @@ impl<I> SavedSeedBrowserRow<I> {
 use vera20k_gui::shell::new_edit::NewEdit;
 
 #[derive(Debug)]
-pub struct SavedSeedBrowserState<I = NativeFileName> {
+pub struct SavedSeedBrowserState<I = SavedSeedFile> {
     pub mode: SavedSeedMode,
     pub entries: Vec<SavedSeedBrowserRow<I>>,
     pub prompt: Option<SavedSeedPrompt<I>>,
@@ -122,7 +123,7 @@ pub struct SavedSeedBrowserState<I = NativeFileName> {
     current_description: SeedDescription,
 }
 
-impl SavedSeedBrowserState<NativeFileName> {
+impl SavedSeedBrowserState<SavedSeedFile> {
     pub fn open(
         mode: SavedSeedMode,
         entries: Vec<SavedSeed>,
@@ -455,7 +456,7 @@ mod tests {
 
     fn seed(name: &str, time: u64, valid: bool) -> SavedSeed {
         SavedSeed {
-            file_name: format!("{name}.SED").into(),
+            file_name: SavedSeedFile::in_random_maps(format!("{name}.SED").into()),
             description: if valid {
                 name.into()
             } else {
@@ -481,7 +482,7 @@ mod tests {
         let mut state = open(SavedSeedMode::Save, vec![seed("Future", 110, true)]);
         assert_eq!(
             state.entries[0].file_name.as_ref(),
-            Some(&"Future.SED".into())
+            Some(&SavedSeedFile::in_random_maps("Future.SED".into()))
         );
         assert_eq!(state.description(), "Future");
         state.select(1);
@@ -507,7 +508,7 @@ mod tests {
         );
         assert_eq!(
             wrong.selected_entry().unwrap().file_name.as_ref(),
-            Some(&"B.SED".into())
+            Some(&SavedSeedFile::in_random_maps("B.SED".into()))
         );
         let no_selection = open(
             SavedSeedMode::Load,
@@ -524,7 +525,10 @@ mod tests {
                 seed("B", 10, true),
             ],
         );
-        assert_eq!(ties.entries[0].file_name.as_ref(), Some(&"A.SED".into()));
+        assert_eq!(
+            ties.entries[0].file_name.as_ref(),
+            Some(&SavedSeedFile::in_random_maps("A.SED".into()))
+        );
     }
 
     #[test]
@@ -591,10 +595,10 @@ mod tests {
             ],
         );
         state.select(1);
-        state.remove_entry(&"B.SED".into(), 2);
+        state.remove_entry(&SavedSeedFile::in_random_maps("B.SED".into()), 2);
         assert_eq!(state.selected(), Some(0));
-        state.remove_entry(&"A.SED".into(), 2);
-        state.remove_entry(&"C.SED".into(), 2);
+        state.remove_entry(&SavedSeedFile::in_random_maps("A.SED".into()), 2);
+        state.remove_entry(&SavedSeedFile::in_random_maps("C.SED".into()), 2);
         assert!(state.entries.is_empty());
         assert!(!state.action_enabled());
     }

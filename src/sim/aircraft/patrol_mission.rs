@@ -114,7 +114,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let state = self
             .substrate
@@ -129,7 +129,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         );
         if let Some(next) = next
@@ -168,15 +168,19 @@ impl PatrolHost for WorldPatrol<'_> {
     }
 
     fn enter_idle(&mut self) {
-        super::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.ctx.effects);
     }
 
     fn assign_attack_cell(&mut self) {
         let destination = self
             .sim
             .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
-        self.sim
-            .assign_aircraft_destination(self.id, destination, self.rules, self.ctx.effects);
+        self.sim.assign_aircraft_destination(
+            self.id,
+            destination,
+            self.rules,
+            &mut self.ctx.effects,
+        );
     }
 
     fn assign_team_target(&mut self) {
@@ -186,7 +190,7 @@ impl PatrolHost for WorldPatrol<'_> {
                 team,
                 self.nav().map(|nav| TargetKind::from(nav).into()),
                 self.rules,
-                self.ctx.effects,
+                &mut self.ctx.effects,
             );
         }
     }
@@ -216,7 +220,7 @@ impl PatrolHost for WorldPatrol<'_> {
 
     fn find_dock(&mut self) -> Option<u64> {
         self.sim
-            .aircraft_find_docking_bay(self.id, self.rules, self.ctx.effects)
+            .aircraft_find_docking_bay(self.id, self.rules, &mut self.ctx.effects)
     }
 
     fn greatest_threat(&mut self) -> Option<u64> {
@@ -240,7 +244,7 @@ impl PatrolHost for WorldPatrol<'_> {
             destination: (mission == MissionType::Enter).then_some(NavTargetRef::object(object)),
         };
         self.sim
-            .mission_override_represented(self.id, packet, self.rules, self.ctx.effects)
+            .mission_override_represented(self.id, packet, self.rules, &mut self.ctx.effects)
             .expect("represented Patrol override setters");
     }
 

@@ -34,10 +34,20 @@
 //! - Part of assets/ — no dependencies on game modules.
 //! - Uses util/read_helpers for binary reading, assets/shp_decode for RLE decompression.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use crate::assets::error::AssetError;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_decode::decode_rle_frame;
-use crate::util::read_helpers::{read_u16_le, read_u32_le};
 
 /// Byte-8 dispatch bit used by the active YR SHP draw path.
 const FORMAT_RLE_ZERO_BIT: u8 = 0x02;
@@ -84,25 +94,44 @@ pub struct ShpFrame {
     pub pixels: Vec<u8>,
 }
 
-impl ShpFile {
-    /// Read the declared frame count without decoding any frame pixels.
-    ///
-    /// This validates the SHP(TS) file marker and verifies that the complete
-    /// declared frame-header table is present, matching the header validation
-    /// performed by [`Self::from_bytes`]. Frame data offsets and payloads are
-    /// deliberately left to the full parser.
-    pub fn frame_count_from_bytes(data: &[u8]) -> Result<u16, AssetError> {
-        if data.len() < 8 {
+/// One frame header's bytes.
+type FrameHeader = [u8; 24];
+
+/// An SHP(TS) file's validated header: its canvas size and its complete
+/// frame-header table, borrowed from the file's bytes. Reading a frame's
+/// fields from its [`FrameHeader`] cannot run past the file.
+struct ShpHeaders<'a> {
+    canvas: [u16; 2],
+    frame_count: u16,
+    frames: &'a [FrameHeader],
+}
+
+impl<'a> ShpHeaders<'a> {
+    fn parse(data: &'a [u8]) -> Result<Self, AssetError> {
+        let Some((
+            &[
+                zero_low,
+                zero_high,
+                width_low,
+                width_high,
+                height_low,
+                height_high,
+                count_low,
+                count_high,
+            ],
+            table,
+        )) = data.split_first_chunk::<8>()
+        else {
             return Err(AssetError::InvalidShpHeader {
                 reason: format!(
                     "File too small for header: {} bytes (need at least 8)",
                     data.len()
                 ),
             });
-        }
+        };
 
         // Bytes 0-1: should be zero (distinguishes SHP(TS) from older SHP format).
-        let zero = read_u16_le(data, 0);
+        let zero = u16::from_le_bytes([zero_low, zero_high]);
         if zero != 0 {
             return Err(AssetError::InvalidShpHeader {
                 reason: format!(
@@ -112,27 +141,72 @@ impl ShpFile {
             });
         }
 
-        let frame_count = read_u16_le(data, 6);
-        let headers_end = 8 + usize::from(frame_count) * 24;
-        if data.len() < headers_end {
+        let frame_count = u16::from_le_bytes([count_low, count_high]);
+        let Some(frames) = table.as_chunks().0.get(..usize::from(frame_count)) else {
             return Err(AssetError::InvalidShpHeader {
                 reason: format!(
                     "File too small for {} frame headers: {} bytes (need {})",
                     frame_count,
                     data.len(),
-                    headers_end
+                    8 + usize::from(frame_count) * 24
                 ),
             });
-        }
+        };
 
-        Ok(frame_count)
+        Ok(Self {
+            canvas: [
+                u16::from_le_bytes([width_low, width_high]),
+                u16::from_le_bytes([height_low, height_high]),
+            ],
+            frame_count,
+            frames,
+        })
+    }
+
+    /// Frame `index`'s header, or the out-of-range error.
+    fn frame(&self, index: usize) -> Result<&'a FrameHeader, AssetError> {
+        self.frames
+            .get(index)
+            .ok_or(AssetError::ShpFrameOutOfRange {
+                index: index as u16,
+                count: self.frame_count,
+            })
+    }
+}
+
+/// A frame header's raw rectangle words: x, y, width, height. Pixel decoding
+/// uses their unsigned dimensions, while native bounds queries interpret the
+/// same words as signed values.
+fn frame_rectangle(header: &FrameHeader) -> [u16; 4] {
+    [
+        u16::from_le_bytes([header[0], header[1]]),
+        u16::from_le_bytes([header[2], header[3]]),
+        u16::from_le_bytes([header[4], header[5]]),
+        u16::from_le_bytes([header[6], header[7]]),
+    ]
+}
+
+/// A frame header's radar minimap colour: bytes 12-14 (R, G, B); byte 15 is
+/// unused.
+fn frame_radar_color(header: &FrameHeader) -> [u8; 3] {
+    [header[12], header[13], header[14]]
+}
+
+impl ShpFile {
+    /// Read the declared frame count without decoding any frame pixels.
+    ///
+    /// This validates the SHP(TS) file marker and verifies that the complete
+    /// declared frame-header table is present, matching the header validation
+    /// performed by [`Self::from_bytes`]. Frame data offsets and payloads are
+    /// deliberately left to the full parser.
+    pub fn frame_count_from_bytes(data: &[u8]) -> Result<u16, AssetError> {
+        Ok(ShpHeaders::parse(data)?.frame_count)
     }
 
     /// Read the declared canvas dimensions after validating the complete header
     /// table, without decoding frame pixels or validating their data offsets.
     pub fn canvas_size_from_bytes(data: &[u8]) -> Result<[u16; 2], AssetError> {
-        Self::frame_count_from_bytes(data)?;
-        Ok([read_u16_le(data, 2), read_u16_le(data, 4)])
+        Ok(ShpHeaders::parse(data)?.canvas)
     }
 
     /// `SHPStruct::GetFrameBounds @ 69E7E0` sign-extends the frame header's
@@ -141,29 +215,18 @@ impl ShpFile {
     /// which the invalid-frame branch `69E829..69E852` copies to its result.
     /// This validates the complete header table, leaving pixel data undecoded.
     pub fn frame_bounds_from_bytes(data: &[u8], index: usize) -> Result<[i32; 4], AssetError> {
-        let count = Self::frame_count_from_bytes(data)?;
-        if index >= usize::from(count) {
-            return Ok([0; 4]);
-        }
-        Ok(Self::frame_rectangle_at(data, index).map(|word| i32::from(word as i16)))
+        let headers = ShpHeaders::parse(data)?;
+        Ok(headers.frames.get(index).map_or([0; 4], |header| {
+            frame_rectangle(header).map(|word| i32::from(word as i16))
+        }))
     }
 
     /// `SHPStruct::GetColor @ 0x0069E860` returns the frame header's raw RGB
     /// bytes without translating through a palette. An invalid frame index
     /// returns `(0,0,0)`, matching its initialized default result.
     pub fn frame_radar_color_from_bytes(data: &[u8], index: usize) -> Result<[u8; 3], AssetError> {
-        let frame_count = Self::frame_count_from_bytes(data)?;
-        if index >= usize::from(frame_count) {
-            return Ok([0; 3]);
-        }
-        let color_offset = 8 + index * 24 + 12;
-        let color =
-            data.get(color_offset..color_offset + 3)
-                .ok_or_else(|| AssetError::ParseError {
-                    format: "SHP".to_string(),
-                    detail: format!("Frame {index} header has no radar-color bytes"),
-                })?;
-        Ok([color[0], color[1], color[2]])
+        let headers = ShpHeaders::parse(data)?;
+        Ok(headers.frames.get(index).map_or([0; 3], frame_radar_color))
     }
 
     /// Parse an SHP file from raw bytes.
@@ -171,12 +234,29 @@ impl ShpFile {
     /// Reads the file header, all frame headers, then decodes each frame's
     /// pixel data (handling both raw and RLE-compressed formats).
     pub fn from_bytes(data: &[u8]) -> Result<Self, AssetError> {
-        let frame_count = Self::frame_count_from_bytes(data)?;
-        let width: u16 = read_u16_le(data, 2);
-        let height: u16 = read_u16_le(data, 4);
-        let mut frames: Vec<ShpFrame> = Vec::with_capacity(usize::from(frame_count));
-        for i in 0..usize::from(frame_count) {
-            frames.push(Self::frame_at(data, i)?);
+        Self::from_bytes_with_budget(data, None)
+    }
+
+    /// Bound the total decompressed indices of a presentation asset.
+    pub fn from_bytes_bounded(data: &[u8], max_pixels: usize) -> Result<Self, AssetError> {
+        Self::from_bytes_with_budget(data, Some(max_pixels))
+    }
+
+    fn from_bytes_with_budget(data: &[u8], mut budget: Option<usize>) -> Result<Self, AssetError> {
+        let headers = ShpHeaders::parse(data)?;
+        let [width, height] = headers.canvas;
+        let mut frames: Vec<ShpFrame> = Vec::with_capacity(headers.frames.len());
+        for (i, header) in headers.frames.iter().enumerate() {
+            if let Some(remaining) = &mut budget {
+                let [_, _, wide, high] = frame_rectangle(header);
+                *remaining = remaining
+                    .checked_sub(usize::from(wide) * usize::from(high))
+                    .ok_or_else(|| AssetError::ParseError {
+                        format: "SHP".into(),
+                        detail: "Decoded frames exceed the presentation pixel budget".into(),
+                    })?;
+            }
+            frames.push(Self::frame_at(data, i, header)?);
         }
         Ok(ShpFile {
             width,
@@ -189,32 +269,25 @@ impl ShpFile {
     /// [`Self::from_bytes`] decodes each frame. It reads only that frame, so
     /// it can succeed on a file whose other frames `from_bytes` rejects.
     pub fn decode_frame(data: &[u8], index: usize) -> Result<Vec<u8>, AssetError> {
-        let frame_count = Self::frame_count_from_bytes(data)?;
-        if index >= usize::from(frame_count) {
-            return Err(AssetError::ShpFrameOutOfRange {
-                index: index as u16,
-                count: frame_count,
-            });
-        }
-        Ok(Self::frame_at(data, index)?.pixels)
+        let headers = ShpHeaders::parse(data)?;
+        Ok(Self::frame_at(data, index, headers.frame(index)?)?.pixels)
     }
 
     /// `ShapeFile::GetFrameData @ 69E740`: encoded bytes from this frame's
     /// file offset onward, without RLE decoding or truncation at the next
     /// frame. The optional depth surface in CC_Draw_Shape uses this view.
     pub fn encoded_frame_data(data: &[u8], index: usize) -> Result<&[u8], AssetError> {
-        let count = Self::frame_count_from_bytes(data)?;
-        if index >= usize::from(count) {
-            return Err(AssetError::ShpFrameOutOfRange {
-                index: index as u16,
-                count,
-            });
-        }
-        Self::frame_data_at(data, index)
+        let headers = ShpHeaders::parse(data)?;
+        Self::frame_data_at(data, index, headers.frame(index)?)
     }
 
-    fn frame_data_at(data: &[u8], i: usize) -> Result<&[u8], AssetError> {
-        let start = read_u32_le(data, 8 + i * 24 + 20) as usize;
+    fn frame_data_at<'a>(
+        data: &'a [u8],
+        i: usize,
+        header: &FrameHeader,
+    ) -> Result<&'a [u8], AssetError> {
+        // Bytes 20-23: data_offset (absolute file offset to this frame's pixel data)
+        let start = u32::from_le_bytes([header[20], header[21], header[22], header[23]]) as usize;
         if start == 0 {
             return Err(AssetError::ParseError {
                 format: "SHP".to_string(),
@@ -234,34 +307,12 @@ impl ShpFile {
             })
     }
 
-    /// Raw rectangle words; the caller validated that the header table holds `i`.
-    /// Pixel decoding uses their unsigned dimensions, while native bounds queries
-    /// interpret the same words as signed values.
-    fn frame_rectangle_at(data: &[u8], i: usize) -> [u16; 4] {
-        let hdr_offset: usize = 8 + i * 24;
-        [
-            read_u16_le(data, hdr_offset),
-            read_u16_le(data, hdr_offset + 2),
-            read_u16_le(data, hdr_offset + 4),
-            read_u16_le(data, hdr_offset + 6),
-        ]
-    }
-
-    /// Frame `i`'s header and decoded pixels; the caller checked that the
-    /// header table holds it.
-    fn frame_at(data: &[u8], i: usize) -> Result<ShpFrame, AssetError> {
-        let hdr_offset: usize = 8 + i * 24;
-        let [frame_x, frame_y, frame_width, frame_height] = Self::frame_rectangle_at(data, i);
-        let format: u8 = data[hdr_offset + 8];
-        // Bytes 9-11: padding/reserved
-        // Bytes 12-14: radar minimap colour (R, G, B); byte 15 unused
-        // Bytes 16-19: reserved (always 0)
-        // Bytes 20-23: data_offset (absolute file offset to this frame's pixel data)
-        let radar_color: [u8; 3] = [
-            data[hdr_offset + 12],
-            data[hdr_offset + 13],
-            data[hdr_offset + 14],
-        ];
+    /// Frame `i`'s header fields and decoded pixels.
+    fn frame_at(data: &[u8], i: usize, header: &FrameHeader) -> Result<ShpFrame, AssetError> {
+        let [frame_x, frame_y, frame_width, frame_height] = frame_rectangle(header);
+        // Bytes 9-11: padding/reserved; bytes 16-19: reserved (always 0)
+        let format: u8 = header[8];
+        let radar_color: [u8; 3] = frame_radar_color(header);
 
         // A frame with zero dimensions has no pixel data (empty frame).
         if frame_width == 0 || frame_height == 0 {
@@ -277,29 +328,22 @@ impl ShpFile {
         }
 
         let pixel_count: usize = frame_width as usize * frame_height as usize;
-        let frame_slice = Self::frame_data_at(data, i)?;
-        let frame_data_start = data.len() - frame_slice.len();
+        let frame_slice = Self::frame_data_at(data, i, header)?;
         let pixels: Vec<u8> = if format & FORMAT_RLE_ZERO_BIT != 0 {
             decode_rle_frame(frame_slice, frame_width as usize, frame_height as usize)?
         } else {
-            let end = frame_data_start.checked_add(pixel_count).ok_or_else(|| {
-                AssetError::ParseError {
-                    format: "SHP".to_string(),
-                    detail: format!("Frame {} raw data extent overflows address space", i),
-                }
-            })?;
-            if end > data.len() {
-                return Err(AssetError::ParseError {
+            frame_slice
+                .get(..pixel_count)
+                .ok_or_else(|| AssetError::ParseError {
                     format: "SHP".to_string(),
                     detail: format!(
-                        "Frame {} raw data extends past end of file ({} > {})",
+                        "Frame {} raw data extends past end of file ({} of {} bytes)",
                         i,
-                        end,
-                        data.len()
+                        frame_slice.len(),
+                        pixel_count
                     ),
-                });
-            }
-            data[frame_data_start..end].to_vec()
+                })?
+                .to_vec()
         };
 
         Ok(ShpFrame {

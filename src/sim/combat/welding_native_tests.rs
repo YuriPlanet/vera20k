@@ -131,7 +131,7 @@ fn rng(sim: &Simulation) -> [String; 3] {
 
 #[cfg(not(feature = "phobos"))]
 fn restore_rng(sim: &mut Simulation, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
@@ -344,6 +344,7 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .entities
         .get_mut(owner)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(id));
     (sim, roles, id)
@@ -413,7 +414,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
             36,
             &mut out,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         None
     );
@@ -425,6 +426,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(id)
@@ -470,6 +472,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 sim.entities()
                     .get(roles["owner"])
                     .unwrap()
+                    .seldom
                     .spark_particle_system
                     .system(),
                 Some(id),
@@ -482,7 +485,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     roles["owner"],
                     target(&roles, requested),
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 let actor = sim.entities().get(roles["owner"]).unwrap();
@@ -491,7 +494,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     expected["target"]
                 );
                 assert_eq!(
-                    actor.spark_particle_system.system().map(|_| "system"),
+                    actor
+                        .seldom
+                        .spark_particle_system
+                        .system()
+                        .map(|_| "system"),
                     expected["spark_link"].as_str()
                 );
                 assert_eq!(
@@ -523,7 +530,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 row["after"]["target"]
             );
             assert_eq!(
-                actor.spark_particle_system.system().map(|_| "system"),
+                actor
+                    .seldom
+                    .spark_particle_system
+                    .system()
+                    .map(|_| "system"),
                 row["after"]["spark_link"].as_str()
             );
             assert_eq!(
@@ -587,6 +598,7 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system()
             .map(|_| "system"),
@@ -974,6 +986,7 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .spark_particle_system
             .bind(live.then_some(id));
         restore_rng(&mut sim, &row["rng_before"]);
@@ -1009,21 +1022,24 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             let rearm = fireat_rearm_frames(tail_rof, row["input"]["berserk"].as_bool().unwrap());
             let actor = sim.substrate.entities.get_mut(owner).unwrap();
             actor.rearm_after_fire(int(&row["input"]["frame"]), rearm);
-            actor.weapon_burst.complete_shot(weapon.burst.max(1));
+            actor.seldom.weapon_burst.complete_shot(weapon.burst.max(1));
             (rof, rearm)
         });
         assert_eq!(rof, int(&row["get_rof"]));
         assert_eq!(rearm, int(&row["rearm"]["rof"]));
         let actor = sim.substrate.entities.get(owner).unwrap();
         assert_eq!(
-            actor.rearm_timer.timer().start_frame(),
+            actor.seldom.rearm_timer.timer().start_frame(),
             int(&row["rearm"]["rearm"][0])
         );
         assert_eq!(
-            actor.rearm_timer.timer().duration(),
+            actor.seldom.rearm_timer.timer().duration(),
             int(&row["rearm"]["rearm"][2])
         );
-        assert_eq!(actor.weapon_burst.index(), int(&row["rearm"]["burst"]));
+        assert_eq!(
+            actor.seldom.weapon_burst.index(),
+            int(&row["rearm"]["burst"])
+        );
         let raw: Vec<_> = row["get_rof_requests"]
             .as_array()
             .unwrap()

@@ -383,10 +383,6 @@ impl ThemeRuntime {
     /// Play(saved +4) and Queue(saved +8). Reuse those same owners and observe
     /// the physical output after Play before Queue decides whether to fade.
     /// Native controls: tools/storage_oracle/sound_theme_metadata.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "native load inputs plus physical output handoff"
-    )]
     pub(crate) fn restore_saved_slots(
         &mut self,
         saved: [i32; 2],
@@ -997,7 +993,8 @@ fn prepare_track(track_name: &str, assets: &AssetManager) -> Option<PreparedTrac
 
 /// Whether `track_name`'s absence is new to the log. A repeating theme whose
 /// file is missing retries every frame, as gamemd does (`0x00720CF2` ignores
-/// the failed play); one warning per track keeps that out of the log.
+/// the failed play); one warning per track keeps that out of the log. The
+/// list is process-wide, like the log it guards.
 fn first_report_of_missing_track(track_name: &str) -> bool {
     static REPORTED: std::sync::Mutex<std::collections::BTreeSet<String>> =
         std::sync::Mutex::new(std::collections::BTreeSet::new());

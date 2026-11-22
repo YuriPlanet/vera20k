@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::ProductionCategory;
+use crate::util::read_helpers::array_at;
 
 /// Fixed byte width of one synchronized command record.
 pub const COMMAND_RECORD_LEN: usize = 0x6f;
@@ -426,16 +427,25 @@ impl CommandRecord {
 
     #[inline]
     pub fn frame_stamp(&self) -> i32 {
-        i32::from_le_bytes(
-            self.bytes[COMMAND_RECORD_FRAME_OFFSET..COMMAND_RECORD_PAYLOAD_OFFSET]
-                .try_into()
-                .expect("frame stamp is four bytes"),
-        )
+        i32::from_le_bytes(array_at::<COMMAND_RECORD_FRAME_OFFSET, 4, _>(&self.bytes))
     }
 
     #[inline]
     pub fn payload(&self) -> &[u8] {
         &self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET..]
+    }
+
+    /// The `N` payload bytes at `AT`. A field that would run past the
+    /// payload fails the build, as [`array_at`] does.
+    #[inline]
+    pub fn payload_field<const AT: usize, const N: usize>(&self) -> [u8; N] {
+        const {
+            assert!(
+                AT + N <= COMMAND_RECORD_PAYLOAD_LEN,
+                "a field past the payload"
+            )
+        };
+        std::array::from_fn(|index| self.bytes[COMMAND_RECORD_PAYLOAD_OFFSET + AT + index])
     }
 
     #[inline]
@@ -668,10 +678,10 @@ impl SpecialPlaceRecord {
         (record.opcode() == Self::OPCODE).then(|| Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
-            type_index: i32::from_le_bytes(record.payload()[..4].try_into().unwrap()),
+            type_index: i32::from_le_bytes(record.payload_field::<0, 4>()),
             cell: (
-                i16::from_le_bytes(record.payload()[4..6].try_into().unwrap()),
-                i16::from_le_bytes(record.payload()[6..8].try_into().unwrap()),
+                i16::from_le_bytes(record.payload_field::<4, 2>()),
+                i16::from_le_bytes(record.payload_field::<6, 2>()),
             ),
         })
     }
@@ -1220,11 +1230,10 @@ fn write_production_fields(record: &mut CommandRecord, rtti: i32, index: i32, na
 }
 
 fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
-    let payload = record.payload();
     (
-        i32::from_le_bytes(payload[..4].try_into().expect("RTTI DWORD")),
-        i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
-        u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
+        i32::from_le_bytes(record.payload_field::<0, 4>()),
+        i32::from_le_bytes(record.payload_field::<4, 4>()),
+        u32::from_le_bytes(record.payload_field::<8, 4>()),
     )
 }
 

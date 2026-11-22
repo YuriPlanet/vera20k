@@ -75,7 +75,7 @@ fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
             &commands,
             22,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .expect("ordinary bound-resource frame");
 }
@@ -119,8 +119,8 @@ fn wait_for(
                 entity.mission.queued(),
                 entity.navigation.nav_com(),
                 entity.locomotor.as_ref().map(|loco| loco.active_kind()),
-                entity.radio_contacts.slot(0),
-                entity.tether.partner(),
+                entity.seldom.radio_contacts.slot(0),
+                entity.seldom.tether.partner(),
             )
         })
         .collect();
@@ -382,7 +382,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         "paid AMCV finishes factory exit",
         |scene| {
             scene.sim().entities().get(mover).is_some_and(|entity| {
-                entity.radio_contacts.is_empty() && entity.tether.partner().is_none()
+                entity.seldom.radio_contacts.is_empty() && entity.seldom.tether.partner().is_none()
             })
         },
     );

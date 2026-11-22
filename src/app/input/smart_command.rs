@@ -12,14 +12,14 @@
 //! search and "分散" assignment are convenience heuristics whose balance has
 //! not been considered for networked play.
 
+use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner_name, schedule_command};
 use crate::app::input::dispatch::selected_stable_ids_in_order;
-use crate::app::AppState;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::combat_weapon::is_ally_by_object;
 use crate::sim::combat::TargetKind;
+use crate::sim::combat::combat_weapon::is_ally_by_object;
 use crate::sim::command::Command;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::MissionType;
@@ -79,6 +79,7 @@ fn in_range(a: [i32; 2], b: [i32; 2], cells: i64) -> bool {
 /// and air units never act; everything else that is alive and ground-based is
 /// a candidate whose common capabilities decide the mode.
 fn surface_selection(sim: &Simulation, rules: &RuleSet, selected: &[u64]) -> Vec<Actor> {
+    let control = sim.control_projection();
     selected
         .iter()
         .filter_map(|&id| {
@@ -88,7 +89,7 @@ fn surface_selection(sim: &Simulation, rules: &RuleSet, selected: &[u64]) -> Vec
                 || entity.category() == EntityCategory::Structure
                 || entity.movement_layer_or_ground()
                     == crate::sim::movement::locomotor::MovementLayer::Air
-                || !sim.techno_player_controllable(id, rules)
+                || !sim.local_techno_controllable_with(&control, id, rules)
             {
                 return None;
             }
@@ -193,11 +194,7 @@ struct ReactorTarget {
 /// Passengers`. The result is shared by [`nearby_infantry_absorb`] and the
 /// Reactor plan so detection and ordering can never disagree about what can
 /// be fed.
-fn nearby_reactors(
-    sim: &Simulation,
-    rules: &RuleSet,
-    actors: &[Actor],
-) -> Vec<ReactorTarget> {
+fn nearby_reactors(sim: &Simulation, rules: &RuleSet, actors: &[Actor]) -> Vec<ReactorTarget> {
     let mut out = Vec::new();
     for entity in sim.entities().values_of_category(EntityCategory::Structure) {
         if !entity.is_alive() || entity.death.is_dying() {
@@ -210,13 +207,19 @@ fn nearby_reactors(
             continue;
         }
         let capacity = object.passengers.max(0) as u32;
-        let aboard = entity.passenger_role().cargo().map_or(0, |cargo| cargo.count());
+        let aboard = entity
+            .passenger_role()
+            .cargo()
+            .map_or(0, |cargo| cargo.count());
         let free = capacity.saturating_sub(aboard);
         if free == 0 {
             continue;
         }
         let pos = object_center_xy(entity);
-        if actors.iter().any(|actor| in_range(actor.pos, pos, REACTOR_RANGE_CELLS)) {
+        if actors
+            .iter()
+            .any(|actor| in_range(actor.pos, pos, REACTOR_RANGE_CELLS))
+        {
             out.push(ReactorTarget {
                 target: Target {
                     id: entity.stable_id(),
@@ -573,7 +576,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                     object.bunker
                         && entity.building.bunker_runtime.is_some()
                         && entity.bunker.occupant().is_none()
-                        && entity.radio_contacts.slot(0).is_none()
+                        && entity.seldom.radio_contacts.slot(0).is_none()
                 });
             spread(actors, &targets, 1)
                 .into_iter()

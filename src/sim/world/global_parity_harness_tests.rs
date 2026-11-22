@@ -86,7 +86,7 @@ pub(super) fn record_replay_diagnostic(
                 "owner":sim.resolve(*owner),"state":state,
             })).collect::<Vec<_>>(),
             "factory_count":sim.production.factories().len(),
-            "factories":sim.production.factories().holders_insertion_ordered().into_iter()
+            "factories":sim.production.factories().holders_insertion_ordered()
                 .map(|(holder,factory)|serde_json::json!({"holder":holder,"factory":factory})).collect::<Vec<_>>(),
         },
         // Only the global fixture kills a Unit. Preserve the shared cleanup
@@ -152,7 +152,7 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
             "health":e.health.current(),"position":e.position,"mission":e.mission,
             "target":e.attack_target,"nav":e.navigation.nav_com(),
             "passive_timer":e.passive_scan.timer(),"last_scan":e.passive_scan.last_scan_frame(),
-            "rearm":e.rearm_timer.timer()})
+            "rearm":e.seldom.rearm_timer.timer()})
         })
         .collect();
     println!(

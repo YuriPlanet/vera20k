@@ -3,7 +3,7 @@
 //! click over an object resolves. Synchronized commands already carry the
 //! chosen destination; their executor never repeats these input queries.
 
-use super::Simulation;
+use super::{ControlProjection, Simulation};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -44,6 +44,8 @@ pub enum MoveAction {
     /// ClickedMission Harvest with the Cell as Destination and no Target
     /// (`0x004D7E8E`), before the MoveFlash and the Cell resolver.
     Harvest,
+    /// Action 0x23: enter the tunnel from its clicked mouth.
+    EnterTunnel,
 }
 
 impl MoveAction {
@@ -53,6 +55,7 @@ impl MoveAction {
             Self::Move => 1,
             Self::NoMove => 2,
             Self::Harvest => 6,
+            Self::EnterTunnel => 0x23,
         }
     }
 }
@@ -116,10 +119,7 @@ impl Simulation {
     ///
     /// Not modelled, each answering another action where native reaches it:
     /// the attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
-    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
-    /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
-    /// soldier over a tube's neighbourhood, which answers 0
-    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and
+    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); the fogged-object scans; and
     /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
     /// The harvest rungs' FogOfWar scan (`0x0074052A..0x0074056C`) needs a fog
     /// record of WhatAmI 0x14 (Overlay), which only FoggedObjectClass's overlay
@@ -127,6 +127,18 @@ impl Simulation {
     /// read the live Cell, as here.
     pub fn cell_move_action(
         &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        query: CellActionQuery,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        self.cell_move_action_with(&self.control_projection(), viewer, id, cell, query, rules)
+    }
+
+    pub fn cell_move_action_with(
+        &self,
+        control: &ControlProjection<'_>,
         viewer: InternedId,
         id: u64,
         cell: (u16, u16),
@@ -146,9 +158,9 @@ impl Simulation {
             return Ok(MoveAction::None);
         }
         if entity.category() == EntityCategory::Structure {
-            return self.building_cell_move_action(viewer, id, cell, query, rules);
+            return self.building_cell_move_action(control, viewer, id, cell, query, rules);
         }
-        if !self.house_is_human_player(entity.owner()) {
+        if !control.can_order(entity.owner()) {
             return Ok(MoveAction::None);
         }
         let object = self
@@ -167,7 +179,7 @@ impl Simulation {
             Some(terrain),
             Some(&cells),
         );
-        let controllable = self.techno_player_controllable(id, rules);
+        let controllable = self.local_techno_controllable_with(control, id, rules);
         let mut action = if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
@@ -200,13 +212,28 @@ impl Simulation {
             EntityCategory::Unit if action == MoveAction::Move => {
                 if !shrouded && unit_harvests_land(object, cells.land_type(cells.lookup(clicked))) {
                     action = MoveAction::Harvest;
+                } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                    // Unit 7406CF and Infantry 51F9AC: IsTubeCell, then
+                    // AllowsTubeEntry (484F10), which always returns true.
+                    action = MoveAction::EnterTunnel;
                 } else if entity.is_deployed() {
                     action = MoveAction::None;
                 }
             }
             EntityCategory::Infantry => {
-                if action == MoveAction::Move && object.deployer && entity.infantry_deploy_doing() {
-                    action = MoveAction::NoMove;
+                if object.jumpjet && matches!(action, MoveAction::Move | MoveAction::NoMove) {
+                    let cell = cells.lookup(clicked);
+                    if cells.is_near_tube_northwest(cell) || cells.is_at_tube_entrance(cell) {
+                        // InfantryClass::What_Action_OnCell 0x0051F860..0x0051F8A6.
+                        action = MoveAction::None;
+                    }
+                }
+                if action == MoveAction::Move {
+                    if object.deployer && entity.infantry_deploy_doing() {
+                        action = MoveAction::NoMove;
+                    } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                        action = MoveAction::EnterTunnel;
+                    }
                 }
                 if action == MoveAction::None && !object.jumpjet && controllable {
                     action = MoveAction::NoMove;
@@ -276,13 +303,14 @@ impl Simulation {
     /// modelled: no retail type with a rally line or UndeploysInto sets it.
     fn building_cell_move_action(
         &self,
+        control: &ControlProjection<'_>,
         viewer: InternedId,
         id: u64,
         cell: (u16, u16),
         query: CellActionQuery,
         rules: &RuleSet,
     ) -> Result<MoveAction, String> {
-        if !self.takes_rally_point(id, self.interner.resolve(viewer), rules) {
+        if !self.local_takes_rally_point_with(control, id, viewer, rules) {
             return Ok(MoveAction::None);
         }
         let entity = self
@@ -498,13 +526,24 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> bool {
+        self.cell_attack_rung_admits_with(&self.control_projection(), id, cell, rules, registry)
+    }
+
+    pub fn cell_attack_rung_admits_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
         if entity.berserk.is_active()
             || entity.is_warped_out()
             || entity.is_warping_in()
-            || !self.house_is_human_player(entity.owner())
+            || !control.can_order(entity.owner())
         {
             return false;
         }
@@ -633,6 +672,7 @@ impl Simulation {
                     .get(target_id)
                     .is_some_and(|target| {
                         target
+                            .seldom
                             .disguise
                             .as_ref()
                             .is_some_and(|disguise| disguise.is_disguised())
@@ -728,7 +768,27 @@ impl Simulation {
         shift: bool,
         rules: &RuleSet,
     ) -> Result<Option<(u16, u16)>, String> {
-        let action = self.cell_move_action(
+        self.cell_click_destination_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            clicked,
+            shift,
+            rules,
+        )
+    }
+
+    pub fn cell_click_destination_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        let action = self.cell_move_action_with(
+            control,
             viewer,
             id,
             clicked,
@@ -745,6 +805,30 @@ impl Simulation {
             .ok_or("Cell click receiver disappeared")?;
         let refused = match action {
             MoveAction::None | MoveAction::Harvest => true,
+            MoveAction::EnterTunnel => {
+                // FootClass::ClickedAction_Cell 0x004D81A9..0x004D8231:
+                // follow both tube records. Issue Move one cell out from the
+                // far mouth, facing away from its own entry direction.
+                let Some(terrain) = self.resolved_terrain.as_ref() else {
+                    return Ok(None);
+                };
+                let cells = NativeCellQuery::isolated(terrain);
+                let Some(tube) = terrain
+                    .tube_for_native_cell(cells.lookup((clicked.0 as i16, clicked.1 as i16)))
+                else {
+                    return Ok(None);
+                };
+                let exit = cells.lookup((tube.exit.0 as i16, tube.exit.1 as i16));
+                let Some(reverse) = terrain.tube_for_native_cell(exit) else {
+                    return Ok(None);
+                };
+                let direction = (reverse.direction.wrapping_sub(4) & 7) as usize;
+                let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
+                return Ok(Some((
+                    tube.exit.0.wrapping_add_signed(dx as i16),
+                    tube.exit.1.wrapping_add_signed(dy as i16),
+                )));
+            }
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Unit => entity.is_fully_deployed(),
                 EntityCategory::Infantry => entity.infantry_deploy_doing(),
@@ -793,7 +877,27 @@ impl Simulation {
         shift: bool,
         rules: &RuleSet,
     ) -> Result<bool, String> {
-        let action = self.cell_move_action(
+        self.cell_click_flashes_move_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            clicked,
+            shift,
+            rules,
+        )
+    }
+
+    pub fn cell_click_flashes_move_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        let action = self.cell_move_action_with(
+            control,
             viewer,
             id,
             clicked,
@@ -890,6 +994,25 @@ impl Simulation {
         action: MoveAction,
         rules: &RuleSet,
     ) -> MoveAction {
+        self.foot_object_class_action_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            target,
+            action,
+            rules,
+        )
+    }
+
+    pub fn foot_object_class_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        rules: &RuleSet,
+    ) -> MoveAction {
         let Some(entity) = self.substrate.entities.get(id) else {
             return action;
         };
@@ -897,9 +1020,9 @@ impl Simulation {
             return action;
         };
         if entity.category() == EntityCategory::Aircraft {
-            return self.aircraft_object_class_action(viewer, id, target, action, rules);
+            return self.aircraft_object_class_action(control, viewer, id, target, action, rules);
         }
-        let human = self.house_is_human_player(entity.owner());
+        let human = control.can_order(entity.owner());
         let action = match (entity.category(), action) {
             // Returns at once (`0x0051EBCB..0x0051EBD7`), before the rung below.
             (EntityCategory::Infantry, MoveAction::Move)
@@ -913,7 +1036,7 @@ impl Simulation {
                 MoveAction::NoMove
             }
             (EntityCategory::Unit | EntityCategory::Infantry, MoveAction::None)
-                if human && self.techno_player_controllable(id, rules) =>
+                if human && self.local_techno_controllable_with(control, id, rules) =>
             {
                 MoveAction::NoMove
             }
@@ -939,6 +1062,7 @@ impl Simulation {
     fn worn_as_terrain(&self, viewer: InternedId, target: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(target).is_some_and(|target| {
             target
+                .seldom
                 .disguise
                 .as_ref()
                 .filter(|disguise| disguise.is_disguised())
@@ -955,6 +1079,7 @@ impl Simulation {
     /// The Aircraft rungs of [`Self::foot_object_class_action`].
     fn aircraft_object_class_action(
         &self,
+        control: &ControlProjection<'_>,
         viewer: InternedId,
         id: u64,
         target: u64,
@@ -969,7 +1094,7 @@ impl Simulation {
                 mouse_over: false,
                 shift: false,
             };
-            self.cell_move_action(viewer, id, cell, query, rules)
+            self.cell_move_action_with(control, viewer, id, cell, query, rules)
                 .unwrap_or(MoveAction::None)
         } else {
             action
@@ -1035,6 +1160,27 @@ impl Simulation {
         force_move_key: bool,
         rules: &RuleSet,
     ) -> Result<Option<TargetKind>, String> {
+        self.object_move_click_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            target,
+            action,
+            force_move_key,
+            rules,
+        )
+    }
+
+    pub fn object_move_click_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        force_move_key: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<TargetKind>, String> {
         let entity = self
             .substrate
             .entities
@@ -1047,10 +1193,10 @@ impl Simulation {
             .interner
             .object_type(entity.type_ref(), rules)
             .ok_or("Move click receiver lacks its type")?;
-        let action = self.foot_object_class_action(viewer, id, target, action, rules);
+        let action = self.foot_object_class_action_with(control, viewer, id, target, action, rules);
         let refused = match action {
-            // Harvest is a Cell answer only.
-            MoveAction::None | MoveAction::Harvest => true,
+            // Both are Cell answers only.
+            MoveAction::None | MoveAction::Harvest | MoveAction::EnterTunnel => true,
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Aircraft => true,
                 EntityCategory::Unit => target == id,
@@ -1078,7 +1224,7 @@ impl Simulation {
         {
             return Ok(None);
         }
-        if !self.techno_player_controllable(id, rules) {
+        if !self.local_techno_controllable_with(control, id, rules) {
             return Ok(None);
         }
         let raised = DriveCoord {
@@ -1163,7 +1309,7 @@ impl Simulation {
             coordinate: self.foot_navigation_coordinate(id)?,
             marked: entity.lifecycle.cell_marked(),
             on_bridge: entity.on_bridge(),
-            in_tube: entity.low_bridge_tube_state.is_some(),
+            in_tube: entity.active_tube().is_some(),
             special_type: object.movement_zone == MovementZone::Subterranean
                 || entity.category() == EntityCategory::Aircraft
                 || (entity.category() == EntityCategory::Infantry && object.jumpjet),

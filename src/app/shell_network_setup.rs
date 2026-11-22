@@ -7,9 +7,10 @@
 mod actions;
 pub(crate) mod agreement;
 pub(crate) mod bans;
+pub(crate) mod campaign_room;
 mod cooperative;
 pub(crate) use cooperative::{
-    CooperativeResume, chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
+    chooser_rows as cooperative_chooser_rows, resume as resume_cooperative,
 };
 pub(crate) mod maps;
 #[cfg(all(test, tests_app))]
@@ -20,8 +21,9 @@ pub(crate) use service::{
     fail_go_delivery, fail_go_handoff, invalidate_network_agreement, poll,
     prepare_lan_guest_handoff, refuse_local_acceptance, service_event, set_network_map_progress,
 };
+mod team_menus;
 mod teams;
-pub(crate) use teams::{lobby_refused_option, starts_needed};
+pub(crate) use teams::{lobby_refused_building_queue, lobby_refused_option, starts_needed};
 pub(crate) mod view;
 mod wol;
 pub(crate) use actions::{
@@ -37,7 +39,7 @@ pub(crate) use wol::{
 use super::{App, AppState};
 use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
-use crate::app::match_runtime::session::NetworkVacancy;
+use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::match_runtime::session::SessionMode;
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
@@ -139,6 +141,7 @@ impl StartPhase {
 }
 
 pub(crate) struct NetworkSetupProtocol {
+    campaign_catalog: Vec<campaign_room::CampaignSeries>,
     locked: bool,
     /// WOL Quick Match (`[0xA8B244]` 1): the game channel's nodes and start
     /// run without C2/C9 (`0x007A6208..0x007A6229`, `0x0078A36C..0x0078A386`)
@@ -173,11 +176,6 @@ pub(crate) struct NetworkSetupProtocol {
     /// Derived from the same admitted source as the received image.
     received_preview_bounds: Option<crate::map::preview::PreviewSourceBounds>,
     received_preview_count: u32,
-    /// VERA: a kept WOL room came back after BC6's Continue
-    /// (`cooperative::resume`) in place of `+0xAC`'s rematch (`0x005C46E0`),
-    /// which seats both players without a join. The next join is the
-    /// partner coming back to that seat.
-    cooperative_rematch_seat: bool,
     /// VERA's rooms: where the host's options last put the local player
     /// (its team, and whether it watches), and where the player last asked
     /// to be, so that a move the host made is told in chat
@@ -378,6 +376,7 @@ impl NetworkSetupProtocol {
         // C2's 0x497 (the advertisement) never runs without C2.
         let wol_host = dialog.wol() && host && !quick_match;
         Self {
+            campaign_catalog: Vec::new(),
             locked: false,
             quick_match,
             external: false,
@@ -394,7 +393,6 @@ impl NetworkSetupProtocol {
             received_preview: None,
             received_preview_bounds: None,
             received_preview_count: 0,
-            cooperative_rematch_seat: false,
             seat_place: None,
             asked_place: None,
             queue_place: None,
@@ -444,17 +442,6 @@ impl NetworkSetupProtocol {
         self.set_start_phase(StartPhase::Submitted);
         self.requests.push(NetworkSetupRequest::StartGame { users });
         true
-    }
-
-    /// VERA: the next join is the kept room's partner coming back.
-    pub(crate) fn await_cooperative_rematch_seat(&mut self) {
-        self.cooperative_rematch_seat = true;
-    }
-
-    /// Whether this join is the kept room's partner coming back: only the
-    /// first join after [`Self::await_cooperative_rematch_seat`].
-    pub(crate) fn take_cooperative_rematch_seat(&mut self) -> bool {
-        std::mem::take(&mut self.cooperative_rematch_seat)
     }
 
     pub(crate) fn lan_go_send_pending(&self) -> bool {
@@ -699,6 +686,10 @@ pub(crate) fn install_watch_setup(
 /// WOL chat notices.
 fn chat_notice(state: &mut AppState, key: &str, args: &[crate::assets::csf_file::CsfArg]) {
     let text = crate::assets::csf_file::format_csf(&state.csf_label(key, key), args);
+    room_notice(state, &text);
+}
+
+fn room_notice(state: &mut AppState, text: &str) {
     crate::app::shell_lan::append_room_chat(
         state,
         crate::ui::lan_shell::LanChatLine {
@@ -812,9 +803,10 @@ impl App {
             }
         };
         // VERA: the room plays its host's rules, the Terrain Deformation and
-        // Superweapon Limit of the host's skirmish Game Options, which the host
-        // can change in the room's Game Options. Quick Match plays the
-        // original game.
+        // Superweapon Limit of the host's skirmish Game Options and the
+        // Building Production Queue of the Options page, which the host can
+        // change in the room's Game Options. Quick Match plays the original
+        // game.
         if !(dialog.wol() && crate::app::shell_wol::lobby::quick_match_runner(state)) {
             launch.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
@@ -1048,6 +1040,9 @@ fn install_setup(
     }
     state.frontend.multiplayer_setup = Some(setup_ui);
     let mut protocol = NetworkSetupProtocol::new(dialog, quick_match);
+    if dialog.modern && !quick_match {
+        protocol.campaign_catalog = campaign_room::discover(state);
+    }
     // VERA's online room publishes its host's Watching from Create Game,
     // also when it comes back after a match; Quick Match's lobby decides.
     if dialog.host && dialog.modern && dialog.wol() && !quick_match {
@@ -1216,7 +1211,7 @@ pub(crate) fn hide_room(state: &mut AppState) {
     crate::app::input::multiplayer_setup::park_chat(state);
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.show_game_options(false);
+        ui.show_game_options(None);
     }
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
 }
@@ -1285,13 +1280,19 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
 
 /// VERA asks first: a guest's online room offers its map before the
 /// transfer downloads it (`shell_wol::live_service::maps`).
-pub(crate) fn offer_missing_map(state: &mut AppState, name: String, message: String) {
+pub(crate) fn offer_missing_map(
+    state: &mut AppState,
+    name: String,
+    message: String,
+    button_key: &'static str,
+) {
     // The offer takes the pointer from a row's open list too.
     crate::app::input::multiplayer_setup::drop_pointer(state, true);
     if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
         ui.map_offer = Some(crate::ui::multiplayer_setup::MapOffer {
             name,
             message,
+            button_key,
             downloading: false,
             opened: Instant::now(),
         });

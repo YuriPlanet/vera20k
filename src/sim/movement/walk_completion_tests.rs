@@ -81,7 +81,7 @@ fn completed_path_head_speed_matches_original_pre_percell_gate() {
             head,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -144,7 +144,7 @@ fn completed_corner_keeps_heading_until_next_head_is_accepted() {
         head,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let actor = sim.substrate.entities.get(id).unwrap();
@@ -264,7 +264,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         });
         actor.mission_leaf = MissionLeafState::infantry_raw_for_test(0, i32_value(&input["doing"]));
         if input["contact"] == 1 {
-            actor.radio_contacts.insert(2);
+            actor.seldom.radio_contacts.insert(2);
         }
         let loco = actor.locomotor.as_mut().unwrap();
         loco.set_walk_destination(Some(coord(&input["destination"])));
@@ -303,7 +303,7 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
             .register(HouseState::new(owner, 0, None, input["human"] == 1, 0, 0));
         sim.substrate.entities.insert(actor);
 
-        sim.finish_walk_navigation(1, &rules, crate::sim::world::FrameEffects::default())
+        sim.finish_walk_navigation(1, &rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
 
         let actor = sim.substrate.entities.get(1).unwrap();
@@ -434,7 +434,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
                     head,
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 assert!(
@@ -451,7 +451,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
                 head,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             _ => {
                 // Supplied post-PerCell liveness is the native corpus boundary;
@@ -459,7 +459,7 @@ fn paid_walk_world_scold_tails_match_original_boundaries() {
                 sim.finish_walk_navigation(
                     1,
                     crate::rules::ruleset::RuleSet::empty_for_test(),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }

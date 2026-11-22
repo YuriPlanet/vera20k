@@ -33,7 +33,7 @@ fn scene(rules: &RuleSet) -> (Simulation, u64) {
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(true);
     let shield = rules.shield_type("TestShield").expect("fixture type");
-    entity.shield = Some(ShieldState::new(
+    entity.seldom.shield = Some(ShieldState::new(
         "TestShield".to_owned(),
         shield.initial_strength(),
         shield.strength(),
@@ -55,7 +55,7 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, damage: i32) {
             None,
             warhead,
         )],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -64,6 +64,7 @@ fn shield(sim: &Simulation) -> &ShieldState {
         .entities
         .get(1)
         .unwrap()
+        .seldom
         .shield
         .as_ref()
         .unwrap()
@@ -202,6 +203,7 @@ fn self_healing_restores_points_on_its_rate() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -260,6 +262,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
             .entities
             .get(target)
             .unwrap()
+            .seldom
             .shield
             .as_ref()
             .unwrap()
@@ -269,17 +272,24 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         .entities
         .get_mut(target)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
         .hp = 40;
     super::tick(&mut sim, target, &rules);
     sim.session.set_binary_frame_for_test(30);
-    sim.temporal_initiate_warp(warper, Some(target), &rules, None, FrameEffects::default());
+    sim.temporal_initiate_warp(
+        warper,
+        Some(target),
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    );
     assert!(sim.substrate.entities.get(target).unwrap().ai_frozen());
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(300);
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         points(&sim),
         40,
@@ -292,7 +302,7 @@ fn temporal_freeze_preserves_recovery_time_until_the_object_resumes() {
         warper,
         rules.ares_form(),
     );
-    sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(target, Some(&rules), &mut ObjectAiCtx::default());
     sim.session.set_binary_frame_for_test(359);
     super::tick(&mut sim, target, &rules);
     assert_eq!(points(&sim), 40, "the saved recovery time has not elapsed");
@@ -309,6 +319,7 @@ fn chronosphere_launch_latch_suppresses_due_recovery_before_warp_out() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -332,6 +343,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -339,7 +351,7 @@ fn chronosphere_skips_recovery_but_keeps_the_original_countdown() {
     super::tick(&mut sim, 1, &rules);
     sim.session.set_binary_frame_for_test(30);
     arm_chrono_warp(&mut sim);
-    sim.process_chrono_warp(1, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(1, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert!(sim.substrate.entities.get(1).unwrap().is_warped_out());
     super::tick(&mut sim, 1, &rules);
@@ -374,7 +386,7 @@ fn construction_binds_the_shield_type() {
     let shield = sim
         .entities()
         .get(id)
-        .and_then(|entity| entity.shield.as_ref())
+        .and_then(|entity| entity.seldom.shield.as_ref())
         .expect("ShieldType= allocated the shield");
     assert_eq!(shield.hp(), 100);
 }
@@ -387,6 +399,7 @@ fn an_offline_shield_absorbs_nothing() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .shield
         .as_mut()
         .unwrap()
@@ -427,7 +440,7 @@ fn ignore_defenses_skips_the_shield_stage() {
 fn control_hit_reaches_health_without_a_shield() {
     let rules = rules("", "");
     let (mut sim, _) = scene(&rules);
-    sim.substrate.entities.get_mut(1).unwrap().shield = None;
+    sim.substrate.entities.get_mut(1).unwrap().seldom.shield = None;
     hit(&mut sim, &rules, 40);
     assert_eq!(health(&sim), 160);
 }
@@ -505,12 +518,13 @@ fn the_dispatched_receiver_returns_the_damage_left_by_the_shield() {
     let (mut sim, _) = scene(&rules);
     let warhead = sim.interner.intern("WH");
     let event = EntityDamageEvent::area(1, 40, 0, RAD_NO_ATTACKER, None, warhead);
-    let (_, _, packet) = world_receiver::commit_receiver(
+    let (_, packet) = world_receiver::commit_receiver(
         &mut sim,
         &mut world_receiver::ReceiverRun::default(),
         AreaDamageReceiver::Entity(event),
         &rules,
         None,
+        &mut Vec::new(),
     );
     assert_eq!(packet, 0);
     assert_eq!(health(&sim), 200);

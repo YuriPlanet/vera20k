@@ -84,7 +84,7 @@ pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     system: u64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
@@ -96,9 +96,14 @@ pub(super) fn tick_system(
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            if let Err(error) =
-                tick_particle(&mut p, sim, rules, owner_house, owner_entity, context)
-            {
+            if let Err(error) = tick_particle(
+                &mut p,
+                sim,
+                rules,
+                owner_house,
+                owner_entity,
+                context.reborrow(),
+            ) {
                 super::system_ai::retire_refused(&mut p, &error);
             }
             super::system_ai::finish_lifetime(&mut p);
@@ -244,7 +249,7 @@ fn apply_damage(
     rules: &RuleSet,
     owner_house: Option<InternedId>,
     owner: Option<u64>,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
     // RESIDUAL: a Damage particle with no Warhead= passes a null warhead
@@ -372,7 +377,7 @@ fn damage_in_range(
     owner_house: Option<InternedId>,
     warhead: InternedId,
     range: f64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
     let leptons = range * 256.0;
@@ -404,8 +409,8 @@ fn damage_in_range(
         {
             continue;
         }
-        let members: Vec<_> = sim.cell_objects((rx, ry), MovementLayer::Ground).collect();
-        for member in members {
+        // The gathering only reads the world; the damage below runs on `items`.
+        for member in sim.cell_objects((rx, ry), MovementLayer::Ground) {
             let Some(at) = location(sim, member) else {
                 continue;
             };

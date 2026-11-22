@@ -568,7 +568,7 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     (sim, rules, owner, yard, product)
@@ -597,7 +597,7 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Placed);
@@ -647,7 +647,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(exit, BuildingExit::Placed, "{name}");
@@ -669,7 +669,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             sim.object_ai_visit_one(
                 product,
                 Some(&rules),
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             );
             let building = sim.substrate.entities.get(product).unwrap();
             if native_route::assert_frame(building, frame, &format!("{name} frame {now}")) {
@@ -693,7 +693,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(exit, BuildingExit::TryLater);
         assert!(
@@ -707,6 +707,27 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         assert_eq!(node_state(&sim, owner), [((16, 16), count)]);
     }
     assert!(sim.substrate.entities.get(tank).is_some());
+    let mut retained = sim.clone();
+    retained.install_session_admission(
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        sim.session
+            .rule_policy()
+            .with_ai_base(crate::rules::rule_policy::AiBasePolicy::RetainAuthoredNodes),
+    );
+    assert_eq!(
+        exit_building(
+            &mut retained,
+            &rules,
+            yard,
+            product,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        ),
+        BuildingExit::TryLater
+    );
+    assert_eq!(node_state(&retained, owner), [((16, 16), 3)]);
+
     // The third failure passes MaximumBuildingPlacementFailures=2: the node
     // goes.
     let exit = exit_building(
@@ -715,7 +736,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(exit, BuildingExit::TryLater);
     assert!(node_state(&sim, owner).is_empty());
@@ -736,7 +757,7 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -765,7 +786,7 @@ fn a_human_yard_places_nothing() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);

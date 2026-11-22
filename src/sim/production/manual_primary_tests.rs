@@ -363,7 +363,10 @@ fn assert_primary_native_state(
             native["flags"],
             "{context}: actor{id} flags"
         );
-        assert_eq!(u8::from(entity.selection.is_selected()), native["selected"]);
+        assert_eq!(
+            u8::from(entity.seldom.selection.is_selected()),
+            native["selected"]
+        );
         assert_eq!(u8::from(entity.lifecycle.cell_marked()), native["marked"]);
         let timer = entity.mission.dispatch_timer();
         assert_eq!(
@@ -483,7 +486,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             supply_primary_actor_flags(&mut sim, id, &case["initial"]["actors"][index]["flags"]);
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             entity.lifecycle.set_cell_marked_for_test(true);
-            entity.selection.set_selected_for_test(false);
+            entity.seldom.selection.set_selected_for_test(false);
             sim.append_house_base_building_for_test(id);
             if actor["primary"].as_u64() == Some(1) {
                 sim.production.set_primary_factory(id);
@@ -492,7 +495,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         }
         sim.sound_events.clear_for_test();
         let seed = corpus["seed"].as_u64().unwrap();
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.scenario_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         let assert_rng = |sim: &Simulation, expected: &serde_json::Value| {
@@ -545,6 +548,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                                 .entities
                                 .get_mut(selected)
                                 .unwrap()
+                                .seldom
                                 .selection
                                 .set_selected_for_test(selected == id);
                         }

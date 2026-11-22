@@ -18,6 +18,9 @@ pub(crate) struct FrontendState {
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
+    /// The external launch's `ExpectedRulesDigest` refused it: this game's
+    /// rules parts, which the launch report names.
+    pub(crate) external_rules_mismatch: Option<crate::app::rules_parts::RulesParts>,
     /// The external launch's or online lobby match's local result, first
     /// decided wins (docs/spawn.md); see `App::record_match_result`.
     pub(crate) match_result: Option<crate::app::cncnet::ExternalMatchResult>,
@@ -62,6 +65,8 @@ pub(crate) struct FrontendState {
     /// its press/hover state is mirrored back into the per-shell structs above for
     /// the render path (substrate Slice 2).
     pub(crate) shell_controller: crate::ui::shell::controller::DialogController,
+    /// Built at startup, dropped while a match runs and built again for the
+    /// first shell screen after it (`App::ensure_main_menu_shell_chrome`).
     pub(crate) main_menu_shell_chrome:
         Option<crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas>,
     pub(crate) main_menu_movie: Option<crate::render::bink_movie::BinkMovieSurface>,
@@ -176,8 +181,6 @@ pub(crate) struct FrontendState {
     /// The host's Watching at its last Create Game in VERA's online lobby,
     /// which its next Create Game shows and its room publishes.
     pub(crate) wol_room_watching: crate::ui::wol_lobby::RoomWatching,
-    /// VERA: how this player returns to its LAN room after the match.
-    pub(crate) lan_rematch: Option<crate::app::shell_lan::LanRematch>,
     /// The WOL pages' loaded art by dialog (`shell_wol::leaf::open_art`),
     /// each freed with its page.
     pub(crate) wol_art: Vec<(
@@ -268,6 +271,9 @@ pub(crate) struct FrontendState {
     pub(crate) login_info: crate::app::shell_wol::login_info::LoginInfo,
     /// VERA's own map pictures for the setup screens' previews.
     pub(crate) map_pictures: crate::app::map_picture::MapPictures,
+    /// The language files the String Keys reload last saw
+    /// (`App::poll_language_files`).
+    pub(crate) language_files: crate::i18n::LanguageFileWatch,
     /// The mod this run reads on top of the game folder (`app::mods`).
     pub(crate) mods: crate::app::mods::Mods,
     /// The release check, its main-menu offer and the download (desktop only).
@@ -294,7 +300,14 @@ impl ShellMessageBox {
                 | ShellMessageBoxPurpose::ModRestart(_)
                 | ShellMessageBoxPurpose::ModFiles(_)
                 | ShellMessageBoxPurpose::ModMade(_)
-        )
+        ) || self.is_mod_import()
+    }
+
+    pub(crate) fn is_mod_import(&self) -> bool {
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        return matches!(self.purpose, ShellMessageBoxPurpose::ModImport(_));
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        false
     }
 
     /// The settings VERA's Esc menu shows.
@@ -329,6 +342,8 @@ pub(crate) enum ShellMessageBoxPurpose {
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
     /// MapSelect's failed Init message returns to the victory continuation.
     CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
+    /// The displayed choice is a projection of MatchSession's stage ballot.
+    AuthoredCampaignResult(Option<usize>),
     /// The updater's offer (`0x121`): Update, Skip Version or Later, over
     /// the release's change list.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -346,6 +361,9 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// The Mods page's Use This Mod: Restart keeps this folder, or the
     /// original game, for the next start and starts the game again.
     ModRestart(Option<String>),
+    /// ZIPs or extracted parts selected for Add Mod, or their import in progress.
+    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+    ModImport(Box<crate::app::shell_mod_import::Dialog>),
     /// The Mods page's Check Files (`App::check_picked_mod`).
     ModFiles(ModFilesBox),
     /// The Mods page's New Mod made this folder: Open Folder shows it, Close

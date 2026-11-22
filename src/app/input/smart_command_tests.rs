@@ -2,17 +2,17 @@
 //! minimal rules INI so they need no gitignored retail game data.
 
 use super::{
-    detect_mode, nearby_infantry_absorb, plan_mode, spread, spread_all, spread_by_capacity, Actor,
-    ReactorTarget, SmartMode, Target, NEAR_RANGE_CELLS,
+    Actor, NEAR_RANGE_CELLS, ReactorTarget, SmartMode, Target, detect_mode, nearby_infantry_absorb,
+    plan_mode, spread, spread_all, spread_by_capacity,
 };
-use crate::sim::command::Command;
-use crate::sim::passenger::{PassengerCargo, PassengerRole};
 use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::Health;
+use crate::sim::command::Command;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
+use crate::sim::passenger::{PassengerCargo, PassengerRole};
 use crate::sim::world::Simulation;
 
 /// A minimal rules corpus: four infantry types with one distinguishing
@@ -84,9 +84,33 @@ fn add_entity(
         false,
     );
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(object.foundation.clone());
     sim.entities_mut_for_test().insert(entity);
+}
+
+#[test]
+fn smart_planner_uses_the_local_permission_for_its_surface_selection() {
+    use crate::sim::control_authority::{ControlGrant, ControlGrantLevel};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let (mut sim, rules) = scene();
+    add_infantry(&mut sim, &rules, 77, "ENG");
+    let delegated = sim.intern("Delegated");
+    sim.register_house(HouseState::new(delegated, 1, None, false, 0, 1));
+    let entity = sim.entities_mut_for_test().get_mut_for_test(77).unwrap();
+    entity.set_owner_for_test(delegated);
+    entity.lifecycle.set_in_limbo_for_test(false);
+    sim.install_session_mode(ScenarioGameMode::Lan);
+    assert!(super::surface_selection(&sim, &rules, &[77]).is_empty());
+    sim.install_control_grants(vec![ControlGrant {
+        source: 0,
+        house: 1,
+        level: ControlGrantLevel::UnitsOnly,
+    }])
+    .unwrap();
+    assert_eq!(super::surface_selection(&sim, &rules, &[77])[0].id, 77);
 }
 
 /// Load `count` soldiers into a reactor's cargo hold, mirroring the app-side
@@ -361,6 +385,7 @@ fn ivan_orders_never_target_the_planter() {
         false,
     );
     target
+        .seldom
         .type_facts
         .set_foundation_for_test("1x1".to_owned().into());
     sim.entities_mut_for_test().insert(target);

@@ -47,7 +47,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if matches!(event, SimSoundEvent::ObjectSoundReleased { owner } if *owner == self.owner)
                 {
@@ -59,7 +59,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
-        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+        fn update_looping_sound(&mut self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
             if owner == self.owner {
                 self.calls.borrow_mut().push(("position", Some(world)));
             }
@@ -115,8 +115,14 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         Some(&rules),
     ));
     let planted = (0..180).any(|_| {
-        sim.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
-            .unwrap();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            33,
+            TickLane::Ordinary,
+            &mut FrameEffects::empty(),
+        )
+        .unwrap();
         sim.entities()
             .get(cannon)
             .unwrap()
@@ -141,14 +147,20 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
         Some(&rules),
     ));
     let started = (0..120).any(|_| {
-        sim.advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
-            .unwrap()
-            .sound_events
-            .iter()
-            .any(|event| {
-                matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
-                    if *anim_id == turret_rotate_sound_owner(cannon) && sound_id == CUE)
-            })
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            33,
+            TickLane::Ordinary,
+            &mut FrameEffects::empty(),
+        )
+        .unwrap()
+        .sound_events
+        .iter()
+        .any(|event| {
+            matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+                    if *anim_id == turret_rotate_sound_owner(cannon) && sound_id.name_in(&rules) == CUE)
+        })
     });
     assert!(started, "the real Attack aim starts the stock turret cue");
     assert!(!latch(&sim, cannon));
@@ -160,7 +172,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
             .is_rotating(sim.session.binary_frame())
     );
     let world = Simulation::movement_sound_world(sim.entities().get(cannon).unwrap());
-    let heard = Heard {
+    let mut heard = Heard {
         owner: turret_rotate_sound_owner(cannon),
         delivered: Cell::new(0),
         calls: RefCell::default(),
@@ -173,7 +185,7 @@ fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
             &rules,
             33,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&heard),
+            &mut FrameEffects::for_sound(&mut heard),
         )
         .unwrap();
         heard
@@ -233,7 +245,7 @@ fn scene(type_name: &str) -> (Simulation, RuleSet, u64) {
 }
 
 /// The ordered handle effects this object's turret loop published.
-fn turret_events(sim: &Simulation, id: u64) -> Vec<String> {
+fn turret_events(rules: &RuleSet, sim: &Simulation, id: u64) -> Vec<String> {
     let owner = turret_rotate_sound_owner(id);
     sim.sound_events
         .iter()
@@ -243,7 +255,7 @@ fn turret_events(sim: &Simulation, id: u64) -> Vec<String> {
             }
             SimSoundEvent::AnimationStarted {
                 anim_id, sound_id, ..
-            } if *anim_id == owner => Some(format!("start {sound_id}")),
+            } if *anim_id == owner => Some(format!("start {}", sound_id.name_in(rules))),
             SimSoundEvent::ObjectSoundReleased { owner: held } if *held == owner => {
                 Some("release".to_string())
             }
@@ -290,7 +302,7 @@ fn aim(sim: &mut Simulation, id: u64, target: u16) {
 fn begin_rotation(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     tick(sim, rules);
     assert!(
-        turret_events(sim, id).is_empty(),
+        turret_events(&rules, sim, id).is_empty(),
         "an idle turret publishes nothing"
     );
     assert!(latch(sim, id), "the idle frame re-arms the latch");
@@ -351,7 +363,7 @@ fn the_latch_is_hashed_state_and_load_rebuilds_the_handle() {
         "Load must preserve the saved unarmed latch"
     );
     tick(&mut restored, &rules);
-    assert!(turret_events(&restored, id).is_empty());
+    assert!(turret_events(&rules, &restored, id).is_empty());
     assert!(!latch(&restored, id));
     while restored
         .substrate
@@ -362,15 +374,15 @@ fn the_latch_is_hashed_state_and_load_rebuilds_the_handle() {
         .is_rotating(restored.session.binary_frame())
     {
         tick(&mut restored, &rules);
-        assert!(turret_events(&restored, id).is_empty());
+        assert!(turret_events(&rules, &restored, id).is_empty());
     }
     tick(&mut restored, &rules);
-    assert_eq!(turret_events(&restored, id), ["release"]);
+    assert_eq!(turret_events(&rules, &restored, id), ["release"]);
     assert!(latch(&restored, id));
     aim(&mut restored, id, 0);
     tick(&mut restored, &rules);
     assert_eq!(
-        turret_events(&restored, id),
+        turret_events(&rules, &restored, id),
         vec!["stop".to_string(), format!("start {CUE}")]
     );
 }
@@ -385,7 +397,7 @@ struct TurretBoundary {
 }
 
 impl SoundBoundary for TurretBoundary {
-    fn consume(&self, sim: &Simulation, _rules: &RuleSet, events: &[SimSoundEvent]) {
+    fn consume(&mut self, sim: &Simulation, _rules: &RuleSet, events: &[SimSoundEvent]) {
         assert_eq!(
             sim.substrate
                 .entities
@@ -429,17 +441,17 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
     begin_rotation(&mut sim, &rules, id);
     sim.prepare_unit_voice_visits([id].into());
     sim.sound_events.clear_for_test();
-    let boundary = TurretBoundary {
+    let mut boundary = TurretBoundary {
         delivered: Cell::new(0),
         batches: RefCell::default(),
         id,
         ai_counter: sim.substrate.entities.get(id).unwrap().mission.ai_counter(),
     };
-    let effects = FrameEffects::for_sound(&boundary);
+    let effects = FrameEffects::for_sound(&mut boundary);
     sim.object_ai_visit_one_with_effects(
         id,
         &rules,
-        crate::sim::world::techno_ai::ObjectAiCtx {
+        &mut crate::sim::world::techno_ai::ObjectAiCtx {
             effects,
             ..Default::default()
         },
@@ -453,14 +465,14 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
     sim.sound_events.clear_for_test();
     boundary.delivered.set(0);
     boundary.batches.borrow_mut().clear();
-    let release = TurretBoundary {
+    let mut release = TurretBoundary {
         ai_counter: sim.substrate.entities.get(id).unwrap().mission.ai_counter(),
         ..boundary
     };
     sim.uninit_with_context(
         id,
         crate::sim::world::UninitContext::new(&rules)
-            .with_effects(FrameEffects::for_sound(&release)),
+            .with_effects(&mut FrameEffects::for_sound(&mut release)),
     );
     assert_eq!(*release.batches.borrow(), [(false, vec!["release"])]);
     assert!(latch(&sim, id));
@@ -521,7 +533,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         for visit in history["visits"].as_array().unwrap() {
             let prior = latch(&sim, id);
             sim.sound_events.clear_for_test();
-            let boundary = TurretBoundary {
+            let mut boundary = TurretBoundary {
                 delivered: Cell::new(0),
                 batches: RefCell::default(),
                 id,
@@ -531,7 +543,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                 id,
                 visit["sample"].as_u64().unwrap() != 0,
                 &rules,
-                FrameEffects::for_sound(&boundary),
+                &mut FrameEffects::for_sound(&mut boundary),
             );
             let expected = visit["calls"]
                 .as_array()
@@ -545,7 +557,11 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(turret_events(&sim, id), expected, "{history}: {visit}");
+            assert_eq!(
+                turret_events(&rules, &sim, id),
+                expected,
+                "{history}: {visit}"
+            );
             assert_eq!(latch(&sim, id), visit["latch"].as_u64().unwrap() != 0);
             let expected_boundaries = visit["calls"]
                 .as_array()
@@ -588,9 +604,9 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         }
         let prior = latch(&sim, id);
         sim.sound_events.clear_for_test();
-        sim.turret_rotate_sound_limbo(id, FrameEffects::default(), &rules);
+        sim.turret_rotate_sound_limbo(id, &mut FrameEffects::default(), &rules);
         assert_eq!(
-            turret_events(&sim, id),
+            turret_events(&rules, &sim, id),
             if prior { vec![] } else { vec!["release"] }
         );
         assert_eq!(
@@ -646,7 +662,7 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
     begin_rotation(&mut sim, &rules, id);
     tick(&mut sim, &rules);
     assert_eq!(
-        turret_events(&sim, id),
+        turret_events(&rules, &sim, id),
         vec!["stop".to_string(), format!("start {CUE}")]
     );
     while sim
@@ -658,10 +674,10 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
         .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
-        assert!(turret_events(&sim, id).is_empty());
+        assert!(turret_events(&rules, &sim, id).is_empty());
     }
     tick(&mut sim, &rules);
-    assert_eq!(turret_events(&sim, id), ["release"]);
+    assert_eq!(turret_events(&rules, &sim, id), ["release"]);
 }
 
 /// The issue's skirmish trigger with no test-side aiming at all: the French
@@ -708,7 +724,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
         id,
         Some(TargetKind::Entity(enemy)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("target assignment");
     assert!(
@@ -735,7 +751,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     let mut released = false;
     for _ in 0..300 {
         tick(&mut sim, &rules);
-        let events = turret_events(&sim, id);
+        let events = turret_events(&rules, &sim, id);
         if events.is_empty() {
             continue;
         }

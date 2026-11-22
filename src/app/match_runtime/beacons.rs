@@ -404,10 +404,9 @@ pub(crate) fn place_beacon(
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP1"));
             post_hud_message(state, HudMessage::BeaconHelp("TXT_BEACON_HELP2"));
             crate::app::input::dispatch::push_local_eva(state, EVA_BEACON_PLACED);
-            if let Some(sound_id) = state
-                .rules()
-                .and_then(|rules| rules.general.place_beacon_sound.clone())
-            {
+            if let Some(sound_id) = state.rules().and_then(|rules| {
+                Some(rules.sound_name(rules.general.place_beacon_sound.as_deref()?))
+            }) {
                 state
                     .match_state
                     .match_audio

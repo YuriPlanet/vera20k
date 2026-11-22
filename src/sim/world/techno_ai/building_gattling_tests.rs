@@ -42,7 +42,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
     }
     impl SoundBoundary for Heard {
-        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+        fn consume(&mut self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
             for event in &events[self.delivered.get()..] {
                 if matches!(event, SimSoundEvent::GattlingLoopRelease { owner } if *owner == self.owner)
                 {
@@ -54,7 +54,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         fn delivered(&self) -> usize {
             self.delivered.get()
         }
-        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+        fn update_looping_sound(&mut self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
             if owner == self.owner {
                 self.calls.borrow_mut().push(("position", Some(world)));
             }
@@ -102,12 +102,18 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
     ));
     let started = (0..120).any(|_| {
         let output = sim
-            .advance_app_frame(&[], &rules, 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_app_frame(
+                &[],
+                &rules,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::empty(),
+            )
             .unwrap();
         output.sound_events.iter().any(|event| {
             matches!(event,
             SimSoundEvent::GattlingLoop { owner, sound_id, .. }
-            if *owner == gattling_sound_owner(cannon) && sound_id == "GattlingGunAttackLoop1")
+            if *owner == gattling_sound_owner(cannon) && sound_id.name_in(&rules) == "GattlingGunAttackLoop1")
         })
     });
     assert!(
@@ -121,7 +127,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
         Some(&rules)
     ));
     let world = Simulation::movement_sound_world(sim.entities().get(cannon).unwrap());
-    let heard = Heard {
+    let mut heard = Heard {
         owner: gattling_sound_owner(cannon),
         delivered: Cell::new(0),
         calls: RefCell::new(Vec::new()),
@@ -134,7 +140,7 @@ fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
             &rules,
             33,
             TickLane::Ordinary,
-            FrameEffects::for_sound(&heard),
+            &mut FrameEffects::for_sound(&mut heard),
         )
         .unwrap();
         heard
@@ -307,14 +313,14 @@ fn expected_sounds(events: &[Value], stage_up: bool) -> Vec<Sound> {
     sounds
 }
 
-fn sounds(sim: &Simulation, id: u64) -> Vec<Sound> {
+fn sounds(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<Sound> {
     let owner = gattling_sound_owner(id);
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
             SimSoundEvent::GattlingLoop {
                 owner: o, sound_id, ..
-            } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+            } if *o == owner => Some(Sound::Loop(sound_id.name_in(rules).to_string())),
             SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
             SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => Some(Sound::Release),
             _ => None,
@@ -335,7 +341,7 @@ fn count(events: &[Value], name: &str, stream: Option<&str>) -> usize {
 fn with_draws(sim: &mut Simulation, row: &Value, call: impl FnOnce(&mut Simulation) -> i32) -> i32 {
     let name = &row["input"]["name"];
     let events = row["events"].as_array().unwrap();
-    let mut main = sim.main_rng.snapshot_for_test();
+    let mut main = sim.main_rng.clone();
     for _ in 0..count(events, "rng", Some("main")) {
         main.next_u32();
     }
@@ -359,7 +365,7 @@ fn with_draws(sim: &mut Simulation, row: &Value, call: impl FnOnce(&mut Simulati
 
 /// The row's recorded Gattling state, `+0xC4` and `+0x148`, and the loop
 /// events the calls made.
-fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
+fn assert_gattling(sim: &Simulation, rules: &RuleSet, id: u64, row: &Value, stage_before: i32) {
     let name = &row["input"]["name"];
     let native = &row["gattling"];
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -390,7 +396,7 @@ fn assert_gattling(sim: &Simulation, id: u64, row: &Value, stage_before: i32) {
         "{name} +0x148"
     );
     assert_eq!(
-        sounds(sim, id),
+        sounds(sim, rules, id),
         expected_sounds(row["events"].as_array().unwrap(), stage > stage_before),
         "{name} loop"
     );
@@ -448,7 +454,7 @@ fn gattling_attack_matches_the_original() {
                     target,
                     weapon,
                     code,
-                    ObjectAiCtx::default(),
+                    &mut ObjectAiCtx::default(),
                     &mut false,
                 )
             })
@@ -486,7 +492,7 @@ fn gattling_attack_matches_the_original() {
             }),
             "{name} FireAt"
         );
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
         if let Some(event) = fire_at {
             let elite = state_is_elite(input);
             // A second run uses the complete live receiver (no boundary
@@ -502,7 +508,7 @@ fn gattling_attack_matches_the_original() {
                 aimed,
                 weapon,
                 FireError::Ok,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false,
             );
             let shot = live_shot(&live, firer);
@@ -557,7 +563,7 @@ fn building_fire_finishes_before_the_mission_returns() {
         aimed,
         weapon,
         FireError::Ok,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
         &mut false,
     );
     assert!(
@@ -565,6 +571,7 @@ fn building_fire_finishes_before_the_mission_returns() {
             .entities
             .get(building)
             .unwrap()
+            .seldom
             .rearm_timer
             .remaining(FRAME as i32)
             > 0,
@@ -612,7 +619,7 @@ fn gattling_guard_matches_the_original() {
                 sim,
                 building,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             )
         });
         assert_eq!(
@@ -631,7 +638,7 @@ fn gattling_guard_matches_the_original() {
             row["status"].as_u64().unwrap(),
             "{name} status"
         );
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
     }
 }
 
@@ -674,7 +681,7 @@ fn gattling_idle_decay_matches_the_original() {
             );
             0
         });
-        assert_gattling(&sim, building, row, stage_before);
+        assert_gattling(&sim, &rules, building, row, stage_before);
     }
 }
 
@@ -747,7 +754,7 @@ fn gattling_cadence_matches_the_original() {
                 (event[0].as_u64().unwrap(), kind)
             })
             .collect();
-        sim.main_rng = SimRng::new(input["main_seed"].as_u64().unwrap_or(1)).into();
+        sim.main_rng = SimRng::new(input["main_seed"].as_u64().unwrap_or(1));
         let mut scenario_draws = 0;
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
@@ -763,7 +770,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         Some(TargetKind::Entity(target)),
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -772,7 +779,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         None,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 }
@@ -781,7 +788,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         target,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     ));
                 }
                 Some(Event::OutOfRange) => aim_at(&mut sim, building, far),
@@ -794,7 +801,7 @@ fn gattling_cadence_matches_the_original() {
             sim.scenario_rng = scenario;
             let native_events = frame["events"].as_array().unwrap();
             scenario_draws += count(native_events, "rng", Some("scenario_ranged"));
-            let mut main = sim.main_rng.snapshot_for_test();
+            let mut main = sim.main_rng.clone();
             for _ in 0..count(native_events, "rng", Some("main")) {
                 main.next_u32();
             }
@@ -848,6 +855,7 @@ fn gattling_cadence_matches_the_original() {
                     .entities
                     .get_mut(building)
                     .unwrap()
+                    .seldom
                     .rearm_timer
                     .start((base + k as i64) as i32, ROF[weapon]);
             }
@@ -857,7 +865,7 @@ fn gattling_cadence_matches_the_original() {
                 "gattling": native,
                 "events": native_events,
             });
-            assert_gattling(&sim, building, &frame_row, stage_before);
+            assert_gattling(&sim, &rules, building, &frame_row, stage_before);
             stage_before = native["stage"].as_i64().unwrap() as i32;
         }
     }
@@ -944,14 +952,14 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             entity.gattling.value(),
         )
     };
-    let loops = |output: &crate::sim::world::SimFrameOutput| {
+    let loops = |output: &crate::sim::world::SimFrameOutput, rules: &RuleSet| {
         output
             .sound_events
             .iter()
             .filter_map(|event| match event {
                 SimSoundEvent::GattlingLoop {
                     owner: o, sound_id, ..
-                } if *o == owner => Some(Sound::Loop(sound_id.clone())),
+                } if *o == owner => Some(Sound::Loop(sound_id.name_in(rules).to_string())),
                 SimSoundEvent::GattlingLoopStop { owner: o } if *o == owner => Some(Sound::Stop),
                 SimSoundEvent::GattlingLoopRelease { owner: o } if *o == owner => {
                     Some(Sound::Release)
@@ -1005,7 +1013,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             );
             shots[stage_before as usize] += 1;
         }
-        sounds.extend(loops(&output));
+        sounds.extend(loops(&output, &scenario.runtime.resources.rules));
     }
     println!("YAGGUN: stage-ups at {stage_ups:?}, shots per stage {shots:?}");
     assert_eq!(stage_ups.len(), 2, "two stage-ups");
@@ -1041,11 +1049,11 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
             },
         )],
     );
-    let mut sounds = loops(&order);
+    let mut sounds = loops(&order, &scenario.runtime.resources.rules);
     let dropped = (0..600_u32)
         .find(|_| {
             let output = retail_frame(&mut scenario, Vec::new());
-            sounds.extend(loops(&output));
+            sounds.extend(loops(&output, &scenario.runtime.resources.rules));
             !state(&scenario).1
         })
         .expect("the cannon drops the MCV");
@@ -1055,7 +1063,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
     );
     let wound_down = (0..60_u32).find(|_| {
         let output = retail_frame(&mut scenario, Vec::new());
-        sounds.extend(loops(&output));
+        sounds.extend(loops(&output, &scenario.runtime.resources.rules));
         let (mission, _, stage, value) = state(&scenario);
         mission == Some(MissionType::Guard) && (stage, value) == (0, 0)
     });

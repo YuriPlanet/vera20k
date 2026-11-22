@@ -3,7 +3,15 @@
 //! use the same channel, endpoint authority and retry owner; only their payload
 //! is split here. Reassembly is discarded with the owning lobby visit.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use super::{LAN_MESSAGE_LEN, SessionScope};
+
+pub mod campaign;
 
 pub const MAGIC: &[u8; 4] = b"VS31";
 pub const MAX_BYTES: usize = 32 * 1024;

@@ -179,12 +179,15 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
                 8,
                 EntityCategory::Structure,
             );
-            building.type_facts.set_foundation_for_test("3x3".into());
-            building.radio_contacts.set_capacity(3);
+            building
+                .seldom
+                .type_facts
+                .set_foundation_for_test("3x3".into());
+            building.seldom.radio_contacts.set_capacity(3);
             for id in [100, 101, if contacted { 1 } else { 102 }] {
-                building.radio_contacts.insert(id);
+                building.seldom.radio_contacts.insert(id);
             }
-            building.radio_contacts.remove(101);
+            building.seldom.radio_contacts.remove(101);
             sim.substrate.entities.insert(building);
             sim.interner = crate::sim::intern::test_interner();
             let mover = sim.substrate.entities.get_mut(1).unwrap();
@@ -226,6 +229,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
                             .entities
                             .get_mut(2)
                             .unwrap()
+                            .seldom
                             .radio_contacts
                             .clear_all();
                     }
@@ -844,7 +848,7 @@ fn bridge_placement_retains_selected_cell_but_reads_fresh_world_attributes() {
                     .set_rx_for_test(20);
             }
         },
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.substrate.entities.get(1).unwrap().on_bridge());
 }
@@ -910,7 +914,7 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -980,7 +984,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
                 reason: UninitReason::Crush,
             },
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(at.0, at.1) & 0x20,
@@ -1078,7 +1082,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         if unload_active {
@@ -1169,7 +1173,10 @@ fn per_cell_partner_fixture(
     );
     producer.set_type_ref_for_test(sim.intern(partner));
     producer.set_owner_for_test(owner);
-    producer.type_facts.set_foundation_for_test("1x1".into());
+    producer
+        .seldom
+        .type_facts
+        .set_foundation_for_test("1x1".into());
     producer.set_on_bridge(producer_on_bridge);
     producer.lifecycle.set_object_alive_for_test(true);
     producer.lifecycle.set_in_limbo_for_test(false);
@@ -1186,7 +1193,7 @@ fn per_cell_partner_fixture(
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         RadioResponse::Roger
     );
@@ -1199,7 +1206,7 @@ fn per_cell_partner_fixture(
                 RadioMessage::Tether,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             RadioResponse::Roger
         );
@@ -1259,7 +1266,7 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -1279,8 +1286,8 @@ fn per_cell_factory_clearance_precedes_ready_and_preserves_foot_stop_scope() {
     );
     for id in [1, 2] {
         let entity = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(entity.radio_contacts.slot(0), None);
-        assert_eq!(entity.tether.partner(), None);
+        assert_eq!(entity.seldom.radio_contacts.slot(0), None);
+        assert_eq!(entity.seldom.tether.partner(), None);
     }
     let unit = sim.substrate.entities.get(1).unwrap();
     assert_eq!(unit.mission.current().known(), Some(MissionType::Unload));
@@ -1448,7 +1455,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
             reason,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let sends = crate::sim::radio::take_transmit_log();
@@ -1483,6 +1490,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             (!sends_clearance).then_some(2),
@@ -1493,6 +1501,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
                 .entities
                 .get(2)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .slot(0),
             (!sends_clearance).then_some(1),
@@ -1530,7 +1539,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
             PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let sends = crate::sim::radio::take_transmit_log();
@@ -1556,7 +1565,7 @@ fn per_cell_factory_clearance_starts_a_slave_miners_hunt() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1586,7 +1595,10 @@ fn computer_product_at_factory_exit() -> (Simulation, RuleSet) {
     house.set_base_center_for_test(Some((20, 20)));
     sim.houses.insert_for_test(house);
     let producer = sim.substrate.entities.get_mut(2).unwrap();
-    producer.type_facts.set_foundation_for_test("5x3".into());
+    producer
+        .seldom
+        .type_facts
+        .set_foundation_for_test("5x3".into());
     producer.position.put_location(DriveCoord::cell(6, 9, 0));
     sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -1631,7 +1643,7 @@ fn per_cell_factory_clearance_sends_a_computer_unit_to_its_post() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1674,7 +1686,7 @@ fn per_cell_factory_clearance_without_a_post_clears_the_archive() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1709,7 +1721,7 @@ fn per_cell_factory_clearance_reads_unit_archive_through_the_shared_setter() {
         super::super::PerCellReason::Arrival,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1763,7 +1775,10 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             );
             if middle_row_underneath {
                 let producer = sim.substrate.entities.get_mut(2).unwrap();
-                producer.type_facts.set_foundation_for_test("1x2".into());
+                producer
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test("1x2".into());
                 producer.position.put_location(DriveCoord::cell(10, 9, 0));
                 sim.substrate.occupancy =
                     crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -1795,7 +1810,7 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
                 super::super::PerCellReason::Arrival,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let sends = crate::sim::radio::take_transmit_log();
@@ -1827,8 +1842,8 @@ fn per_cell_factory_harvester_queue_uses_live_readiness_and_preserves_miner_stat
             );
             for id in [1, 2] {
                 let entity = sim.substrate.entities.get(id).unwrap();
-                assert_eq!(entity.radio_contacts.slot(0), None);
-                assert_eq!(entity.tether.partner(), None);
+                assert_eq!(entity.seldom.radio_contacts.slot(0), None);
+                assert_eq!(entity.seldom.tether.partner(), None);
             }
             assert_eq!(
                 sim.rng_state(),
@@ -1853,17 +1868,22 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
             entity
                 .passive_scan
                 .set_passively_acquired_target_for_test(true);
-            entity.weapon_burst.complete_shot(2);
+            entity.seldom.weapon_burst.complete_shot(2);
             entity
                 .navigation
                 .set_nav_com_for_test(has_destination.then(|| NavTargetRef::cell(12, 10)));
             let rules = crate::rules::ruleset::RuleSet::empty_for_test();
-            sim.unit_enter_idle_mode(1, rules, false, crate::sim::world::FrameEffects::default());
+            sim.unit_enter_idle_mode(
+                1,
+                rules,
+                false,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let entity = sim.substrate.entities.get(1).unwrap();
             // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
             // keeps the index through the NULL target.
             assert_eq!(
-                entity.weapon_burst.index(),
+                entity.seldom.weapon_burst.index(),
                 i32::from(has_destination || rules.ares_form())
             );
             assert_eq!(entity.passive_scan.acquired(), has_destination);
@@ -1969,10 +1989,10 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             "unit_nav_aux": nav(unit.navigation.nav_com_aux()),
             "unit_archive": target(unit.archive_target()),
             "pending_entry": name(unit.pending_entry()),
-            "unit_contacts": (0..unit.radio_contacts.capacity()).map(|n| name(unit.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "building_contacts": (0..building.radio_contacts.capacity()).map(|n| name(building.radio_contacts.slot(n))).collect::<Vec<_>>(),
-            "unit_tether": u8::from(unit.tether.partner().is_some()),
-            "building_tether": u8::from(building.tether.partner().is_some()),
+            "unit_contacts": (0..unit.seldom.radio_contacts.capacity()).map(|n| name(unit.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "building_contacts": (0..building.seldom.radio_contacts.capacity()).map(|n| name(building.seldom.radio_contacts.slot(n))).collect::<Vec<_>>(),
+            "unit_tether": u8::from(unit.seldom.tether.partner().is_some()),
+            "building_tether": u8::from(building.seldom.tether.partner().is_some()),
             "building_mission": building.mission.current().raw(),
             "building_queued": building.mission.queued().raw(),
             "status": building.mission.handler_state(),
@@ -2156,14 +2176,16 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                 ai_counter: 0,
                 dispatch_timer: MissionDispatchTimer::from_raw(-1, 0),
             });
-            entity.radio_contacts.clear_all();
+            entity.seldom.radio_contacts.clear_all();
             entity
+                .seldom
                 .radio_contacts
                 .set_capacity(before[contacts].as_array().unwrap().len());
             if before[contacts][0].is_string() {
-                entity.radio_contacts.insert(peer);
+                entity.seldom.radio_contacts.insert(peer);
             }
             entity
+                .seldom
                 .tether
                 .set_for_test((integer(&before[tether]) != 0).then_some(peer));
         }
@@ -2282,11 +2304,14 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                 tank,
                 &rules,
                 false,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else if input["entry"] == "navigation_gate" {
-            let returns =
-                sim.track_navigation_gate(tank, &rules, crate::sim::world::FrameEffects::default());
+            let returns = sim.track_navigation_gate(
+                tank,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             assert_eq!(
                 u8::from(returns),
                 row["returned_al"].as_u64().unwrap() as u8,
@@ -2326,7 +2351,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
                             compare(world, tank, depot, other, &native["state"], context);
                         }
                     },
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_eq!(per_cell_calls, 1, "{context}: original terminal PerCell");
@@ -2409,7 +2434,7 @@ fn foot_idle_empty_queue_admission_matches_original_latch_rows() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),
@@ -2465,7 +2490,7 @@ fn foot_idle_set_latch_refuses_queue_and_speed_setters_without_effects() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )),
         row["returned_al"].as_u64().unwrap() as u8
     );
@@ -2513,7 +2538,7 @@ fn foot_idle_ends_a_warp_teleport_like_original_end_rows() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let events: Vec<&str> = row["events"]
@@ -2587,7 +2612,7 @@ fn inherited_foot_idle_latch_roundtrips_and_hashes_for_every_foot_category() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(restored.rng_state(), rng);
         assert_eq!(restored.state_hash(), entered_hash);
@@ -2618,7 +2643,10 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
         let (mut sim, rules) = factory_per_cell_fixture(true, false, "Harvester=yes");
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let producer = sim.substrate.entities.get_mut(2).unwrap();
-        producer.type_facts.set_foundation_for_test("5x3".into());
+        producer
+            .seldom
+            .type_facts
+            .set_foundation_for_test("5x3".into());
         producer.position.put_location(DriveCoord::cell(6, 9, 0));
         sim.substrate.occupancy =
             crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
@@ -2636,7 +2664,7 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -2691,7 +2719,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -2701,7 +2729,7 @@ fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
             Some((8, Some(1)))
         );
         let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.seldom.tether.partner(), None);
         assert_eq!(unit.archive_target(), None);
         if archive.is_some() {
             assert_eq!(unit.mission.current().known(), Some(MissionType::Harvest));
@@ -2747,7 +2775,7 @@ fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
                 RadioMessage::Break,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             crate::sim::radio::take_transmit_log();
         }
@@ -2769,7 +2797,7 @@ fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
             super::super::PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 
@@ -2876,7 +2904,8 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
         let unit = sim.substrate.entities.get_mut(id).unwrap();
         match link {
             "slave" => {
-                unit.slave = crate::sim::slave_manager::SlaveLink::for_test(Some(id + 1), vec![]);
+                unit.seldom.slave =
+                    crate::sim::slave_manager::SlaveLink::for_test(Some(id + 1), vec![]);
             }
             "slave_manager" => {
                 unit.slave_manager = Some(Box::new(crate::sim::slave_manager::SlaveManager::new(
@@ -2899,7 +2928,7 @@ fn the_unit_guard_pick_follows_house_iq_team_and_type() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -2932,7 +2961,7 @@ fn a_unit_at_rest_on_a_cell_centre_breaks_its_radio_link() {
             .spawn_object("GAWEAP", "Americans", 20, 20, 0, &rules)
             .unwrap();
         let unit = sim.substrate.entities.get_mut(id).unwrap();
-        unit.radio_contacts.insert(factory);
+        unit.seldom.radio_contacts.insert(factory);
         if case == "off_centre" || case == "raised" {
             unit.position.put_location(DriveCoord {
                 x: 10 * 256 + if case == "raised" { 128 } else { 129 },
@@ -2961,7 +2990,7 @@ fn a_unit_at_rest_on_a_cell_centre_breaks_its_radio_link() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let over_out = crate::sim::radio::take_transmit_log()
             .iter()
@@ -2995,7 +3024,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
         ));
         let unit = sim.substrate.entities.get_mut(id).unwrap();
         if case != "commanded" {
-            unit.mission_only.mark();
+            unit.seldom.mission_only.mark();
         }
         if case != "empty" {
             unit.passenger_role_mut_for_test()
@@ -3010,7 +3039,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let expected = if case == "loaded" {
             MissionType::Unload
@@ -3057,7 +3086,7 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
         if on_bunker {
             unit.position.put_location(DriveCoord::cell(14, 9, 0));
         }
-        unit.radio_contacts.insert(bunker);
+        unit.seldom.radio_contacts.insert(bunker);
         unit.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Enter),
             suspended: MissionId::NONE,
@@ -3072,7 +3101,7 @@ fn a_unit_entering_a_bunker_ahead_of_it_queues_nothing() {
             id,
             &rules,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
@@ -3404,7 +3433,7 @@ fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
             super::super::PerCellReason::TurnComplete,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["per_cell"]);
@@ -3631,7 +3660,7 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
             ally.set_category_for_test(EntityCategory::Unit);
             let mut enemy = GameEntity::test_default(3, "E1", "Russians", x, y);
             enemy.set_category_for_test(EntityCategory::Infantry);
-            enemy.crushable_facts.set_crushable_for_test(true);
+            enemy.seldom.crushable_facts.set_crushable_for_test(true);
             for mut entity in [ally, enemy] {
                 entity.lifecycle.set_object_alive_for_test(true);
                 entity.lifecycle.set_in_limbo_for_test(false);
@@ -3663,4 +3692,214 @@ fn a_train_smashes_what_it_cannot_crush_in_the_cell_it_enters() {
     assert_ne!(entered, (10, 10));
     assert_eq!(run(false, Some(entered)), (entered, false, true, 20));
     assert_eq!(run(true, Some(entered)), (entered, true, true, 0));
+}
+
+/// A Drive calls SetSpeedFraction on linked Units even when its accelerating
+/// prefix kept the same applied value (4B11DF -> 4B1218). There is no IsTrain
+/// gate on this speed hand-off. The equal non-accelerating arm skips it.
+#[test]
+fn accelerating_drive_hands_its_applied_speed_to_linked_units() {
+    let rules = RuleSet::empty_for_test();
+    for accelerates in [false, true] {
+        let (mut sim, invocation, _) = fixture(TrackFamily::Drive, 0);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.mover_facts.set_drive_accelerates_for_test(accelerates);
+        let fraction = SimFixed::lit("0.375");
+        head.foot_speed.set_speed_fraction(fraction);
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_target_fraction(TrackFamily::Drive, fraction);
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        sim.substrate.entities.insert(car);
+        sim.run_track_process(invocation, rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let car = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(
+            car.foot_speed.applied_fraction(),
+            if accelerates {
+                fraction
+            } else {
+                SimFixed::ZERO
+            }
+        );
+    }
+}
+
+/// Stop_Moving 4AFE0C..4AFE89 checks the engine's committed head before it
+/// dispatches the car's active locomotor Stop. The car keeps its own head.
+#[test]
+fn train_stop_reaches_the_linked_car_only_with_a_committed_head() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str("[MTNK]\nIsTrain=yes\n"),
+    ) else {
+        return;
+    };
+    let dest = DriveCoord::cell(10, 7, 0);
+    let car_head = DriveCoord::cell(10, 10, 0);
+    for committed in [false, true] {
+        let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
+        sim.interner.bind_types(&retail.rules);
+        let head = sim.substrate.entities.get_mut(1).unwrap();
+        head.set_unit_follower(Some(2));
+        head.locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_head(TrackFamily::Drive, committed.then_some(dest));
+        let mut car = GameEntity::test_default(2, "MTNK", "Americans", 10, 11);
+        car.set_is_unit_follower(true);
+        let loco = super::super::locomotor::LocomotorState::for_test_kind(
+            crate::rules::locomotor_type::LocomotorKind::Drive,
+        );
+        let loco = car.locomotor.insert(loco);
+        loco.ensure_installed_track_state();
+        loco.store_track_head(TrackFamily::Drive, Some(car_head));
+        loco.store_track_destination(TrackFamily::Drive, Some(dest));
+        sim.substrate.entities.insert(car);
+        sim.locomotor_stop_moving(1, &retail.rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let loco = sim
+            .substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            loco.track_destination(TrackFamily::Drive),
+            (!committed).then_some(dest)
+        );
+        assert_eq!(loco.track_head(TrackFamily::Drive), Some(car_head));
+    }
+}
+
+/// Drive / Ship vt+0x484 tests AL before going on (0x004B2A31 / 0x006A2081).
+/// Foot consumes a queued cell but the human infantry deployment refuses it.
+/// Infantry's Guard tail (0x0051CC6D -> 0x0051CDA4) then returns false.
+#[test]
+fn track_waypoint_returns_the_infantry_guard_result() {
+    let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    );
+    let house = sim.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
+    let id = sim
+        .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(MissionType::Guard),
+        0,
+    );
+    actor.mission_leaf.set_foot_idle_entry_latch(0);
+    actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+    actor
+        .navigation
+        .push_nav_queue_for_test(crate::sim::components::NavTargetRef::cell(17, 15));
+    let result =
+        sim.stop_or_take_next_waypoint(id, &rules, &mut crate::sim::world::FrameEffects::default());
+    let actor = sim.entities().get(id).unwrap();
+    assert!(actor.navigation.nav_queue().is_empty());
+    assert_eq!(actor.navigation.nav_com(), None);
+    assert!(!result);
+}
+
+/// Infantry Per_Cell_Process (0x0051A8C0) commences the queued mission on
+/// arrival even when Sticky forbids Ready_To_Commence in the Unit receiver.
+#[test]
+fn drive_arrival_commences_the_infantrys_queued_mission() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId};
+
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[InfantryTypes]\n0=MTNK\n[MTNK]\nStrength=100\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+    )).unwrap();
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.set_category_for_test(EntityCategory::Infantry);
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_known(MissionType::Sticky),
+        queued: MissionId::from_known(MissionType::Attack),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    let loco = actor.locomotor.as_mut().unwrap();
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    assert!(loco.store_track_progress(TrackFamily::Drive, track));
+    assert!(!sim.mission_ready_to_commence(1, &rules));
+
+    sim.run_track_points_observed(
+        invocation,
+        budget,
+        Some(&rules),
+        None,
+        &mut |sim, id, event| {
+            if event == TrackWorldEvent::PerCell {
+                assert_eq!(
+                    sim.entities().get(id).unwrap().mission.current().known(),
+                    Some(MissionType::Attack)
+                );
+            }
+        },
+    );
+    assert_eq!(
+        sim.entities().get(1).unwrap().mission.current().known(),
+        Some(MissionType::Attack)
+    );
+}
+
+/// Terminal Get_Mission (Drive 0x004B2259 / Ship 0x006A1898) falls back
+/// to the queued mission if Ready_To_Commence kept the current slot empty.
+#[test]
+fn terminal_idle_checks_a_move_that_is_still_queued() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::miner::{Miner, MinerConfig, MinerKind};
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, state::MissionTestFixture};
+
+    let (mut sim, invocation, budget) = fixture(TrackFamily::Drive, 15);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    let mut miner = Miner::new(MinerKind::War, &MinerConfig::default(), 0);
+    miner.set_unload_active_for_test(true);
+    actor.miner = Some(Box::new(miner));
+    actor.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::NONE,
+        queued: MissionId::from_known(MissionType::Move),
+        suspended: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    actor
+        .navigation
+        .publish_nav_com(Some(NavTargetRef::cell(10, 9)));
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(10, 9, 0)));
+    let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
+    track.set_cursor(super::super::drive_track::raw_track_points(1).len() as i32);
+    loco.store_track_progress(TrackFamily::Drive, track);
+
+    let mut entered_idle = false;
+    sim.run_track_points_observed(invocation, budget, None, None, &mut |sim, id, event| {
+        if event == TrackWorldEvent::PerCell {
+            let mission = &sim.entities().get(id).unwrap().mission;
+            assert_eq!(mission.current(), MissionId::NONE);
+            assert_eq!(mission.effective().known(), Some(MissionType::Move));
+        }
+        entered_idle |= event == TrackWorldEvent::Arrival;
+    });
+    assert!(entered_idle);
 }
