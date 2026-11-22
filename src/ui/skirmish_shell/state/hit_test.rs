@@ -1,144 +1,14 @@
-//! Hit testing, hover targets, status-help keys, and action application for the skirmish shell.
+//! Hover targets and status-help keys for the skirmish shell.
 
-use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::LaunchCountry;
 
 use super::super::layout::{
-    ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, DropdownMetrics,
-    RandomMapSetupControl, RectPx, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId,
-    combo_face_rect,
+    ChooseMapModalButton, RandomMapSetupControl, SkirmishCheckboxId, SkirmishTrackbarId,
 };
-use super::trackbars::{trackbar_ids, trackbar_rect};
 use super::{
-    ChooseMapHoverTarget, ChooseMapModalState, OwnerDrawButton, SkirmishAiRowType, SkirmishComboId,
-    SkirmishComboItem, SkirmishCountryChoice, SkirmishHoverTarget, SkirmishShellAction,
-    SkirmishShellState, accept_selected_map, combo_dropdown_content_rect,
-    combo_dropdown_visible_row_count, combo_items, combo_rect, player_row_visible,
+    ChooseMapHoverTarget, OwnerDrawButton, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
+    SkirmishCountryChoice, SkirmishHoverTarget,
 };
-
-fn hover_open_combo_item(
-    state: &SkirmishShellState,
-    layout: &SkirmishShellLayout,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> Option<SkirmishHoverTarget> {
-    let open = state.open_combo_dropdown?;
-    let content = combo_dropdown_content_rect(state, layout, maps, open.id)?;
-    if !content.contains(x, y) {
-        return None;
-    }
-
-    let visible_row =
-        ((y - content.y) / DropdownMetrics::scaled(layout.scale).row_h).max(0) as usize;
-    if visible_row >= combo_dropdown_visible_row_count(state, maps, open.id) {
-        return None;
-    }
-    let item_index = open.top_index + visible_row;
-    let item = combo_items(state, maps, open.id).get(item_index).copied()?;
-    Some(SkirmishHoverTarget::ComboItem { id: open.id, item })
-}
-
-pub fn hovered_shell_control(
-    layout: &SkirmishShellLayout,
-    state: &SkirmishShellState,
-    maps: &[MapMenuEntry],
-    x: i32,
-    y: i32,
-) -> Option<SkirmishHoverTarget> {
-    if state.choose_map_modal.is_some() || state.validation_modal.is_some() {
-        return None;
-    }
-    if state.game_options.is_some() {
-        return crate::ui::skirmish_shell::game_options::GameOptionsLayout::over(layout)
-            .control_at(x, y)
-            .map(SkirmishHoverTarget::GameOptions);
-    }
-
-    if let Some(target) = hover_open_combo_item(state, layout, maps, x, y) {
-        return Some(target);
-    }
-
-    if layout.status_help.contains(x, y) {
-        return Some(SkirmishHoverTarget::StatusHelp0x695);
-    }
-    if layout.player_name.contains(x, y) {
-        return Some(SkirmishHoverTarget::PlayerName0x6a0);
-    }
-    if let Some(button) = hit_test_owner_draw_button(layout, x, y) {
-        return Some(SkirmishHoverTarget::OwnerDrawButton(button));
-    }
-    if layout.map_preview.contains(x, y) {
-        return Some(SkirmishHoverTarget::MapPreview0x468);
-    }
-    for checkbox in layout.checkboxes {
-        if checkbox.rect.contains(x, y) {
-            return Some(SkirmishHoverTarget::Checkbox(checkbox.id));
-        }
-    }
-    for id in trackbar_ids() {
-        if trackbar_rect(layout, id).contains(x, y) {
-            return Some(SkirmishHoverTarget::Trackbar(id));
-        }
-    }
-    for id in [SkirmishComboId::TeamMenu, SkirmishComboId::SeatMenu] {
-        if combo_rect(layout, state, id)
-            .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
-        {
-            return Some(SkirmishHoverTarget::ComboFace(id));
-        }
-    }
-    for slot in 0..layout.shown_rows {
-        let row = state.slot_row(slot);
-        if !player_row_visible(state, maps, row) {
-            continue;
-        }
-        for id in [
-            SkirmishComboId::Side(row),
-            SkirmishComboId::Color(row),
-            SkirmishComboId::Start(row),
-            SkirmishComboId::Team(row),
-        ] {
-            if combo_rect(layout, state, id)
-                .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
-            {
-                return Some(SkirmishHoverTarget::ComboFace(id));
-            }
-        }
-    }
-    for slot in 1..layout.shown_rows {
-        let row = state.slot_row(slot);
-        if !player_row_visible(state, maps, row) {
-            continue;
-        }
-        let id = SkirmishComboId::AiType(row - 1);
-        if combo_rect(layout, state, id)
-            .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
-        {
-            return Some(SkirmishHoverTarget::ComboFace(id));
-        }
-    }
-
-    // Static (non-interactive) controls are tested last: they do not overlap
-    // the interactive widgets above, so order does not change any result, and
-    // gamemd does not restrict 0x102 status help to interactive widgets.
-    for (slot, flag) in layout.flags.iter().enumerate() {
-        if !player_row_visible(state, maps, state.slot_row(slot)) {
-            continue;
-        }
-        if flag.contains(x, y) {
-            return Some(SkirmishHoverTarget::FlagPicture);
-        }
-    }
-    if layout.right_panel_text.game_type.contains(x, y) {
-        return Some(SkirmishHoverTarget::GameTypeLabel0x6ec);
-    }
-    if layout.right_panel_text.map_label.contains(x, y) {
-        return Some(SkirmishHoverTarget::ScenarioLabel0x5a8);
-    }
-
-    None
-}
 
 /// Like [`status_help_key_for_hover`], but an Ares country row may supply
 /// its own `MenuText.Status` CSF key from the refreshed catalog.
@@ -219,38 +89,6 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         } => status_help_key_for_color_item(item).or_else(|| status_help_key_for_combo(id)),
         SkirmishHoverTarget::ComboItem { id, .. } => status_help_key_for_combo(id),
     }
-}
-
-pub fn hovered_choose_map_modal_control(
-    layout: &ChooseMapModalLayout,
-    modal: &ChooseMapModalState,
-    x: i32,
-    y: i32,
-) -> Option<ChooseMapHoverTarget> {
-    if layout.status_help.contains(x, y) {
-        return Some(ChooseMapHoverTarget::StatusHelp0x695);
-    }
-    if let Some(button) = super::super::layout::choose_map_modal_button_at(layout, x, y) {
-        return Some(ChooseMapHoverTarget::Button(button));
-    }
-    if layout.preview.contains(x, y) {
-        return Some(ChooseMapHoverTarget::Preview0x468);
-    }
-    if layout.mode_list.contains(x, y) {
-        let rows = modal.mode_rows();
-        if let Some(row) =
-            modal
-                .mode_geometry(layout)
-                .row_at(rows.len(), modal.mode_top_index, x, y)
-        {
-            return Some(ChooseMapHoverTarget::ModeListRow0x6eb { mode: rows[row] });
-        }
-        return Some(ChooseMapHoverTarget::ModeList0x6eb);
-    }
-    if layout.map_list.contains(x, y) {
-        return Some(ChooseMapHoverTarget::MapList0x553);
-    }
-    None
 }
 
 pub fn status_help_key_for_choose_map_hover(target: ChooseMapHoverTarget) -> Option<&'static str> {
@@ -363,15 +201,6 @@ fn status_help_key_for_side_item(country: SkirmishCountryChoice) -> Option<&'sta
     }
 }
 
-/// The lobby colour after `color` in list order, wrapping to the first.
-fn next_lobby_color(state: &SkirmishShellState, color: usize) -> usize {
-    usize::from(
-        state
-            .lobby_colors
-            .next_lobby_priority(i32::try_from(color).unwrap_or(-1)),
-    )
-}
-
 /// gamemd names its eight colours and the observer's (`STT:PlayerColor*`);
 /// VERA's extra colours show their swatch and no status line.
 fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static str> {
@@ -387,104 +216,5 @@ fn status_help_key_for_color_item(item: SkirmishComboItem) -> Option<&'static st
         SkirmishComboItem::Color(7) => Some("STT:PlayerColorPink"),
         SkirmishComboItem::Color(8) => Some("STT:PlayerColorObserver"),
         _ => None,
-    }
-}
-
-fn hit_rect(rect: RectPx, x: i32, y: i32, action: SkirmishShellAction) -> SkirmishShellAction {
-    if rect.contains(x, y) {
-        action
-    } else {
-        SkirmishShellAction::None
-    }
-}
-
-pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAction {
-    match button {
-        OwnerDrawButton::StartGame0x617 => SkirmishShellAction::StartGame,
-        OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
-        OwnerDrawButton::GameOptions => SkirmishShellAction::GameOptions,
-        OwnerDrawButton::Setups => SkirmishShellAction::Setups,
-        OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
-    }
-}
-
-pub fn hit_test_owner_draw_button(
-    layout: &SkirmishShellLayout,
-    x: i32,
-    y: i32,
-) -> Option<OwnerDrawButton> {
-    if layout.start_button.contains(x, y) {
-        return Some(OwnerDrawButton::StartGame0x617);
-    }
-    if layout.choose_map_button.contains(x, y) {
-        return Some(OwnerDrawButton::ChooseMap0x5aa);
-    }
-    if layout.game_options_button.contains(x, y) {
-        return Some(OwnerDrawButton::GameOptions);
-    }
-    if layout.setups_button.contains(x, y) {
-        return Some(OwnerDrawButton::Setups);
-    }
-    if layout.back_button.contains(x, y) {
-        return Some(OwnerDrawButton::Back0x5c0);
-    }
-    None
-}
-
-pub fn hit_test(layout: &SkirmishShellLayout, x: i32, y: i32) -> SkirmishShellAction {
-    let start = hit_rect(layout.start_button, x, y, SkirmishShellAction::StartGame);
-    if start != SkirmishShellAction::None {
-        return start;
-    }
-
-    let choose = hit_rect(
-        layout.choose_map_button,
-        x,
-        y,
-        SkirmishShellAction::ChooseMap,
-    );
-    if choose != SkirmishShellAction::None {
-        return choose;
-    }
-
-    let back = hit_rect(layout.back_button, x, y, SkirmishShellAction::BackOrExit);
-    if back != SkirmishShellAction::None {
-        return back;
-    }
-
-    SkirmishShellAction::None
-}
-
-pub fn apply_action(
-    state: &mut SkirmishShellState,
-    action: SkirmishShellAction,
-    maps: &[MapMenuEntry],
-) -> SkirmishShellAction {
-    match action {
-        SkirmishShellAction::None => SkirmishShellAction::None,
-        SkirmishShellAction::StartGame => SkirmishShellAction::StartGame,
-        SkirmishShellAction::BackOrExit => SkirmishShellAction::BackOrExit,
-        SkirmishShellAction::ChooseMap => SkirmishShellAction::ChooseMap,
-        SkirmishShellAction::GameOptions => SkirmishShellAction::GameOptions,
-        SkirmishShellAction::Setups => SkirmishShellAction::Setups,
-        SkirmishShellAction::SelectMap(idx) => {
-            accept_selected_map(state, maps, idx);
-            SkirmishShellAction::None
-        }
-        SkirmishShellAction::SelectColor(target) => {
-            match target {
-                ColorComboId::Player => {
-                    state.player_color_index = next_lobby_color(state, state.player_color_index);
-                }
-                ColorComboId::Ai(idx) => {
-                    let visible = player_row_visible(state, maps, idx + 1);
-                    if visible && let Some(current) = state.opponents.get(idx) {
-                        let next = next_lobby_color(state, current.color_index);
-                        state.opponents[idx].color_index = next;
-                    }
-                }
-            }
-            SkirmishShellAction::None
-        }
     }
 }

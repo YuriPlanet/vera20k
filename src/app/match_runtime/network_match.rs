@@ -809,10 +809,6 @@ fn capture_live_bars(state: &mut AppState, elapsed: u32, now_millis: u32) {
     }
 }
 
-fn csf(state: &AppState, key: &str) -> String {
-    crate::app::App::csf_label(state, key, key)
-}
-
 /// Kick_Player_Now `0x0064B240`: drop the record and run DestroyConnection.
 /// RESIDUAL: its stats-only House+0x208/+0x247 writes and the WOL
 /// statistics block are not ported.
@@ -836,12 +832,12 @@ fn list_metrics(state: &AppState) -> (i32, usize) {
     let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(state);
     let rect = crate::ui::shell::connection::list_rect(width, height);
     let page = state.match_state.network_wait.page();
-    let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.list.top_index));
-    let geometry = crate::ui::shell::list::ShellListGeometry::new(
+    let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.top));
+    let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
         rect,
         count,
         top,
-        crate::ui::shell::list::ListMetrics::RETAIL,
+        vera20k_gui::shell::list::ListMetrics::RETAIL,
     );
     (rect.w, geometry.visible_rows)
 }
@@ -853,7 +849,7 @@ fn append_line(state: &mut AppState, text: &str) {
     if let Some(page) = state.match_state.network_wait.page_mut() {
         crate::ui::lan_shell::append_list_message(
             &mut page.lines,
-            &mut page.list,
+            &mut page.top,
             LanChatLine {
                 text: text.encode_utf16().collect(),
                 color: u32::MAX,
@@ -925,21 +921,21 @@ fn open_dialog(state: &mut AppState, elapsed: u64) {
         .as_ref()
         .is_some_and(|wait| wait.kind == LiveWaitKind::Initial)
     {
-        append_line(state, &csf(state, "TXT_WAITING_FOR_CONNECTIONS"));
+        append_line(state, &state.csf_text("TXT_WAITING_FOR_CONNECTIONS"));
         return;
     }
     let lines = [
         crate::assets::csf_file::format_csf(
-            &csf(state, "TXT_RECONNECTING_TO"),
+            &state.csf_text("TXT_RECONNECTING_TO"),
             &[crate::assets::csf_file::CsfArg::Str(&reconnecting)],
         ),
         format!(
             "{} {}",
-            csf(state, "TXT_RECONNECT_HELP2"),
-            csf(state, "TXT_RECONNECT_HELP4")
+            state.csf_text("TXT_RECONNECT_HELP2"),
+            state.csf_text("TXT_RECONNECT_HELP4")
         ),
-        csf(state, "TXT_RECONNECT_HELP5"),
-        csf(state, "TXT_RECONNECT_HELP1"),
+        state.csf_text("TXT_RECONNECT_HELP5"),
+        state.csf_text("TXT_RECONNECT_HELP1"),
     ];
     for line in lines {
         append_line(state, &line);
@@ -958,7 +954,7 @@ fn add_vote(state: &mut AppState, voter: usize, target: usize) {
     voters.push(voter);
     let session = &state.match_state.session;
     let line = crate::assets::csf_file::format_csf(
-        &csf(state, "TXT_RECONNECT_KICK_RECEIVED"),
+        &state.csf_text("TXT_RECONNECT_KICK_RECEIVED"),
         &[
             crate::assets::csf_file::CsfArg::Str(&participant_name(session, voter)),
             crate::assets::csf_file::CsfArg::Str(&participant_name(session, target)),
@@ -1095,7 +1091,7 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
                 }
             }
             let text = crate::assets::csf_file::format_csf(
-                &csf(state, "TXT_TIME_ALLOWED"),
+                &state.csf_text("TXT_TIME_ALLOWED"),
                 &[crate::assets::csf_file::CsfArg::Int(i64::from(seconds))],
             );
             if let Some(page) = state.match_state.network_wait.page_mut() {
@@ -1226,7 +1222,7 @@ pub(crate) fn propose_kick(state: &mut AppState, row: usize) {
         return;
     };
     if target == local {
-        let line = csf(state, "TXT_RECONNECT_KICK_SELF");
+        let line = state.csf_text("TXT_RECONNECT_KICK_SELF");
         append_line_and_show_last(state, &line);
         return;
     }

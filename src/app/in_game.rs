@@ -112,11 +112,8 @@ impl App {
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
         // loop once Main_Tick reports the game over (0x0062314E..0x00623157).
         crate::app::shell_wol::page::close_page_dialog(state);
-        state.match_state.match_presentation.pause_menu_interaction = Default::default();
-        state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.surrender_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = Default::default();
-        state.match_state.match_presentation.restate = Default::default();
+        state.match_state.match_presentation.dialog_ui = Default::default();
+        state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
         state.match_state.network_wait = Default::default();
@@ -440,11 +437,8 @@ impl App {
             .match_presentation
             .radar_movies
             .set_active(movie_active);
-        state.match_state.match_presentation.pause_menu_interaction = Default::default();
-        state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.surrender_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = Default::default();
-        state.match_state.match_presentation.restate = Default::default();
+        state.match_state.match_presentation.dialog_ui = Default::default();
+        state.match_state.match_presentation.diplomacy_page = Default::default();
         state.match_state.match_presentation.sound_dialog = None;
         if will_be_open {
             // Deactivate683EB0/4AEAD0 tears down drag/capture on the way into

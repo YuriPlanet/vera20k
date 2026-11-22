@@ -1,45 +1,35 @@
 //! Dialog 0x100 Single Player page: resource-order controls over the shared
 //! right-panel menu page layout (`ui::shell::menu_page`).
 
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 
 /// RT_DIALOG `0x100` buttons with the results written by dialog proc
 /// `0x0052D640` (`SinglePlayerDialog0x100__WndProc`). Control `0x68A` (result
 /// 10) has no template child, so it is not reachable.
 pub const SINGLE_PLAYER_PAGE: MenuPageSpec = MenuPageSpec {
-    dialog: DialogId(0x0100),
+    dialog: DialogResourceId(0x0100),
     title_key: "GUI:SinglePlayerMenu",
     stacked: &[
-        MenuPageButtonSpec {
-            id: 0x0688,
-            dlu_top: 122,
-            csf_key: "GUI:NewCampaign",
-            tooltip_key: "STT:SingleButtonNewCampaign",
-            result: Some(8),
-        },
-        MenuPageButtonSpec {
-            id: 0x0689,
-            dlu_top: 149,
-            csf_key: "GUI:LoadSavedGame",
-            tooltip_key: "STT:SingleButtonLoadSavedGame",
-            result: Some(9),
-        },
-        MenuPageButtonSpec {
-            id: 0x0579,
-            dlu_top: 176,
-            csf_key: "GUI:Skirmish",
-            tooltip_key: "STT:SingleButtonSkirmish",
-            result: Some(0x0B),
-        },
+        MenuPageButtonSpec::new(
+            0x0688,
+            122,
+            "GUI:NewCampaign",
+            "STT:SingleButtonNewCampaign",
+        )
+        .returning(8),
+        MenuPageButtonSpec::new(
+            0x0689,
+            149,
+            "GUI:LoadSavedGame",
+            "STT:SingleButtonLoadSavedGame",
+        )
+        .returning(9),
+        MenuPageButtonSpec::new(0x0579, 176, "GUI:Skirmish", "STT:SingleButtonSkirmish")
+            .returning(0x0B),
     ],
-    back: MenuPageButtonSpec {
-        id: 0x0686,
-        dlu_top: 346,
-        csf_key: "GUI:MainMenu",
-        tooltip_key: "STT:SingleButtonBack",
-        result: Some(0x12),
-    },
+    back: MenuPageButtonSpec::new(0x0686, 346, "GUI:MainMenu", "STT:SingleButtonBack")
+        .returning(0x12),
 };
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> MenuPageLayout {

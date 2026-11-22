@@ -1,9 +1,8 @@
 //! The Quick Match and Buddy List runners' entries into the shared lobby
 //! records: a new runner, its joins, creates, boxes and leaves, the buddy
-//! dialog's open and resume, and the lobby art.
+//! dialog's open and resume.
 
 use super::created_channel;
-use crate::app::frontend::shell_layout;
 use crate::app::shell_wol::WolPage;
 use crate::app::shell_wol::service::WolServiceRequest;
 use crate::app::{App, AppState};
@@ -76,12 +75,11 @@ pub(in crate::app::shell_wol) fn open_runner(state: &mut AppState, runner: Runne
             .session
             .enter_network(crate::app::match_runtime::session::NetworkReturnContext::Wol);
     }
-    state.frontend.wol_login_art = None;
+    super::leaf::free_art(state, crate::ui::wol_login::DIALOG);
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
 }
 
 /// `0x00788800` for the Quick Match lobby (stage 2): a lobby already
@@ -188,7 +186,7 @@ pub(in crate::app::shell_wol) fn buddy_dialog_opens(state: &mut AppState) {
         lobby.message = None;
         lobby.step = Step::Ready;
         lobby.covered = false;
-        lobby.ui.popup = None;
+        lobby.ui.close_popup();
         lobby.joining = None;
     }
 }
@@ -255,24 +253,4 @@ pub(in crate::app::shell_wol) fn buddy_find_game(state: &mut AppState, name: Str
             flags: 0,
         },
     );
-}
-
-/// `0x0072CD60`: MnScrnLCustomMatchLobby.shp through its own palette (800
-/// wide only), with the list and button PCX images.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_lobby_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_lobby_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("MnScrnLCustomMatchLobby.shp", "MnScrnLCustomMatchLobby.pal"),
-        &PCX_FILES,
-    );
-    state.frontend.wol_lobby_art.is_some()
 }

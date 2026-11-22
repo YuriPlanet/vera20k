@@ -943,7 +943,8 @@ impl App {
                     if Self::score_shell_active(state) {
                         Self::leave_shell_dialog(
                             state,
-                            crate::app::frontend::shell_transition::ShellExitThen::ScoreContinue,
+                            crate::app::frontend::shell_transition::ShellSlideKind::Score,
+                            App::leave_mission_result_screen,
                         );
                     } else {
                         Self::leave_mission_result_screen(state);

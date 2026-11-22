@@ -9,6 +9,7 @@
 //! skirmish the world is frozen under the dialog, and in LAN/WOL a frame-rate
 //! refresh shows the same values up to 250 ms earlier.
 
+use super::dialog_page::InGameDialog;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::presentation::house_ui::HouseUiSources;
@@ -20,10 +21,10 @@ use crate::sim::scenario_session::ExecutionTopology;
 use crate::sim::world::Simulation;
 use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::diplomacy::{
-    DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyButton, DiplomacyChatBox, DiplomacyControl,
-    DiplomacyLayout, DiplomacyRow, DiplomacyView, diplomacy_layout,
+    self, DIPLOMACY_ROWS, DiplomacyAlliesBox, DiplomacyChatBox, DiplomacyControl, DiplomacyLayout,
+    DiplomacyRow, DiplomacyView, diplomacy_layout,
 };
-use winit::event::MouseButton;
+use crate::ui::shell::page::PageEvent;
 
 /// Which control asked for the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,7 +287,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     ) else {
         return view;
     };
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let listeners: Vec<_> = (0..sim.houses().order().len())
         .map(|index| state.match_state.match_presentation.chat.listens(index))
         .collect();
@@ -308,7 +309,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         &HouseUiSources::from_state(state, &computer),
         |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
     );
-    let paging = state.match_state.match_presentation.diplomacy.page;
+    let paging = state.match_state.match_presentation.diplomacy_page;
     let range = paging.range(resolved.rows.len(), DIPLOMACY_ROWS);
     view.first_row = range.start;
     view.page_index = paging.index(resolved.rows.len(), DIPLOMACY_ROWS);
@@ -326,9 +327,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
             .and_then(|launch| {
                 crate::skirmish_modes::mode_by_id(&state.frontend.skirmish_modes, launch.mode.id)
             })
-            .map(|mode| {
-                crate::app::frontend::shell_pass::resolve_csf(state, &mode.ui_name_key).into_owned()
-            });
+            .map(|mode| state.csf_text(&mode.ui_name_key));
     }
     // 0x006580E0..0x0065810C: TauntsOn shows in LAN/WOL with LANTaunts /
     // WOLTaunts; the 250 ms refresh never touches it.
@@ -343,85 +342,52 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     view
 }
 
+/// 0x73: title 0x694 and Return as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: diplomacy::DIALOG,
+    title: Some(diplomacy::TITLE_LABEL),
+    lower: (0x423, diplomacy::RETURN_LABEL),
+    label: "Active Diplomacy Shell 73",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    // The boxes play GUICheckboxSound where their proc cases do, below.
+    own_checkbox_sound: true,
+};
+
 pub(crate) fn layout(state: &AppState) -> Option<DiplomacyLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(diplomacy_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-    ))
+    super::dialog_page::layout(state, diplomacy_layout)
 }
 
-fn control_under_pointer(state: &AppState) -> Option<DiplomacyControl> {
-    let layout = layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    view(state).control_at(&layout, x, y)
-}
-
-fn return_under(control: Option<DiplomacyControl>) -> Option<DiplomacyButton> {
-    match control {
-        Some(DiplomacyControl::Return) => Some(DiplomacyButton::Return),
-        Some(DiplomacyControl::PreviousPage) => Some(DiplomacyButton::PreviousPage),
-        Some(DiplomacyControl::NextPage) => Some(DiplomacyButton::NextPage),
-        _ => None,
-    }
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    let over = control_under_pointer(state);
-    let interaction = &mut state.match_state.match_presentation.diplomacy;
-    interaction.hovered = over;
-    interaction.button.hovered = return_under(over);
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
+/// One pointer message on 0x73 (`down`: `None` moves), over the rows as
+/// they stand now.
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = layout(state) else {
         return;
-    }
-    let over = control_under_pointer(state);
-    state.match_state.match_presentation.diplomacy.hovered = over;
-    let target = return_under(over);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .diplomacy
-            .button
-            .press(target);
-        if target.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
-            // 0x0061374B..0x00613771).
-            App::play_main_menu_button_sound(state);
-        }
-        match over {
-            Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, row),
-            Some(DiplomacyControl::Allies(row)) => press_allies_box(state, row),
-            Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
-            _ => {}
-        }
-    } else {
-        match state
-            .match_state
-            .match_presentation
-            .diplomacy
-            .button
-            .release(target)
-        {
-            Some(DiplomacyButton::Return) => {
-                // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
+    };
+    let view = view(state);
+    let rect = |id| view.rect(&layout, id);
+    let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
+    for event in DIALOG.route(state, down, diplomacy::spec, rect, sync) {
+        let (PageEvent::Activated(id) | PageEvent::Toggled(id, _)) = event else {
+            continue;
+        };
+        match DiplomacyControl::from_id(id) {
+            // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
+            Some(DiplomacyControl::Return) => {
                 App::enter_in_game_menu_state(state, InGameMenuState::Closed);
             }
-            Some(button @ (DiplomacyButton::PreviousPage | DiplomacyButton::NextPage)) => {
-                let count = view(state).page_count * DIPLOMACY_ROWS;
-                state.match_state.match_presentation.diplomacy.page.change(
-                    button == DiplomacyButton::NextPage,
-                    count,
+            Some(control @ (DiplomacyControl::PreviousPage | DiplomacyControl::NextPage)) => {
+                state.match_state.match_presentation.diplomacy_page.change(
+                    control == DiplomacyControl::NextPage,
+                    view.page_count * DIPLOMACY_ROWS,
                     DIPLOMACY_ROWS,
                 );
                 state.platform.window.request_redraw();
             }
-            None => {}
+            Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, &view, row),
+            Some(DiplomacyControl::Allies(row)) => press_allies_box(state, &view, row),
+            Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
+            _ => {}
         }
     }
 }
@@ -432,15 +398,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 /// (`0x00658269`). The box shows the sim's mask again at the next refresh,
 /// so VERA, which draws the box from the mask, keeps no box state. A hidden
 /// or disabled box takes no click.
-fn press_allies_box(state: &mut AppState, row: usize) {
-    let view = view(state);
+fn press_allies_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
     let logical_row = view.first_row + row;
-    let Some(allies) = view.rows.get(row).and_then(|row| row.as_ref()?.allies) else {
-        return;
-    };
-    if !allies.enabled {
-        return;
-    }
     let Some(house) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
@@ -451,11 +410,15 @@ fn press_allies_box(state: &mut AppState, row: usize) {
     }) else {
         return;
     };
+    play_checkbox_sound(state);
+    ally(state, house);
+}
+
+fn play_checkbox_sound(state: &mut AppState) {
     let sound = state
         .rules()
         .and_then(|rules| rules.general.gui_checkbox_sound.clone());
     App::play_shell_ui_sound_by_id(state, sound.as_deref());
-    ally(state, house);
 }
 
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
@@ -537,15 +500,11 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
 /// GUICheckboxSound and notifies the dialog with the new state
 /// (`0x0061670E..0x0061678B`); 0x73 writes it to the mask byte of the row's
 /// House (`0x0065827A..0x006582C3`). A hidden or disabled box takes no click.
-fn toggle_chat_box(state: &mut AppState, row: usize) {
-    let view = view(state);
+fn toggle_chat_box(state: &mut AppState, view: &DiplomacyView, row: usize) {
     let logical_row = view.first_row + row;
     let Some(chat) = view.rows.get(row).and_then(|row| row.as_ref()?.chat) else {
         return;
     };
-    if !chat.enabled {
-        return;
-    }
     let Some(index) = state.match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
@@ -559,10 +518,7 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
         .match_presentation
         .chat
         .set_listens(index, !chat.checked);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    play_checkbox_sound(state);
 }
 
 /// A press on the TauntsOn box: the checkbox proc flips it only for a press
@@ -571,28 +527,13 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
 /// the mode's byte (`0x006582F9` LANTaunts, `0x00658313` WOLTaunts), live
 /// for both send and receive. It is never disabled.
 fn toggle_taunts_box(state: &mut AppState) {
-    let Some(layout) = layout(state) else {
-        return;
-    };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    if !crate::ui::skirmish_shell::checkbox_icon_rect(
-        layout.taunts,
-        crate::ui::shell::geom::ShellScale::RETAIL,
-    )
-    .contains(x, y)
-    {
-        return;
-    }
     let mode = state.match_state.session_mode();
     let runtime = &mut state.frontend.multiplayer_shell_runtime;
     let Some(on) = runtime.taunts_on(mode) else {
         return;
     };
     runtime.set_taunts_on(mode, !on);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    play_checkbox_sound(state);
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

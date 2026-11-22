@@ -3,18 +3,20 @@
 //! sink, the locale page `0xFE`, the auto-login query `0x112` and Quick
 //! Match's postmatch add-buddy query `0x122`.
 
-use crate::util::time::Instant;
 use std::path::Path;
 
+use super::leaf::{self, Pointer};
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolProvider};
-use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
+use crate::app::frontend::shell_layout;
+use crate::app::frontend::shell_transition::{ShellExitThen, ShellSlideKind};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
-use crate::ui::main_menu_dialogs::options::LauncherCue;
-use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
+use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::{NodeId, Prop, Value};
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
 /// never read or create the legacy account/persona file.
@@ -33,7 +35,7 @@ fn native_info_file(provider: Option<WolProvider>, directory: &Path) -> Option<W
 /// `WOLPlayerInfo__LoadRecord` `0x00778A20` for `name`.
 pub(super) fn load(state: &AppState, name: &str) -> WolPersona {
     match info_file(state) {
-        Some(file) => file.load_persona(name, &|key| service::resolve(state, key)),
+        Some(file) => file.load_persona(name, &|key| state.csf_text(key)),
         None => WolPersona::default(),
     }
 }
@@ -43,9 +45,9 @@ pub(super) fn load(state: &AppState, name: &str) -> WolPersona {
 /// does (`0x00786938`). Online visits have no persona file, so the picks the
 /// player saved in VERA.INI stay instead of becoming Random.
 pub(super) fn take_side_and_color(state: &mut AppState, name: &str) {
-    if let Some((country, color)) = persona_picks(info_file(state).as_ref(), name, &|key| {
-        service::resolve(state, key)
-    }) {
+    if let Some((country, color)) =
+        persona_picks(info_file(state).as_ref(), name, &|key| state.csf_text(key))
+    {
         state
             .frontend
             .multiplayer_shell_runtime
@@ -65,7 +67,7 @@ fn persona_picks(
 /// `WOLInfo__SaveProfileToINI` `0x0077A080` under `name`.
 pub(super) fn save(state: &AppState, persona: &mut WolPersona, name: &str) {
     if let Some(file) = info_file(state) {
-        file.save_persona(persona, name, &|key| service::resolve(state, key));
+        file.save_persona(persona, name, &|key| state.csf_text(key));
     }
 }
 
@@ -89,17 +91,12 @@ pub(super) fn enter_wol_main(state: &mut AppState) {
 
 /// `0x10E`'s init (`0x007989AA`): with a nickname, the persona (loading it
 /// creates the file) fills the heading, the five stats and the update line.
-pub(super) fn fill_welcome(state: &mut AppState) {
-    let nickname = state.frontend.wol_account.nickname.clone();
-    let texts = if nickname.is_empty() {
-        Vec::new()
-    } else {
-        let persona = load(state, &nickname);
-        profile_texts(state, &nickname, &persona)
-    };
-    if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.welcome_texts = texts;
+pub(super) fn welcome_texts(state: &AppState) -> Vec<(u16, String)> {
+    let nickname = &state.frontend.wol_account.nickname;
+    if nickname.is_empty() {
+        return Vec::new();
     }
+    profile_texts(state, nickname, &load(state, nickname))
 }
 
 /// `0x0077A9F0`'s texts by control id: the heading (`GUI:UserProfileLabel`,
@@ -113,7 +110,7 @@ pub(super) fn profile_texts(
 ) -> Vec<(u16, String)> {
     let stat = |value: i32| {
         if value == -1 {
-            service::resolve(state, "GUI:UnknownStats")
+            state.csf_text("GUI:UnknownStats")
         } else {
             value.to_string()
         }
@@ -122,20 +119,20 @@ pub(super) fn profile_texts(
         String::new()
     } else {
         format_csf(
-            &service::resolve(state, "GUI:UserProfileLabel"),
+            &state.csf_text("GUI:UserProfileLabel"),
             &[CsfArg::Str(name)],
         )
     };
     let update = if !persona.update_date.is_empty() && !persona.update_time.is_empty() {
         format_csf(
-            &service::resolve(state, "GUI:WelcomeUpdate"),
+            &state.csf_text("GUI:WelcomeUpdate"),
             &[
                 CsfArg::Str(&persona.update_date),
                 CsfArg::Str(&persona.update_time),
             ],
         )
     } else {
-        service::resolve(state, "GUI:Blank")
+        state.csf_text("GUI:Blank")
     };
     vec![
         (0x06EF, heading),
@@ -187,28 +184,30 @@ pub(super) fn open_locale_page(state: &mut AppState) {
     };
     visit.page = WolPage::Locale(Box::default());
     visit.requests.push(WolServiceRequest::LocaleCount);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(LOCALE_DIALOG, false);
-    state.platform.window.request_redraw();
+    state.frontend.shell_controller.reset_to(LOCALE_DIALOG);
+    // OK is created disabled (0x5800000B).
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(false));
+    }
 }
 
 /// API+0xD0's count fills `0xFE`'s list with `WOL:Locale%02d` (`0x00780A00`,
 /// format `0x0084A684`).
 pub(super) fn locale_count(state: &mut AppState, count: i32) {
     let texts: Vec<(i32, String)> = (0..count.max(0))
-        .map(|locale| {
-            (
-                locale,
-                service::resolve(state, &format!("WOL:Locale{locale:02}")),
-            )
-        })
+        .map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}"))))
         .collect();
-    if let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        page.fill(texts);
+    let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    else {
+        return;
+    };
+    page.fill(texts);
+    let items = page.rows.iter().map(|row| row.text.clone()).collect();
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, LOCALE_LIST, Prop::Items, Value::Items(items));
     }
-    state.platform.window.request_redraw();
 }
 
 /// `0x0078766F..0x007876C1`: the empty backdrop, the AutoLoginQuery art and
@@ -217,39 +216,15 @@ pub(super) fn open_auto_login_query(state: &mut AppState) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    visit.page = WolPage::AutoLoginQuery(Box::default());
-    open_art(state);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(AUTO_LOGIN_DIALOG, false);
-    state.platform.window.request_redraw();
-}
-
-/// `0x0072BCA0`: AutoLoginQuery.shp (800 wide only) through
-/// AutoLoginQuery.PAL.
-pub(crate) fn open_art(state: &mut AppState) -> bool {
-    if state.frontend.wol_auto_login_art.is_some() {
-        return true;
-    }
-    let Some(assets) = state.process_assets.manager() else {
-        return false;
-    };
-    state.frontend.wol_auto_login_art = crate::render::main_menu_shell_chrome::build_wol_page_art(
-        &state.renderer.gpu,
-        &state.renderer.batch_renderer,
-        assets,
-        shell_layout::art_key_screen_width(state),
-        ("AutoLoginQuery.shp", "AutoLoginQuery.PAL"),
-        &[],
-    );
-    state.frontend.wol_auto_login_art.is_some()
+    visit.page = WolPage::AutoLoginQuery;
+    super::leaf::open_art(state, AUTO_LOGIN_DIALOG);
+    state.frontend.shell_controller.reset_to(AUTO_LOGIN_DIALOG);
 }
 
 /// `0x112`'s teardown has run: Yes stores the nickname as AutoLogin, No the
 /// Ask flag; `0x0072BCF0` frees the art and the flow returns 1.
 pub(crate) fn commit_auto_login(state: &mut AppState, answer: AutoLoginAnswer) {
-    state.frontend.wol_auto_login_art = None;
+    super::leaf::free_art(state, AUTO_LOGIN_DIALOG);
     if let Some(file) = info_file(state) {
         match answer {
             AutoLoginAnswer::Yes => file.set_auto_login(&state.frontend.wol_account.nickname),
@@ -270,23 +245,21 @@ pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
     };
     visit.page = WolPage::AddBuddyQuery(Box::new(AddBuddyQuery {
         opponent: opponent.to_owned(),
-        query: WolAutoLoginQuery::default(),
     }));
     state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
     let _ = App::ensure_skirmish_shell_chrome(state);
-    state
-        .frontend
-        .shell_controller
-        .reset_to(ADD_BUDDY_DIALOG, false);
-    state.platform.window.request_redraw();
+    state.frontend.shell_controller.reset_to(ADD_BUDDY_DIALOG);
+    let question = add_buddy_text(state).unwrap_or_default();
+    if let Some(root) = sync(state) {
+        let gui = state.frontend.shell_controller.gui_mut();
+        page::set(gui, root, TEXT, Prop::Text, Value::Text(question));
+    }
 }
 
-/// `0x122` while it exists: the controls and the opponent its question
-/// names.
+/// `0x122` while it exists: the opponent its question names.
 #[derive(Debug, Clone)]
 pub(crate) struct AddBuddyQuery {
     pub(crate) opponent: String,
-    pub(crate) query: WolAutoLoginQuery,
 }
 
 /// `0x122`'s question.
@@ -295,7 +268,7 @@ pub(crate) fn add_buddy_text(state: &AppState) -> Option<String> {
         return None;
     };
     Some(format_csf(
-        &service::resolve(state, ADD_BUDDY_TEXT_KEY),
+        &state.csf_text(ADD_BUDDY_TEXT_KEY),
         &[CsfArg::Str(&page.opponent)],
     ))
 }
@@ -314,22 +287,12 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
         visit.page = WolPage::Backdrop { wait: None };
     }
     service::locale_chosen(state, locale);
-    state.platform.window.request_redraw();
-}
-
-pub(super) fn page_open(state: &AppState) -> bool {
-    state.frontend.wol.as_ref().is_some_and(|visit| {
-        matches!(
-            visit.page,
-            WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)
-        )
-    })
 }
 
 /// The open page's dialog.
-fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogId> {
+pub(crate) fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogResourceId> {
     match state.frontend.wol.as_ref()?.page {
-        WolPage::AutoLoginQuery(_) => Some(AUTO_LOGIN_DIALOG),
+        WolPage::AutoLoginQuery => Some(AUTO_LOGIN_DIALOG),
         WolPage::Locale(_) => Some(LOCALE_DIALOG),
         WolPage::AddBuddyQuery(_) => Some(ADD_BUDDY_DIALOG),
         _ => None,
@@ -338,196 +301,96 @@ fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogId> {
 
 pub(crate) fn layout(state: &AppState) -> Option<WolPersonaLayout> {
     let dialog = dialog(state)?;
-    let (width, height) = shell_layout::shell_screen_size(state);
-    Some(if shell_layout::fills_window(state) {
-        WolPersonaLayout::responsive(dialog, width as i32, height as i32)
-    } else {
-        WolPersonaLayout::new(dialog, width as i32, height as i32)
-    })
+    Some(shell_layout::on(state, |w, h, scale| {
+        WolPersonaLayout::new(dialog, w, h, scale)
+    }))
 }
 
-/// `0xFE`'s list geometry over its rows.
-pub(crate) fn list_geometry(layout: &WolPersonaLayout, page: &WolLocalePage) -> ShellListGeometry {
-    ShellListGeometry::new(
-        layout.control,
-        page.rows.len(),
-        page.top,
-        ListMetrics::scaled(layout.page.scale),
+/// Builds and places the open page's widgets; the root.
+pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
+    let layout = layout(state)?;
+    let dialog = layout.dialog;
+    leaf::sync(
+        state,
+        dialog,
+        layout.page.scale,
+        || spec(dialog),
+        |id| layout.rect_of(id),
     )
 }
 
-/// The status help under the pointer (`0x006040B0`).
-pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
-    let dialog = dialog(state)?;
-    let hovered = match &state.frontend.wol.as_ref()?.page {
-        WolPage::AutoLoginQuery(query) => query.hovered,
-        WolPage::AddBuddyQuery(page) => page.query.hovered,
-        WolPage::Locale(page) => page.hovered,
-        _ => None,
-    }?;
-    tooltip_key(dialog, hovered)
+/// `0xFE`'s list as it shows: its geometry and top row.
+pub(crate) fn list_view(state: &AppState) -> Option<(ShellListGeometry, usize)> {
+    let layout = layout(state)?;
+    let gui = state.frontend.shell_controller.gui();
+    let list = gui.find_id(leaf::root(state, LOCALE_DIALOG)?, LOCALE_LIST.into())?;
+    let view = gui.list_view(list)?;
+    let metrics = ListMetrics::scaled(layout.page.scale);
+    Some((
+        view.geometry(layout.rect_of(LOCALE_LIST)?, metrics),
+        view.top,
+    ))
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
-    let Some(layout) = layout(state) else {
-        return;
-    };
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let button = over.filter(|id| matches!(*id, ACCEPT | DECLINE));
-    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        Some(WolPage::AutoLoginQuery(query)) => {
-            query.hovered = over;
-            query.buttons.hovered = button;
-        }
-        Some(WolPage::AddBuddyQuery(page)) => {
-            page.query.hovered = over;
-            page.query.buttons.hovered = button;
-        }
-        Some(WolPage::Locale(page)) => {
-            page.hovered = over;
-            page.buttons.hovered = button;
-            let geometry = list_geometry(&layout, page);
-            page.scroll.pointer_moved(geometry, &mut page.top, x, y);
-        }
-        _ => {}
-    }
-    state.frontend.shell_status_line.repaint();
-    state.platform.window.request_redraw();
-}
-
-enum Press {
-    Nothing,
-    Button,
-    Cue(LauncherCue),
+    sync(state);
+    leaf::pointer(state, Pointer::Move);
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    let Some(layout) = layout(state) else {
+    let Some(root) = sync(state) else {
         return;
     };
-    let (x, y) = state.match_state.input.cursor_px();
-    let over = layout.control_at(x, y);
-    let button = over.filter(|id| matches!(*id, ACCEPT | DECLINE));
-    let Some(page) = state.frontend.wol.as_mut().map(|visit| &mut visit.page) else {
-        return;
-    };
-    if !pressed {
-        let close = match page {
-            WolPage::AutoLoginQuery(query) => query
-                .buttons
-                .release(button)
-                .and_then(|id| query.activate(id))
-                .map(ShellExitThen::WolAutoLoginClose),
-            // Both buttons write [Ask] AddMatchBuddies from Don't Ask
-            // (0x007A2B2F, 0x007A2B66).
-            WolPage::AddBuddyQuery(page) => {
-                page.query
-                    .buttons
-                    .release(button)
-                    .map(|id| ShellExitThen::WolAddBuddyClose {
-                        yes: id == ACCEPT,
-                        ask_again: page.query.ask_again(),
-                    })
-            }
-            WolPage::Locale(locale) => {
-                locale.scroll.cancel();
-                locale
-                    .buttons
-                    .release(button)
-                    .and_then(|id| locale.activate(id))
-                    .map(ShellExitThen::WolLocaleClose)
-            }
-            _ => None,
-        };
-        if let Some(then) = close {
-            App::leave_shell_dialog(state, then);
-        }
-        state.platform.window.request_redraw();
-        return;
-    }
-    let press = match page {
-        WolPage::AutoLoginQuery(query) => press_query(query, over, &layout, x, y),
-        WolPage::AddBuddyQuery(page) => press_query(&mut page.query, over, &layout, x, y),
-        WolPage::Locale(locale) => {
-            let geometry = list_geometry(&layout, locale);
-            match over {
-                Some(ACCEPT) if !locale.button_enabled(ACCEPT) => Press::Nothing,
-                Some(id @ (ACCEPT | DECLINE)) => {
-                    locale.buttons.press(Some(id));
-                    Press::Button
+    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    for event in events {
+        let gui = state.frontend.shell_controller.gui_mut();
+        let close: Option<(ShellSlideKind, ShellExitThen)> =
+            match (event, &state.frontend.wol.as_ref().map(|visit| &visit.page)) {
+                // LBN_SELCHANGE (0x00796C3C): OK follows the selection.
+                (PageEvent::Selected(LOCALE_LIST, _), _) => {
+                    page::set(gui, root, ACCEPT, Prop::Enabled, Value::Bool(true));
+                    None
                 }
-                Some(LOCALE_LIST) => {
-                    if let Some(part) = geometry.scroll_part_at(x, y) {
-                        locale
-                            .scroll
-                            .press(part, geometry, &mut locale.top, y, Instant::now());
-                    } else if let Some(row) = geometry.row_at(locale.rows.len(), locale.top, x, y) {
-                        locale.select(row);
-                    }
-                    Press::Nothing
+                (PageEvent::Activated(id), Some(WolPage::AutoLoginQuery)) => {
+                    WolAutoLoginQuery::activate(id, page::checked(gui, root, DO_NOT_ASK)).map(
+                        |answer| -> (ShellSlideKind, ShellExitThen) {
+                            (
+                                ShellSlideKind::WolAutoLoginQuery,
+                                Box::new(move |state: &mut AppState| {
+                                    commit_auto_login(state, answer)
+                                }),
+                            )
+                        },
+                    )
                 }
-                _ => {
-                    locale.buttons.press(None);
-                    Press::Nothing
+                // Both buttons write [Ask] AddMatchBuddies from Don't Ask
+                // (0x007A2B2F, 0x007A2B66).
+                (PageEvent::Activated(id), Some(WolPage::AddBuddyQuery(_))) => {
+                    let (yes, ask_again) = (id == ACCEPT, !page::checked(gui, root, DO_NOT_ASK));
+                    Some((
+                        ShellSlideKind::WolAddBuddyQuery,
+                        Box::new(move |state: &mut AppState| {
+                            commit_add_buddy(state, yes, ask_again)
+                        }),
+                    ))
                 }
-            }
-        }
-        _ => Press::Nothing,
-    };
-    match press {
-        // Owner-draw buttons play GUIMainButtonSound on the press.
-        Press::Button => App::play_main_menu_button_sound(state),
-        Press::Cue(cue) => App::play_launcher_options_cue(state, cue),
-        Press::Nothing => {}
-    }
-    state.platform.window.request_redraw();
-}
-
-/// A press on `0x112` or `0x122`.
-fn press_query(
-    query: &mut WolAutoLoginQuery,
-    over: Option<u16>,
-    layout: &WolPersonaLayout,
-    x: i32,
-    y: i32,
-) -> Press {
-    match over {
-        Some(id @ (ACCEPT | DECLINE)) => {
-            query.buttons.press(Some(id));
-            Press::Button
-        }
-        // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-        // toggles on the press.
-        Some(DO_NOT_ASK)
-            if crate::ui::skirmish_shell::checkbox_icon_rect(layout.control, layout.page.scale)
-                .contains(x, y) =>
-        {
-            query.toggle();
-            Press::Cue(LauncherCue::Checkbox)
-        }
-        _ => {
-            query.buttons.press(None);
-            Press::Nothing
+                (PageEvent::Activated(id), Some(WolPage::Locale(locale))) => {
+                    let selected = page::int(gui, root, LOCALE_LIST, Prop::Selected);
+                    locale
+                        .activate(id, selected.and_then(|row| usize::try_from(row).ok()))
+                        .map(|locale| -> (ShellSlideKind, ShellExitThen) {
+                            (
+                                ShellSlideKind::WolLocale,
+                                Box::new(move |state: &mut AppState| commit_locale(state, locale)),
+                            )
+                        })
+                }
+                _ => None,
+            };
+        if let Some((kind, then)) = close {
+            App::leave_shell_dialog(state, kind, then);
         }
     }
-}
-
-/// The list scrollbar's repeats.
-pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    let layout = layout(state)?;
-    let (x, y) = state.match_state.input.cursor_px();
-    let WolPage::Locale(page) = &mut state.frontend.wol.as_mut()?.page else {
-        return None;
-    };
-    let geometry = list_geometry(&layout, page);
-    if page
-        .scroll
-        .poll(geometry, &mut page.top, x, y, Instant::now())
-    {
-        state.platform.window.request_redraw();
-    }
-    page.scroll.repeat_at()
 }
 
 #[cfg(all(test, tests_app))]

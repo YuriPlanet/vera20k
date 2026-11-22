@@ -320,7 +320,7 @@ impl LiveRoundFlow {
                 WolPage::Message { .. } => "message",
                 WolPage::Lobby => "lobby",
                 WolPage::Options(_) => "options",
-                WolPage::AutoLoginQuery(_) => "auto_login",
+                WolPage::AutoLoginQuery => "auto_login",
                 WolPage::Locale(_) => "locale",
                 WolPage::MyInformation(_) => "my_information",
                 WolPage::Buddy(_) => "buddy",
@@ -431,12 +431,12 @@ impl LiveRoundFlow {
                     .iter()
                     .position(|row| row.locale != 0)
                     .unwrap_or(0);
-                let geometry = persona::list_geometry(&layout, page);
+                let (geometry, top) = persona::list_view(state).context("online location list")?;
                 ensure!(
-                    row >= page.top && row < page.top + geometry.visible_rows,
+                    row >= top && row < top + geometry.visible_rows,
                     "online location choice is outside the visible list"
                 );
-                let row_rect = geometry.row(row - page.top);
+                let row_rect = geometry.row(row - top);
                 click(state, row_rect);
                 click(
                     state,
@@ -1048,7 +1048,7 @@ impl LiveRoundFlow {
                         .frontend
                         .score_page
                         .as_ref()
-                        .is_some_and(|page| page.reveals_terminal()) =>
+                        .is_some_and(|page| page.statics.is_terminal()) =>
             {
                 let page = state.frontend.score_page.as_ref().context("score page")?;
                 let visible = page.visible_row_texts();
@@ -1079,9 +1079,9 @@ impl LiveRoundFlow {
                         .paging_button(crate::ui::score_shell::NEXT_PAGE)
                         .context("score Next")?;
                     set_window_pointer_to_rect_center(state, rect);
-                    App::handle_score_shell_mouse_move(state);
-                    App::handle_score_shell_mouse_down(state);
-                    App::handle_score_shell_mouse_up(state);
+                    App::handle_score_shell_mouse(state, None);
+                    App::handle_score_shell_mouse(state, Some(true));
+                    App::handle_score_shell_mouse(state, Some(false));
                     MoviesCapture::restore_neutral_pointer(state);
                     self.record(frame, "Next results page displayed through normal button");
                     return Ok(());
@@ -1109,9 +1109,9 @@ impl LiveRoundFlow {
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;
                 set_window_pointer_to_rect_center(state, rect);
-                App::handle_score_shell_mouse_move(state);
-                App::handle_score_shell_mouse_down(state);
-                App::handle_score_shell_mouse_up(state);
+                App::handle_score_shell_mouse(state, None);
+                App::handle_score_shell_mouse(state, Some(true));
+                App::handle_score_shell_mouse(state, Some(false));
                 MoviesCapture::restore_neutral_pointer(state);
                 self.record(frame, "Real multiplayer results acknowledged");
                 self.phase = RoundPhase::Returning;
@@ -1494,12 +1494,15 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
         .as_ref()
         .and_then(|visit| visit.lobby())
         .context("online lobby")?;
-    let geometry =
-        lobby
-            .ui
-            .game_list
-            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
-    let top = lobby.ui.game_list.top_index;
+    let geometry = lobby.ui.shown_geometry(
+        crate::ui::wol_lobby::GAMES,
+        layout
+            .control_rect(crate::ui::wol_lobby::GAMES)
+            .unwrap_or_default(),
+        lobby.ui.game_rows.len(),
+        layout.page.scale,
+    );
+    let top = lobby.ui.list_top(crate::ui::wol_lobby::GAMES);
     if row < top || row >= top + geometry.visible_rows {
         let rect = if let Some(bar) = geometry.scrollbar {
             let y = if row < top {
@@ -1516,7 +1519,10 @@ fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
                 top > geometry.max_top,
                 "offscreen online game has no ordinary scroll input"
             );
-            RectPx::new(layout.games.x, layout.games.y, layout.games.w, 1)
+            let games = layout
+                .control_rect(crate::ui::wol_lobby::GAMES)
+                .unwrap_or_default();
+            RectPx::new(games.x, games.y, games.w, 1)
         };
         click(state, rect);
         return Ok(false);

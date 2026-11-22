@@ -975,14 +975,24 @@ impl LiveLanCapture {
             }
             Phase::Lobby if rendered == PresentedShell::LanLobby && lobby_settled(state) => {
                 let name = if self.host() { HOST_NAME } else { GUEST_NAME };
-                lobby_click(state, lobby::layout(state).name);
+                lobby_click(
+                    state,
+                    lobby::layout(state)
+                        .rect(crate::ui::lan_shell::NAME)
+                        .unwrap_or_default(),
+                );
                 lobby::key_press(state, Some(KeyCode::Home), None);
                 for _ in 0..32 {
                     lobby::key_press(state, Some(KeyCode::Delete), None);
                 }
                 lobby::key_press(state, None, Some(name));
-                if state.frontend.lan.as_ref().context("BB")?.lobby.observer {
-                    lobby_click(state, lobby::layout(state).observer_toggle);
+                if state.frontend.multiplayer_shell_runtime.lan_observer() {
+                    lobby_click(
+                        state,
+                        lobby::layout(state)
+                            .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
+                            .unwrap_or_default(),
+                    );
                 }
                 self.event(frame, "BB name entered through normal input");
                 if self.host() {
@@ -1007,13 +1017,14 @@ impl LiveLanCapture {
                     // selection handler, which emits the real query packet.
                     let layout = lobby::layout(state);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
-                    let geometry = lobby_state.game_list.geometry(
-                        layout.games,
+                    let top = lobby::list_top(state, crate::ui::lan_shell::GAMES);
+                    let geometry = vera20k_gui::shell::list::ShellListGeometry::new(
+                        layout.rect(crate::ui::lan_shell::GAMES).unwrap_or_default(),
                         lobby_state.game_count(),
-                        layout.page.scale,
+                        top,
+                        vera20k_gui::shell::list::ListMetrics::scaled(layout.page.scale),
                     );
-                    let (x, y) =
-                        list_row_point(geometry, index + 1, lobby_state.game_list.top_index);
+                    let (x, y) = list_row_point(geometry, index + 1, top);
                     lobby_click(state, RectPx::new(x, y, 2, 2));
                     lobby_button(state, crate::ui::lan_shell::JOIN)?;
                     self.event(frame, "discovered host selected; real Join request");
@@ -1814,9 +1825,9 @@ fn click_main_menu(
         .context("rendered multiplayer main-menu button")?
         .rect;
     set_window_pointer_to_rect_center(state, rect);
-    App::handle_main_menu_shell_mouse_move(state);
-    App::handle_main_menu_shell_mouse_down(state);
-    App::handle_main_menu_shell_mouse_up(state);
+    App::handle_main_menu_shell_mouse(state, None);
+    App::handle_main_menu_shell_mouse(state, Some(true));
+    App::handle_main_menu_shell_mouse(state, Some(false));
     MoviesCapture::restore_neutral_pointer(state);
     Ok(())
 }

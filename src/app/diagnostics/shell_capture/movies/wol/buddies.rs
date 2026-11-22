@@ -19,7 +19,7 @@ impl WolCapture {
 
     pub(super) fn buddy_my_info(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::wol_my_info::PLAY_BUDDY;
-        let page = crate::app::shell_wol::my_info::page(state).context("0x114")?;
+        let page = my_info_shown(state)?;
         if self.rejoined {
             ensure!(
                 state.frontend.wol.as_ref().and_then(|visit| visit.mode())
@@ -67,10 +67,24 @@ impl WolCapture {
             .iter()
             .position(|row| row.name == name)
             .context("no buddy row")?;
-        let rect = ui
-            .list
-            .geometry(layout.list, ui.rows.len(), layout.page.scale)
-            .row(row - ui.list.top_index);
+        let gui = state.frontend.shell_controller.gui();
+        let top = state
+            .frontend
+            .shell_controller
+            .root_in(crate::ui::wol_buddy::DIALOG)
+            .and_then(|root| gui.find_id(root, crate::ui::wol_buddy::LIST.into()))
+            .and_then(|list| gui.list_view(list))
+            .map_or(0, |view| view.top);
+        let metrics = vera20k_gui::shell::list::ListMetrics::scaled(layout.page.scale);
+        let rect = vera20k_gui::shell::list::ShellListGeometry::new(
+            layout
+                .rect_of(crate::ui::wol_buddy::LIST)
+                .unwrap_or_default(),
+            ui.rows.len(),
+            top,
+            metrics,
+        )
+        .row(row - top);
         welcome_click(state, rect);
         ensure!(
             state.frontend.wol_buddies.selected == name,
@@ -89,7 +103,9 @@ impl WolCapture {
     }
 
     pub(super) fn buddy_shown(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::wol_buddy::{ADD, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS};
+        use crate::ui::wol_buddy::{
+            ADD, ADD_DIALOG, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS,
+        };
         let rows = Self::buddy_rows(state)?;
         let expected: Vec<(&str, Option<i32>)> = Self::BUDDIES
             .iter()
@@ -127,11 +143,16 @@ impl WolCapture {
                 Self::buddy_button(state, ADD)?;
                 App::handle_wol_key(state, None, true, Some("Natasha"));
                 let dialog = crate::app::shell_wol::buddy::page(state).context("0x116")?;
-                let add = dialog.ui.add.as_ref().context("Add did not open 0x115")?;
+                dialog.ui.add.as_ref().context("Add did not open 0x115")?;
+                let text = crate::app::shell_wol::leaf::text(
+                    state,
+                    ADD_DIALOG,
+                    crate::ui::wol_buddy::NAME,
+                );
                 ensure!(
-                    add.text() == "Natasha" && add.add_enabled,
-                    "0x115 did not take the name: {:?}",
-                    add.text()
+                    text == "Natasha"
+                        && crate::app::shell_wol::leaf::enabled(state, ADD_DIALOG, ADD),
+                    "0x115 did not take the name: {text:?}"
                 );
                 self.event(frame, "0x115 opened, Natasha typed");
                 if self.target == WolTarget::BuddyAdded {

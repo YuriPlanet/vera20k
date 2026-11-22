@@ -11,6 +11,7 @@ use crate::app::persistence::wol_profile::{WOLINFO_INI, WolInfoFile};
 use crate::app::shell_network_setup::{
     self as setup, NetworkSetupEvent, NetworkSetupRequest, WolStartUser,
 };
+use crate::app::shell_route::ShellRoute;
 use crate::app::shell_wol::lobby::WolJoined;
 use crate::app::shell_wol::{
     SERVER_STATUS_READY, WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList,
@@ -23,8 +24,9 @@ use crate::ui::wol_lobby::{
     self as lobby_ui, CHANNEL_KEYED, GAME_CHANNEL, GAME_LIMIT_800, LOBBY_KEY, MEMBER_OPERATOR,
     MEMBER_VOICE, WolChannel, WolMember,
 };
-use crate::ui::wol_login::{BACK, LOGIN, WolCredential};
+use crate::ui::wol_login::{BACK, DIALOG as LOGIN_DIALOG, LOGIN, WolCredential};
 use crate::ui::wol_options::WolPreferences;
+use vera20k_gui::Prop;
 
 mod buddies;
 mod driver;
@@ -1079,7 +1081,8 @@ impl WolCapture {
             list.hot_row,
             list.popup.first
         );
-        let picked = &list.rows[row];
+        let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+        let picked = &card.countries.get(row).context("the picked row")?.text;
         ensure!(
             rows.iter().any(|(_, value)| value == picked),
             "the card shows {rows:?}"
@@ -1146,7 +1149,7 @@ impl WolCapture {
                     .lobby()
                     .is_some_and(|lobby| !lobby.shown || lobby.covered || lobby.ui.popup.is_some())
             })
-            || state.frontend.shell_route.network_setup();
+            || state.frontend.shell_route == ShellRoute::NetworkSetup;
         if let Some(menu) = match self.target {
             WolTarget::InternetMenu => Some(crate::ui::pause_menu::InGameMenuState::Menu),
             WolTarget::IngameConnectionLost | WolTarget::IngamePageCancel => {
@@ -1217,17 +1220,22 @@ impl WolCapture {
             "wolinfo": state.platform.game_config.as_ref().and_then(|config| {
                 std::fs::read_to_string(config.paths.settings_dir().join(WOLINFO_INI)).ok()
             }),
-            "login": visit.and_then(|visit| visit.login()).map(|login| json!({
-                "nickname": login.nickname.display_text(),
-                "password_units": login.password.units.len(),
-                "login_enabled": login.login_enabled,
-                "forget_enabled": login.forget_enabled,
-                "remember_enabled": login.remember_enabled,
-                "remember_checked": login.remember_checked,
-                "focused": login.focused_control,
-                "entry": format!("{:?}", login.policy),
-                "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
-            })),
+            "login": visit.and_then(|visit| visit.login()).map(|login| {
+                use crate::ui::wol_login::{FORGET, NICKNAME, PASSWORD, REMEMBER};
+                let ui = &state.frontend.shell_controller;
+                let flag = |id, prop, default| ui.flag(LOGIN_DIALOG, id, prop, default);
+                json!({
+                    "nickname": ui.text(LOGIN_DIALOG, NICKNAME),
+                    "password_units": ui.text(LOGIN_DIALOG, PASSWORD).encode_utf16().count(),
+                    "login_enabled": flag(LOGIN, Prop::Enabled, true),
+                    "forget_enabled": flag(FORGET, Prop::Enabled, true),
+                    "remember_enabled": flag(REMEMBER, Prop::Enabled, true),
+                    "remember_checked": flag(REMEMBER, Prop::Checked, false),
+                    "focused": ui.focused_control(LOGIN_DIALOG),
+                    "entry": format!("{:?}", login.policy),
+                    "popup": login.account.as_ref().map(|form| format!("{:?}", form.kind)),
+                })
+            }),
         })
     }
 }
@@ -1422,7 +1430,9 @@ fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
 
 /// The translation list's face where a press opens it: the arrow at its right.
 fn translate_list_arrow(layout: &crate::ui::wol_options::WolOptionsLayout) -> Result<RectPx> {
-    let face = layout.translate.context("the translation list")?.list;
+    let face = layout
+        .rect(crate::ui::wol_options::TRANSLATE)
+        .context("the translation list")?;
     Ok(RectPx::new(face.x + face.w - 12, face.y, 4, face.h))
 }
 
@@ -1467,12 +1477,15 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
         .as_ref()
         .and_then(|visit| visit.lobby())
         .context("the lobby runner")?;
-    let geometry =
-        lobby
-            .ui
-            .game_list
-            .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
-    let rect = geometry.row(row - lobby.ui.game_list.top_index);
+    let geometry = lobby.ui.shown_geometry(
+        crate::ui::wol_lobby::GAMES,
+        layout
+            .control_rect(crate::ui::wol_lobby::GAMES)
+            .unwrap_or_default(),
+        lobby.ui.game_rows.len(),
+        layout.page.scale,
+    );
+    let rect = geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::GAMES));
     welcome_click(state, rect);
     Ok(())
 }
@@ -1500,12 +1513,15 @@ fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
         .iter()
         .position(|row| row.name == name)
         .context("the player's row")?;
-    let geometry = lobby.ui.player_list.geometry(
-        layout.players,
+    let geometry = lobby.ui.shown_geometry(
+        crate::ui::wol_lobby::PLAYERS,
+        layout
+            .control_rect(crate::ui::wol_lobby::PLAYERS)
+            .unwrap_or_default(),
         lobby.ui.player_rows.len(),
         layout.page.scale,
     );
-    Ok(geometry.row(row - lobby.ui.player_list.top_index))
+    Ok(geometry.row(row - lobby.ui.list_top(crate::ui::wol_lobby::PLAYERS)))
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
@@ -1557,9 +1573,18 @@ fn welcome_click(state: &mut AppState, rect: RectPx) {
     MoviesCapture::restore_neutral_pointer(state);
 }
 
-fn login_mut(state: &mut AppState) -> Result<&mut crate::ui::wol_login::WolLoginState> {
-    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
-        Some(crate::app::shell_wol::WolPage::Login(login)) => Ok(login),
+/// The open `0x10F` and the shell's widgets it stands on.
+fn login_mut(
+    state: &mut AppState,
+) -> Result<(
+    &mut crate::ui::wol_login::WolLoginState,
+    &mut crate::ui::shell::controller::DialogController,
+)> {
+    let frontend = &mut state.frontend;
+    match frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        Some(crate::app::shell_wol::WolPage::Login(login)) => {
+            Ok((login, &mut frontend.shell_controller))
+        }
         _ => bail!("0x10F is not open"),
     }
 }
@@ -1677,6 +1702,44 @@ fn setup_button(state: &mut AppState, id: u16) -> Result<()> {
         .rect;
     setup_click(state, rect);
     Ok(())
+}
+
+/// What `0x114`'s widgets show.
+struct MyInfoShown {
+    data: Vec<i32>,
+    server_face: Option<String>,
+    nicknames: Vec<String>,
+    slot: i32,
+    auto_login: bool,
+    auto_login_enabled: bool,
+    match_same_res: bool,
+    forget_enabled: bool,
+    play_buddy_enabled: bool,
+    texts: Vec<(u16, String)>,
+}
+
+fn my_info_shown(state: &AppState) -> Result<MyInfoShown> {
+    use crate::app::shell_wol::my_info;
+    use crate::ui::wol_my_info::*;
+    let page = my_info::page(state).context("0x114")?;
+    let root = my_info::root(state).context("0x114's widgets")?;
+    let gui = state.frontend.shell_controller.gui();
+    let flag = |id: u16, prop: Prop| {
+        crate::ui::shell::page::get(gui, root, id, prop) != Some(&vera20k_gui::Value::Bool(false))
+    };
+    let server = selected(gui, root, SERVER).and_then(|row| page.combos[1].get(row));
+    Ok(MyInfoShown {
+        data: COMBOS.map(|id| page.data_or(gui, root, id, -99)).to_vec(),
+        server_face: server.map(|row| row.text.clone()),
+        nicknames: page.combos[0].iter().map(|row| row.text.clone()).collect(),
+        slot: page.slot(gui, root),
+        auto_login: crate::ui::shell::page::checked(gui, root, AUTO_LOGIN),
+        auto_login_enabled: flag(AUTO_LOGIN, Prop::Enabled),
+        match_same_res: crate::ui::shell::page::checked(gui, root, MATCH_SAME_RES),
+        forget_enabled: flag(FORGET, Prop::Enabled),
+        play_buddy_enabled: flag(PLAY_BUDDY, Prop::Enabled),
+        texts: page.texts.clone(),
+    })
 }
 
 fn layout_button(state: &AppState, id: u16) -> Result<RectPx> {

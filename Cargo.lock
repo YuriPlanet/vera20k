@@ -3299,6 +3299,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "vera20k-core",
+ "vera20k-gui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
@@ -3355,6 +3356,13 @@ dependencies = [
  "wasm_sync",
  "web-time",
  "zip",
+]
+
+[[package]]
+name = "vera20k-gui"
+version = "0.3.8"
+dependencies = [
+ "web-time",
 ]
 
 [[package]]

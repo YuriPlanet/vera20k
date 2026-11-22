@@ -12,7 +12,7 @@ use crate::util::time::Instant;
 use super::{
     BAD_CHANNEL_KEY, BoxThen, GAMES_PERIOD, LOBBIES_PERIOD, QuickMatchBoxThen, Runner, Step,
     WolJoined, base_names, buddy_runner, close_runner, close_wait, commit_create, create_ended,
-    csf, joined_game_line, lobby, lobby_mut, message_line, modern_lobby, nickname, open_game_room,
+    joined_game_line, lobby, lobby_mut, message_line, modern_lobby, nickname, open_game_room,
     quick_match_runner, refill_games, refill_lobbies, refill_players, replace_box_body, request,
     request_listed, selected_admits, setup_channel_left, show_box, sort_lobby, switch_lobby,
     switching_room, take_visit,
@@ -57,7 +57,7 @@ pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
         close_wait(state);
         let join = selected_admits(state);
         if let Some(lobby) = lobby_mut(state) {
-            lobby.ui.enable_commands(join);
+            lobby.ui.set_commands(true, join, false);
         }
         return;
     }
@@ -193,14 +193,14 @@ pub(super) fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
             None => joined.channel.name.clone(),
         };
         let text = crate::assets::csf_file::format_csf(
-            &csf(state, "TXT_JOINED_S"),
+            &state.csf_text("TXT_JOINED_S"),
             &[crate::assets::csf_file::CsfArg::Str(&name)],
         );
         message_line(state, text);
     }
     let join = selected_admits(state);
     if let Some(lobby) = lobby_mut(state) {
-        lobby.ui.lobby_switched(join);
+        lobby.ui.set_commands(true, join, true);
     }
     refill_lobbies(state);
     refill_players(state);
@@ -322,7 +322,7 @@ fn join_error(state: &mut AppState, code: u32) {
     {
         // 0x7A5961..0x7A5D2A: modes 1-3 print these as lines (colour -1)
         // instead of the boxes; every failure sets event 5.
-        let text = csf(state, key);
+        let text = state.csf_text(key);
         message_line(state, text);
         join_failed_tail(state, true);
         return;
@@ -349,7 +349,9 @@ fn join_error(state: &mut AppState, code: u32) {
             show_box(state, key, false, BoxThen::JoinFailed { close });
         }
         JoinErrorReply::Chat => {
-            let text = csf(state, "TXT_CANT_JOINCHAN").replacen("%X", &format!("{code:X}"), 1);
+            let text = state
+                .csf_text("TXT_CANT_JOINCHAN")
+                .replacen("%X", &format!("{code:X}"), 1);
             message_line(state, text);
             join_failed_tail(state, true);
         }
@@ -440,7 +442,8 @@ pub(super) fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>)
             } else {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::WolCreateAccepted { observe },
+                    shell_transition::ShellSlideKind::WolLobby,
+                    move |state| commit_create(state, observe),
                 );
             }
         }

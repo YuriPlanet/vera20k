@@ -25,8 +25,8 @@ use crate::skirmish_launch::{
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 use crate::ui::skirmish_shell::{
-    PlayerNameEditState, SkirmishAiRowType, SkirmishModeSelection, SkirmishSavedSetup,
-    SkirmishShellState, SkirmishTrackbarId,
+    SkirmishAiRowType, SkirmishModeSelection, SkirmishSavedSetup, SkirmishShellState,
+    SkirmishTrackbarId, player_name_from_profile,
 };
 use cooperative::{
     CooperativeCountryRole, CooperativeCountryRosterEntry, CooperativeError,
@@ -480,7 +480,7 @@ impl MultiplayerShellRuntime {
     fn handle_bytes_for(&self, text: &str) -> Vec<u8> {
         Self::name_box_bytes(
             text,
-            &PlayerNameEditState::with_name(&self.handle_text()).text,
+            &player_name_from_profile(&self.handle_text()),
             &self.local_preferences.handle_bytes,
         )
     }
@@ -1205,7 +1205,7 @@ impl MultiplayerShellRuntime {
             };
         }
 
-        state.player_name_edit = PlayerNameEditState::with_name(&self.handle_text());
+        state.player_name = player_name_from_profile(&self.handle_text());
         state.player_country =
             LaunchCountry::from_country_index(self.local_preferences.side.max(0) as u32);
         state.player_country_random = self.local_preferences.side_ex == RANDOM_ITEM_DATA;
@@ -1312,7 +1312,7 @@ impl MultiplayerShellRuntime {
         // the unconditional writer at 0x006990A0. Keep the resolved concrete
         // values behind the raw -1/-2 markers so reopening the shell can show
         // Random without discarding the value selected for this launch.
-        let handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
+        let handle_bytes = self.handle_bytes_for(&state.player_name);
         self.local_preferences = LocalMultiplayerPreferences {
             toggles: self.local_preferences.toggles,
             handle_bytes,
@@ -1349,7 +1349,7 @@ impl MultiplayerShellRuntime {
         pack_snapshot_selection(&mut self.snapshot, state, maps, modes);
         pack_snapshot_slots(&mut self.snapshot, state);
         pack_snapshot_options(&mut self.snapshot, state);
-        self.local_preferences.handle_bytes = self.handle_bytes_for(&state.player_name_edit.text);
+        self.local_preferences.handle_bytes = self.handle_bytes_for(&state.player_name);
         self.local_preferences.handle_source = HandleSource::Native;
         self.local_preferences.game_mode = self.snapshot.game_mode;
         if state.player_country_random {
@@ -1365,16 +1365,6 @@ impl MultiplayerShellRuntime {
         } else {
             self.local_preferences.color_ex = RANDOM_ITEM_DATA;
         }
-    }
-
-    /// Resolve a borrowed raw session on the process-continuity Scenario RNG.
-    /// The shell and durable snapshot remain unchanged.
-    #[cfg(test)]
-    pub(crate) fn resolve_launch_session(
-        &mut self,
-        session: &SkirmishLaunchSession,
-    ) -> SkirmishLaunchSession {
-        session.resolve_shell_random_assignments(&mut self.scenario_rng)
     }
 
     pub(crate) fn cooperative_setup_view(&self) -> CooperativeSetupView<'_> {
@@ -1445,19 +1435,14 @@ impl MultiplayerShellRuntime {
         }
     }
 
-    /// Cooperative `+0x28` as a launch country: None is Random.
+    /// Cooperative `+0x28` as a launch country (a `HouseTypeClass` index):
+    /// None is Random.
     pub(crate) fn cooperative_default_country(&self) -> Option<LaunchCountry> {
-        self.cooperative_country(
-            self.cooperative_progress
-                .default_country(&self.cooperative_registry, &self.cooperative_country_roster),
-        )
-    }
-
-    /// A roster index as the launch country (`HouseTypeClass` index).
-    pub(crate) fn cooperative_country(&self, index: i32) -> Option<LaunchCountry> {
+        let roster = &self.cooperative_country_roster;
+        let index = (self.cooperative_progress).default_country(&self.cooperative_registry, roster);
         usize::try_from(index)
             .ok()
-            .filter(|index| *index < self.cooperative_country_roster.len())
+            .filter(|index| *index < roster.len())
             .map(|index| LaunchCountry::from_country_index(index as u32))
     }
 
@@ -3530,7 +3515,7 @@ WOLTaunts=junk
         let mut shell = SkirmishShellState::default();
         runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
 
-        assert_eq!(shell.player_name_edit.text, "[New Player]");
+        assert_eq!(shell.player_name, "[New Player]");
         assert_eq!(shell.player_country, LaunchCountry::America);
         assert!(!shell.player_country_random);
         assert_eq!(shell.player_color_index, 2);
@@ -3582,7 +3567,7 @@ WOLTaunts=junk
             0x1234,
         );
         let shell = SkirmishShellState {
-            player_name_edit: PlayerNameEditState::with_name("12345678901234567890"),
+            player_name: player_name_from_profile("12345678901234567890"),
             player_country_random: true,
             player_color_claimed: false,
             ..Default::default()
@@ -3791,7 +3776,7 @@ WOLTaunts=junk
             0x89ab,
         );
         let mut shell = SkirmishShellState::default();
-        shell.player_name_edit = PlayerNameEditState::with_name("\u{20ac}");
+        shell.player_name = player_name_from_profile("\u{20ac}");
 
         active_runtime
             .close_shell_transaction(&shell, &[map()], &[mode()], &random_session())
@@ -3811,7 +3796,7 @@ WOLTaunts=junk
 
         let mut reopened_shell = SkirmishShellState::default();
         reopened.hydrate_shell(&mut reopened_shell, &[map()], &[mode()]);
-        assert_eq!(reopened_shell.player_name_edit.text, "\u{20ac}");
+        assert_eq!(reopened_shell.player_name, "\u{20ac}");
     }
 
     /// A code page stored the name box's text (`玩家` in GBK, `€` in
@@ -3853,7 +3838,7 @@ WOLTaunts=junk
             runtime.hydrate_shell(&mut shell, &[map()], &[mode()]);
             runtime.pack_durable_state(&shell, &[map()], &[mode()]);
             assert_eq!(runtime.local_preferences.handle_bytes, handle);
-            shell.player_name_edit.text
+            shell.player_name
         };
         assert_eq!(visit(acp_encode("Hélène")), acp_round_trip("Hélène"));
         visit(gbk.clone());
@@ -3866,7 +3851,7 @@ WOLTaunts=junk
         assert_eq!(runtime.local_preferences.handle_bytes, gbk);
         // Skirmish: an edited name.
         let mut shell = SkirmishShellState::default();
-        shell.player_name_edit = PlayerNameEditState::with_name("Zoë");
+        shell.player_name = player_name_from_profile("Zoë");
         runtime.pack_durable_state(&shell, &[map()], &[mode()]);
         assert_eq!(runtime.local_preferences.handle_bytes, acp_encode("Zoë"));
     }
@@ -3935,7 +3920,7 @@ WOLTaunts=junk
         let mut runtime = runtime(snapshot, 11);
         let session = random_session();
 
-        let resolved = runtime.resolve_launch_session(&session);
+        let resolved = session.resolve_shell_random_assignments(&mut runtime.scenario_rng);
 
         assert!(session.local_slot().country_random);
         assert!(session.local_slot().color_random);

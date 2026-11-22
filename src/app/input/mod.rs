@@ -13,6 +13,7 @@ pub(crate) mod context_order;
 pub(crate) mod cursor;
 pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
+pub(crate) mod dialog_page;
 pub(crate) mod diplomacy;
 pub(crate) mod briefing_diplomacy;
 pub(crate) mod restate;

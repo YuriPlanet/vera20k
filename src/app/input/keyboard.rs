@@ -7,9 +7,9 @@ use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::register
 use crate::app::keyboard_shim::KeyEventExtModifierSupplement;
 use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
-use crate::ui::shell::list::ListMetrics;
-use crate::ui::shell::list::ShellListGeometry;
+use crate::ui::shell::page::PageEvent;
 use crate::util::time::Instant;
+use vera20k_gui::{Prop, Value};
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
 #[cfg(not(any(
@@ -316,7 +316,8 @@ fn close(state: &mut AppState, exit: KeyboardExit) {
     if launcher && exit != KeyboardExit::PumpTerminated {
         App::leave_shell_dialog(
             state,
-            crate::app::frontend::shell_transition::ShellExitThen::KeyboardClose(exit),
+            crate::app::frontend::shell_transition::ShellSlideKind::Keyboard,
+            move |state| crate::app::input::keyboard::commit_close(state, exit),
         );
     } else {
         commit_close(state, exit);
@@ -389,179 +390,135 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
         }
     }
 }
-fn cue(state: &mut AppState, open: bool) {
-    let id = state.rules().and_then(|r| {
-        if open {
-            r.general.gui_combo_open_sound.clone()
-        } else {
-            r.general.gui_combo_close_sound.clone()
+/// A3's control events, after their cues: a button's action, a command
+/// row's selection, a category pick.
+fn apply(state: &mut AppState, events: Vec<PageEvent>) {
+    for event in super::dialog_page::play_cues(state, events) {
+        match event {
+            PageEvent::Activated(CANCEL) => close(state, KeyboardExit::Cancel),
+            PageEvent::Activated(id) => {
+                if let Some(KeyboardControl::Button(button)) = KeyboardControl::from_id(id) {
+                    activate(state, button);
+                }
+            }
+            PageEvent::Selected(_, row) => {
+                if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
+                    dialog.select_command(row as usize);
+                }
+            }
+            PageEvent::Picked(_, row) => {
+                if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
+                    dialog.select_category(row.max(0) as usize);
+                }
+            }
+            _ => {}
         }
-    });
-    App::play_shell_ui_sound_by_id(state, id.as_deref());
+    }
 }
 
 /// Poll the captured list gesture and return its next event-loop wake deadline.
 pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
-    let (layout, (x, y)) = layout_and_pointer(state)?;
     let dialog = state.frontend.keyboard_dialog.as_mut()?;
-    let geometry = ShellListGeometry::new(
-        layout.commands,
-        dialog.rows.len(),
-        dialog.top,
-        ListMetrics::scaled(layout.scale),
-    );
-    if dialog
-        .scroll
-        .poll(geometry, &mut dialog.top, x, y, Instant::now())
-    {
-        state.platform.window.request_redraw();
-    }
-    dialog.scroll.repeat_at()
+    let window = &state.platform.window;
+    dialog.ui.poll_then(|| window.request_redraw())
 }
+
+/// One pointer message on A3 (`down`: `None` moves). The category combo
+/// opens on a press anywhere on its face; its open list takes every press,
+/// and closes on it. A press on the face or the capture field moves the
+/// focus there. Back, Assign and Reset All are owner-draw
+/// (GUIMainButtonSound, 0x0061376B); a command row press plays the generic
+/// click.
+fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some((layout, (x, y))) = layout_and_pointer(state) else {
+        return;
+    };
+    state.platform.window.request_redraw();
+    let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
+        return;
+    };
+    let rows = Value::Rect(layout.category_rows(dialog.categories.len()));
+    dialog.ui.set_scale(layout.scale);
+    let events = super::dialog_page::route(
+        &mut dialog.ui,
+        KEYBOARD_PAGE.dialog,
+        // KeyboardState::new built A3's controls.
+        || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog),
+        |id| layout.rect(id),
+        |gui, root| {
+            let category = KeyboardControl::Category.id();
+            crate::ui::shell::page::set(gui, root, category, Prop::PopupRect, rows)
+        },
+        super::dialog_page::event_at(x, y, down),
+    );
+    apply(state, events);
+}
+
 pub(crate) fn cursor_moved(state: &mut AppState) {
-    let Some((layout, (x, y))) = layout_and_pointer(state) else {
-        return;
-    };
-    let dialog = state.frontend.keyboard_dialog.as_mut().unwrap();
-    dialog.hovered = layout.control_at(x, y);
-    dialog.buttons.hovered = match dialog.hovered {
-        Some(KeyboardControl::Button(id)) => Some(id),
-        _ => None,
-    };
-    if dialog.category_open {
-        dialog.category_hovered = layout.category_row_at(dialog.categories.len(), x, y);
-    }
-    let geometry = ShellListGeometry::new(
-        layout.commands,
-        dialog.rows.len(),
-        dialog.top,
-        ListMetrics::scaled(layout.scale),
-    );
-    dialog.scroll.pointer_moved(geometry, &mut dialog.top, x, y);
-    state.platform.window.request_redraw();
+    pointer(state, None);
 }
+
 pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
+    if button == MouseButton::Left {
+        pointer(state, Some(pressed));
     }
-    let Some((layout, (x, y))) = layout_and_pointer(state) else {
-        return;
-    };
-    let dialog = state.frontend.keyboard_dialog.as_mut().unwrap();
-    if dialog.category_open {
-        if pressed {
-            let row = layout.category_row_at(dialog.categories.len(), x, y);
-            if let Some(row) = row {
-                dialog.select_category(row);
-            }
-            dialog.category_open = false;
-            cue(state, false);
-        }
-        return;
-    }
-    let hit = layout.control_at(x, y);
-    let over = match hit {
-        Some(KeyboardControl::Button(id)) => Some(id),
-        _ => None,
-    };
-    if !pressed {
-        dialog.scroll.cancel();
-        state.platform.window.request_redraw();
-        let action = dialog.buttons.release(over);
-        if let Some(action) = action {
-            activate(state, action);
-        }
-        return;
-    }
-    dialog.scroll.cancel();
-    dialog.buttons.press(over);
-    match hit {
-        // Back, Assign and Reset All are owner-draw: GUIMainButtonSound
-        // (0x0061376B).
-        Some(KeyboardControl::Button(_)) => App::play_main_menu_button_sound(state),
-        Some(KeyboardControl::Category) => {
-            dialog.capture_focused = false;
-            dialog.category_open = true;
-            dialog.category_hovered = Some(dialog.category);
-            cue(state, true);
-        }
-        Some(KeyboardControl::Commands) => {
-            let geometry = ShellListGeometry::new(
-                layout.commands,
-                dialog.rows.len(),
-                dialog.top,
-                ListMetrics::scaled(layout.scale),
-            );
-            if let Some(part) = geometry.scroll_part_at(x, y) {
-                dialog
-                    .scroll
-                    .press(part, geometry, &mut dialog.top, y, Instant::now());
-            } else if let Some(row) = geometry.row_at(dialog.rows.len(), dialog.top, x, y) {
-                dialog.select_command(row);
-                App::play_skirmish_shell_generic_click_sound(state);
-            }
-        }
-        Some(KeyboardControl::Capture) => dialog.capture_focused = true,
-        _ => {}
-    }
-    state.platform.window.request_redraw();
 }
+
 pub(crate) fn wheel(state: &mut AppState, lines: f32) {
     let Some(layout) = layout(state) else {
         return;
     };
-    let dialog = state.frontend.keyboard_dialog.as_mut().unwrap();
-    if dialog.category_open {
-        let next = (dialog.category as i32 - lines.signum() as i32)
-            .clamp(0, dialog.categories.len().saturating_sub(1) as i32) as usize;
-        dialog.select_category(next);
-    } else if dialog.hovered == Some(KeyboardControl::Commands) {
-        let geometry = ShellListGeometry::new(
-            layout.commands,
-            dialog.rows.len(),
-            dialog.top,
-            ListMetrics::scaled(layout.scale),
-        );
-        dialog.top =
-            (dialog.top as i32 - (lines * 3.0) as i32).clamp(0, geometry.max_top as i32) as usize;
-    }
+    let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
+        return;
+    };
+    // The open category list (`WheelPicks`) steps its selection a notch,
+    // any turn at all; otherwise the hovered command list takes three rows.
+    let lines = match dialog.category_open() {
+        true => lines.signum() as i32,
+        false => (lines * 3.0) as i32,
+    };
+    dialog.ui.set_scale(layout.scale);
+    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines });
+    let events = dialog.ui.drain_events();
+    let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
+    apply(state, events);
 }
 pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
         return;
     };
-    if event.state.is_pressed() && event.logical_key == Key::Named(NamedKey::Escape) {
-        if dialog.category_open {
-            dialog.category_open = false;
-            cue(state, false);
+    let code = match event.physical_key {
+        winit::keyboard::PhysicalKey::Code(code) => Some(code),
+        _ => None,
+    };
+    let gui_key = code.and_then(|code| crate::ui::shell::controller::gui_key(code, false));
+    if event.state.is_pressed()
+        && let Some(key) = gui_key
+    {
+        // The open category list takes the arrows, Enter and Escape (with
+        // its close cue); otherwise Escape reaches the hidden IDCANCEL.
+        let open = dialog.category_open();
+        let consumed = if open {
+            let now = dialog.ui.now();
+            dialog.ui.gui_mut().key_popup(key, now);
+            true
         } else {
-            close(state, KeyboardExit::Cancel);
-        }
-        return;
-    }
-    if dialog.category_open {
-        if !event.state.is_pressed() {
+            dialog.ui.on_input(vera20k_gui::InputEvent::Key(key))
+        };
+        let mut events = dialog.ui.drain_events();
+        events.extend(dialog.ui.gui_mut().drain_events());
+        let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
+        apply(state, events);
+        if consumed {
             return;
         }
-        let step = match event.logical_key {
-            Key::Named(NamedKey::ArrowUp) => -1,
-            Key::Named(NamedKey::ArrowDown) => 1,
-            _ => 0,
-        };
-        if step != 0 {
-            dialog.category_hovered = Some(
-                (dialog.category_hovered.unwrap_or(dialog.category) as i32 + step)
-                    .clamp(0, dialog.categories.len().saturating_sub(1) as i32)
-                    as usize,
-            );
-        } else if event.logical_key == Key::Named(NamedKey::Enter) {
-            let row = dialog.category_hovered.unwrap_or(dialog.category);
-            dialog.select_category(row);
-            cue(state, false);
-        }
+    } else if dialog.category_open() {
         return;
     }
-    if !dialog.capture_focused {
+    let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
+        return;
+    };
+    if !dialog.capture_focused() {
         return;
     }
     let unmodified = event.key_without_modifiers();
@@ -595,7 +552,6 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
         dialog.captured = captured;
         dialog.current_owner_visible = true;
         dialog.error = None;
-        state.platform.window.request_redraw();
     }
 }
 
