@@ -792,6 +792,9 @@ fn relay_renewal_is_timed_from_grant_receipt_at_half_life() {
     service.poll_renewal(due + 11_000);
     assert!(input.try_recv().is_err());
     assert!(!service.relay_pass_lapsed(received.wrapping_add(300_000)));
+    // A lobby session that ends mid-match cannot renew the pass any more.
+    service.clear_cleanup();
+    assert!(service.relay_pass_lapsed(due + 301_000));
 }
 
 #[test]

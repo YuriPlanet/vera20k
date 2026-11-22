@@ -479,7 +479,6 @@ impl LiveService {
         self.watching = None;
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
-        self.relay_lapses_at = None;
     }
 
     /// The one writer of the match this player is in. The worker holds the

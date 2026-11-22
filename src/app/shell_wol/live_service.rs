@@ -368,7 +368,8 @@ pub(super) struct LiveService {
     /// Renewal deadline of the newest gameplay grant received.
     relay_renewal_due: Option<u32>,
     /// When the newest gameplay grant lapses: its receipt plus
-    /// [`RELAY_GRANT_LIFETIME`].
+    /// [`RELAY_GRANT_LIFETIME`]. A lobby session that ends mid-match
+    /// (`clear_cleanup`) keeps it: the match plays on until the pass lapses.
     relay_lapses_at: Option<u32>,
     maps: maps::Transfers,
     translations: Translations,
