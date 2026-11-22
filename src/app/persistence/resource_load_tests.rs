@@ -18,6 +18,12 @@ const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
 #[test]
 fn packed_ice_bytes_survive_materialization_and_saved_resource_loading() {
+    crate::test_fixture::on_game_stack(
+        packed_ice_bytes_survive_materialization_and_saved_resource_loading_body,
+    );
+}
+
+fn packed_ice_bytes_survive_materialization_and_saved_resource_loading_body() {
     use crate::map::map_file::MapFile;
     use crate::util::{base64::base64_decode, ini_writer, lzo};
     use ::base64::Engine;
@@ -820,6 +826,12 @@ fn frontend_main() -> crate::sim::rng::MainRng {
 
 #[test]
 fn saved_local_lighting_projects_pending_history_and_rejects_invalid_cells() {
+    crate::test_fixture::on_game_stack(
+        saved_local_lighting_projects_pending_history_and_rejects_invalid_cells_body,
+    );
+}
+
+fn saved_local_lighting_projects_pending_history_and_rejects_invalid_cells_body() {
     use crate::app::presentation::lighting::{MatchLighting, rebuild_lighting_grid_from_sim};
     use crate::map::lighting::CellLightGrid;
     use crate::sim::components::AnimClassSpawnDescriptor;
@@ -1121,6 +1133,10 @@ fn saved_local_lighting_projects_pending_history_and_rejects_invalid_cells() {
 
 #[test]
 fn retail_saved_resources_prepare_cold() {
+    crate::test_fixture::on_game_stack(retail_saved_resources_prepare_cold_body);
+}
+
+fn retail_saved_resources_prepare_cold_body() {
     let Some(save) = incoming_save("TEMPERATE", "") else {
         return;
     };
@@ -1191,6 +1207,12 @@ fn retail_saved_resources_prepare_cold() {
 
 #[test]
 fn cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff() {
+    crate::test_fixture::on_game_stack(
+        cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff_body,
+    );
+}
+
+fn cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff_body() {
     use crate::app::match_bootstrap::OrdinaryMatchSeedClock;
     use crate::app::persistence::commands::resume_menu_saved_game_rng;
     use crate::rules::rule_policy::AllowWinTagsPolicy;
@@ -1245,6 +1267,12 @@ fn cold_custom_player_load_keeps_the_saved_scenario_rng_at_menu_handoff() {
 
 #[test]
 fn saved_infantry_sequence_bank_survives_image_without_sequence() {
+    crate::test_fixture::on_game_stack(
+        saved_infantry_sequence_bank_survives_image_without_sequence_body,
+    );
+}
+
+fn saved_infantry_sequence_bank_survives_image_without_sequence_body() {
     let Some(mut save) = incoming_save("TEMPERATE", "[SLAV]\nImage=MONEY\n") else {
         return;
     };
@@ -1297,6 +1325,12 @@ fn saved_infantry_sequence_bank_survives_image_without_sequence() {
 
 #[test]
 fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() {
+    crate::test_fixture::on_game_stack(
+        unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction_body,
+    );
+}
+
+fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction_body() {
     use crate::sim::components::AnimClassSpawnDescriptor;
     use crate::sim::native_identity::NativeUniqueIdCursor;
     use crate::util::fixed_math::SIM_ZERO;
@@ -1448,6 +1482,12 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
 
 #[test]
 fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner() {
+    crate::test_fixture::on_game_stack(
+        unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner_body,
+    );
+}
+
+fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner_body() {
     use crate::sim::terrain_spawn::{
         TerrainConstructionMode, TerrainConstructionRules, construct_terrain_objects_with_rules,
     };
@@ -1633,6 +1673,12 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
 
 #[test]
 fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
+    crate::test_fixture::on_game_stack(
+        arctic_type_load_validates_before_mutation_and_resaves_the_same_owner_body,
+    );
+}
+
+fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner_body() {
     let Some(mut save) = incoming_save(
         "SNOW",
         "[BlimpBombP]\nImage=ZBOMB\nInviso=yes\nAlternateArcticArt=yes\n\
@@ -1803,6 +1849,12 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
 
 #[test]
 fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
+    crate::test_fixture::on_game_stack(
+        retail_saved_resources_prepare_cross_map_and_roll_back_late_failure_body,
+    );
+}
+
+fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure_body() {
     let Some(save) = incoming_save("TEMPERATE", "") else {
         return;
     };
