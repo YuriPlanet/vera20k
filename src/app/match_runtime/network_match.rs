@@ -653,8 +653,10 @@ pub(crate) fn participant_color(session: &MatchSession, source_index: usize) -> 
 /// The name and colour a received in-match chat packet `0x0C` shows. Native
 /// `0x0048D8DD` shows the packet's own. VERA shows the admitted participant
 /// at the sending endpoint under its roster name and colour, so an online
-/// name longer than the packet's 19 bytes arrives whole and no player speaks
-/// as another; any other sender keeps the packet's.
+/// name longer than the packet's 19 bytes arrives whole. Any other sender
+/// keeps the packet's. A relay match authenticates every source, so there no
+/// player speaks as another; on LAN or a direct spawn a sender at an unbound
+/// endpoint still can.
 pub(crate) fn chat_sender(
     session: &MatchSession,
     endpoint: std::net::SocketAddrV4,
