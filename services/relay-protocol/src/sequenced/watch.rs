@@ -28,6 +28,10 @@ const MAX_WATCHERS: usize = 1024;
 pub(crate) const WATCH_SOURCE: u8 = MAX_PEERS;
 /// A watcher silent this long loses its place.
 const WATCH_SILENCE_S: u64 = 30;
+/// A watcher's session after its Leave or renewal answers only Leave for
+/// this many seconds: the client's minute of Leave resends, and the second
+/// `now` rounds off.
+const WATCH_LEAVE_S: u64 = (LEAVE_ATTEMPTS as u64 * LEAVE_INTERVAL_MS).div_ceil(1000) + 1;
 /// A room notes its stream's end this often, and keeps enough of these
 /// marks for the longest delay: a delayed watcher's stream grows by this
 /// much at a time.
@@ -385,7 +389,9 @@ impl RelayServer {
 
     /// Admits a watcher to a started match whose whole stream is on disk,
     /// or renews its hop: a newer ticket gets a new session and keeps the
-    /// old hop's agreement and budgets; the old session goes at once.
+    /// old hop's agreement and budgets. The client moves to the new session
+    /// on its READY, so a watcher that quits before then leaves from the
+    /// old one, which is parked for that Leave (`park_watcher`).
     fn watch_confirm(
         &mut self,
         source: SocketAddrV4,
@@ -466,7 +472,7 @@ impl RelayServer {
                     new.packets = old.packets;
                     new.archive_pulls = old.archive_pulls;
                     new.outgoing = old.outgoing;
-                    retired = Some(old.session);
+                    retired = Some(old);
                 } else {
                     room.watchers.push(watcher);
                 }
@@ -483,15 +489,74 @@ impl RelayServer {
             (None, None) => unreachable!("a new watcher gets a session"),
         };
         if let Some(old) = retired {
-            self.release_session(old, now);
+            self.park_watcher(&old, now);
         }
         self.watching.outgoing.charge(now, cost);
         Ok(vec![reply])
     }
 
-    /// A datagram `session_incoming` authenticated on a watcher's session:
-    /// PING, or one of Ready, Pull and Leave. Anything else, DATA and UPLINK
-    /// included, is refused.
+    /// A watcher's Leave `[3]`, on its live session or a parked one: the
+    /// first takes the watcher out of its room, writing nothing, and parks
+    /// its session; each is answered with LEAVE_ACK echoing its sequence.
+    /// As a player's (`ordering_leave`), it runs no replay check, since the
+    /// client resends the same bytes, and spends the watcher's own
+    /// handshake budget before the relay's.
+    pub(crate) fn watch_leave(
+        &mut self,
+        source: SocketAddrV4,
+        message: &Incoming<'_>,
+        now: u64,
+    ) -> Result<Vec<ForwardDatagram>, RelayError> {
+        let cost = envelope::OVERHEAD as u64;
+        if !self.player_handshakes(&message.ticket.player).permits(
+            now,
+            1,
+            PLAYER_HANDSHAKES_PER_SECOND,
+        ) || !self
+            .watching
+            .outgoing
+            .permits(now, cost, WATCH_BYTES_PER_SECOND)
+        {
+            return Err(RelayError::RateLimited);
+        }
+        self.charge_player_handshake(message.ticket.player, now);
+        self.watching.outgoing.charge(now, cost);
+        if let Some(room) = self.rooms.get_mut(&message.ticket.room)
+            && let Some(index) = room
+                .watchers
+                .iter()
+                .position(|watcher| watcher.session == message.session)
+        {
+            let watcher = room.watchers.swap_remove(index);
+            self.park_watcher(&watcher, now);
+        }
+        Ok(vec![ForwardDatagram {
+            endpoint: source,
+            bytes: encode_server(
+                &message.key,
+                LEAVE_ACK,
+                message.session,
+                message.sequence,
+                &[],
+            ),
+        }])
+    }
+
+    /// Keeps the session of a watcher its Leave or renewal ended for that
+    /// Leave and its resends, `WATCH_LEAVE_S`; `prune` then releases it.
+    fn park_watcher(&mut self, watcher: &Watcher, now: u64) {
+        if let Some(slot) = self.sessions.get_mut(&watcher.session) {
+            slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
+                ticket: watcher.ticket,
+                key: watcher.key.clone(),
+                until: now.saturating_add(WATCH_LEAVE_S),
+            }));
+        }
+    }
+
+    /// A datagram `session_incoming` authenticated on a watcher's live
+    /// session other than Leave: PING, Ready or Pull. Anything else, DATA
+    /// and UPLINK included, is refused.
     pub(crate) fn watch_datagram(
         &mut self,
         source: SocketAddrV4,
@@ -515,11 +580,10 @@ impl RelayServer {
             .rooms
             .get_mut(&room_id)
             .ok_or(RelayError::Unregistered)?;
-        let index = watchers
-            .iter()
-            .position(|watcher| watcher.session == message.session)
+        let watcher = watchers
+            .iter_mut()
+            .find(|watcher| watcher.session == message.session)
             .ok_or(RelayError::Unregistered)?;
-        let watcher = &mut watchers[index];
         watcher.heard(sequence, source, now_ms)?;
         let budgets = &mut self.watching;
         if !spend(
@@ -547,25 +611,6 @@ impl RelayServer {
             }
             return Ok(vec![watcher.packet(READY, &[])?]);
         };
-        if request == LEAVE_REQUEST && payload.len() == 1 {
-            // Nothing goes into the stream. The session goes at once, so a
-            // lost acknowledgement is not answered again.
-            let watcher = watchers.swap_remove(index);
-            self.release_session(watcher.session, now);
-            let cost = envelope::OVERHEAD as u64;
-            if !self
-                .watching
-                .outgoing
-                .permits(now, cost, WATCH_BYTES_PER_SECOND)
-            {
-                return Ok(Vec::new());
-            }
-            self.watching.outgoing.charge(now, cost);
-            return Ok(vec![ForwardDatagram {
-                endpoint: source,
-                bytes: encode_server(&watcher.key, LEAVE_ACK, watcher.session, sequence, &[]),
-            }]);
-        }
         let feedback = watcher.link.feedback(now_ms);
         let failure = ordering
             .as_ref()
@@ -916,9 +961,82 @@ mod tests {
             server
                 .session_table()
                 .iter()
-                .all(|entry| entry.source != WATCH_SOURCE)
+                .all(|entry| entry.source != WATCH_SOURCE || entry.leaving)
         );
         assert_eq!(before, (ordering(&server), server.ordering_history(ROOM)));
+    }
+
+    /// A watcher whose LEAVE_ACK is lost resends the same Leave until it is
+    /// answered, for about a minute; its session takes nothing else
+    /// meanwhile, and is released once the client stops.
+    #[test]
+    fn a_watchers_resent_leave_is_answered_until_the_client_stops() {
+        let directory = TestDirectory::new();
+        let (mut server, _first, _second) = running_match(&directory, 3000);
+        let mut watching = watcher(&server, ROOM, 41, 0);
+        connect(&mut server, &mut watching, 3000);
+        watch_ready(&mut server, &mut watching, [7; 32], 3000);
+        let mut leave = Vec::new();
+        watching.leave_ordering_at(3000, &mut leave).unwrap();
+        let from = endpoint(&watching);
+        let lost = server.process_at(from, &leave, unix(3000), 3000).unwrap();
+        assert_eq!(lost.len(), 1);
+        assert!(server.rooms[&ROOM].watchers.is_empty());
+        let mut ping = Vec::new();
+        watching.encode(PING, &[], &mut ping).unwrap();
+        assert_eq!(
+            server.process_at(from, &ping, unix(3000), 3000).err(),
+            Some(RelayError::Unregistered)
+        );
+        let last_ms = 3000 + u64::from(LEAVE_ATTEMPTS) * LEAVE_INTERVAL_MS;
+        assert!(matches!(
+            events(&mut server, &mut watching, &leave, last_ms)[..],
+            [OrderEvent::Left]
+        ));
+        let gone_ms = 3000 + WATCH_LEAVE_S * 1000;
+        assert_eq!(
+            server
+                .process_at(from, &leave, unix(gone_ms), gone_ms)
+                .err(),
+            Some(RelayError::Unregistered)
+        );
+        assert!(!server.sessions.contains_key(&watching.session().unwrap()));
+    }
+
+    /// A watcher that quits before its renewal's READY arrives leaves from
+    /// the session the renewal replaced, which still answers it.
+    #[test]
+    fn a_watcher_quitting_before_its_renewal_ready_still_leaves() {
+        let directory = TestDirectory::new();
+        let (mut server, _first, _second) = running_match(&directory, 3000);
+        let mut watching = watcher(&server, ROOM, 41, 0);
+        connect(&mut server, &mut watching, 3000);
+        watch_ready(&mut server, &mut watching, [7; 32], 3000);
+        let ticket = WatchTicket {
+            room: ROOM,
+            expires: 1250,
+            nonce: [42; 16],
+            watcher: [41; 16],
+            delay_seconds: 0,
+        }
+        .sign(&server.key)
+        .unwrap();
+        let key = *derive_packet_key(&server.key, &ticket).expose_for_https();
+        let mut renewal = watching.renewal(&ticket, key, [0; 32]).unwrap();
+        let from = endpoint(&watching);
+        let mut bytes = Vec::new();
+        renewal.probe(&mut bytes).unwrap();
+        let challenge = server
+            .process_at(from, &bytes, unix(3000), 3000)
+            .unwrap()
+            .remove(0);
+        let ServerEvent::Challenge(cookie) = renewal.receive(&challenge.bytes).unwrap() else {
+            panic!("challenge");
+        };
+        renewal.confirm(cookie, &mut bytes).unwrap();
+        // The relay takes the renewal; its READY is lost.
+        server.process_at(from, &bytes, unix(3000), 3000).unwrap();
+        leave(&mut server, &mut watching, 3000);
     }
 
     /// A lobby may grant a watch before the relay has started and journaled

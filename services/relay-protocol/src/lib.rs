@@ -768,8 +768,9 @@ struct Peer {
     link: link::ReaderLink,
 }
 
-/// A hop whose ticket expired: it accepts only LEAVE until `until`, unix
-/// seconds (spec §6.2 "释放").
+/// A hop that accepts only LEAVE until `until`, unix seconds (spec §6.2
+/// "释放"): a player's whose ticket expired or a renewal replaced, or a
+/// watcher's after its Leave or renewal (`park_watcher`).
 struct LeavingHop {
     ticket: Ticket,
     key: SecretKey,
@@ -1022,19 +1023,23 @@ impl RelayServer {
             self.session_incoming(header, bytes, now)?
         };
         // Watchers never reach a player's path (README "Watchers").
-        if message.ticket.source == sequenced::watch::WATCH_SOURCE {
-            return if matches!(message.kind, HELLO | CONFIRM) {
-                self.watch_handshake(source, &message, now, now_millis)
-            } else {
-                self.watch_datagram(source, &message, now, now_millis)
-            };
+        let watching = message.ticket.source == sequenced::watch::WATCH_SOURCE;
+        if watching && matches!(message.kind, HELLO | CONFIRM) {
+            return self.watch_handshake(source, &message, now, now_millis);
         }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
-            return self.ordering_leave(source, &message, now, now_millis);
+            return if watching {
+                self.watch_leave(source, &message, now)
+            } else {
+                self.ordering_leave(source, &message, now, now_millis)
+            };
         }
         // A leaving hop accepts only LEAVE (spec §6.2 "释放").
         if leaving {
             return Err(RelayError::Unregistered);
+        }
+        if watching {
+            return self.watch_datagram(source, &message, now, now_millis);
         }
         // Only the authenticated room needs a fresh boundary before a
         // submission. The socket loop advances every room independently.
@@ -1838,9 +1843,9 @@ pub struct SessionEntry {
     pub room: [u8; 16],
     pub source: u8,
     /// The hop's current endpoint: the address of its last authenticated
-    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired
-    /// or a renewal replaced it (the hop then only answers LEAVE, to the
-    /// LEAVE's address).
+    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired,
+    /// a renewal replaced it or, for a watcher, it left (the hop then only
+    /// answers LEAVE, to the LEAVE's address).
     pub endpoint: Option<SocketAddrV4>,
     /// The hop's ticket expiry, unix seconds like `process`'s `now`.
     pub expires: u64,
@@ -1858,7 +1863,8 @@ impl RelayServer {
     /// session. A hop is in it from its accepted CONFIRM until
     /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
     /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
-    /// after its ticket's expiry (§6.2).
+    /// after its ticket's expiry (§6.2). A watcher's goes `WATCH_LEAVE_S`
+    /// seconds after its LEAVE or renewal, or when `prune_watchers` drops it.
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions
