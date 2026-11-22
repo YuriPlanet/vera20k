@@ -341,11 +341,12 @@ VERA20K_SNAPSHOT_LAYOUT=1 python3 -m tools.cargo_run -- \
 python3 -m tools.group_tests check
 ```
 
-Last run (phase-1 finish merge, HEAD `6eb67b68a`): wasm-ext 20/20;
-`sim::ext_modules::` with `sim::trigger_runtime::` 389 passed, 5 ignored, all six
-Rust examples run; `rules::`, `sim::attach_effect::`, `sim::capture_manager::`,
+Last run (after merging EncoreAlpha's review changes `4b4ed4243` and upstream main,
+HEAD `fc78b8e90`): wasm-ext 21/21; `sim::ext_modules::` with `sim::trigger_runtime::`
+395 passed, 5 ignored, all six Rust examples run; `rules::`, `assets::`,
+`headless_scenario::`, `sim::attach_effect::`, `sim::capture_manager::`,
 `sim::combat::`, `sim::crates::`, `sim::passenger::`, `sim::production::`,
-`sim::team_script_vm::`, `sim::world::`, `sim::movement::` 4867 passed, 151 ignored,
+`sim::team_script_vm::`, `sim::world::`, `sim::movement::` 5086 passed, 173 ignored,
 2 failed for this machine only (Chinese retail CSF; no unlayered retail `ini/`);
 client check, wasm32 check and `group_tests check` pass. Not run: a `--profile fast`
 retail map load through the app loader.
