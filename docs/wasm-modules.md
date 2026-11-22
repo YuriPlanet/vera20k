@@ -239,4 +239,6 @@ difference shows within 15 frames.
   in module memory for the next `on_frame`. A human house's units are ordered with
   `SetMission`, which works for every house (`House::order` takes computer houses
   only), and a module's own `SetMission` does not ask its own `CommandAllowed`.
-  It needs one human player, a computer opponent and Bases on.
+  Its muster waits for the player rather than a timer: game speed 0 is unlimited,
+  so a number of frames is no time to think. It needs one human player, a computer
+  opponent and Bases on; its text is Simplified Chinese.
