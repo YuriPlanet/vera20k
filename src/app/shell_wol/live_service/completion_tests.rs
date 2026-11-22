@@ -783,10 +783,15 @@ fn relay_renewal_is_timed_from_grant_receipt_at_half_life() {
         (operation, payload),
         ("renew_relay", json!({"match_id":"renew-match"}))
     );
+    // The reconnect notice reads the pass's lapse on the same receipt clock.
+    assert!(!service.relay_pass_lapsed(received));
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(299_999)));
+    assert!(service.relay_pass_lapsed(received.wrapping_add(300_000)));
     // The reply's fresh grant moves the deadline half a lifetime on.
     service.relay_granted(due + 1_000);
     service.poll_renewal(due + 11_000);
     assert!(input.try_recv().is_err());
+    assert!(!service.relay_pass_lapsed(received.wrapping_add(300_000)));
 }
 
 #[test]
