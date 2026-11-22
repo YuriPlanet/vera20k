@@ -5,6 +5,7 @@
 //! laid-out tree and paints it with its own renderer.
 
 pub mod gui;
+pub mod hud;
 pub mod node;
 pub mod shell;
 pub mod spec;
