@@ -27,7 +27,8 @@ pub(crate) enum NetworkSetupEvent {
     ParticipantLeft {
         index: usize,
     },
-    /// A WOL guest's `R` to the host (`0x007A8260`).
+    /// A guest's `R` to the host: WOL's `0x007A8260`, LAN's Type18
+    /// (`0x005E0D1C`).
     PlayerChoices {
         index: usize,
         choices: SkirmishLocalSlot,
@@ -148,7 +149,6 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             || !matches!(
                 event,
                 NetworkSetupEvent::GameStarted { .. }
-                    | NetworkSetupEvent::PlayerChoices { .. }
                     | NetworkSetupEvent::Teams(_)
                     | NetworkSetupEvent::VerifyStarted { .. }
                     | NetworkSetupEvent::PeerConnected { .. }
@@ -769,9 +769,11 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     Ok(())
 }
 
-/// The host checks a guest's `R` (`0x007A8260`): its slot passes the bans,
-/// and Cooperative's mode +0x1C (0x5C17B0) admits its campaign's countries;
-/// the other modes' (0x5D67A0) admit any.
+/// The host checks a guest's `R`: in either room its slot passes the bans.
+/// WOL's receiver (`0x007A8260`) then checks the country by the mode's
+/// +0x1C: Cooperative's (0x5C17B0) admits its campaign's countries, the
+/// other modes' (0x5D67A0) any. LAN's Type18 receiver (`0x005E0D1C`) has no
+/// such check.
 fn accept_peer_choices(
     state: &mut AppState,
     index: usize,
@@ -779,6 +781,12 @@ fn accept_peer_choices(
     observer: bool,
 ) -> anyhow::Result<PeerChoicesChange> {
     super::bans::admit_slot(state, &mut choices);
+    if !super::dialog(state).wol() {
+        return state
+            .match_state
+            .session
+            .accept_lan_peer_choices(index, choices, observer);
+    }
     let countries = super::cooperative::current(state)
         .then(|| {
             state
@@ -844,13 +852,7 @@ pub(super) fn place_player(
         .get(index)
         .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
     if index != launch.local_player_index {
-        if super::dialog(state).wol() {
-            return accept_peer_choices(state, index, choices, observer);
-        }
-        return state
-            .match_state
-            .session
-            .accept_lan_peer_choices(index, choices, observer);
+        return accept_peer_choices(state, index, choices, observer);
     }
     if observer != human.is_observer() {
         return state
