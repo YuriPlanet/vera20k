@@ -525,7 +525,9 @@ impl Tree {
         parents.sort_unstable();
         parents.dedup();
         for parent in parents {
-            let Ok(node) = self.node_mut(parent) else { continue };
+            let Ok(node) = self.node_mut(parent) else {
+                continue;
+            };
             let mut children = std::mem::take(&mut node.children);
             children.retain(|child| self.node(*child).is_ok());
             if let Ok(node) = self.node_mut(parent) {

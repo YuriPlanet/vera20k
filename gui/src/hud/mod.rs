@@ -31,8 +31,8 @@ pub use layout::Hold;
 pub use paint::{ButtonState, PaintCmd, PaintOp, batches};
 
 /// Empties `buffer` for the next frame, free of what the last frame's
-/// commands borrowed. It keeps its allocation where `A` and `B` have one
-/// layout, as a command type has whatever it borrows.
+/// commands borrowed. It keeps the allocation only where `A` and `B` have
+/// one layout, as when they differ in lifetimes alone.
 pub fn recycle<A, B>(mut buffer: Vec<A>) -> Vec<B> {
     buffer.clear();
     // An empty same-layout vector collects in place.
@@ -183,7 +183,10 @@ impl Hud {
         }
         self.tree.set(id, prop, value)?;
         self.revision += 1;
-        if matches!(prop, Prop::Visible | Prop::Enabled | Prop::Clickable | Prop::Hoverable) {
+        if matches!(
+            prop,
+            Prop::Visible | Prop::Enabled | Prop::Clickable | Prop::Hoverable
+        ) {
             self.forget_inactive();
         }
         Ok(())
