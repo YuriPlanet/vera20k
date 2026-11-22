@@ -15,7 +15,8 @@ persistent state is created.
 `{player_id,nickname,token,expires_at,features?}`, plus `motd` while an operator welcome is set:
 text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 `features` lists what the lobby offers beyond protocol 4, and a game offers only what it
-lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)).
+lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)) and `campaign_rooms`
+(HostOptions `campaign` below), which VERA's lobby does not offer.
 A game says what it is and what it can do in [sign-in headers](#sign-in-headers).
 Each entry receives a fresh random player
 UUID and bearer token. `expires_at` is a Unix timestamp in seconds by the lobby's clock,
@@ -165,14 +166,19 @@ A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and
 for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
 unchanged.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
-Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
-`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
-that carry it. Other modes omit the field.
 `start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
 and for a random map of 9 to 30 players four more for each start past the eighth,
 bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
+Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
+`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
+that carry it. Other modes omit the field.
+Multiplayer Campaign rooms add `campaign`, the authored room record
+([Multiplayer Campaign rooms](Networking.md#multiplayer-campaign-rooms)), only on a lobby
+that offers `campaign_rooms`; that lobby keeps it through room revisions, the start and
+`watch_started`. Without the feature a game refuses campaign rooms online, and a 400
+`invalid_options` for a campaign room's options turns them off until the next sign-in.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
 current: `options.json` holds rooms' options as the game sends them at the limits it
@@ -296,15 +302,16 @@ its `{name}`, while every game shows `text` for a key it lacks.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
-`start_rejected`'s `message` is English. Current games match
+`start_rejected`'s `message` is English. Games from 0.3.6 on match
 the four messages the lobby sends: `A player left before the game started.`,
 `A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
 and `A player could not complete the peer latency check.`, and show each in the player's
 language; for the relay message a game whose `relay_ready` the service took says another
 player's game could not reach the server, and any other says its own could not. Any
 other message, including a reworded one, shows the general line that the match could
-not start, so a change to these messages needs the game's
-`LiveService::start_rejected_line` changed with it.
+not start, as every message does in older games. The lobby therefore keeps these four
+messages unchanged while it admits games from 0.3.6 on;
+`tests/fixtures/lobby/start_rejected.json` lists them.
 
 A start that times out connecting also says who held it up: every game's
 `start_rejected` then carries `phrases`, one `StartNotConnected` holding
@@ -906,7 +913,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   It refuses with 400 `invalid_name`, `invalid_email` or `invalid_password`, 409
   `name_unavailable` or `email_in_use`, or 429. Names follow the session rule;
   passwords are 8–64 printable ASCII characters; emails are at most 254 characters of
-  the `x@y.z` shape, one account each.
+  the `x@y.z` shape, one account each. `tests/fixtures/lobby/accounts.json` holds names,
+  passwords and emails at the edges of these rules, each with whether the game takes it;
+  the lobby gives each the same answer.
 - `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
   `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
 - `/v1/accounts/forgot` `{name}` returns 202 whether or not the name has an account,
@@ -929,6 +938,21 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   A name without an account returns 404 `no_account`. Deletion returns 409
   `match_active` while the player is in a match or a ranked game of theirs is still
   waiting for results.
+- `/v1/accounts/rename` `{name,password,new_name}` returns 200 `{name}` with the new
+  name; no game sends it. The new name follows the session rule, and the password stays
+  the same. Ratings, standings, past seasons and ranked games move to the new name; the
+  rename drops every remembered sign-in, signs out whoever plays under the old name and
+  mails the owner. An account renames at most once in 30 days: sooner returns 429
+  `rename_too_soon` with `retry_after`. Wrong passwords count toward the sign-in limits,
+  which refuse a rename with 429 `account_locked` or `rate_limited` as they refuse a
+  sign-in. It also refuses with 400 `invalid_request` or `invalid_name`, 403
+  `wrong_password`, 404 `no_account`, 409 `match_active` as deletion does, 409
+  `same_name` for the account's own name (a change of case only is allowed), and 409
+  `name_unavailable` for a name that is reserved, held, an account's or being
+  registered, or has a player online, a match or ranked games under it. For 30 days the
+  old name stays held for the account: registering it returns 409 `name_unavailable`,
+  `GET /v1/players/<old name>` answers the account's profile under its new name, and
+  deleting the account frees it. A change of case only holds nothing.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -937,8 +961,11 @@ the owner. 30 wrong passwords from one network in an hour return 429 `rate_limit
 An account's sign-in has `account:true` in the response, and `remember:true` with the
 right password adds a `sign_in_token` (32 bytes, base64url without padding). A password
 or `sign_in_token` for a name without an account returns 404 `no_account`; otherwise
-that name enters as a guest. A lobby without accounts set up refuses a password with
-503 `accounts_unavailable`.
+that name enters as a guest. A renamed account's held old name returns the same 404 to a
+password or `sign_in_token`, with `phrases` `AccountRenamed` holding `{name}`, the new
+name. Every game the lobby admits shows it and, as for any `no_account`, forgets the
+remembered sign-in. A guest under that name gets 409 `name_unavailable`. A lobby without
+accounts set up refuses a password with 503 `accounts_unavailable`.
 
 Opening VERA Online offers **Play as Guest** and **Sign In and Play**. Guest entry
 immediately requests a session under a temporary name such as `Guest04219`, with no
@@ -1046,7 +1073,8 @@ where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers
-404. `GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
+404, unless it is a renamed account's held old name ([Accounts](#accounts)).
+`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
 minute: `{season,started_at,ends_at,updated_at,total,players,seasons,running}`, `season`
 being `null` when no season runs and `ends_at` `null` without an end, `total` the players
 ranked in it and `players` the best 1,000 of them by OS, then wins, each

@@ -18,6 +18,9 @@ use super::{
     switching_room, take_visit,
 };
 
+/// `0x007A5890`'s failure tail: rejoin flag from the pending channel, the
+/// pending and current channels cleared, the wait closed, the lists
+/// refilled and `0x113` shown; event 5 then ends the runner.
 pub(super) fn join_failed_tail(state: &mut AppState, close: bool) {
     if quick_match_runner(state) {
         // Event 5 acts only at stage 0, so `close` is the stage timeout's
@@ -255,7 +258,6 @@ pub(super) fn enter_game_as_guest(state: &mut AppState) {
     }
 }
 
-/// `0x007A5890`'s HRESULT branches in Custom Match.
 /// How `0x007A5890` answers a failed join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum JoinErrorReply {
@@ -293,6 +295,7 @@ pub(crate) const WATCHERS_FULL: u32 = 0xA004_0076;
 /// The modern list's tag of a match to watch.
 pub(super) const WATCH_LIST_TAG: &str = "VERA:WatchListTag";
 
+/// `0x007A5890`'s HRESULT branches in Custom Match.
 pub(super) fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
         key,
