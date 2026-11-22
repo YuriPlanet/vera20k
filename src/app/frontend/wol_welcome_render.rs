@@ -28,8 +28,8 @@ use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
     push_entry_scaled,
 };
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;

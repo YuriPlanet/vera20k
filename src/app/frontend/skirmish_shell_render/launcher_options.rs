@@ -8,11 +8,11 @@ use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, paint_gui_styled};
 use super::{chrome::*, *};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
-use crate::render::shell_text::{self, ShellAlign, TextRect};
+use crate::render::shell_text::{self, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::main_menu_dialogs::options::OptionsDialogState;
 use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayout};
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::util::time::Instant;
 
 /// The page's controls and its open list, painted from the dialog's tree

@@ -18,9 +18,9 @@ use crate::render::shell_paint::{
     ModalButton, ModalDepths, ModalDraw, PaintLabel, SHELL_TEXT_RGB_ENABLED,
     paint_labels_at_depth_scaled, paint_modal_sprites,
 };
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::shell::modal::{BoxButton, BoxParts, ShellBox};
 
 /// How a box sits in its host's paint: its art, its layers' depths (the

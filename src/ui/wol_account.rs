@@ -9,10 +9,10 @@
 use vera20k_gui::{InputEvent, Key, NodeKind, NodeSpec, Prop, Value};
 
 use crate::i18n::tr_fill;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::shell::page;
 use crate::ui::wol_login::{DIALOG, typed};

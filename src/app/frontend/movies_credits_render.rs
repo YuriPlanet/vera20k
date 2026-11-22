@@ -12,14 +12,14 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
 use crate::render::shell_surface_present::SurfaceEffects;
-use crate::render::shell_text::{ShellAlign, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::movies_credits_shell::{
     MOVIE_LIST_DIALOG, MOVIE_LIST_PAGE, MOVIE_LIST_PROMPT_KEY, MOVIE_LIST_TOOLTIP_KEY,
     find_family_list,
 };
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::shell::menu_page;
 use vera20k_gui::ListView;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};

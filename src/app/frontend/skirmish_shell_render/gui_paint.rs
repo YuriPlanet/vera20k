@@ -26,9 +26,9 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's

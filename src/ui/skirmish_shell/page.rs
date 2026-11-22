@@ -19,10 +19,10 @@ use super::state::{
     selected_combo_item, selected_combo_item_index, status_help_key_for_hover,
 };
 use crate::map::scenario_menu::MapMenuEntry;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::game_speed::SpeedContext;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 
 /// The page's dialog in the shell controller.

@@ -9,10 +9,10 @@ use super::text::rect_to_text_rect;
 use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use crate::app::AppState;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign};
+use crate::render::shell_text;
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::shell::modal::{WolPageLayout, WolPageReceivedLayout};
 use crate::ui::wol_page::*;
 

@@ -6,12 +6,12 @@
 use crate::app::loading::init::MapMenuEntry;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
+use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::{
     ControlChrome, SkirmishShellChromeAtlas, SkirmishShellChromeEntry,
 };
 use crate::rules::ruleset::RuleSet;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::skirmish_shell::{
     DropdownMetrics, DropdownScrollbarPart, RectPx, SkirmishShellLayout, SkirmishShellState,
     checkbox_icon_rect, combo_arrow_rect, combo_face_rect, combo_swatch_rect,

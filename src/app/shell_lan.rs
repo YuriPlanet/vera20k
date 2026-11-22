@@ -590,8 +590,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             let limits = state.frontend.room_limits;
             state.frontend.lan.as_mut().expect("active BB").creating = true;
             let choices = crate::ui::room_limits::widgets(limits, ROOM_PLAYERS, ROOM_SPECTATORS);
-            let align = crate::render::shell_text::ShellAlign::H_RIGHT
-                | crate::render::shell_text::ShellAlign::V_CENTER;
+            let align = crate::ui::shell::geom::ShellAlign::H_RIGHT
+                | crate::ui::shell::geom::ShellAlign::V_CENTER;
             let caption = crate::ui::wol_page::static_text(
                 ROOM_PLAYERS_CAPTION,
                 Some("VERA:MaxPlayers"),

@@ -5,7 +5,7 @@
 
 use crate::app::AppState;
 use crate::app::input::restate::DIALOG;
-use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::restate::restate_layout;
 
 pub(crate) fn render_restate_shell(

@@ -14,10 +14,10 @@ use crate::app::frontend::movies_credits_render::{family_list_hovered, paint_fam
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::mods::Listed;
 use crate::render::shell_paint::{PaintLabel, SHELL_TEXT_RGB_ENABLED};
-use crate::render::shell_text::ShellAlign;
 use crate::ui::main_menu_shell::RectPx;
 use crate::ui::mods_shell::{self, ModsLayout, PAGE};
 use crate::ui::movies_credits_shell::family_list_selected;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::menu_page;
 
 /// Row text inset from the row's left edge, as in the movie list, and from

@@ -220,7 +220,7 @@ const SHELL_SOUND_LABELS: [u16; 3] = [0x7E50, 0x7E51, 0x7E52];
 /// disabled window takes no press. B8 never opens without one (BBB disables
 /// its Sound button, `0x004E2201..0x004E2223`), so only `0xD6` clears it.
 pub fn shell_sound_spec(positions: [u8; 3], sliders_enabled: bool) -> NodeSpec {
-    let align = i32::from(crate::render::shell_text::ShellAlign::H_RIGHT.0);
+    let align = i32::from(crate::ui::shell::geom::ShellAlign::H_RIGHT.0);
     let rows = SoundSlider::ALL.map(|id| {
         let index = id as usize;
         [

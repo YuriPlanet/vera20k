@@ -15,8 +15,8 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
-use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::render::shell_text::{self, ShellTextDraw};
+use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::wol_lobby::*;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
