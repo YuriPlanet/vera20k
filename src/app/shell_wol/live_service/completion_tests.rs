@@ -874,7 +874,8 @@ fn an_expired_start_says_whose_game_could_not_reach_the_relay() {
 }
 
 /// The lobby's reasons for refusing a start show as their own lines; one
-/// this game does not know keeps the general line.
+/// this game does not know keeps the general line. The lobby's tests read
+/// the same reasons.
 #[test]
 fn a_refused_start_shows_the_lobbys_reason() {
     let (mut service, _input, _output) = control_service(None);
@@ -889,6 +890,16 @@ fn a_refused_start_shows_the_lobbys_reason() {
         "no start pending here"
     );
     service.pending = Some(start_waiting_until(Instant::now(), true));
+    let messages =
+        &crate::test_fixture::json("tests/fixtures/lobby/start_rejected.json")["messages"];
+    for message in messages.as_array().unwrap() {
+        let message = message.as_str().unwrap();
+        assert_ne!(
+            service.start_rejected_line(message),
+            "VERA:StartRefusedConnection",
+            "{message}"
+        );
+    }
     assert_eq!(
         service.start_rejected_line(relay),
         "VERA:StartRelayNotReached",
