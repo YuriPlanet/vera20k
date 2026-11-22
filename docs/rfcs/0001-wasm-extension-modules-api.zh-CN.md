@@ -2,7 +2,7 @@
 
 [English](0001-wasm-extension-modules-api.md)
 
-[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.16，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
+[RFC 0001](0001-wasm-extension-modules.zh-CN.md) 的参考附录，版本 0.0.17，与正文在同一次提交中修改，不一致时以正文为准；规则只在正文中陈述，版本 1 的清单见[第 9 节](#9-版本-1-清单)和各表的层级列。
 
 ## 目录
 
@@ -73,7 +73,7 @@ TypeScript 引用为 `i64` 别名，Rust 为 newtype；`NO_HANDLE = 0`。
 - 返回数量的函数写入模块的缓冲区（`out`、`cap`），写入数量经末尾的输出指针写回。
 - `len` 一律是字节数；`cap` 对字符串和字节是字节数，对引用缓冲区（`find`、`client_find` 的 `out`）是 `i64` 条目数；写回的数量单位同 `cap`。`get_many`、`client_get_many` 的 `out` 至少容纳 `n × m` 个 `i64`。
 - `name_of`、`rules_get`、`client_storage_read` 把完整长度写入 `len_out`；大于 `cap` 时 `out` 中什么也不写。
-- 分页调用返回状态，`count` 和 `next` 写入 `FindResult`（固定布局）。首页 `after=0`；续页沿用查询，只取排序键 ≥ `after` 的项。按 [8.2](#82-搜索范围find) 使用创建序号、所属方或格子下标、类型 ID 或稳定的修饰器加入序号。页满时 `next=页末键+1`，下一页可能为空；未满时 `next=0`。有效查询容量为零时写入 `count=0`、`next=0` 并返回 `Ok`，不扫描。
+- 分页调用返回状态，`count` 和 `next` 写入 `FindResult`（固定布局）。首页 `after=0`；续页沿用查询，只取排序键 ≥ `after` 的项。按 [8.2](#82-搜索范围find) 使用创建序号、所属方或格子下标、类型 ID 或稳定的修饰器加入序号。因单次扫描上限（正文 15.4）结束时，`next` 是第一个未检查的键，`count` 可能小于容量或为 0；页满时 `next=页末键+1`，下一页可能为空；其余情况 `next=0`。只有 `next=0` 表示最后一页。有效查询容量为零时写入 `count=0`、`next=0` 并返回 `Ok`，不扫描。
 
 ### 状态
 
@@ -471,7 +471,7 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 变量 | 声明生成 `Wave.get()`、`Panicked.get(unit)`、`ReinforcementsBought.set(house, 1)`；原版变量为 `Var.local(n).get()`、`Var.global(n).set(value)` | 初始化时缓存 `lookup` 的结果（原版用固定 ID）；访问时一次 `var_get` 或 `var_set`，客户端只有 `client_var_get` |
 | 名字 | `Rules.technoType("E1")`、`Rules.weapon("RedEye2")`、`Rules.superWeaponType("NukeSpecial")` 返回类型引用（含按国家名查类型的 `Rules.country(name)`） | `lookup` 成功时编码类型引用；未找到时 SDK 返回 `NO_HANDLE`，保留 `NotFound` 状态 |
 | 规则 | `Rules.get(section, key)`、`Rules.set(section, key, value)` | `rules_get`、`rules_set` |
-| 搜索 | `.first()` 或 `.page(buffer, after)`；`.country(americans)` 按国家筛选 | 每次一次 `find`；first 使用容量 1，空结果为 0。country 接受已解析的国家类型引用，生成 Country 相等子句 |
+| 搜索 | `.first()` 或 `.page(buffer, after)`；`.country(americans)` 按国家筛选 | 每次 `.page` 一次 `find`；first 使用容量 1，沿 `next` 继续，直到找到或 `next=0`，没有匹配时返回 0。country 接受已解析的国家类型引用，生成 Country 相等子句 |
 | 其他 | `Cell.at(x, y)`、`Waypoint.cell(n)`（只编码引用）；`Notify.id(name)`、`Notify.send(to, id, data)` | —；`lookup`、`send_notify` |
 | 注册 | 顶层的 `onScenarioStart(fn)`、`onFrame(new Every(N), fn)`、`onMessage(fn)`、`namedAction(name, fn)`；客户端的 `onStart(fn)`、`onRender(fn)`、`onClientEvent(ClientEvent.Click, fn)` | SDK 生成的导出 |
 | 客户端 | `Ui.find(name)`、`Ui.create(NodeKind.Text, parent)`、`Node.setLabel(n, text)`、`Node.setVisible(n, v)`、`Client.viewer()`、`Client.sendMessage(data)`、`Client.order(...)`、`Storage.read(key)`、`Node.setItems(n, items)` | `client_*`，各一次；`Storage.read` 的值大于缓冲区时调用两次；`Node.setItems` 用 `\n` 连接条目后调用 `client_set_bytes` |

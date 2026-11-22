@@ -2,7 +2,7 @@
 
 [简体中文](0001-wasm-extension-modules-api.zh-CN.md)
 
-Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.16, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
+Reference appendix to [RFC 0001](0001-wasm-extension-modules.md), version 0.0.17, revised in the same commit as the main text, which takes precedence. Rules are stated only in the main text. Version 1 contents are in [section 9](#9-version-1-inventory) and the tier columns.
 
 ## Contents
 
@@ -73,7 +73,7 @@ Property values, variables and integer record payloads use `i64`. Interpret them
 - Count-returning functions write into a module buffer (`out`, `cap`) and write the number written through their trailing out pointer.
 - `len` always counts bytes. For strings and bytes, `cap` counts bytes. For reference buffers (`out` in `find` and `client_find`), it counts `i64` entries. The written count uses the same unit. The output of `get_many` and `client_get_many` must hold at least `n × m` entries of type `i64`.
 - `name_of`, `rules_get` and `client_storage_read` write the full length to `len_out` and write nothing to `out` if it exceeds `cap`.
-- A paged call returns its status and writes `count` and `next` to a `FindResult` (fixed layouts). Start with `after=0`. Reuse the query on subsequent pages, taking only entries with sort key ≥ `after`. [8.2](#82-search-scopes-find) specifies creation serial, house or cell index, type ID, or stable modifier insertion serial. On a full page, `next=last key+1` and the following page may be empty. Otherwise `next=0`. A valid zero-capacity query writes `count=0`, `next=0` and returns `Ok` without scanning.
+- A paged call returns its status and writes `count` and `next` to a `FindResult` (fixed layouts). Start with `after=0`. Reuse the query on subsequent pages, taking only entries with sort key ≥ `after`. [8.2](#82-search-scopes-find) specifies creation serial, house or cell index, type ID, or stable modifier insertion serial. If the per-call scan limit (main text 15.4) ends the page, `next` is the first key not examined, and `count` may be below capacity or 0. On a full page, `next=last key+1` and the following page may be empty. Otherwise `next=0`. Only `next=0` marks the last page. A valid zero-capacity query writes `count=0`, `next=0` and returns `Ok` without scanning.
 
 ### Status
 
@@ -471,7 +471,7 @@ The table uses TypeScript. Rust uses newtypes and snake case (`where_prop`). Nam
 | Variables | Declarations generate `Wave.get()`, `Panicked.get(unit)`, `ReinforcementsBought.set(house, 1)`. Stock variables use `Var.local(n).get()`, `Var.global(n).set(value)`. | Cache `lookup` at initialization (stock IDs are fixed). One `var_get` or `var_set` per access. Clients have only `client_var_get`. |
 | Names | `Rules.technoType("E1")`, `Rules.weapon("RedEye2")`, `Rules.superWeaponType("NukeSpecial")` return type references, as does `Rules.country(name)` for a country name | Encode the type reference on successful `lookup`. On failure the SDK returns `NO_HANDLE` and retains `NotFound`. |
 | Rules | `Rules.get(section, key)`, `Rules.set(section, key, value)` | `rules_get`, `rules_set` |
-| Searches | `.first()` or `.page(buffer, after)`. `.country(americans)` filters by country. | One `find` per call. first uses capacity 1 and returns 0 for no match. country takes a resolved country type reference and generates a Country equality clause. |
+| Searches | `.first()` or `.page(buffer, after)`. `.country(americans)` filters by country. | One `find` per `.page` call. first uses capacity 1, calls again from `next` until it has a match or `next=0`, and then returns 0 for no match. country takes a resolved country type reference and generates a Country equality clause. |
 | Other | `Cell.at(x, y)`, `Waypoint.cell(n)` only encode references. `Notify.id(name)`, `Notify.send(to, id, data)` | No call for references. Notifications use `lookup`, `send_notify`. |
 | Registration | Top-level `onScenarioStart(fn)`, `onFrame(new Every(N), fn)`, `onMessage(fn)`, `namedAction(name, fn)`. Client `onStart(fn)`, `onRender(fn)`, `onClientEvent(ClientEvent.Click, fn)` | SDK-generated exports |
 | Client | `Ui.find(name)`, `Ui.create(NodeKind.Text, parent)`, `Node.setLabel(n, text)`, `Node.setVisible(n, v)`, `Client.viewer()`, `Client.sendMessage(data)`, `Client.order(...)`, `Storage.read(key)`, `Node.setItems(n, items)` | One `client_*` call each. `Storage.read` calls twice if the value exceeds its buffer. `Node.setItems` joins entries with `\n` and calls `client_set_bytes`. |
