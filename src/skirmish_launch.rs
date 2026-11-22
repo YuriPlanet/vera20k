@@ -507,9 +507,8 @@ pub struct SkirmishLaunchOptions {
     /// waits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue: Vec<String>,
-    /// VERA's room rules: the host's Terrain Deformation and personal
-    /// rules, which every player's match plays. Left out while the room has
-    /// neither.
+    /// VERA's room rules: the host's Options switches ([`HostRules`]), which
+    /// every player's match plays. Left out while all are off.
     #[serde(default, skip_serializing_if = "HostRules::is_empty")]
     pub host_rules: HostRules,
 }

@@ -836,7 +836,9 @@ The switches compose over the root each scenario reads, never over the
 cold start or the shell's Country reads, so every player's one rules registry is the
 same whichever rules a room plays. Offline games play the player's own, a network
 replay the room's it recorded. A Quick Match room has none: the guest's game drops
-any its host sends, and the lobby refuses them there. A launcher's network game
+any its host sends, and the lobby refuses them there. A
+[campaign room](#multiplayer-campaign-rooms) plays none either, whatever its host's
+are (`MatchSession::network_personal_rules`). A launcher's network game
 (`tools/spawn`) has no host to share them, so each player plays their own, which its
 `ExpectedRulesDigest` compares, and the start barrier compares again; it plays
 without the Building Production Queue, which its probe leaves out too, so a player's

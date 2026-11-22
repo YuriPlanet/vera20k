@@ -58,8 +58,9 @@ pub(crate) struct ProcessAssets {
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     /// The player's own rule switches, read at startup with VERA.INI and
     /// changed by the skirmish Game Options ([`Self::set_terrain_deformation`],
-    /// [`Self::set_superweapon_limit`]). A network room plays its host's
-    /// instead ([`Self::use_personal_rules`]).
+    /// [`Self::set_superweapon_limit`]) and the Options page
+    /// ([`Self::set_building_production_queue`]). A network room plays its
+    /// host's instead ([`Self::use_personal_rules`]).
     personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
