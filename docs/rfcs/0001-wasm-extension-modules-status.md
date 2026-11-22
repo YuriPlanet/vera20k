@@ -11,6 +11,9 @@ content as work lands; do not append a diary.
   (the RFC's experiment repository; the earlier work merged there as #5).
 - Scope: RFC phase 1 (`rules.wasm`) first, then phase 2 (`ui.wasm`), then phase 3.
   The TypeScript SDK is deferred by the maintainer; validate with the Rust SDK.
+- Feedback: the RFC draft PR
+  [YuriPlanet/vera20k#4653](https://github.com/YuriPlanet/vera20k/pull/4653) carries
+  two comments asking for review: the modding tutorial and the four playtest mods.
 
 ## Map of the code
 
@@ -34,6 +37,7 @@ content as work lands; do not append a diary.
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
 | Modder guide | `docs/wasm-modules.md` |
+| Tutorials (Chinese) | `docs/wasm-modules-tutorial.zh-CN.md` (Rust, builds and checks); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript, written ahead of the SDK from RFC 5a and appendix 3 to review the planned API; nothing in it is compiled) |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
@@ -45,7 +49,7 @@ content as work lands; do not append a diary.
 | Map embedding (`[VeraWasm]`, `[VeraWasmRulesPack]`) | `src/map/ext_module_pack.rs` |
 | Loading | `headless_scenario.rs`, `app/loading/init.rs`: `PreparedExtModules::load` (mod folder `rules.wasm`, then map) before the rules load, `install_scenario_ext_modules` after the simulation exists |
 | `asset wasm-check / wasm-embed / wasm-extract` | `src/asset_tools/verb_wasm.rs` |
-| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage` |
+| Rust SDK | `sdk/rust/vera20k-sdk` (no_std; `props.rs`, `vars.rs`, `triggers.rs`); examples `sdk/examples/minimal-rules`, `modifier-vars`, `panic-triggers`, `actions-demo`, `orders-rules`, `decide-damage`; the tutorial's `tutorial-bounty`; playtest mods `playtest`, `veteran-fury`, `siege-doctrine`, `meteor-storm`, `trigger-lab` (the last four split the API by area without overlap, see `docs/wasm-modules.md`) |
 
 Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `.cargo/config.toml` targets wasm32 with the allowlisted features). The engine tests
@@ -54,8 +58,32 @@ Build an example: `cd sdk/examples/<name> && cargo build --release` (its
 `a_rust_built_actions_module_runs`, `a_rust_built_orders_module_runs` and
 `a_rust_built_decide_module_halves_damage` run them when `VERA20K_TEST_RULES_WASM`,
 `VERA20K_TEST_MODIFIER_WASM`, `VERA20K_TEST_TRIGGERS_WASM`, `VERA20K_TEST_ACTIONS_WASM`,
-`VERA20K_TEST_ORDERS_WASM` and `VERA20K_TEST_DECIDE_WASM` name the built `.wasm` files. The examples' `.cargo/config.toml`
-is ignored by the root `.gitignore`; add a new one with `git add -f`.
+`VERA20K_TEST_ORDERS_WASM` and `VERA20K_TEST_DECIDE_WASM` name the built `.wasm` files.
+`playtest_modules_keep_running` plays 2000 frames of a Battle against one computer
+house with each module that `VERA20K_TEST_PLAYTEST_WASM` lists (`:`-separated) and
+checks it keeps running with no trigger refused; `--nocapture` prints the module logs.
+These tests need `RA2_DIR` (the retail install) or they return early and pass
+without running. The examples' `.cargo/config.toml` is ignored by the root
+`.gitignore`; add a new one with `git add -f`.
+
+Writing modules: `core::fmt` (`write!`, `format_args!`, `{:?}`) in a `no_std` module
+pulls in an encoding the load checks refuse (`zero byte expected`); the examples
+format numbers with a small `Line` builder instead. One `on_frame!` export per
+module (merge timers into one function).
+
+## Playtest setup
+
+- Fast client: `python3 -m tools.cargo_run -- build --profile fast -p vera20k --bin
+  vera20k --bin asset` with `CARGO_TARGET_DIR=/Volumes/扩展盘/vera20k-build/cargo-target/wx-engine`;
+  the binaries land in `owned-worktrees/<sha256(worktree path)[:16]>/fast/`. Put a
+  `config.toml` beside them (`[paths] ra2_dir = "<retail install>"`), or the client
+  finds no `ra2md.mix` and the mod fails to start. `cargo_run`'s cache retention
+  deletes the namespaces of removed worktrees, binaries included.
+- Mods go in the user data folder (`~/Library/Application Support/VERA20k/Mods/<Name>/`
+  on macOS) as `mod.ini` plus `rules.wasm`; start with `vera20k --mod <Name>`. A mod
+  that failed to start is skipped once on the next start (crash guard).
+- Module `log` lines appear in the chat list (8 per frame) and in `logs/ra2.log`
+  under target `ext_module`.
 
 ## Done (phase 1)
 
@@ -274,7 +302,25 @@ is ignored by the root `.gitignore`; add a new one with `git add -f`.
 ## Remaining in phase 1
 
 Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
-left is listed under residuals. Before version 1 (RFC "Process"): the TypeScript SDK
+left is listed under residuals. Small follow-ups found by the playtest mods:
+
+- Read the house property `IsCivilian` (`house_property` in `ext_modules.rs`).
+- An SDK helper that turns numbers into text without `core::fmt`.
+- Build-dependent effects: `Unkillable` and the crit modifiers exist only in Phobos
+  builds; a module cannot tell up front (raised on the RFC PR).
+
+Phase 2 (`ui.wasm`) should build on the GUI crate of `feature/gui-crate`
+([YuriPlanet/vera20k#4973](https://github.com/YuriPlanet/vera20k/pull/4973), not
+merged). Its `docs/gui-library-api.md` already maps the `client_node_*` and
+`client_set/get` calls (sections 3 and 15) and its `Gui` tree has create, set, get,
+cascading remove, `Refused` and a node cap. Missing for the RFC: the in-match UI
+(only out-of-game screens moved), lookup by part name, node owners, the
+`veraui.ini` loader, and the RFC v1 kinds `Row`, `Column`, `CameoGrid`, `Image`,
+`Bar`, `Decoration` and `MapMarker`. Order: move the in-match UI onto the crate,
+add names, owners and those kinds, then a thin `client_*` bridge that checks the
+section 10 permissions.
+
+Before version 1 (RFC "Process"): the TypeScript SDK
 (deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (`Launch`,
 `ProjectileFrame`, module trajectories, peer calls).
@@ -353,5 +399,10 @@ HEAD `fc78b8e90`): wasm-ext 21/21; `sim::ext_modules::` with `sim::trigger_runti
 `sim::combat::`, `sim::crates::`, `sim::passenger::`, `sim::production::`,
 `sim::team_script_vm::`, `sim::world::`, `sim::movement::` 5086 passed, 173 ignored,
 2 failed for this machine only (Chinese retail CSF; no unlayered retail `ini/`);
-client check, wasm32 check and `group_tests check` pass. Not run: a `--profile fast`
-retail map load through the app loader.
+client check, wasm32 check and `group_tests check` pass.
+
+Since then (HEAD `6e8124e67`): `playtest_modules_keep_running` passes with the four
+playtest mods. A `--profile fast` client loaded a mod module through the app loader
+in a retail skirmish: the module ran, logged to the chat list and paid credits;
+the waves of `veteran-fury` failed on `IsCivilian` until the module stopped using
+it. The other three mods have run only in the headless test.
