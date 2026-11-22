@@ -929,6 +929,20 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   A name without an account returns 404 `no_account`. Deletion returns 409
   `match_active` while the player is in a match or a ranked game of theirs is still
   waiting for results.
+- `/v1/accounts/rename` `{name,password,new_name}` returns 200 `{name}` with the new
+  name; no game sends it. The new name follows the session rule, and the password stays
+  the same. Ratings, standings, past seasons and ranked games move to the new name; the
+  rename drops every remembered sign-in, signs out whoever plays under the old name and
+  mails the owner. An account renames at most once in 30 days: sooner returns 429
+  `rename_too_soon` with `retry_after`. Wrong passwords count toward the sign-in limits.
+  It also refuses with 400 `invalid_request` or `invalid_name`, 403 `wrong_password`,
+  404 `no_account`, 409 `match_active` as deletion does, 409 `same_name` for the
+  account's own name (a change of case only is allowed), and 409 `name_unavailable` for
+  a name that is reserved, held, an account's or being registered, or has a player
+  online, a match or ranked games under it. For 30 days the old name stays held for the
+  account: registering it returns 409 `name_unavailable`, `GET /v1/players/<old name>`
+  answers the account's profile under its new name, and deleting the account frees it.
+  A change of case only holds nothing.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -937,8 +951,11 @@ the owner. 30 wrong passwords from one network in an hour return 429 `rate_limit
 An account's sign-in has `account:true` in the response, and `remember:true` with the
 right password adds a `sign_in_token` (32 bytes, base64url without padding). A password
 or `sign_in_token` for a name without an account returns 404 `no_account`; otherwise
-that name enters as a guest. A lobby without accounts set up refuses a password with
-503 `accounts_unavailable`.
+that name enters as a guest. A renamed account's held old name returns the same 404 to a
+password or `sign_in_token`, with `phrases` `AccountRenamed` holding `{name}`, the new
+name. Every game the lobby admits shows it and, as for any `no_account`, forgets the
+remembered sign-in. A guest under that name gets 409 `name_unavailable`. A lobby without
+accounts set up refuses a password with 503 `accounts_unavailable`.
 
 Opening VERA Online offers **Play as Guest** and **Sign In and Play**. Guest entry
 immediately requests a session under a temporary name such as `Guest04219`, with no
@@ -1046,7 +1063,8 @@ where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers
-404. `GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
+404, unless it is a renamed account's held old name ([Accounts](#accounts)).
+`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
 minute: `{season,started_at,ends_at,updated_at,total,players,seasons,running}`, `season`
 being `null` when no season runs and `ends_at` `null` without an end, `total` the players
 ranked in it and `players` the best 1,000 of them by OS, then wins, each
