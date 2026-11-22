@@ -547,7 +547,8 @@ impl RandomMapGenerationRetention {
 
     pub(super) fn accept_setup(&mut self, selected_map_file: &str) {
         self.accepted_launch = self.candidate.take().map(|generated| {
-            let start_staging = AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
+            let start_staging =
+                AcceptedRmgStartStaging::from_scenario_staging(&self.generated_header);
             (
                 selected_map_file.to_owned(),
                 AcceptedRandomMapLaunch {
@@ -872,8 +873,18 @@ pub(super) fn prepare_random_map_generation(
     );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
-            asset_manager.get(name)
+            asset_manager.get_ref(name)
         });
+    // The launch load refuses the same theater with this message
+    // (app/loading/init.rs). Here the refusal reaches the player as the
+    // dialog's generate-failed note (`fail_generate`), as the refusals above
+    // do; the note is one fixed sentence, so the missing piece is logged.
+    if let Some(missing) =
+        blocks.missing_cliff_tile(&theater.lookup, resolved_inputs.ids.cliffs.cliff_set)
+    {
+        log::warn!("random map: {missing}");
+        return None;
+    }
     Some(PreparedRandomMapGeneration {
         theater,
         terrain_rules,
@@ -1199,7 +1210,7 @@ fn draws_preview(point: crate::map::rmg::build::GenerationPoint) -> bool {
 }
 
 /// An exported map's path as the dialog shows it: from inside the player's
-/// home folder when it lies there (`AppData\Local\VERA20k\Maps\rmap1.yrm`),
+/// home folder when it lies there (`AppData\Local\VERA20k\Maps\rmap1.map`),
 /// else whole.
 fn shown_export_path(path: &std::path::Path, home: Option<&std::path::Path>) -> String {
     home.and_then(|home| path.strip_prefix(home).ok())
@@ -1209,11 +1220,10 @@ fn shown_export_path(path: &std::path::Path, home: Option<&std::path::Path>) -> 
 }
 
 impl App {
-    /// VERA extension: keep the dialog's generated map as `rmap<seed>.yrm` in
-    /// VERA's Maps folder through [`crate::app::map_library::keep_map`],
-    /// never the game folder, so Choose Map lists it at once; a name another
-    /// map holds takes the map's hash suffix. Returns the written file, none
-    /// when there is no map or the write fails.
+    /// Keep the dialog's generated map through [`crate::app::map_library::keep_map`].
+    /// New exports use `rmap<seed>.map` in VERA's Maps folder. An existing
+    /// export with the same bytes keeps its name; a different map keeps its
+    /// file and the new export gets a hash suffix. Choose Map lists the result.
     fn export_generated_map(state: &mut AppState) -> Option<std::path::PathBuf> {
         let generated = state.frontend.random_map_retention.candidate()?;
         let modal = state
@@ -1244,14 +1254,14 @@ impl App {
                 .preview_source_bounds()
                 .as_ref(),
         );
-        let file = format!("rmap{seed}.yrm");
-        match crate::app::map_library::keep_map(state, &file, text.as_bytes()) {
+        let stem = format!("rmap{seed}");
+        match crate::app::map_library::keep_map(state, &stem, text.as_bytes()) {
             Ok(path) => {
                 log::info!("random map: exported {}", path.display());
                 Some(path)
             }
             Err(err) => {
-                log::warn!("random map: could not export {file}: {err:#}");
+                log::warn!("random map: could not export {stem}: {err:#}");
                 None
             }
         }
@@ -2213,15 +2223,15 @@ mod tests {
     #[test]
     fn an_exported_map_is_shown_from_the_home_folder() {
         let home = std::path::Path::new("home").join("player");
-        let kept = home.join("AppData").join("rmap7.yrm");
+        let kept = home.join("AppData").join("rmap7.map");
         assert_eq!(
             shown_export_path(&kept, Some(&home)),
             std::path::Path::new("AppData")
-                .join("rmap7.yrm")
+                .join("rmap7.map")
                 .display()
                 .to_string()
         );
-        let elsewhere = std::path::Path::new("maps").join("rmap7.yrm");
+        let elsewhere = std::path::Path::new("maps").join("rmap7.map");
         assert_eq!(
             shown_export_path(&elsewhere, Some(&home)),
             elsewhere.display().to_string()
@@ -3495,7 +3505,7 @@ mod tests {
 
     /// VERA extension end-to-end: with a retail install, the Advanced building
     /// sliders generate and export a map carrying unpowered, damaged neutral
-    /// buildings. Ignored because it needs RA2_DIR; the written `.yrm` is left
+    /// buildings. Ignored because it needs RA2_DIR; the written `.map` is left
     /// under target/scale for a human to open in the game.
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
@@ -3560,11 +3570,17 @@ mod tests {
             None,
         );
         let dir = std::path::Path::new("target/scale");
-        std::fs::create_dir_all(dir).unwrap();
-        let path = dir.join("rmg_building_sliders.yrm");
-        std::fs::write(&path, text.as_bytes()).unwrap();
+        let path = crate::map::source::keep_received_map(
+            dir,
+            &retail_dir,
+            "rmg_building_sliders",
+            text.as_bytes(),
+        )
+        .unwrap()
+        .path;
 
-        let read = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
+        let read =
+            crate::map::map_file::MapFile::from_bytes(&std::fs::read(&path).unwrap()).unwrap();
         let derelicts = read
             .entities
             .iter()

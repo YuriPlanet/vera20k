@@ -600,6 +600,38 @@ pub fn wol_create_game_layout_on(
     }
 }
 
+/// VERA Online's welcome and player count are centred on the Create Room art.
+/// The original MNBTTN buttons share their rectangles with pointer input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WolEntryChoiceLayout {
+    pub dialog: RectPx,
+    pub heading: RectPx,
+    pub players_online: RectPx,
+    pub guest: RectPx,
+    pub account: RectPx,
+}
+
+pub(crate) fn wol_entry_choice_layout_on(
+    area: RectPx,
+    scale: geom::ShellScale,
+) -> WolEntryChoiceLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| scale.scale_rect(RectPx::new(dialog.x + x, dialog.y + y, w, h));
+    let button = geom::child_window(0, 0, 99, 15);
+    let gap = 16;
+    let left = (dialog.w - 2 * button.w - gap) / 2;
+    let top = dialog.h - 34 - button.h;
+    let middle = dialog.h / 2;
+    let line = |y, h| child(20, y, dialog.w - 40, h);
+    WolEntryChoiceLayout {
+        dialog: scale.scale_rect(dialog),
+        heading: line(middle - 34, 32),
+        players_online: line(middle, 28),
+        guest: child(left, top, button.w, button.h),
+        account: child(left + button.w + gap, top, button.w, button.h),
+    }
+}
+
 /// VERA online's account popups (Create Account, its mailed code, Forgot
 /// Password) on the online Create Game box: one caption and edit per field,
 /// OK and Cancel, and a two-line status inside the frame.

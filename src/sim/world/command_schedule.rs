@@ -658,7 +658,7 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules, effects);
         for command in commands {
@@ -723,7 +723,7 @@ impl Simulation {
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (bool, bool) {
         // Scatter's found-cell arm immediately runs the locomotor. Its
         // authoritative bridge flag can change before the ordinary movement
@@ -1101,7 +1101,7 @@ impl Simulation {
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }
@@ -1274,7 +1274,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
         let is_network = self.session.execution_topology().is_lockstep();
@@ -1323,7 +1323,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (usize, bool) {
         self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
             .expect("component command dispatch must succeed")
@@ -1345,7 +1345,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
         let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
@@ -1399,7 +1399,7 @@ impl Simulation {
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             execute_tick,
             spawned: false,
             executed: 0,
@@ -1590,7 +1590,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
                 &command,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             if let Some(record) = entry.record() {
                 self.frame_effects

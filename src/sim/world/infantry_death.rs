@@ -130,7 +130,7 @@ impl InfantryDeathPostlude {
         world: &mut Simulation,
         rules: &RuleSet,
         effects: &mut crate::sim::combat::DeathEffects,
-        uninit: Option<super::UninitContext<'_>>,
+        mut uninit: Option<super::UninitContext<'_>>,
     ) {
         use crate::sim::combat::destruction_effects::{
             AresMakeInfTail, DeathAnimFollowUp, DeathAnimSpawn,
@@ -161,7 +161,7 @@ impl InfantryDeathPostlude {
             // A grounded object's Crash refuses; at height1..10 it can retain
             // the object instead of UnInit, alive at Health 0 and falling.
             // Reuse FootClass's one Crash owner.
-            if let Some(context) = uninit
+            if let Some(context) = uninit.as_mut()
                 && world
                     .substrate
                     .entities
@@ -562,7 +562,7 @@ impl Simulation {
         inf_death_anim: Option<&str>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: super::FrameEffects<'_>,
+        effects: &mut super::FrameEffects<'_>,
     ) -> InfantryDeathPostlude {
         if self
             .substrate
@@ -697,7 +697,7 @@ impl Simulation {
         id: u64,
         sequence: InfantryDeathSequence,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let action = i32::from(crate::rules::infantry_sequence::action_id(
             sequence.animation(),
@@ -798,7 +798,7 @@ mod corpse_tests {
             id,
             InfantryDeathSequence::Die1,
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -915,7 +915,7 @@ mod corpse_tests {
                     arg6: false,
                 },
             );
-            sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+            sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
             let entity = sim.substrate.entities.get(id).unwrap();
             assert_eq!(entity.health.current(), 0, "{warhead}");
             assert_eq!(sim.anims().count(), 0, "{warhead}: no InfDeath anim");

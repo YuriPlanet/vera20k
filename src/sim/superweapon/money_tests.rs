@@ -104,7 +104,7 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -346,7 +346,7 @@ fn superweapon_money_ai_refuses_before_target_search_or_rng() {
         ready(&mut sim, &rules, owner, "Reveal", false);
         let before = sim.state_hash();
         AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
-        superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+        superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
         let events = AI_FIRE_LOG.with(|log| log.borrow_mut().take().unwrap());
         assert_eq!(events, vec![AiFireEvent::TryFire]);
         assert_eq!(sim.state_hash(), before);
@@ -413,11 +413,11 @@ fn superweapon_money_funded_ai_uses_the_same_single_settlement() {
         .get_mut(&owner)
         .unwrap()
         .set_preferred_super_weapon_target((10, 10));
-    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     assert_eq!(sim.houses[&owner].economy().credits(), 500);
     assert_eq!(sim.houses[&owner].economy().spent_credits(), 500);
     assert!(!sim.super_weapons[&owner][&id].is_ready);
-    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, &mut FrameEffects::default());
     assert_eq!(sim.houses[&owner].economy().credits(), 500);
 }
 
@@ -493,7 +493,7 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
                 &mut sim,
                 &rules,
                 owner,
-                Default::default(),
+                &mut Default::default(),
             );
         }
         assert_eq!(

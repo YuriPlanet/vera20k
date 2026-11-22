@@ -449,7 +449,8 @@ fn append_chat_to(
         let layout = crate::app::input::multiplayer_setup::layout(state);
         (layout.chat_log, layout.page.scale, layout.chat_text_scale())
     } else if wol_lobby {
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        // The online page's chat may be hidden behind its games.
+        let layout = crate::app::shell_wol::lobby::chat_layout(state);
         (layout.chat_log, layout.page.scale, 1.0)
     } else {
         let layout = layout(state);
@@ -487,6 +488,15 @@ fn append_chat_to(
                 .bit_font
                 .text_width(&String::from_utf16_lossy(units)) as i32
         });
+    }
+    if wol_lobby
+        && let Some(lobby) = state
+            .frontend
+            .wol
+            .as_mut()
+            .and_then(|visit| visit.lobby_mut())
+    {
+        lobby.ui.chat_arrived();
     }
 }
 
@@ -553,15 +563,21 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
         LanLobbyAction::Join { game_id, observe } => {
             let reserved = reserved_names(state);
             let error = join_error(
-                &state.frontend.lan.as_ref().unwrap().lobby,
+                &state.frontend.lan.as_ref().expect("active BB").lobby,
                 &name,
                 &reserved,
             );
             if let Some(key) = error {
-                state.frontend.lan.as_mut().unwrap().lobby.set_enabled(true);
+                state
+                    .frontend
+                    .lan
+                    .as_mut()
+                    .expect("active BB")
+                    .lobby
+                    .set_enabled(true);
                 report_error(state, key);
             } else if let Some(game_id) = game_id {
-                let runtime = state.frontend.lan.as_mut().unwrap();
+                let runtime = state.frontend.lan.as_mut().expect("active BB");
                 runtime.pending_join = Some(PendingJoin {
                     game_id,
                     observe,
@@ -592,7 +608,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .multiplayer_shell_runtime
                 .local_participant()
                 .name;
-            let runtime = state.frontend.lan.as_mut().unwrap();
+            let runtime = state.frontend.lan.as_mut().expect("active BB");
             runtime.requests.push(LanServiceRequest::NameChanged);
             // Local discovery row is a projection. It is always first only
             // when looking at the Lobby sentinel, never a selected game's roster.
@@ -623,12 +639,12 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .frontend
                 .lan
                 .as_mut()
-                .unwrap()
+                .expect("active BB")
                 .requests
                 .push(LanServiceRequest::Chat { text: message });
         }
         LanLobbyAction::SelectGame { game_id, change } => {
-            let runtime = state.frontend.lan.as_mut().unwrap();
+            let runtime = state.frontend.lan.as_mut().expect("active BB");
             if game_id.is_none() {
                 runtime.lobby.replace_players(vec![local_lobby_row(&name)]);
             }
@@ -792,7 +808,13 @@ fn create(state: &mut AppState, name: &str) {
         .lan_create_observer();
     let error = create_error(&state.frontend.lan.as_ref().expect("active BB").lobby, name);
     if let Some(key) = error {
-        state.frontend.lan.as_mut().unwrap().lobby.set_enabled(true);
+        state
+            .frontend
+            .lan
+            .as_mut()
+            .expect("active BB")
+            .lobby
+            .set_enabled(true);
         show_modal(state, key);
     } else {
         App::leave_shell_dialog(
@@ -1130,15 +1152,15 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             {
                 App::play_launcher_options_cue(state, LauncherCue::GenericClick);
             }
-        } else if matches!(control, Some(OBSERVER_IMAGE | OBSERVER_TOGGLE)) {
-            let icon_hit = control == Some(OBSERVER_IMAGE)
+        } else if let Some(observer @ (OBSERVER_IMAGE | OBSERVER_TOGGLE)) = control {
+            let icon_hit = observer == OBSERVER_IMAGE
                 || crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.observer_toggle,
                     layout.page.scale,
                 )
                 .contains(x, y);
             if icon_hit {
-                let action = lobby.activate(control.unwrap());
+                let action = lobby.activate(observer);
                 if let Some(action) = action {
                     dispatch(state, action);
                 }
@@ -1177,23 +1199,19 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     let (x, y) = state.match_state.input.cursor_px();
     let now = Instant::now();
     let runtime = state.frontend.lan.as_mut()?;
-    if runtime
+    if let Some(request) = runtime
         .pending_join
-        .as_ref()
-        .is_some_and(|request| !request.canceling && now >= request.expires)
+        .as_mut()
+        .filter(|request| !request.canceling && now >= request.expires)
     {
-        let game_id = runtime.pending_game().unwrap();
-        runtime
-            .requests
-            .push(LanServiceRequest::CancelJoin { game_id });
         // Native5DF410 bounds the request by600 wall buckets. VERA also
         // retires a possibly committed UDP admission before enabling retry;
         // an old reply may not enter setup after the timeout was reported.
+        request.canceling = true;
+        let game_id = request.game_id;
         runtime
-            .pending_join
-            .as_mut()
-            .expect("timed request")
-            .canceling = true;
+            .requests
+            .push(LanServiceRequest::CancelJoin { game_id });
         // Native reports a timeout as a denial; VERA says nothing answered.
         report_error(
             state,

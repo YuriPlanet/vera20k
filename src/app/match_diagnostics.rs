@@ -32,6 +32,7 @@ pub(crate) struct MatchDiagnosticsState {
     /// by the frame loop, closed by the lifecycle flush points above.
     pub(crate) replay_log: Option<ReplayLog>,
     command_executions: Option<CommandExecutionLog>,
+    /// Diagnostic probe the draw fills through `&AppState`, hence a `RefCell`.
     actor_presentation: std::cell::RefCell<Option<ActorPresentationProbe>>,
     replay_playback: Option<ReplayPlaybackState>,
     replay_capture_output: Option<PathBuf>,
@@ -441,6 +442,12 @@ impl MatchDiagnosticsState {
             }
             _ => None,
         };
+        if let Some(verified) = &verification {
+            log::info!(
+                "Rendered replay verified {} checkpoints through frame {}, final state {:016x}",
+                verified.checked_hashes, verified.final_tick, verified.final_state_hash
+            );
+        }
         let receipt = serde_json::json!({
             "replay_sha256": self.replay_artifact_sha256,
             "png_sha256": crate::util::sha256::sha256_hex(&png),
@@ -521,7 +528,7 @@ impl MatchDiagnosticsState {
     pub(crate) fn retain_replay_startup(
         &mut self,
         runtime: &crate::sim::runtime::SimRuntime,
-        launch: Option<&crate::skirmish_launch::SkirmishLaunchSession>,
+        launch: Option<crate::sim::replay::ReplayLaunchInput<'_>>,
         source: Option<&crate::map::source::LoadedMapSource>,
         map_hash: Option<u64>,
         options: crate::sim::replay::ReplayStartOptions,
@@ -538,7 +545,7 @@ impl MatchDiagnosticsState {
         };
         match crate::sim::replay::ReplayStartup::capture(
             runtime,
-            crate::sim::replay::ReplayLaunchInput::Slots(launch),
+            launch,
             source,
             map_hash,
             crate::app::types::SIM_TICK_MS,

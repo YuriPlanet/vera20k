@@ -168,7 +168,7 @@ fn run_with(
     launch_mode: AppLaunchMode,
     app_bundle: bool,
     event_loop: EventLoop<()>,
-    mod_switch: Option<crate::app::mods::ModSwitch>,
+    mut mod_switch: Option<crate::app::mods::ModSwitch>,
 ) -> Result<i32> {
     // A player started this launch and may have no console: a failure that
     // ends it shows a message box. Spawn, replay and capture launches come
@@ -236,7 +236,14 @@ fn run_with(
         AppLaunchMode::Replay(request) => crate::app::App::new_replay(request),
         // A hidden map-picture run is desktop automation the menus start; it
         // watches its parent's lifetime and never reaches Android.
-        AppLaunchMode::MapPicture(request) => {
+        AppLaunchMode::MapPicture(mut request) => {
+            if let Some(prepared) = request.prepared_mod.take() {
+                use crate::app::mods::ModSwitch;
+                let Some(ModSwitch::Use(folder)) = mod_switch.take() else {
+                    anyhow::bail!("--prepared-mod needs a selected mod");
+                };
+                mod_switch = Some(ModSwitch::Picture { folder, prepared });
+            }
             crate::app::map_picture::watch_lifetime();
             crate::app::App::new_map_picture(request)
         }

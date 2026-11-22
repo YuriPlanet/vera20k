@@ -66,7 +66,25 @@ pub(crate) fn air_spatial_query_bucket_order(
     radius_cells: i32,
     map_width: u16,
     map_height: u16,
-) -> Vec<u16> {
+) -> impl Iterator<Item = u16> {
+    /// The query's buckets, held inline: an AA scan or an airborne AoE asks
+    /// for them each time it runs. Each cardinal run steps from a bucket on
+    /// the center's row or column to the center, at most `SIDE - 1` steps,
+    /// and each corner run takes at most the shorter of its two cardinal
+    /// runs plus two, so the center and eight runs hold at most `1 + 8 *
+    /// SIDE` buckets.
+    struct BucketOrder {
+        buckets: [u16; 1 + 8 * AIR_SPATIAL_BUCKET_SIDE as usize],
+        len: usize,
+    }
+
+    impl BucketOrder {
+        fn push(&mut self, bucket: u16) {
+            self.buckets[self.len] = bucket;
+            self.len += 1;
+        }
+    }
+
     fn step_bucket(bucket: u16, dx: i16, dy: i16) -> u16 {
         let side = i32::from(AIR_SPATIAL_BUCKET_SIDE);
         let bx = (i32::from(bucket % AIR_SPATIAL_BUCKET_SIDE) + i32::from(dx)).clamp(0, side - 1);
@@ -75,7 +93,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     }
 
     fn push_cardinal(
-        order: &mut Vec<u16>,
+        order: &mut BucketOrder,
         mut bucket: u16,
         center: u16,
         step_dx: i16,
@@ -91,7 +109,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     }
 
     fn push_corner(
-        order: &mut Vec<u16>,
+        order: &mut BucketOrder,
         center: u16,
         x_count: usize,
         y_count: usize,
@@ -114,7 +132,11 @@ pub(crate) fn air_spatial_query_bucket_order(
 
     let radius = if radius_cells < 2 { 1 } else { radius_cells };
     let center = air_spatial_bucket_index(center_rx, center_ry, map_width, map_height);
-    let mut order = vec![center];
+    let mut order = BucketOrder {
+        buckets: [0; 1 + 8 * AIR_SPATIAL_BUCKET_SIDE as usize],
+        len: 0,
+    };
+    order.push(center);
     let endpoint = |dx: i32, dy: i32| {
         let rx = (i32::from(center_rx) + dx).clamp(0, i32::from(u16::MAX)) as u16;
         let ry = (i32::from(center_ry) + dy).clamp(0, i32::from(u16::MAX)) as u16;
@@ -130,7 +152,7 @@ pub(crate) fn air_spatial_query_bucket_order(
     push_corner(&mut order, center, west, south, -1, 1);
     push_corner(&mut order, center, east, north, 1, -1);
     push_corner(&mut order, center, east, south, 1, 1);
-    order
+    order.buckets.into_iter().take(order.len)
 }
 
 /// The cell list Mark addresses for this object now: none unless its layer
@@ -975,6 +997,7 @@ pub(crate) fn entity_occupancy_cells(entity: &GameEntity) -> Vec<(u16, u16)> {
         return vec![(entity.position.rx(), entity.position.ry())];
     }
     entity
+        .seldom
         .type_facts
         .foundation()
         .cell_offsets()

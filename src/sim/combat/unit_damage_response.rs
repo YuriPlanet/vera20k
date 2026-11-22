@@ -99,7 +99,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -180,7 +180,7 @@ impl Simulation {
         id: u64,
         source: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
@@ -194,7 +194,7 @@ impl Simulation {
         let owner = unit.owner();
         if unit.category() != EntityCategory::Unit
             || self.team_script_vm.team_for_member(id).is_some()
-            || unit.tether.partner().is_some()
+            || unit.seldom.tether.partner().is_some()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
                 Some(&self.house_alliances),
                 &self.interner,
@@ -244,7 +244,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|unit| !unit.radio_contacts.contains(dock))
+            .is_some_and(|unit| !unit.seldom.radio_contacts.contains(dock))
             && radio::transmit(
                 self,
                 id,

@@ -71,7 +71,8 @@ enum Shown {
 pub(crate) struct HardwareCursor {
     /// This run reads its frames back, and they must hold the cursor.
     frames_read_back: bool,
-    /// The shape this draw offered, until [`show`] takes it.
+    /// The shape this draw offered, until [`show`] takes it. A `Cell`: the
+    /// draw offers it through `&AppState`.
     offered: Cell<Option<(CursorId, usize)>>,
     shown: Shown,
     /// Images made so far: one mouse.sha load at one size. A new image of

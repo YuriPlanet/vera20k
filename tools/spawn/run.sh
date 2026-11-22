@@ -15,7 +15,15 @@
 #                    (same key and state directory)
 #   BOUND=S          every other source presses Leave ACT_SECONDS+S into the
 #                    match (default 60); on a score screen Leave is Continue
-#   PACING=on|off    relay: sign a VO2C certificate with that pacing flag
+#   PACING=on|off|continuous  relay: sign a VO2C certificate with that pacing flag
+#   SPEED=N          GameSpeed setting (default 2, 30 frames a second; 0 is 60)
+#   SLOW=K           source K plays as a slow PC: SLOW_DRAW_MS (default 0) more
+#                    per drawn picture and SLOW_TICK_MS (default 0) more per
+#                    simulation tick (VERA20K_SPAWN_SLOW_DRAW_MS / _TICK_MS)
+#   AI=N             N computer houses after the humans (relay: PLAYERS=1 allowed)
+#   ALONE=on         relay, PLAYERS=1: a certificate the relay orders alone
+#   WATCHERS=N       relay: N watchers (OUT/w0..), started WATCH_AFTER seconds
+#                    (default 0) after p0's match appears (docs/spawn.md "Watching")
 #   RELAY_PORT=P     relay: loopback UDP port (default 5000)
 #   SERVICE_PORT=P   relay: the mock match API's port (default 8787)
 #   GATEWAY_PORT=P   browser: the WebSocket gateway's port (default 8788)
@@ -41,11 +49,15 @@ bin=${VERA20K_BIN:-$(ls -t "$root"/target/owned-worktrees/*/fast/vera20k 2>/dev/
 pids=""
 cleanup() {
   for pid in $pids; do kill "$pid" 2>/dev/null || true; done
-  [ "$mode" = browser ] || pkill -f -- "$bin -SPAWN" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 extra="--players $players"
 [ -n "${SPECTATORS:-}" ] && extra="$extra --spectators $SPECTATORS"
+[ -n "${AI:-}" ] && extra="$extra --ai $AI"
+[ "${ALONE:-}" = on ] && extra="$extra --alone on"
+[ -n "${SPEED:-}" ] && extra="$extra --speed $SPEED"
+watchers=${WATCHERS:-0}
+[ "$watchers" -gt 0 ] && extra="$extra --watchers $watchers"
 
 relay_pid=""
 relay_port=${RELAY_PORT:-5000}
@@ -66,8 +78,17 @@ if [ "$mode" = relay ] || [ "$mode" = browser ]; then
   VERA_RELAY_TICKET_KEY=$key node "$root/tools/spawn/spawn-e2e.mjs" relay --out "$out" --ra2 "$ra2" $extra \
     --port "$service_port" --relay "127.0.0.1:$relay_port" ${PACING:+--pacing "$PACING"} \
     > "$out/service.log" 2>&1 &
-  pids="$pids $!"
-  until grep -q "match API on" "$out/service.log" 2>/dev/null; do sleep 0.2; done
+  service_pid=$!
+  pids="$pids $service_pid"
+  service_deadline=$(( $(date +%s) + limit ))
+  until grep -q "match API on" "$out/service.log" 2>/dev/null; do
+    if ! kill -0 "$service_pid" 2>/dev/null; then
+      echo "match API exited during startup: see $out/service.log" >&2
+      exit 1
+    fi
+    [ "$(date +%s)" -lt "$service_deadline" ] || { echo "timeout after ${limit}s: match API startup" >&2; exit 1; }
+    sleep 0.2
+  done
 else
   [ -n "${IPS:-}" ] && extra="$extra --ips $IPS"
   # shellcheck disable=SC2086
@@ -96,15 +117,43 @@ while [ "$source" -lt "$players" ]; do
   elif [ "$source" = "$leaver" ]; then
     hooks="VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$act"
   fi
+  if [ "$source" = "${SLOW:-none}" ]; then
+    hooks="$hooks VERA20K_SPAWN_SLOW_DRAW_MS=${SLOW_DRAW_MS:-0} VERA20K_SPAWN_SLOW_TICK_MS=${SLOW_TICK_MS:-0}"
+  fi
   rm -f "$out/p$source/spawn_result.json"
   # VERA20K_SPAWN_HIDDEN_WINDOW=1: invisible window, no Dock/menu bar entry.
   # shellcheck disable=SC2086
   (cd "$out/p$source" && exec env VERA20K_SPAWN_HIDDEN_WINDOW=1 $hooks "$bin" -SPAWN -WIN > stdout.log 2>&1) &
+  pids="$pids $!"
   clients="$clients $!"
   eval "client_$source=$!"
   source=$((source + 1))
 done
-pids="$pids $clients"
+
+# Watchers join the match once it plays; each exits when it has watched it
+# to its end.
+watcher_clients=""
+deadline=$(( $(date +%s) + limit ))
+if [ "$watchers" -gt 0 ]; then
+  # A player that never reaches the match (a refused launch) must not hold
+  # the run past its limit.
+  until grep -q "External launch: match on screen" "$out/p0/logs/ra2.log" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "timeout after ${limit}s: no match for the watchers" >&2; exit 1; }
+    sleep 0.5
+  done
+  sleep "${WATCH_AFTER:-0}"
+  index=0
+  while [ "$index" -lt "$watchers" ]; do
+    rm -f "$out/w$index/spawn_result.json"
+    # The match's score screen waits for Continue, which the hook presses
+    # once the players are surely gone.
+    (cd "$out/w$index" && exec env VERA20K_SPAWN_HIDDEN_WINDOW=1 \
+      VERA20K_SPAWN_LEAVE_AFTER_SECONDS=$((act + bound + 60)) "$bin" -SPAWN -WIN > stdout.log 2>&1) &
+    pids="$pids $!"
+    watcher_clients="$watcher_clients $!"
+    index=$((index + 1))
+  done
+fi
 
 if [ "$kill_target" != none ]; then
   if [ "$kill_target" = relay ]; then victim=$relay_pid; watch=0; else eval "victim=\$client_$kill_target"; watch=$kill_target; fi
@@ -123,7 +172,6 @@ if [ "$kill_target" != none ]; then
   pids="$pids $!"
 fi
 
-deadline=$(( $(date +%s) + limit ))
 source=0
 for pid in $clients; do
   while kill -0 "$pid" 2>/dev/null; do
@@ -134,6 +182,19 @@ for pid in $clients; do
   wait "$pid" || status=$?
   echo "exit status $status" >> "$out/p$source/stdout.log"
   source=$((source + 1))
+done
+index=0
+for pid in $watcher_clients; do
+  while kill -0 "$pid" 2>/dev/null; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "timeout after ${limit}s" >&2; exit 1; }
+    sleep 1
+  done
+  status=0
+  wait "$pid" || status=$?
+  echo "exit status $status" >> "$out/w$index/stdout.log"
+  echo "== w$index"; tail -n 1 "$out/w$index/stdout.log"
+  [ -f "$out/w$index/spawn_result.json" ] && cat "$out/w$index/spawn_result.json" && echo
+  index=$((index + 1))
 done
 source=0
 while [ "$source" -lt "$players" ]; do

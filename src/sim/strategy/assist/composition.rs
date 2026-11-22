@@ -193,7 +193,7 @@ pub(super) fn fill_lines(
     // Why the infantry line kept running: the ceiling is only as good as the
     // three numbers it reads. Traced like the build list's own line, so a
     // roster that is four fifths infantry can be attributed instead of guessed.
-    if std::env::var("AUTOPLAY_TRACE_COMPOSITION").is_ok() && obs.tick() % 1800 == 0 {
+    if super::trace_enabled("AUTOPLAY_TRACE_COMPOSITION") && obs.tick() % 1800 == 0 {
         let infantry: usize = brain.census.tiers[Slot::Infantry.index()].iter().sum();
         log::info!(
             "composition trace: infantry={} fighters={} free={} vehicle_floor={} rich={} full={} below={} holds={} resetting={}",

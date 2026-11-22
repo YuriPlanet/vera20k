@@ -123,7 +123,7 @@ impl Simulation {
                     input.rules,
                     input.overlay_registry,
                     player_count,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )?;
                 // Startup OverlayClass::Mark completes synchronously before native
                 // proceeds to AI credits; the placement refreshed the bridge
@@ -422,7 +422,7 @@ impl Simulation {
                     special,
                     input.rules,
                     Some(input.overlay_registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                     false,
                 );
                 sim.make_ally(
@@ -430,7 +430,7 @@ impl Simulation {
                     owner,
                     input.rules,
                     Some(input.overlay_registry),
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                     false,
                 );
             }

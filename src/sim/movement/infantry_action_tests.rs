@@ -57,7 +57,7 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -94,7 +94,7 @@ fn cheer_matches_original_admission_and_shared_do_action_clock() {
             id,
             input["bypass_admission"].as_bool().unwrap_or(false),
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         let actor = sim.substrate.entities.get(id).unwrap();
         let after = &row["after"];
@@ -201,7 +201,7 @@ fn rocketeer(input: &Value) -> (Simulation, RuleSet, u64) {
             64,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("rocketeer");
     let height = input["height"].as_i64().unwrap_or(500) as i32;
@@ -318,7 +318,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                         request,
                         force,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_eq!(accepted, output["accepted"].as_bool().unwrap(), "{name}");
@@ -327,14 +327,17 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                 id,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             "sequencer" => {
                 // The object turn (`infantry_action_turn`) follows the
                 // sequencer with the locomotion actions, which this row does
                 // not run.
-                let removed =
-                    sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default());
+                let removed = sim.infantry_sequencer(
+                    id,
+                    &rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
                 let native_removed = output["recorded"]
                     .as_array()
                     .unwrap()
@@ -362,7 +365,7 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
                     DO_FIRE_FLY,
                     false,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             }
@@ -465,7 +468,7 @@ fn walk_consumer(input: &Value) -> (Simulation, RuleSet, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("infantryman");
     let entity = sim.substrate.entities.get_mut(id).unwrap();
@@ -514,7 +517,12 @@ fn walk_locomotion_actions_match_original_consumer_rows() {
     for row in corpus.iter().filter(|row| row["input"]["consumer"] == true) {
         let name = row["input"].to_string();
         let (mut sim, rules, id) = walk_consumer(&row["input"]);
-        sim.infantry_movement_actions(id, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.infantry_movement_actions(
+            id,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
             entity.mission_leaf.as_infantry().unwrap().doing(),
@@ -624,7 +632,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -650,7 +658,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
                     &rules,
                     false,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             );
@@ -681,7 +689,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
         );
         let rng_before = sim.rng_state();
         assert!(
-            !sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()),
+            !sim.infantry_sequencer(id, &rules, &mut crate::sim::world::FrameEffects::default()),
             "{name}: retained owner"
         );
         assert_eq!(
@@ -741,11 +749,11 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
-        actor.slave = SlaveLink::for_test(
+        actor.seldom.slave = SlaveLink::for_test(
             owner.then_some(123),
             vec![
                 CargoBale {
@@ -768,7 +776,7 @@ fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusa
         let old_stage = actor.native_stage().clone();
         let rng = sim.rng_state();
         assert_eq!(
-            sim.infantry_do_action(id, request, false, &rules, FrameEffects::default())
+            sim.infantry_do_action(id, request, false, &rules, &mut FrameEffects::default())
                 .unwrap(),
             accepted,
             "{kind}, owner={owner}, cargo={amount}, fear={fear}, current={current}, request={request}"
@@ -823,7 +831,7 @@ fn retail_slave_shovel_completion_follows_the_effective_mission() {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -845,7 +853,7 @@ fn retail_slave_shovel_completion_follows_the_effective_mission() {
             92,
             1,
         ));
-        assert!(!sim.infantry_sequencer(id, &rules, FrameEffects::default()));
+        assert!(!sim.infantry_sequencer(id, &rules, &mut FrameEffects::default()));
         assert_eq!(
             doing(&sim, id),
             expected,

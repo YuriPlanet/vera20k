@@ -184,6 +184,7 @@ fn attached_speed_native_histories_include_crates_refresh_expiry_and_discard() {
             assert_eq!(
                 serde_json::json!(
                     victim
+                        .seldom
                         .ares
                         .attach_effects
                         .entries
@@ -216,17 +217,18 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         },
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     assert_eq!(bullets.len(), 1);
     for id in bullets {
-        sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
     }
     assert_eq!(
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]
@@ -296,6 +298,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
                         .entities()
                         .get(id)
                         .unwrap()
+                        .seldom
                         .ares
                         .attach_effects
                         .entries[0]
@@ -322,6 +325,7 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         sim.entities()
             .get(target)
             .unwrap()
+            .seldom
             .ares
             .attach_effects
             .entries[0]

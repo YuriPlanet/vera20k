@@ -51,7 +51,7 @@ pub(crate) const COMPOSITION_RGB: [u8; 3] = [0x9F, 0x9F, 0x00];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImeTarget {
     InGameChat,
-    WolLobbyChat,
+    WolLobbyEdit,
     SetupChat,
     LanLobbyChat,
     ChooseMapSearch,
@@ -115,8 +115,8 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
             crate::app::input::multiplayer_setup::ime_chat_rect(state),
         ),
         (
-            ImeTarget::WolLobbyChat,
-            crate::app::shell_wol::lobby::ime_chat_rect(state),
+            ImeTarget::WolLobbyEdit,
+            crate::app::shell_wol::lobby::ime_edit_rect(state),
         ),
         (
             ImeTarget::ChooseMapSearch,
@@ -201,7 +201,7 @@ fn commit(state: &mut AppState, text: &str) {
         Some(ImeTarget::SetupChat) => {
             crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
         }
-        Some(ImeTarget::WolLobbyChat) => {
+        Some(ImeTarget::WolLobbyEdit) => {
             crate::app::shell_wol::lobby::key_press(state, None, Some(text))
         }
         Some(ImeTarget::ChooseMapSearch) => {

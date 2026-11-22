@@ -56,7 +56,7 @@
 //!   (dormant: no retail one sets it).
 
 use super::{FrameEffects, SimSoundEvent, Simulation, TriggerSoundTarget};
-use crate::rules::ruleset::RuleSet;
+use crate::rules::ruleset::{RuleSet, SoundName};
 use crate::rules::sound_ini::SoundReference;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::DriveCoord;
@@ -105,16 +105,16 @@ impl Simulation {
         };
         self.sound_events.emit(match target {
             TriggerSoundTarget::Centered => SimSoundEvent::VocCentered {
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
             },
             TriggerSoundTarget::Coordinate { coordinate, flags } => SimSoundEvent::VocAtCoord {
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
                 coordinate,
                 flags,
             },
             TriggerSoundTarget::Object { owner, world } => SimSoundEvent::AnimationStarted {
                 anim_id: owner,
-                sound_id: sound_id.clone(),
+                sound_id: SoundName::Unlisted(sound_id.as_str().into()),
                 world,
             },
             TriggerSoundTarget::Eva => SimSoundEvent::TriggerAudio {
@@ -125,7 +125,12 @@ impl Simulation {
     }
 
     /// `ObjectClass::AI`'s sound block for one visit of a Techno or Terrain.
-    pub(crate) fn object_ai_sounds(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    pub(crate) fn object_ai_sounds(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         // `+0x1F4` and `+0x64` are read before `Location`, so an object
         // with neither costs no coordinate.
         let ambient = self.object_ambient_sound(id, rules);
@@ -138,7 +143,7 @@ impl Simulation {
         if let Some(sound_id) = ambient {
             self.sound_events.emit(SimSoundEvent::AnimationStarted {
                 anim_id: ambient_sound_owner(id),
-                sound_id: sound_id.to_owned(),
+                sound_id: rules.sound_name(sound_id),
                 world,
             });
             effects.flush_sound(self, rules);
@@ -163,7 +168,7 @@ impl Simulation {
         &mut self,
         sound: Option<&SoundReference>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Ares 3.0 TActionClass_PlayAudioAtRandomWP (10039B60, hook 0x6E1780,
         // #1004906) replaces the scan: every defined slot is a candidate,
@@ -247,7 +252,7 @@ impl Simulation {
         sound: Option<&SoundReference>,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
@@ -283,7 +288,7 @@ impl Simulation {
         &mut self,
         waypoint: Option<u32>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
             waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))

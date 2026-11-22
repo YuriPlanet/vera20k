@@ -577,8 +577,15 @@ fn accepted_descriptor_height_survives_selected_list_transition() {
 #[test]
 fn a_wall_class_from_the_live_entry_prices_the_crossing() {
     // Column x=3 is a wall line on a 7x17 board, open only at its foot.
-    struct WallLine(u8);
+    struct WallLine(u8, bool);
     impl SearchFootEntry for WallLine {
+        fn train_pose(&self) -> Option<TrainSearchPose> {
+            self.1.then_some(TrainSearchPose {
+                facing_octant: 2,
+                level: 0,
+            })
+        }
+
         fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
             Ok(match query.candidate {
                 SearchEntryCandidate::CopiedCoord((3, y)) if y < 16 => self.0,
@@ -588,16 +595,13 @@ fn a_wall_class_from_the_live_entry_prices_the_crossing() {
     }
     let grid = PathGrid::new(7, 17);
     let crosses = |class: u8, mover_is_train: bool| {
-        let entry = WallLine(class);
+        let entry = WallLine(class, mover_is_train);
         let route = astar_search(
             &grid,
             (0, 0),
             MovementLayer::Ground,
             (6, 0),
-            &AStarOptions {
-                mover_is_train,
-                ..AStarOptions::new(&entry)
-            },
+            &AStarOptions::new(&entry),
         )
         .unwrap();
         assert_eq!(route.last().map(|step| (step.rx, step.ry)), Some((6, 0)));

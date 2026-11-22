@@ -45,27 +45,24 @@ pub(crate) use atlas::SUBPIXEL_STEPS;
 use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
-/// How far a text is squeezed to fit the box it draws in: narrower letters
-/// first, along the bundled fonts' width axis, then smaller ones. VERA's own:
+/// How far a text is squeezed to fit the box it draws in: narrower letters,
+/// along the bundled fonts' width axis, at their own height. VERA's own:
 /// gamemd cuts off what does not fit, and translations run longer than the
-/// English the boxes were drawn for.
+/// English the boxes were drawn for. What the narrowest letters still do not
+/// fit is cut off as gamemd cuts it: smaller letters would read worse, since
+/// GAME.FNT's whole-pixel strokes run together when shrunk.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Fit(u8);
 
-/// Each step's width and size as shares of the text's own. Noto Sans's width
-/// axis ends at 62.5, a quarter narrower than Latin text's 82.
-const FIT_STEPS: [(f32, f32); 5] = [
-    (1.0, 1.0),
-    (72.0 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 1.0),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.9),
-    (62.5 / LATIN_WIDTH_PERCENT, 0.8),
-];
+/// Each step's width as a share of the text's own. Noto Sans's width axis
+/// ends at 62.5, a quarter narrower than Latin text's 82.
+const FIT_STEPS: [f32; 3] = [1.0, 72.0 / LATIN_WIDTH_PERCENT, 62.5 / LATIN_WIDTH_PERCENT];
 
 impl Fit {
     /// The text as designed.
     pub const NONE: Self = Self(0);
-    /// The last step, where a word too long for a line splits.
+    /// The narrowest letters: the last step, where a word too long for a
+    /// line splits.
     pub const TIGHTEST: Self = Self(FIT_STEPS.len() as u8 - 1);
 
     /// The next step, or `None` past the tightest.
@@ -74,22 +71,12 @@ impl Fit {
     }
 
     fn width(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].0
+        FIT_STEPS[usize::from(self.0)]
     }
 
     /// Each width the steps narrow text to, as designed first.
     fn widths() -> impl Iterator<Item = f32> {
-        let mut widths: Vec<f32> = Vec::with_capacity(FIT_STEPS.len());
-        for (width, _) in FIT_STEPS {
-            if !widths.contains(&width) {
-                widths.push(width);
-            }
-        }
-        widths.into_iter()
-    }
-
-    fn size(self) -> f32 {
-        FIT_STEPS[usize::from(self.0)].1
+        FIT_STEPS.into_iter()
     }
 }
 
@@ -519,9 +506,7 @@ impl TextEngine {
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
             &stack,
         ))));
-        builder.push_default(StyleProperty::FontSize(
-            TextClass::Latin.size() * fit.size(),
-        ));
+        builder.push_default(StyleProperty::FontSize(TextClass::Latin.size()));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(LATIN_WEIGHT)));
         builder.push_default(StyleProperty::FontWidth(FontWidth::from_percentage(
             LATIN_WIDTH_PERCENT * fit.width(),
@@ -541,10 +526,7 @@ impl TextEngine {
                 TextClass::Cjk => CJK_WEIGHT,
                 TextClass::Other(_) => OTHER_WEIGHT,
             };
-            builder.push(
-                StyleProperty::FontSize(class.size() * fit.size()),
-                start..end,
-            );
+            builder.push(StyleProperty::FontSize(class.size()), start..end);
             builder.push(
                 StyleProperty::FontWeight(FontWeight::new(weight)),
                 start..end,
@@ -662,7 +644,6 @@ impl TextEngine {
     /// One glyph drawn `pixel_size` pixels tall, `native` its native size and
     /// pen phase ([`split_phase`]), with `pen` (device pixels, on the
     /// baseline) at the corner of the native pixel the pen lies in.
-    #[allow(clippy::too_many_arguments)]
     fn place_glyph(
         &mut self,
         font: u16,
@@ -936,11 +917,12 @@ mod tests {
     }
 
     /// A squeeze narrows GAME.FNT's own letters by the width it narrows the
-    /// bundled fonts to, before shrinking them; GAME.FNT has no width axis.
+    /// bundled fonts to (GAME.FNT has no width axis), and even the tightest
+    /// keeps their height: shrunk, their whole-pixel strokes run together.
     #[test]
-    fn a_squeeze_narrows_game_fnt_letters() {
+    fn a_squeeze_narrows_game_fnt_letters_and_keeps_their_height() {
         let mut engine = engine_with_tiny_fnt();
-        let narrowest = Fit(2);
+        let narrowest = Fit::TIGHTEST;
         let designed = engine.shape("AAAA", 0, Fit::NONE);
         let narrowed = engine.shape("AAAA", 0, narrowest);
         let slots = &engine.slots;
@@ -952,7 +934,9 @@ mod tests {
         );
         let share = narrowed.width() / designed.width();
         assert!((share - narrowest.width()).abs() < 0.01, "{share}");
-        assert!(narrowest.width() < 0.8 && narrowest.size() == 1.0);
+        assert!(narrowest.width() < 0.8);
+        let size = |shaped: &ShapedText| shaped.lines[0].glyphs[0].size;
+        assert_eq!(size(&narrowed), size(&designed));
     }
 
     /// A letter GAME.FNT lacks draws from it in its style ([`fnt_fill`]); a
@@ -1008,7 +992,7 @@ mod tests {
         let mut engine = engine_with_tiny_fnt();
         let after_thai = engine.shape("กA", 0, Fit::NONE);
         assert!(after_thai.lines[0].glyphs[1].x.fract() != 0.0);
-        for (text, fit) in [("AAAA", Fit(2)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
+        for (text, fit) in [("AAAA", Fit(1)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
             let alpha = draw_fit(&mut engine, text, fit, 1.0, 64, 16);
             assert!(alpha.contains(&255), "{text} {fit:?}");
             assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{text} {fit:?}");
@@ -1149,7 +1133,7 @@ mod tests {
         let mut reads_from_the_right = || engine.shape("Tanya انضم", 0, Fit::NONE).lines[0].rtl;
         assert!(!reads_from_the_right());
         std::fs::write(&file, "[Strings]\nVERA:Unlimited=غير محدود\n").unwrap();
-        assert!(crate::i18n::poll_language_files(Some(&dir)));
+        assert!(crate::i18n::LanguageFileWatch::default().poll(Some(&dir)));
         let turned = reads_from_the_right();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(turned, "the rewritten file reads right to left");

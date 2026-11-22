@@ -45,7 +45,7 @@ fn coord(value: &Value) -> DriveCoord {
 }
 
 fn install_rng(sim: &mut Simulation, native: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(native["main"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(native["mapgen"].as_str().unwrap());
     sim.scenario_rng = SimRng::from_native_state_hex_for_test(native["scenario"].as_str().unwrap());
 }
@@ -260,7 +260,7 @@ impl Fixture {
                 },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             // The native command witness follows Event4C6CB0 with the
             // ordinary Mission5B3570 Commence receiver before its snapshot.
@@ -291,7 +291,7 @@ impl Fixture {
                 new_owner,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get_mut(building).unwrap();
             entity
@@ -395,7 +395,13 @@ impl Fixture {
         // for its admitted Building. Restore that prior after installing the
         // coherent ownership indexes, never after the compared arrival.
         let history = &before["discovery"];
-        let discovery = &mut sim.substrate.entities.get_mut(building).unwrap().discovery;
+        let discovery = &mut sim
+            .substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .seldom
+            .discovery;
         discovery.set_owned_by_current_house_for_test(history["owned_by_current_house"] == 1);
         discovery
             .set_discovered_by_current_house_for_test(history["discovered_by_current_house"] == 1);
@@ -450,17 +456,17 @@ impl Fixture {
         );
         let history = &native["discovery"];
         assert_eq!(
-            entity.discovery.owned_by_current_house(),
+            entity.seldom.discovery.owned_by_current_house(),
             history["owned_by_current_house"] == 1,
             "{boundary}: native41A owner classification"
         );
         assert_eq!(
-            entity.discovery.discovered_by_current_house(),
+            entity.seldom.discovery.discovered_by_current_house(),
             history["discovered_by_current_house"] == 1,
             "{boundary}: native41B current-viewer history"
         );
         assert_eq!(
-            entity.discovery.discovered_by_other_house(),
+            entity.seldom.discovery.discovered_by_other_house(),
             history["discovered_by_other_house"] == 1,
             "{boundary}: native41C other-viewer history"
         );
@@ -602,7 +608,7 @@ impl Fixture {
             },
             &self.rules,
             Some(&self.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = self.sim.substrate.entities.get_mut(id).unwrap();
         install_mission(entity, &native["engineer"]);
@@ -746,7 +752,7 @@ fn original_half_threshold_and_friendly_repair_object_actions() {
         enemy,
         &fixture.rules,
         Some(&fixture.registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     for row in controls["enemy_rows"].as_array().unwrap() {
         fixture
@@ -816,7 +822,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
                         head,
                         &fixture.rules,
                         Some(&fixture.registry),
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap()
             });
@@ -855,7 +861,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
                     "{boundary}: raw RNG word/order"
                 );
             }
-            let played = fixture.sim.sound_events[sound_start..].iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "BuildingRepaired")).count();
+            let played = fixture.sim.sound_events[sound_start..].iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&fixture.rules) == "BuildingRepaired")).count();
             let expected = arrival["lifecycle"]
                 .as_array()
                 .unwrap()
@@ -873,7 +879,7 @@ fn original_nine_routes_ten_walk_arrivals_repair_capture_and_deferred_cleanup() 
         }
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -956,7 +962,7 @@ fn original_engineer_receiver_terminal_branches_return_before_foot_tail() {
                 head,
                 &fixture.rules,
                 Some(&fixture.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             fixture
                 .sim
@@ -974,7 +980,7 @@ fn original_engineer_receiver_terminal_branches_return_before_foot_tail() {
                     id,
                     &fixture.rules,
                     Some(&fixture.registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let foot_tail = arrival["trace"]

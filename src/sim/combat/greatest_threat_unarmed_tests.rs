@@ -159,6 +159,7 @@ fn unarmed_infiltrator_scan_runs_clears_the_latch_and_holds_nothing() {
         .entities
         .get_mut(spy)
         .unwrap()
+        .seldom
         .foot_retarget_after_stop
         .mark_stopped_cannot_fire();
     assert_eq!(
@@ -208,6 +209,7 @@ fn unarmed_plain_infantryman_returns_before_the_foot_scan() {
         .entities
         .get_mut(plain)
         .unwrap()
+        .seldom
         .foot_retarget_after_stop
         .mark_stopped_cannot_fire();
     assert_eq!(
@@ -339,6 +341,7 @@ fn unarmed_engineer_scans_holds_nothing_and_clears_the_latch() {
         .entities
         .get_mut(engineer)
         .unwrap()
+        .seldom
         .foot_retarget_after_stop
         .mark_stopped_cannot_fire();
     assert_eq!(

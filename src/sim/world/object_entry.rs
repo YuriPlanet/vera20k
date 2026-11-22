@@ -288,6 +288,7 @@ fn infantry_disguised_to(
     observer: InternedId,
 ) -> Result<bool, String> {
     let Some(disguise) = entity
+        .seldom
         .disguise
         .as_ref()
         .filter(|state| state.is_disguised())
@@ -564,7 +565,7 @@ impl Simulation {
             }
         }
         if !self.session.uses_local_player_shroud()
-            || !e.discovery.owned_by_current_house()
+            || !e.seldom.discovery.owned_by_current_house()
             || e.is_mission_only()
         {
             return 0;
@@ -933,7 +934,7 @@ fn plain_entry(
             return None;
         }
     }
-    if infantry && mover.e.tether.partner().is_some() {
+    if infantry && mover.e.seldom.tether.partner().is_some() {
         return Some(0);
     }
     let nonzero = to.row_nonzero(mover.speed_row?)?;
@@ -1094,7 +1095,7 @@ fn full_foot_entry<'a>(
     let boundary_refused = !live.sim.object_placement_scope_active()
         && (!infantry || e.in_playfield())
         && !target.in_playfield(live)
-        && !live.sim.foot_allows_outside_playfield(id)?;
+        && !live.sim.foot_allows_outside_playfield(id, obj.is_train)?;
     if boundary_refused && e.in_playfield() {
         return Ok(7);
     }
@@ -1201,7 +1202,7 @@ fn full_foot_entry<'a>(
             {
                 return Ok(
                     if layer == MovementLayer::Ground
-                        && e.tether.partner().is_none()
+                        && e.seldom.tether.partner().is_none()
                         && !target.row_nonzero(live, obj.speed_type)?
                     {
                         7
@@ -1259,7 +1260,7 @@ fn full_foot_entry<'a>(
             .sim
             .entity_object_type(blocker, live.rules)
             .ok_or("repair list missing blocker type")?;
-        if infantry && e.slave.owner() == Some(blocker_id) {
+        if infantry && e.seldom.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
                 entities: &live.sim.substrate.entities,
                 occupancy: &live.sim.substrate.occupancy,
@@ -1288,7 +1289,7 @@ fn full_foot_entry<'a>(
                     }
                     return Ok(
                         if layer == MovementLayer::Ground
-                            && e.tether.partner().is_none()
+                            && e.seldom.tether.partner().is_none()
                             && !target.row_nonzero(live, obj.speed_type)?
                         {
                             7
@@ -1467,7 +1468,7 @@ fn full_foot_entry<'a>(
         if infantry
             && mission == Some(MissionType::Enter)
             && object_target_is(e, blocker_id)
-            && e.tether.partner().is_some()
+            && e.seldom.tether.partner().is_some()
         {
             return Ok(0);
         }
@@ -1567,7 +1568,7 @@ fn full_foot_entry<'a>(
         }
     }
     if layer == MovementLayer::Ground
-        && (!infantry || e.tether.partner().is_none())
+        && (!infantry || e.seldom.tether.partner().is_none())
         && !target.row_nonzero(live, obj.speed_type)?
     {
         return Ok(7);
@@ -1993,6 +1994,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .set_owned_by_current_house_for_test(true);
             sim.session.set_game_mode(
@@ -2299,7 +2301,7 @@ mod tests {
         let slave = sim
             .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
             .unwrap();
-        sim.substrate.entities.get_mut(slave).unwrap().slave =
+        sim.substrate.entities.get_mut(slave).unwrap().seldom.slave =
             crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {

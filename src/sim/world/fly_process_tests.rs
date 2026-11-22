@@ -335,7 +335,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
             _ => None,
         });
     if flag(input, "loaner", false) {
-        entity.mission_only.mark();
+        entity.seldom.mission_only.mark();
     }
     entity.set_in_playfield(flag(input, "in_playfield", true));
     entity
@@ -431,18 +431,24 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         );
         building.lifecycle.set_object_alive_for_test(true);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(format!("{width}x{height}").into());
         building.position.set_exact_z_leptons_for_test(Some(0));
         building
+            .seldom
             .radio_contacts
             .set_capacity(dock_offsets(dock).len());
         if let Some(slot) = dock["slot"].as_u64() {
-            building.radio_contacts.set_slot(slot as usize, AIRCRAFT);
+            building
+                .seldom
+                .radio_contacts
+                .set_slot(slot as usize, AIRCRAFT);
             sim.substrate
                 .entities
                 .get_mut(AIRCRAFT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(DOCK);
         }
@@ -550,6 +556,7 @@ fn stop_fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         );
         structure.lifecycle.set_object_alive_for_test(true);
         structure
+            .seldom
             .type_facts
             .set_foundation_for_test(format!("{width}x{height}").into());
         structure.position.set_exact_z_leptons_for_test(Some(0));
@@ -672,7 +679,7 @@ fn fly_process_matches_native_frames() {
                     AIRCRAFT,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             });
@@ -784,7 +791,7 @@ fn fly_map_edge_gate_matches_native_rows() {
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
         if flag(input, "mission_only", true) {
-            entity.mission_only.mark();
+            entity.seldom.mission_only.mark();
         }
         entity.set_in_playfield(flag(input, "in_playfield", true));
         if flag(input, "target", false) {

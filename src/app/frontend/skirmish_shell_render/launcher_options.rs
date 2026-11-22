@@ -13,8 +13,8 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, HealthBarMode, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
-    SidebarColumns, SidebarSize, Zoom,
+    ColorVisionMode, GraphicsApi, HealthBarMode, LauncherCheckboxId, LauncherComboId,
+    OptionsDialogState, SidebarColumns, SidebarSize, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -261,6 +261,7 @@ pub(super) fn build_text(
             LauncherComboId::Ares => {
                 crate::ui::main_menu_dialogs::options::ares_label(dialog.shell_selected_ares())
             }
+            LauncherComboId::GraphicsApi => dialog.shell_selected_graphics_api().label(),
             LauncherComboId::Language => dialog.shell_language_label(),
         };
         out.push(text_draw(
@@ -347,6 +348,10 @@ pub(super) fn build_open_list(
         LauncherComboId::ColorVision => ColorVisionMode::choices()
             .into_iter()
             .map(ColorVisionMode::label)
+            .collect(),
+        LauncherComboId::GraphicsApi => GraphicsApi::choices()
+            .into_iter()
+            .map(GraphicsApi::label)
             .collect(),
         LauncherComboId::Language => dialog.shell_language_rows(),
     };

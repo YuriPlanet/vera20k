@@ -8,7 +8,7 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    ColorVisionMode, DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent,
+    ColorVisionMode, DisplayTarget, GraphicsApi, HealthBarMode, LauncherCue, LauncherOptionsEvent,
     LauncherOptionsLabels, LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult,
     OptionsDialogState, SidebarColumns, SidebarSize, Zoom, admitted_initial_position,
     admitted_volume_position,
@@ -43,6 +43,7 @@ pub(crate) fn launcher_values_from_profile(
         smooth_sidebar: profile.smooth_sidebar,
         smooth_online_menus: profile.smooth_online_menus,
         vsync: profile.vsync,
+        high_refresh_rate_in_battle: profile.high_refresh_rate_in_battle,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         auto_repair: profile.auto_repair,
@@ -64,6 +65,7 @@ pub(crate) fn launcher_values_from_profile(
         sidebar_columns: profile.sidebar_columns,
         health_bars: profile.health_bars,
         ares: profile.ares,
+        graphics_api: profile.graphics_api,
         color_vision: profile.color_vision,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
@@ -119,6 +121,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_health_bars(&mut self, mode: HealthBarMode);
     /// The `[VERA] Ares=` list's pick; the game reads it at its next start.
     fn store_ares(&mut self, setting: crate::util::ares_launch::AresSetting);
+    /// The `[VERA] GraphicsAPI=` list's pick; the game reads it at its next
+    /// start (`persistence::startup_backend`).
+    fn store_graphics_api(&mut self, api: GraphicsApi);
     /// The `[VERA] ColorVisionMode=` list's pick; presentation only, read by
     /// the final frame pass on the very next frame.
     fn store_color_vision(&mut self, mode: ColorVisionMode);
@@ -143,6 +148,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Present in step with the display, or as soon as a frame is drawn
     /// (`[VERA] VSync=`).
     fn store_vsync(&mut self, vsync: bool);
+    fn store_high_refresh_rate_in_battle(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
@@ -194,6 +200,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::AresSelected(setting) => operations.store_ares(setting),
+        LauncherOptionsEvent::GraphicsApiSelected(api) => operations.store_graphics_api(api),
         LauncherOptionsEvent::ColorVisionModeSelected(mode) => operations.store_color_vision(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
@@ -228,6 +235,9 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_smooth_online_menus(enabled);
         }
         LauncherOptionsEvent::VSyncChanged(vsync) => operations.store_vsync(vsync),
+        LauncherOptionsEvent::HighRefreshRateInBattleChanged(enabled) => {
+            operations.store_high_refresh_rate_in_battle(enabled)
+        }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }

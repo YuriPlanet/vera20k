@@ -20,7 +20,7 @@ impl Simulation {
         &mut self,
         viewer: InternedId,
         cell: (u16, u16),
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         if !self.session.game_options().fog_of_war {
             return;
@@ -61,7 +61,7 @@ impl Simulation {
                         .map(|entity| entity.category())
                     {
                         Some(EntityCategory::Structure) => {
-                            self.freeze_building_in_fog(viewer, id, true, context);
+                            self.freeze_building_in_fog(viewer, id, true, context.reborrow());
                         }
                         Some(
                             EntityCategory::Infantry
@@ -292,7 +292,7 @@ mod tests {
                 0,
                 0,
                 rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -308,7 +308,7 @@ mod tests {
         sim.reveal_entity_with_rules(id, rules);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.finish_building_construction_for_test();
-        entity.selection.set_selected_for_test(true);
+        entity.seldom.selection.set_selected_for_test(true);
         id
     }
 
@@ -371,12 +371,12 @@ mod tests {
     fn frozen_foundation_survives_damage_destruction_and_load_until_revealed() {
         let (mut sim, rules, viewer) = world();
         let id = place(&mut sim, &rules);
-        let context = UninitContext::new(&rules);
+        let mut context = UninitContext::new(&rules);
         for cell in [(12, 12), (13, 12), (12, 13)] {
-            sim.fog_cell(viewer, cell, context);
+            sim.fog_cell(viewer, cell, context.reborrow());
             assert!(sim.fog.fogged_objects().is_empty());
         }
-        sim.fog_cell(viewer, (13, 13), context);
+        sim.fog_cell(viewer, (13, 13), context.reborrow());
         let record = sim.fog.fogged_objects().values().next().unwrap().clone();
         assert_eq!(sim.fog.fogged_objects().len(), 1);
         assert_eq!(record.occupied_cells.len(), 4);
@@ -385,6 +385,7 @@ mod tests {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .selection
                 .is_selected()
         );
@@ -400,7 +401,7 @@ mod tests {
                 0,
             ),
         );
-        sim.uninit_with_context(id, context);
+        sim.uninit_with_context(id, context.reborrow());
         sim.flush_pending_delete();
         assert!(!sim.fog.is_object_fogged(viewer, id));
         assert_eq!(sim.fog.fogged_objects().values().next(), Some(&record));
@@ -430,9 +431,9 @@ mod tests {
     #[test]
     fn building_placed_in_existing_fog_stays_hidden_until_revealed() {
         let (mut sim, rules, viewer) = world();
-        let context = UninitContext::new(&rules);
+        let mut context = UninitContext::new(&rules);
         for cell in [(12, 12), (13, 12), (12, 13), (13, 13)] {
-            sim.fog_cell(viewer, cell, context);
+            sim.fog_cell(viewer, cell, context.reborrow());
         }
         assert!(sim.fog.fogged_objects().is_empty());
         let building = place(&mut sim, &rules);
@@ -458,7 +459,7 @@ mod tests {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         sim.substrate
@@ -523,7 +524,7 @@ mod tests {
                         0,
                         0,
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
                 sim.substrate

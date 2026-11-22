@@ -1,6 +1,6 @@
 //! VERA: the online login page's forms (docs/lobby-protocol.md "Accounts"):
-//! the page's own sign-in form, a username with an optional password, and
-//! its popups: Create Account and the mailed code that confirms it, Forgot
+//! account sign-in and the account popups:
+//! Create Account and the mailed code that confirms it, Forgot
 //! Password's username and then its code and new password, and Delete
 //! Account's username or email and password. gamemd has no such dialog; the popups
 //! use the online Create Game box's art, field column, checkbox rows and
@@ -30,6 +30,23 @@ const CODE_LENGTH: usize = 6;
 /// What Login's password field holds for this computer's remembered sign-in
 /// of the typed username: masked, it shows that Login needs no password.
 const REMEMBERED_PLACEHOLDER: [u16; 8] = [b'*' as u16; 8];
+
+/// The temporary display name of an in-game guest. Presentation randomness
+/// lives outside the simulation. Keep the five digits on hosts without an
+/// OS random source too, including when two attempts occur in one clock tick.
+pub(crate) fn guest_nickname() -> String {
+    let number = getrandom::u32().unwrap_or_else(|_| {
+        use crate::util::time::{SystemTime, UNIX_EPOCH};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        time.subsec_nanos()
+            .wrapping_add(NEXT.fetch_add(1, Ordering::Relaxed))
+    });
+    format!("Guest{:05}", number % 100_000)
+}
 
 /// A lobby player name: 1 to 24 letters, digits, `_` or `-`. The one
 /// owner of the rule: names also become persona INI section names.
@@ -155,9 +172,7 @@ impl FieldKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormKind {
-    /// The page's sign-in: a username alone for a guest, or an account's
-    /// username and password, or this computer's remembered sign-in, and
-    /// Remember password.
+    /// An account password or this computer's remembered sign-in.
     SignIn,
     Register,
     Verify,
@@ -366,7 +381,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Name, "VERA:Username"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
-            StatusText::new("VERA:SignInPrompt"),
+            StatusText::new("VERA:AccountSignInPrompt"),
         );
         form.remember = Some(false);
         form.remembered_name = remembered.map(str::to_owned);
@@ -398,6 +413,9 @@ impl WolAccountForm {
     }
 
     pub(crate) fn forget_deleted_sign_in(&mut self, name: &str) {
+        if self.kind != FormKind::SignIn {
+            return;
+        }
         self.remembered_name
             .take_if(|known| known.eq_ignore_ascii_case(name));
         if self.text(FieldKind::Name).eq_ignore_ascii_case(name) {
@@ -409,7 +427,7 @@ impl WolAccountForm {
         StatusText::new(if self.remembered {
             "VERA:SignInRemembered"
         } else {
-            "VERA:SignInPrompt"
+            "VERA:AccountSignInPrompt"
         })
     }
 
@@ -595,24 +613,17 @@ impl WolAccountForm {
         }
     }
 
-    /// The sign-in, when its fields are right. An empty password enters as
-    /// a guest, whom no computer remembers; a typed one must be an account
-    /// password.
     fn sign_in_action(&self) -> Option<AccountFormAction> {
-        if self.kind != FormKind::SignIn {
-            return None;
-        }
         let name = self.text(FieldKind::Name);
         let password = if self.remembered {
             String::new()
         } else {
             self.text(FieldKind::Password)
         };
-        let guest = !self.remembered && password.is_empty();
-        (valid_name(&name) && (self.remembered || guest || valid_password(&password))).then(|| {
+        (valid_name(&name) && (self.remembered || valid_password(&password))).then(|| {
             AccountFormAction::SignIn {
                 sign_in: AccountSignIn { name, password },
-                remember: !guest && self.remember == Some(true),
+                remember: self.remember == Some(true),
             }
         })
     }
@@ -1010,22 +1021,12 @@ mod tests {
             Some(AccountFormAction::ForgetSignIn)
         );
         assert!(!form.remembered && form.fields[1].text().is_empty());
-        // Without a password the name enters as a guest; a password too
-        // short for an account is refused.
-        assert_eq!(form.clone().activate(FORM_OK), sign_in("tanya", "", false));
+        assert_eq!(form.clone().activate(FORM_OK), None);
+        assert!(!form.ok_enabled(), "account sign-in requires its password");
         form.insert_text("s3cret");
         assert!(!form.ok_enabled(), "six characters are no account password");
         form.insert_text("-pw");
         assert_eq!(form.activate(FORM_OK), sign_in("tanya", "s3cret-pw", false));
-        // No computer remembers a guest, whatever the box says.
-        let mut guest = WolAccountForm::sign_in("", None);
-        guest.insert_text("Boris");
-        guest.activate(FORM_REMEMBER);
-        assert_eq!(guest.remember, Some(true));
-        assert_eq!(
-            guest.edit_key(WolEditKey::Enter),
-            sign_in("Boris", "", false)
-        );
         // Another username is another account: the placeholder goes.
         let mut form = WolAccountForm::sign_in("Tanya", Some("Tanya"));
         form.focus(0);
@@ -1057,8 +1058,7 @@ mod tests {
         assert!(!form.remembered && form.fields[1].text() == "x");
         form.edit_key(WolEditKey::Backspace);
         assert_eq!(form.clone().activate(FORM_OK), remembered);
-        // So with the username: another name is a guest's, the name typed
-        // back the account's.
+        // Editing the username drops the placeholder until its name returns.
         form.focus(0);
         form.edit_key(WolEditKey::Backspace);
         assert!(!form.remembered && form.fields[1].text().is_empty());

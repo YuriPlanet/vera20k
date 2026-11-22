@@ -29,23 +29,29 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     use crate::rules::terrain_rules::LandType;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
-    let mut cells: Vec<_> = (0..6).map(|x| drivable_slope_cell(x, 0, 0)).collect();
+    let mut cells: Vec<_> = (0..7).map(|x| drivable_slope_cell(x, 0, 0)).collect();
     cells[1].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
-    // (4, 0) stays open: the exit's Scatter goes there.
+    // Direction-8 Unit admission at 73F218 reads the exit mouth's own tube.
+    cells[5].land_type = LandType::Tunnel.as_index();
+    cells[5].tube_index = Some(TubeId(1));
+    // The exit opens east onto (6, 0). The westward side faces into the tunnel.
     for cell in &mut cells[2..4] {
         cell.ground_walk_blocked = true;
         cell.base_ground_walk_blocked = true;
     }
     let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
-        6,
+        7,
         1,
         cells,
-        vec![TubeFact::explicit((1, 0), (5, 0), 2, vec![2, 2, 2, 2])],
+        vec![
+            TubeFact::explicit((1, 0), (5, 0), 2, vec![2; 4]),
+            TubeFact::explicit((5, 0), (1, 0), 6, vec![6; 4]),
+        ],
     );
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let zones =
-        ZoneGrid::build_with_native_bridge_geometry(&grid, &terrain, &[], 6, 1, Some((6, 1)));
+        ZoneGrid::build_with_native_bridge_geometry(&grid, &terrain, &[], 7, 1, Some((7, 1)));
     let mut sim = Simulation::with_seed(71);
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
     entity.set_owner_for_test(sim.intern("Americans"));
@@ -248,27 +254,31 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     // no track selected; the next Processes drive on from there. This
     // fixture's playfield reaches past its one-row map, so the Scatter's
     // cell may lie off the grid: a fresh SetDestination (the setter the
-    // Scatter calls) sends the unit to (4, 0) instead.
-    sim.set_unit_destination(
+    // Scatter calls) sends the unit out through its east-facing opening. Unit
+    // Can_Enter_Cell (73F24B..73F2ED) refuses the westward cell inside.
+    assert!(sim.set_unit_destination(
         1,
-        NavTargetRef::cell(4, 0),
+        NavTargetRef::cell(6, 0),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
-    );
+        &mut crate::sim::world::FrameEffects::default(),
+    ));
     let exit_frame = sim.session.binary_frame();
     let arrived = (exit_frame + 1..exit_frame + 300).any(|frame| {
         sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
-        (entity.position.rx(), entity.position.ry()) == (4, 0)
+        (entity.position.rx(), entity.position.ry()) == (6, 0)
     });
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(
         arrived,
-        "the unit drove off the exit to (4, 0): position={:?}",
-        entity.position
+        "the unit drove off the exit to (6, 0): position={:?}, nav={:?}, path={:?}, head={:?}",
+        entity.position,
+        entity.navigation.nav_com(),
+        entity.navigation.path_replay().remaining_directions(),
+        committed_track_head(entity)
     );
 }
 
@@ -436,7 +446,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
@@ -617,7 +627,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
         DriveCoord { x: 0, y: 256, z: 0 },
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -797,7 +807,7 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
             NavTargetRef::cell(4, 1),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         Ok(true)
     );
@@ -1009,7 +1019,7 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
         head,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.foot_speed.applied_fraction(), SimFixed::lit("0.25"));
@@ -1125,7 +1135,7 @@ fn drive_first_process_route(start: (u16, u16), goal: (u16, u16)) -> RouteAndGoa
         NavTargetRef::cell(goal.0, goal.1),
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let accepted = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -1273,7 +1283,7 @@ fn walk_move(
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
 }
 

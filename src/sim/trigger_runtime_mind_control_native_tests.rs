@@ -135,7 +135,12 @@ fn mind_control_tag_ingress_matches_original_callbacks_and_live_trigger_state() 
         }
         sim.trigger_runtime.dispatch_trace.clear();
         sim.trigger_runtime.action_trace.clear();
-        sim.mind_control_detonation(detonation, &rules, Some(&overlay), FrameEffects::default());
+        sim.mind_control_detonation(
+            detonation,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        );
 
         let expected_dispatch: Vec<_> = case["calls"]
             .as_array()
@@ -223,6 +228,7 @@ fn mind_control_tag_ingress_matches_original_callbacks_and_live_trigger_state() 
                     .entities
                     .get(victim)
                     .unwrap()
+                    .seldom
                     .mind_control
                     .controller(),
                 None,

@@ -240,7 +240,7 @@ mod tests {
                     row["initial_count"].as_i64().unwrap() as i8,
                     types,
                 );
-            sim.power_down_building_upgrade(host, &rules, Default::default());
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim
                 .substrate
                 .entities
@@ -322,7 +322,7 @@ mod tests {
                     .anim_slots_mut_for_test()[slot] = Some(anim);
                 sentinels.push((slot, anim));
             }
-            sim.power_down_building_upgrade(host, &rules, Default::default());
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim.entities().get(host).unwrap();
             assert_eq!(
                 i64::from(actual.building_upgrades().count()),
@@ -617,7 +617,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;

@@ -656,7 +656,7 @@ fn drive_across_high_bridge_with_order(
             &[order],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
 
@@ -1397,7 +1397,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
             &[order],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
 
@@ -2367,7 +2367,7 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| (path.len(), path));
@@ -2575,7 +2575,7 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| path.len());
@@ -3036,7 +3036,7 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     let path = accepted_route(&scenario, entity_id).map(|path| path.len());

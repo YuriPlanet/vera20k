@@ -13,6 +13,12 @@
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
+
 use std::borrow::Cow;
 
 use crate::assets::error::AssetError;
@@ -444,12 +450,17 @@ pub fn format_csf(fmt: &str, args: &[CsfArg]) -> String {
 /// (`%02d` in `TXT_TIME_FORMAT_HOURS`). Anything else in the flag run is
 /// ignored, matching how the retail formats actually use it.
 fn push_padded_int(out: &mut String, flags: &[char], value: i64) {
+    /// Retail formats pad to two digits; a string table is outside data, and
+    /// `%0999999999999d` would otherwise push a terabyte of zeros.
+    const MAX_PAD_WIDTH: usize = 64;
     let zero_pad = flags.first() == Some(&'0');
     let width: usize = flags
         .iter()
         .skip(usize::from(zero_pad))
         .take_while(|c| c.is_ascii_digit())
-        .fold(0usize, |acc, c| acc * 10 + (*c as usize - '0' as usize));
+        .fold(0usize, |acc, c| {
+            (acc * 10 + (*c as usize - '0' as usize)).min(MAX_PAD_WIDTH)
+        });
     let digits = value.to_string();
     if digits.len() < width {
         let pad = if zero_pad { '0' } else { ' ' };
@@ -633,6 +644,13 @@ fn build_test_csf(label: &str, value: &str) -> Vec<u8> {
 }
 
 /// Authored localization fixture using the CSF owner's binary encoder.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::unwrap_used,
+        reason = "a test fixture: a bad fixture is a bug in the test that built it"
+    )
+)]
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
     assert!(!entries.is_empty());
@@ -868,6 +886,13 @@ mod tests {
         // The engine's wide call sites carry %hs / %ls.
         assert_eq!(format_csf("%hs", &[CsfArg::Str("ok")]), "ok");
         assert_eq!(format_csf("%ls", &[CsfArg::Str("ok")]), "ok");
+    }
+
+    #[test]
+    fn format_csf_caps_a_hostile_pad_width() {
+        let out = format_csf("%0999999999999d", &[CsfArg::Int(5)]);
+        assert_eq!(out.len(), 64, "{out}");
+        assert!(out.ends_with('5') && out.starts_with("000"), "{out}");
     }
 
     #[test]

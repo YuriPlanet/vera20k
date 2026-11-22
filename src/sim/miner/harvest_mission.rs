@@ -28,7 +28,7 @@ pub(crate) fn mission_harvest(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<Option<i32>, TiberiumImageError> {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(None);
@@ -72,7 +72,7 @@ fn harvest_mission_step(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<(), TiberiumImageError> {
     // Cursor sanity (debug-only, never hashed): the working cursor must have
     // decoded from the entity's handler state — pins the cursor round-trip the

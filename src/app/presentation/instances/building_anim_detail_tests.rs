@@ -24,7 +24,7 @@ fn step(scene: &mut HeadlessScenario) {
             &[],
             crate::app::types::SIM_TICK_MS,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("ordinary bound frame");
     assert!(
@@ -63,7 +63,8 @@ fn scene(root: &Path) -> (HeadlessScenario, u64) {
             .object("GAPOWR")
             .unwrap()
             .foundation
-            .cell_offsets();
+            .cell_offsets()
+            .collect::<Vec<_>>();
         terrain
             .cells()
             .iter()
@@ -135,7 +136,8 @@ fn emit(
     let building = sim.entities().get(plant).unwrap();
     let frame = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(), false,
+        &Default::default(),
+        false,
     );
     let record = frame.object(plant).unwrap();
     let order = NativeDisplayOrder::from_world(&sim, None);
@@ -169,7 +171,7 @@ fn emit(
     let mut house_colors = crate::map::houses::HouseColorMap::new();
     house_colors.insert(OWNER.to_owned(), HouseColorIndex(0));
     let hidden = Default::default();
-    let mut prepared = Vec::new();
+    let mut prepared = PlannedObjects::default();
     // Use the application's binding/material preparation and one shared Display
     // admission walk. Preparing a slot neither consumes the FPS latch nor makes
     // the prepared piece visible before its actual retained encounter.
@@ -207,11 +209,7 @@ fn emit(
         0,
         detail_level as i32,
     );
-    let prepared = prepared
-        .into_iter()
-        .map(|parent| (parent.parent.id, parent))
-        .collect();
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,

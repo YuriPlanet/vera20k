@@ -299,7 +299,7 @@ impl Simulation {
         value: i32,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(house) = self.houses.get_mut(&owner) else {
             return false;
@@ -328,7 +328,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let candidate = self.houses[&owner]
             .base_projection()
@@ -337,8 +337,9 @@ impl Simulation {
             .rev()
             .find_map(|&id| {
                 let building = self.substrate.entities.get(id)?;
-                (!building.lifecycle.in_limbo() && building.type_facts.build_const_eligible())
-                    .then_some(id)
+                (!building.lifecycle.in_limbo()
+                    && building.seldom.type_facts.build_const_eligible())
+                .then_some(id)
             });
         let Some(cell) = candidate.and_then(|id| self.raw_building_base_cell(id)) else {
             return true;
@@ -424,7 +425,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // 0x0050C924 reads TechnoClass::Array's count before the search; the
         // walk re-reads each slot (0x0050C9D5).
@@ -1246,7 +1247,13 @@ mod tests {
                 };
                 let ids = sim.houses[&owner].base_projection().buildings().to_vec();
                 let other = add_house(&mut sim, "Russians", &rules);
-                sim.change_owner_with_rules(ids[0], other, &rules, None, FrameEffects::default());
+                sim.change_owner_with_rules(
+                    ids[0],
+                    other,
+                    &rules,
+                    None,
+                    &mut FrameEffects::default(),
+                );
                 assert_eq!(
                     sim.theoretical_power_for_owner(&rules, "Americans"),
                     native_total("stock-drain")
@@ -1960,7 +1967,7 @@ mod tests {
             allies,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(costs(&sim), (675, 450));
         assert!(
@@ -2045,7 +2052,7 @@ mod tests {
         let house = sim.houses.get_mut(&owner).unwrap();
         house.set_base_center_for_test(None);
         house.set_alternate_base_center_for_test((0, 0));
-        sim.move_ground_forces_to_base(owner, &rules, FrameEffects::default());
+        sim.move_ground_forces_to_base(owner, &rules, &mut FrameEffects::default());
         assert_eq!(snapshot(&sim), before);
 
         let origin = (12, 12);
@@ -2068,7 +2075,7 @@ mod tests {
         assert_eq!(search(origin, (1, 1)), Some(origin), "1x1 differs");
         assert_ne!(found, origin, "the water blocks the origin's 4x4 block");
         let destination = Some(NavTargetRef::cell(found.0 + 1, found.1 + 1));
-        sim.move_ground_forces_to_base(owner, &rules, FrameEffects::default());
+        sim.move_ground_forces_to_base(owner, &rules, &mut FrameEffects::default());
 
         let after = snapshot(&sim);
         let move_mission = MissionId::from_known(MissionType::Move);

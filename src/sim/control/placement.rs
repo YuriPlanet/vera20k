@@ -23,6 +23,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_site::{SiteKey, find_base_building_site};
 use crate::sim::behavior::view::cell_distance;
 use crate::sim::control::observation::Observation;
+use crate::sim::strategy::assist::trace_enabled;
 use crate::sim::intern::InternedId;
 
 /// How far from an anchor the fallback sweep looks, in cells. A power plant is
@@ -359,7 +360,7 @@ impl<'a, 'b> Placement<'a, 'b> {
             }
         }
         let cell = self.sweep(ty, attempt);
-        if std::env::var("AUTOPLAY_TRACE_SITE").is_ok() {
+        if trace_enabled("AUTOPLAY_TRACE_SITE") {
             let near = cell.and_then(|cell| {
                 self.obs
                     .ore_cells(self.rules)

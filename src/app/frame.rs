@@ -28,6 +28,14 @@ const MAIN_MENU_SHELL_PRELUDE: &[ShellFramePreludeStep] = &[
     ShellFramePreludeStep::ObserveEntry,
 ];
 
+fn match_screen_runs_while_hidden(
+    screen: &GameScreen,
+    campaign_result: bool,
+    active_in_game: impl FnOnce() -> bool,
+) -> bool {
+    campaign_result || (*screen == GameScreen::InGame && active_in_game())
+}
+
 /// The runtime admission belongs to the pass before Logic mutates pause state.
 #[derive(Default)]
 pub(super) struct RuntimeServiceResult {
@@ -422,6 +430,8 @@ impl App {
             };
         }
         crate::app::lan_service::poll(state, scenario_now_ms);
+        crate::app::match_runtime::narrative_sync::service(state, scenario_now_ms);
+        crate::app::match_runtime::stage_result::poll(state, scenario_now_ms);
         Self::poll_external_launch_progress(state);
         Self::poll_spawn_actions(state);
         // Resume receipts must release only the relay clock hold even while
@@ -723,12 +733,15 @@ impl App {
             && crate::app::lan_service::has_online_relay_route(state)
     }
 
-    /// Does a hidden window still have a running match to service? True while
-    /// in-game and the configured focus freeze is not holding the world; a
-    /// tactical capture never reaches the hidden service loop.
+    /// Keep transport live during campaign stage voting and handoff as well
+    /// as during an active match or a synchronized fullscreen cutscene.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::InGame
-            && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active())
+        crate::app::match_runtime::narrative_sync::owns_fullscreen(state)
+            || match_screen_runs_while_hidden(
+                &state.frontend.screen,
+                state.match_state.session.campaign_result().is_some(),
+                || Self::house_outcome_wait_pending(state) || !state.focus_freeze_active(),
+            )
     }
 
     /// The active-game shell `page` into `destination`.
@@ -871,6 +884,9 @@ impl App {
             let _ = state.renderer.gpu.device.poll(wgpu::PollType::Poll);
         }
         state.platform.frame_pacer.clear_render_continuation();
+        if matches!(pass, FramePass::Draw) {
+            crate::app::cncnet::SpawnSlowPc::spend(crate::app::cncnet::SpawnSlowPc::of(state).draw);
+        }
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(state);
         if let Some(session) = hidden_run.as_deref_mut() {
@@ -1113,6 +1129,7 @@ impl App {
         }
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if state.match_state.input.retail_screenshot_requested {
             state
                 .renderer
@@ -1138,6 +1155,14 @@ impl App {
             || crate::app::match_runtime::network_failure::pending(state)
         {
             Self::ensure_skirmish_shell_chrome(state);
+        }
+        // The main menu's chrome, dropped for the match: back before a shell
+        // screen (the menu pages, the score page) draws or hit-tests with it.
+        if matches!(
+            state.frontend.screen,
+            GameScreen::MainMenu | GameScreen::MissionResult { .. }
+        ) {
+            Self::ensure_main_menu_shell_chrome(state);
         }
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).
@@ -1669,8 +1694,12 @@ impl App {
         } else {
             None
         };
-        let retail_screenshot_current_frame =
+        let screenshot_requested =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
+        // Browser capture reads the visible canvas, not the native retained
+        // PCX composition (which requires a synchronous GPU map and std::fs).
+        let retail_screenshot_current_frame = screenshot_requested
+            && !cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"));
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
         // screenshot retains, and neither is the wheel-zoomed battlefield's
@@ -1753,6 +1782,21 @@ impl App {
             .encode_color_vision(&mut encoder, &output.texture);
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        if screenshot_requested {
+            // Browser hand-off submits/presents inline. Ask for the snapshot
+            // now, before the browser can recycle the canvas drawing buffer.
+            crate::web::download_screenshot();
+        }
+        if let Some(render_output) = &game_render_output
+            && screen_page == ScreenPage::Battlefield
+        {
+            state
+                .match_state
+                .match_presentation
+                .outcome_banner_presentation
+                .record_presented(render_output.rendered_verdict);
+        }
         let handoff_waited = state.renderer.gpu.take_handoff_wait();
         if let Some((mut phases, handoff_started)) = measured_phases {
             // What handing frames to the driver cost this thread: every
@@ -1996,6 +2040,18 @@ impl App {
 #[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_campaign_result_polls_transport_during_stage_handoff() {
+        let screen = GameScreen::MainMenu;
+        assert!(match_screen_runs_while_hidden(&screen, true, || false));
+        assert!(!match_screen_runs_while_hidden(&screen, false, || true));
+        assert!(!match_screen_runs_while_hidden(
+            &GameScreen::InGame,
+            false,
+            || false,
+        ));
+    }
 
     #[test]
     fn teardown_commits_before_intro_and_entry_observation() {

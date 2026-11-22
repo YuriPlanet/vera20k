@@ -203,7 +203,7 @@ fn ares_forces_the_repacked_mcv_onto_the_water_cell() {
     let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
     for _ in 0..(frames * rate * 4 + 240) {
         runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if runtime.simulation.entities().get(yard).is_none() {
             break;
@@ -316,7 +316,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
     let [_, frames, rate] = runtime.resources.rules.buildup_control("GACNST");
     for _ in 0..(frames * rate * 4 + 240) {
         runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         if runtime.simulation.entities().get(yard).is_none() {
             break;
@@ -346,7 +346,7 @@ fn authored_water_yard_refusal_refunds_keeps_constructor_and_survives_short_game
     assert_retained(&runtime.simulation, owner, held);
     runtime.simulation.take_frame_step_trace();
     runtime
-        .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
     assert!(
         runtime

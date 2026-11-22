@@ -67,7 +67,7 @@ pub(super) fn mission_permits_scatter(entity: &GameEntity, rules: &RuleSet) -> b
 /// `UnitClass::Scatter` refusals before the coordinate
 /// (`0x00743A5C..0x00743BAA`), in native order:
 /// - `+0x28C` (`0x006F3280`): effective Sleep, Sticky or Unload, or
-///   `IsTrain=` (unparsed; no retail type sets it);
+///   a train (TechnoClass::CanScatter, 0x006F32B7);
 /// - an active Teleport locomotor (the active class, not the installed slot:
 ///   a Chrono Miner's temporary Drive is eligible);
 /// - the mission's `Scatter=` unless forced;
@@ -79,6 +79,7 @@ pub(super) fn mission_permits_scatter(entity: &GameEntity, rules: &RuleSet) -> b
 /// None draws RNG or writes state. Evidence for the flag-free prefix:
 /// tools/spatial_oracle/unit_scatter_state.{py,json,meta.json}.
 pub(super) fn unit_scatter_admitted(
+    interner: &StringInterner,
     unit: &GameEntity,
     flags: ScatterFlags,
     rules: &RuleSet,
@@ -88,7 +89,15 @@ pub(super) fn unit_scatter_admitted(
     if rules.ares_form() && unit.driver_killed() {
         return false;
     }
-    if matches!(unit.mission.effective().raw(), 0 | 6 | 16) {
+    if matches!(unit.mission.effective().raw(), 0 | 6 | 16)
+        || interner
+            .object_type_in_category(
+                unit.type_ref(),
+                crate::rules::object_type::ObjectCategory::Vehicle,
+                rules,
+            )
+            .is_some_and(|ty| ty.is_train)
+    {
         return false;
     }
     let Some(locomotor) = unit.locomotor.as_ref() else {
@@ -180,38 +189,35 @@ pub(super) fn scatter_dispatch_allowed(
 /// `CellClass::Scatter_Objects`' dispatch walk (`0x00481670`): the objects of
 /// one cell list, in list order, its gate hands `Scatter(coord, forced,
 /// no_kidding)`. Without no-kidding the list is first pre-scanned for an
-/// elite, which releases every occupant.
-pub(super) fn scatter_objects_admitted(
-    occupants: &[u64],
+/// elite, which releases every occupant. `occupants` keeps the admitted.
+pub(super) fn retain_scatter_admitted(
+    occupants: &mut Vec<u64>,
     no_kidding: bool,
     rules: &RuleSet,
     entities: &EntityStore,
     houses: &crate::sim::houses::Houses,
     interner: &StringInterner,
-) -> Vec<u64> {
-    let listed = || occupants.iter().copied();
+) {
     let eligibility = ScatterEligibility::from_rules(rules);
     let elite_in_cell = !no_kidding
-        && listed().any(|id| {
+        && occupants.iter().any(|&id| {
             entities
                 .get(id)
                 // `Scatter_Objects`' elite pre-scan: each occupant's `IsElite`.
                 .is_some_and(|entity| entity.veterancy.rank() >= RANK_ELITE_U16)
         });
-    listed()
-        .filter(|&id| {
-            entities.get(id).is_some_and(|occupant| {
-                scatter_dispatch_allowed(
-                    eligibility,
-                    no_kidding,
-                    elite_in_cell,
-                    Some(ScatterTechno::from_entity(
-                        occupant, rules, houses, interner,
-                    )),
-                )
-            })
+    occupants.retain(|&id| {
+        entities.get(id).is_some_and(|occupant| {
+            scatter_dispatch_allowed(
+                eligibility,
+                no_kidding,
+                elite_in_cell,
+                Some(ScatterTechno::from_entity(
+                    occupant, rules, houses, interner,
+                )),
+            )
         })
-        .collect()
+    });
 }
 
 /// The flags of `TechnoClass::ReceiveDamage`'s Scatter call: forced, no
@@ -252,7 +258,7 @@ fn receive_damage_scatter_admitted(
     let refused = retaliation == DamageRetaliation::Refused;
     if refused
         && (!mission_permits_scatter(entity, rules)
-            || entity.tether.partner().is_some()
+            || entity.seldom.tether.partner().is_some()
             || super::motion_query::is_moving(entity)
                 .ok_or("damage Scatter requires an active locomotor Is_Moving")?)
     {
@@ -298,7 +304,7 @@ impl Simulation {
         retaliation: DamageRetaliation,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -339,7 +345,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if self.session.binary_frame() & 0x3F != 0x3F {
             return Ok(false);
@@ -388,7 +394,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -439,12 +445,18 @@ impl Simulation {
         id: u64,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame()) {
+        if !unit_scatter_admitted(
+            &self.interner,
+            unit,
+            flags,
+            rules,
+            self.session.binary_frame(),
+        ) {
             return;
         }
         if let Some(cell) = self.scatter_nearby_cell(id, rules) {
@@ -483,14 +495,19 @@ impl Simulation {
         source: DriveCoord,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(unit) = self.substrate.entities.get(id) else {
             return Ok(());
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame())
-            || crate::sim::mission::control::current_control(rules, &unit.mission)
-                .is_some_and(|entry| entry.paralyzed)
+        if !unit_scatter_admitted(
+            &self.interner,
+            unit,
+            flags,
+            rules,
+            self.session.binary_frame(),
+        ) || crate::sim::mission::control::current_control(rules, &unit.mission)
+            .is_some_and(|entry| entry.paralyzed)
             || unit
                 .miner
                 .as_ref()
@@ -565,7 +582,7 @@ impl Simulation {
 
     /// `CellClass::Scatter_Objects @ 0x00481670` on `layer`'s list (`+0xE4`
     /// ground, `+0xE8` deck): the list is snapshotted, then each occupant
-    /// [`scatter_objects_admitted`] selects takes `Scatter(source, flags)`
+    /// [`retain_scatter_admitted`] selects takes `Scatter(source, flags)`
     /// (`vt+0x174`, [`Self::scatter`]) in list order. The gate reads nothing
     /// a receiver writes, so selecting first dispatches the same objects.
     pub(crate) fn scatter_cell_objects(
@@ -576,15 +593,15 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
-        let occupants = self
+        let mut admitted = self
             .substrate
             .occupancy
             .get(cell.0, cell.1)
             .map_or_else(Vec::new, |occ| occ.snapshot_layer(layer));
-        let admitted = scatter_objects_admitted(
-            &occupants,
+        retain_scatter_admitted(
+            &mut admitted,
             flags.no_kidding,
             rules,
             &self.substrate.entities,
@@ -611,7 +628,7 @@ impl Simulation {
         target: crate::sim::combat::TargetKind,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(actor) = self.substrate.entities.get(firer) else {
             return Ok(false);

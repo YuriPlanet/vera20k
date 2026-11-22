@@ -40,7 +40,7 @@ pub(crate) enum QuietSound {
     },
     /// [`SimSoundEvent::VocAt`] of this sound at this spot.
     VocAt {
-        sound_id: String,
+        sound_id: crate::rules::ruleset::SoundName,
         rx: u16,
         ry: u16,
         sub_x: SimFixed,
@@ -149,7 +149,7 @@ mod tests {
         audio
             .sound_events
             .push(crate::audio::events::GameSoundEvent::UiSound {
-                sound_id: "leftover".to_string(),
+                sound_id: crate::rules::ruleset::SoundName::Unlisted("leftover".into()),
             });
 
         audio.reset_for_new_match();

@@ -338,7 +338,7 @@ enum Sound {
 }
 
 impl Calls {
-    fn of(sim: &Simulation, anims_before: usize) -> Self {
+    fn of(sim: &Simulation, rules: &RuleSet, anims_before: usize) -> Self {
         let sounds = sim
             .sound_events
             .iter()
@@ -358,7 +358,7 @@ impl Calls {
                     world_z_leptons,
                     ..
                 } => Some(Sound::At(
-                    sound_id.clone(),
+                    sound_id.name_in(rules).to_string(),
                     [
                         i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
                         i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
@@ -506,7 +506,7 @@ fn storm_start_matches_native_rows() {
             house_ref(&houses, &row["owner"]),
         );
         assert_globals(&sim, &houses, &row["storm"], row);
-        assert_eq!(Calls::of(&sim, 0), Calls::expected(row), "{row}");
+        assert_eq!(Calls::of(&sim, &rules, 0), Calls::expected(row), "{row}");
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -551,7 +551,7 @@ fn storm_cloud_matches_native_rows() {
         let anims: Vec<AnimId> = sim.anims().map(|(&id, _)| id).collect();
         assert_eq!(lists(&sim, &anims), expected_lists(&row["storm"]), "{row}");
         assert_eq!(
-            Calls::of(&sim, existing.len()),
+            Calls::of(&sim, &rules, existing.len()),
             Calls::expected(row),
             "{row}"
         );
@@ -681,11 +681,11 @@ fn storm_strike_matches_native_rows() {
             &rules,
             None,
             coords,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let mut expected = Calls::expected(row);
-        let mut seen = Calls::of(&sim, 0);
+        let mut seen = Calls::of(&sim, &rules, 0);
         if row["explosion"].is_null() {
             // RESIDUAL (module doc): VERA constructs nothing for a null type.
             expected.anims.retain(|(name, ..)| !name.is_empty());
@@ -815,7 +815,7 @@ fn storm_process_matches_native_rows() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_globals(&sim, &houses, &row["storm"], row);
@@ -851,7 +851,11 @@ fn storm_process_matches_native_rows() {
             })
             .collect();
         assert_eq!(table, expected_table, "{row}");
-        assert_eq!(Calls::of(&sim, anims_before), Calls::expected(row), "{row}");
+        assert_eq!(
+            Calls::of(&sim, &rules, anims_before),
+            Calls::expected(row),
+            "{row}"
+        );
         assert_eq!(
             house_states(&sim, &houses),
             expected_house_states(row),
@@ -1010,7 +1014,7 @@ fn strike(
         rules,
         registry,
         [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1353,7 +1357,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
     assert!(fatal.substrate.entities.get(10).is_some_and(|entity| {
         entity.health.current() == 0
             && entity.death.is_dying()
-            && !entity.in_logic_vector.is_member()
+            && !entity.seldom.in_logic_vector.is_member()
     }));
     assert_eq!(
         fatal.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_id,
@@ -1538,7 +1542,7 @@ fn retail_storm_strikes_through_production_frames() {
             .sound_events
             .iter()
             .filter(|event| {
-                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "WeatherStrike")
+                matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "WeatherStrike")
             })
             .count();
         assert!(frames < 2000, "the storm ends");
@@ -1600,7 +1604,7 @@ fn ares_fire_storm(
         sw_type,
         cell,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     )
 }
@@ -1746,7 +1750,7 @@ fn ares_storm_starts_with_its_type_keys() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocCentered { sound_id } if sound_id == "WeatherIntro"
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "WeatherIntro"
     )));
     assert!(!events.iter().any(began), "no stock line");
 
@@ -1756,7 +1760,7 @@ fn ares_storm_starts_with_its_type_keys() {
             sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     };
     process(&mut sim, 1002);
@@ -1836,7 +1840,7 @@ fn ares_storm_strike_scales_a_lightning_rods_damage() {
         &rules,
         None,
         [i32::from(at.0) * 256 + 128, i32::from(at.1) * 256 + 128, 0],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(rod).unwrap().health.current(),
@@ -1888,7 +1892,7 @@ fn ares_storm_lists_strike_from_half_front_to_back() {
         &mut sim,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.lightning_storm.clouds_for_test().1.is_empty());
     let bolts: Vec<i32> = sim

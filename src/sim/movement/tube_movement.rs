@@ -13,7 +13,7 @@ use super::track_process::TrackFamily;
 use super::{MovementTickStats, PerCellReason, walk_head};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
-use crate::map::tube_facts::{TubeFact, TubeId, TubeSource};
+use crate::map::tube_facts::{TubeFact, TubeId};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel;
@@ -31,7 +31,7 @@ use crate::util::native_x87::{NativeF64Bits, X87Chop53, distance_3d_leptons};
 
 /// FootClass-owned active TubeMovement payload.
 ///
-/// `Some` also means the mover is absent from CellClass object lists and raw
+/// While the signed tube byte is nonnegative, the mover is absent from CellClass lists and raw
 /// occupation, but inside an exit: the Infantry exit lists and marks the
 /// infantryman (`0x0051BA22`, `0x0051BA45`) and runs its self-Scatter before
 /// it clears the tube (`0x0051BA8D`), as
@@ -45,7 +45,21 @@ pub struct LowBridgeTubeMovementState {
 }
 
 impl LowBridgeTubeMovementState {
-    /// The tube (FootClass+0x684).
+    /// Drive 4B1380, Ship 6A0A48, Walk 75B3FC, Hover 51515B and Mech
+    /// 5B06E6 truncate the Cell's signed word index to Foot+684 *after*
+    /// selecting the complete map record for the first target.
+    fn entered(index: TubeId, target: DriveCoord) -> Option<Self> {
+        let byte = index.0 as u8;
+        (byte != u8::MAX).then_some(Self {
+            tube_id: TubeId(u16::from(byte)),
+            cursor: 0,
+            target,
+        })
+    }
+
+    /// The stored byte (FootClass+0x684); the signed AI/coordinate gates
+    /// operate on its low byte. A negative byte other than -1 still
+    /// suppresses the body and the Unit's radio move-to-dock response.
     pub fn tube_id(&self) -> TubeId {
         self.tube_id
     }
@@ -67,48 +81,24 @@ impl LowBridgeTubeMovementState {
     }
 }
 
-/// What a tube check finds for a path head word of 8 ([`tube_word`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TubeWord {
-    /// The Cell's tube index (`+0x116`) is a live tube.
-    Enter(TubeId),
-    /// The index is out of range: -1, or past the last tube.
-    NoTube,
-}
-
 /// The tube check of the path head word (Foot `+0x5E0`), Walk's
 /// (`0x0075B302..0x0075B356`) and Drive's (`0x004B1297`,
 /// `0x004B1302..0x004B1322`; Ship twin `0x006A095F`, `0x006A09CA..0x006A09EA`):
 /// a word of 8 reads the tube index (`+0x116`) of the Cell holding the
-/// Location (Walk `0x0075B338`, Drive's GetCell vt+0x1BC `0x005F6960`), on any
-/// layer. `None` when the word is not a tube word.
+/// Location on either layer (Walk `0x0075B338`, Hover `0x0051505F`,
+/// Drive's GetCell vt+0x1BC `0x005F6960`).
 ///
-/// RESIDUAL: an index past 127 (the `+0x684` byte) or an automatic
-/// zero-length record (module doc) is not entered, and the head falls
-/// through to the admission or the paid track. Native enters it, then
-/// truncates the byte or divides by the zero path length (Walk `0x0075B53D`,
-/// Drive `0x004B1474`). Trigger: a tube word at such a Cell. Effect: VERA
-/// takes the word's step where native misreads the tube or faults.
-/// Frequency: not measured; no stock-map tube census exists.
-fn tube_word(
-    path_replay: &crate::sim::components::FootPathQueue,
+/// The record's full index selects the first target, including above 127.
+/// Automatic and empty records have no first target. Native divides by
+/// their zero length at entry (Walk 75B53D, Drive 4B1474, Hover 5152B4);
+/// the caller safely falls through or drops the head.
+fn movement_tube_at<'a>(
     position: &Position,
-    terrain: &ResolvedTerrainGrid,
-) -> Option<TubeWord> {
-    if path_replay.remaining_directions().first()
-        != Some(&crate::util::direction::TUBE_STEP_DIRECTION)
-    {
-        return None;
-    }
-    let Some((tube_id, tube)) = terrain
-        .cell(position.rx(), position.ry())
-        .and_then(|cell| cell.tube_index)
-        .and_then(|tube_id| Some((tube_id, terrain.tube(tube_id)?)))
-    else {
-        return Some(TubeWord::NoTube);
-    };
-    (tube_id.0 <= i8::MAX as u16 && tube.source == TubeSource::ExplicitMap && tube.path_len() > 0)
-        .then_some(TubeWord::Enter(tube_id))
+    terrain: &'a ResolvedTerrainGrid,
+) -> Option<(TubeId, &'a TubeFact)> {
+    let id = terrain.cell(position.rx(), position.ry())?.tube_index?;
+    let tube = terrain.tube(id)?;
+    Some((id, tube))
 }
 
 /// The exit Cell's centre at Z 0, the head each entry stores (Walk
@@ -135,6 +125,7 @@ fn tube_first_z(
     on_bridge: bool,
     tube: &TubeFact,
     terrain: &ResolvedTerrainGrid,
+    hover: bool,
 ) -> Result<i32, String> {
     let steps = i32::try_from(tube.path_len()).map_err(|_| "tube path too long")?;
     let [x, y] = ground_pose::position_world_xy(position);
@@ -144,24 +135,32 @@ fn tube_first_z(
     if position.exact_z_leptons().is_none() {
         position.put_z(ground_pose::z_at_height(ground, 0, on_bridge));
     }
-    Ok(ground.wrapping_add(exit.wrapping_sub(ground) / steps))
+    // Hover 51522D, 5152BB adds the rise to ObjectClass::GetZ (5F5F30).
+    // Walk, Drive and Ship add it to the floor under the current Location.
+    let base = if hover {
+        ground_pose::position_world_coord(position).z
+    } else {
+        ground
+    };
+    Ok(base.wrapping_add(exit.wrapping_sub(ground) / steps))
 }
 
 /// Walk's first tube target (`0x0075B40C..0x0075B544`): the Location moved
 /// by the first path step (the next Cell's centre less the entry Cell's,
 /// `0x005657A0`, `0x00480A30`), at [`tube_first_z`].
-fn walk_tube_target(
+fn walk_or_hover_tube_target(
     position: &mut Position,
     on_bridge: bool,
     tube: &TubeFact,
     terrain: &ResolvedTerrainGrid,
+    hover: bool,
 ) -> Result<DriveCoord, String> {
-    let (dx, dy) = crate::util::direction::cell_delta_unchecked(tube.path_steps[0] as u8);
+    let (dx, dy) = crate::util::direction::cell_delta_unchecked((tube.path_steps[0] & 7) as u8);
     let [x, y] = ground_pose::position_world_xy(position);
     Ok(DriveCoord {
         x: x.wrapping_add(dx.wrapping_mul(256)),
         y: y.wrapping_add(dy.wrapping_mul(256)),
-        z: tube_first_z(position, on_bridge, tube, terrain)?,
+        z: tube_first_z(position, on_bridge, tube, terrain, hover)?,
     })
 }
 
@@ -174,22 +173,42 @@ fn track_tube_target(
     tube: &TubeFact,
     terrain: &ResolvedTerrainGrid,
 ) -> Result<DriveCoord, String> {
-    let (dx, dy) = crate::util::direction::cell_delta_unchecked(tube.path_steps[0] as u8);
+    let (dx, dy) = crate::util::direction::cell_delta_unchecked((tube.path_steps[0] & 7) as u8);
     let cell_x = (tube.entry.0 as i16).wrapping_add(dx as i16);
     let cell_y = (tube.entry.1 as i16).wrapping_add(dy as i16);
     Ok(DriveCoord {
         x: i32::from(cell_x) * 256 + 128,
         y: i32::from(cell_y) * 256 + 128,
-        z: tube_first_z(position, on_bridge, tube, terrain)?,
+        z: tube_first_z(position, on_bridge, tube, terrain, false)?,
     })
+}
+
+/// Result of resolving Walk's or Hover's tube head. An automatic or empty
+/// shell falls through Walk's admission, as it does for the Drive/Ship track.
+#[derive(PartialEq, Eq)]
+pub(super) enum TubeEntry {
+    Entered,
+    Missing,
+    Empty,
+}
+
+impl GameEntity {
+    /// Unit AI 7363A4 and Infantry AI 51BAB8 require a nonnegative signed
+    /// byte to run TubeMovement. GetDestinationCoords 4DBDF7 and
+    /// ShouldBeOnBridge 4DDC40 use the same gate.
+    pub fn active_tube(&self) -> Option<&LowBridgeTubeMovementState> {
+        self.low_bridge_tube_state
+            .as_ref()
+            .filter(|state| state.tube_id.0 <= i8::MAX as u16)
+    }
 }
 
 impl Simulation {
     /// Walk's fresh-head tube check (`0x0075B302..0x0075B599`), ahead of the
     /// admission the Process resumes at `0x0075B59C`
     /// ([`Simulation::run_walk_admission_request`]). A path head word of 8
-    /// ([`tube_word`]):
-    /// - at a live tube, enters it ([`Self::walk_tube_entry`]);
+    /// (direction 8):
+    /// - at a live tube, enters it ([`Self::enter_walk_or_hover_tube`]);
     /// - at no tube (`0x0075B34A`, `0x0075B356`), clears the head word and
     ///   the Walk head (`0x0075B554..0x0075B57A`), then calls Walk's
     ///   Stop_Moving (ILocomotion `+0x48`, `0x0075B57D`) and the class
@@ -201,34 +220,36 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return Ok(false);
-        };
         let actor = self
             .substrate
             .entities
             .get(id)
             .ok_or("retired Walk tube owner")?;
-        let Some(word) = tube_word(actor.navigation.path_replay(), &actor.position, terrain) else {
+        if self.resolved_terrain.is_none()
+            || actor
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .first()
+                != Some(&crate::util::direction::TUBE_STEP_DIRECTION)
+        {
             return Ok(false);
-        };
-        match word {
-            TubeWord::Enter(tube_id) => {
-                self.walk_tube_entry(id, tube_id, rules, registry, effects)?;
-            }
-            TubeWord::NoTube => {
-                if let Some(actor) = self.substrate.entities.get_mut(id) {
-                    actor.navigation.path_replay_mut().clear_live_head();
-                    if let Some(locomotor) = actor.locomotor.as_mut() {
-                        locomotor.set_step_head(None);
-                    }
-                }
-                self.walk_stop_moving(id, rules, effects)?;
-                self.assign_null_destination(id, rules, registry, effects);
+        }
+        match self.enter_walk_or_hover_tube(id, rules, registry, effects)? {
+            TubeEntry::Entered => return Ok(true),
+            TubeEntry::Empty => return Ok(false),
+            TubeEntry::Missing => {}
+        }
+        if let Some(actor) = self.substrate.entities.get_mut(id) {
+            actor.navigation.path_replay_mut().clear_live_head();
+            if let Some(locomotor) = actor.locomotor.as_mut() {
+                locomotor.set_step_head(None);
             }
         }
+        self.walk_stop_moving(id, rules, effects)?;
+        self.assign_null_destination(id, rules, registry, effects);
         Ok(true)
     }
 
@@ -237,32 +258,41 @@ impl Simulation {
     /// `0x0075B391`), the Walk head at the exit Cell's centre with Z 0
     /// (`0x0075B3CA..0x0075B3D2`), the path shift
     /// (`0x0075B3E0..0x0075B3EB`), then the tube, cursor 0
-    /// (`0x0075B3FC..0x0075B405`) and its first target ([`walk_tube_target`]).
+    /// (`0x0075B3FC..0x0075B405`) and its first target ([`walk_or_hover_tube_target`]).
     /// The target reads only the Location and the floor, which the Mark and
     /// the raw receiver leave alone, so it is taken first.
-    fn walk_tube_entry(
+    /// Hover 51503B..5152CE shares the Mark, raw removal, path shift and
+    /// first XY target. Hover additionally resets Foot+558 to the exit and
+    /// starts its first Z from the live hovering unit.
+    pub(super) fn enter_walk_or_hover_tube(
         &mut self,
         id: u64,
-        tube_id: TubeId,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
-    ) -> Result<(), String> {
-        let terrain = self
-            .resolved_terrain
-            .as_ref()
-            .ok_or("Walk tube entry requires map cells")?;
-        let tube = terrain
-            .tube(tube_id)
-            .ok_or("Walk tube entry lost its tube")?;
-        let head = tube_exit_centre(tube);
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<TubeEntry, String> {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return Ok(TubeEntry::Missing);
+        };
         let actor = self
             .substrate
             .entities
             .get_mut(id)
-            .ok_or("retired Walk tube owner")?;
+            .ok_or("retired tube owner")?;
+        let Some((tube_id, tube)) = movement_tube_at(&actor.position, terrain) else {
+            return Ok(TubeEntry::Missing);
+        };
+        if tube.path_len() == 0 {
+            return Ok(TubeEntry::Empty);
+        }
+        let head = tube_exit_centre(tube);
+        let hover = actor
+            .locomotor
+            .as_ref()
+            .is_some_and(|l| l.hover_runtime().is_some());
         let on_bridge = actor.on_bridge();
-        let target = walk_tube_target(&mut actor.position, on_bridge, tube, terrain)?;
+        let target =
+            walk_or_hover_tube_target(&mut actor.position, on_bridge, tube, terrain, hover)?;
         let location = ground_pose::position_world_coord(&actor.position);
         self.foot_mark_remove(id, rules, registry, effects);
         Self::object_raw_receiver_at(
@@ -280,20 +310,25 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired Walk tube owner")?;
         if let Some(locomotor) = actor.locomotor.as_mut() {
-            locomotor.set_step_head(Some(head));
+            if let Some(hover) = locomotor.hover_runtime_mut() {
+                hover.set_head(Some(head));
+            } else {
+                locomotor.set_step_head(Some(head));
+            }
         }
-        actor.navigation.path_replay_mut().consume(1);
-        actor.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
-            tube_id,
-            cursor: 0,
-            target,
-        });
-        Ok(())
+        let queue = actor.navigation.path_replay_mut();
+        if hover {
+            queue.accept(super::foot_path::coord_cell(head), 1);
+        } else {
+            queue.consume(1);
+        }
+        actor.low_bridge_tube_state = LowBridgeTubeMovementState::entered(tube_id, target);
+        Ok(TubeEntry::Entered)
     }
 
     /// Drive's and Ship's Process_Track tube arm (Drive
     /// `0x004B1297..0x004B148E`, Ship `0x006A095F..0x006A0B5D`), after the
-    /// speed prefix: a path head word of 8 ([`tube_word`]) with no selected
+    /// speed prefix: a path head word of 8 (direction 8) with no selected
     /// track (`+0x58` of -1, `0x004B12A8`). The owner's Mark(UP)
     /// (vt+0x124(0), `0x004B12BA`) runs first, then a set HeadTo (`+0x40`)
     /// clears with the track's valid byte (`+0x63`,
@@ -319,7 +354,7 @@ impl Simulation {
         family: TrackFamily,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -335,21 +370,26 @@ impl Simulation {
         {
             return Ok(false);
         }
-        let Some(word) = tube_word(actor.navigation.path_replay(), &actor.position, terrain) else {
+        if actor
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .first()
+            != Some(&crate::util::direction::TUBE_STEP_DIRECTION)
+        {
             return Ok(false);
-        };
+        }
         // The target reads only the Location and the floor, which Mark(UP)
         // leaves alone, so it is taken first.
-        let entry = match word {
-            TubeWord::Enter(tube_id) => {
-                let tube = terrain
-                    .tube(tube_id)
-                    .ok_or("Drive tube entry lost its tube")?;
-                let on_bridge = actor.on_bridge();
-                let target = track_tube_target(&mut actor.position, on_bridge, tube, terrain)?;
-                Some((tube_id, tube_exit_centre(tube), target))
+        let entry = if let Some((tube_id, tube)) = movement_tube_at(&actor.position, terrain) {
+            if tube.path_len() == 0 {
+                return Ok(false);
             }
-            TubeWord::NoTube => None,
+            let on_bridge = actor.on_bridge();
+            let target = track_tube_target(&mut actor.position, on_bridge, tube, terrain)?;
+            Some((tube_id, tube_exit_centre(tube), target))
+        } else {
+            None
         };
         self.foot_mark_remove(id, rules, registry, effects);
         let actor = self
@@ -372,11 +412,7 @@ impl Simulation {
             Some((tube_id, head, target)) => {
                 locomotor.store_track_head(family, Some(head));
                 actor.navigation.path_replay_mut().consume(1);
-                actor.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
-                    tube_id,
-                    cursor: 0,
-                    target,
-                });
+                actor.low_bridge_tube_state = LowBridgeTubeMovementState::entered(tube_id, target);
                 locomotor.store_track_valid(family, true);
             }
             None => actor.navigation.path_replay_mut().clear_live_head(),
@@ -418,7 +454,7 @@ fn tick_active_tube_object(
     let Some(entity) = entities.get(entity_id) else {
         return TubeTurn::Inactive;
     };
-    let Some(mut state) = entity.low_bridge_tube_state else {
+    let Some(mut state) = entity.active_tube().copied() else {
         return TubeTurn::Inactive;
     };
     let Some(tube) = terrain.tube(state.tube_id) else {
@@ -467,7 +503,7 @@ fn tick_active_tube_object(
     }
 
     let next_raw = tube.path_steps[usize::from(state.cursor)];
-    let (dx, dy) = crate::util::direction::cell_delta_unchecked(next_raw as u8);
+    let (dx, dy) = crate::util::direction::cell_delta_unchecked((next_raw & 7) as u8);
     let old_target = state.target;
     state.target.x = state.target.x.wrapping_add(dx.wrapping_mul(256));
     state.target.y = state.target.y.wrapping_add(dy.wrapping_mul(256));
@@ -526,7 +562,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::MOVEMENT);
         let mut turn = TubeObjectTurn::default();
@@ -559,7 +595,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.low_bridge_tube_state.is_none());
+            .is_some_and(|entity| entity.active_tube().is_none());
         // Infantry51BACD/Unit7363BB call the same virtual+4A0(0) after the
         // tube leaf; this early-return path bypasses common Techno AI.
         self.update_techno_discovery_from_shroud(id);
@@ -581,7 +617,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let occupants = self
             .substrate
@@ -637,7 +673,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -682,7 +718,7 @@ impl Simulation {
             )?;
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.runtime_bridge_transition.latch();
+            actor.seldom.runtime_bridge_transition.latch();
         }
         let bridge_state_changed = self
             .per_cell_process(id, PerCellReason::Arrival, rules, registry, effects)
@@ -729,7 +765,7 @@ impl Simulation {
     /// placement refuses, such as a vehicle the infantryman is entering.
     ///
     /// The Walk head the entry stored at the exit Cell's centre
-    /// ([`Self::walk_tube_entry`]) is what Force_Immediate_Destination(null)
+    /// ([`Self::enter_walk_or_hover_tube`]) is what Force_Immediate_Destination(null)
     /// releases: FindSubCellDest clears that spot's raw bit (`0x0075C2A0`).
     ///
     /// Answers whether its Scatter's immediate Process or Per_Cell_Process
@@ -739,7 +775,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let terrain = self
             .resolved_terrain
@@ -798,12 +834,15 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             // VERA's spot and level caches follow the Location: the spot is
             // the one the raw receiver reads from it.
-            actor.sub_cell.hold(cell_kernel::infantry_preferred_spot(
-                cell_kernel::CellQueryPoint {
-                    x: exit.x,
-                    y: exit.y,
-                },
-            ));
+            actor
+                .seldom
+                .sub_cell
+                .hold(cell_kernel::infantry_preferred_spot(
+                    cell_kernel::CellQueryPoint {
+                        x: exit.x,
+                        y: exit.y,
+                    },
+                ));
             let on_bridge = actor.on_bridge();
             actor.position.store_cell_level(level, on_bridge);
         }
@@ -848,7 +887,7 @@ impl Simulation {
         }
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.low_bridge_tube_state = None;
-            actor.runtime_bridge_transition.latch();
+            actor.seldom.runtime_bridge_transition.latch();
         }
         bridge_state_changed |= self
             .per_cell_process(id, PerCellReason::Arrival, rules, registry, effects)
@@ -1112,7 +1151,7 @@ mod tests {
             .unwrap()
             .slope_type = 1;
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         assert_eq!(turn.movement.movers_total, 1);
@@ -1141,7 +1180,7 @@ mod tests {
             1 << 3
         );
         assert_eq!(owner.foot_speed.applied_fraction(), SIM_ONE);
-        assert!(owner.runtime_bridge_transition.pending_mismatch());
+        assert!(owner.seldom.runtime_bridge_transition.pending_mismatch());
         assert!(owner.in_playfield());
     }
 
@@ -1246,7 +1285,7 @@ mod tests {
             .low_bridge_tube_state
             .is_some()
         {
-            sim.tube_object_turn(1, &rules, None, FrameEffects::default())
+            sim.tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .expect("tube turn");
             turns += 1;
             assert!(turns < 1000, "the tube's two steps end");
@@ -1374,7 +1413,13 @@ mod tests {
                 z: 0,
             });
         assert_eq!(
-            sim.track_tube_head(1, TrackFamily::Drive, &rules, None, FrameEffects::default()),
+            sim.track_tube_head(
+                1,
+                TrackFamily::Drive,
+                &rules,
+                None,
+                &mut FrameEffects::default()
+            ),
             Ok(true)
         );
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1414,6 +1459,115 @@ mod tests {
         );
     }
 
+    /// Hover ProcessMovement 51503B..5152CE consumes the tunnel word,
+    /// rebases the remaining path at the exit, and measures the first step
+    /// from the hovering Foot's live XYZ, including its altitude.
+    #[test]
+    fn hover_enters_at_its_live_altitude_and_rebases_the_path() {
+        let (mut sim, rules) = unit_driving_into(0);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let mut loco =
+            LocomotorState::for_test_kind(crate::rules::locomotor_type::LocomotorKind::Hover);
+        *loco.hover_runtime_mut().unwrap() =
+            crate::sim::movement::hover::HoverRuntime::moving_for_test(
+                Some(DriveCoord::cell(3, 0, 0)),
+                NativeF64Bits::ONE,
+            );
+        unit.locomotor = Some(loco);
+        unit.position.put_location(DriveCoord {
+            x: 60,
+            y: 200,
+            z: 42,
+        });
+        sim.hover_move_to_path_step(1, &rules, &mut FrameEffects::default())
+            .unwrap();
+        let unit = sim.substrate.entities.get(1).unwrap();
+        let transit = unit.low_bridge_tube_state.expect("Hover entered the tube");
+        assert_eq!(
+            transit.target,
+            DriveCoord {
+                x: 316,
+                y: 200,
+                z: 42
+            }
+        );
+        assert_eq!(
+            unit.locomotor.as_ref().unwrap().step_head(),
+            Some(DriveCoord::cell(2, 0, 0))
+        );
+        assert_eq!(unit.navigation.path_replay().reference_cell(), Some((2, 0)));
+        assert_eq!(unit.navigation.path_replay().remaining_directions(), [2]);
+        assert_eq!(vehicle_bits(&sim, 0), 0);
+    }
+
+    /// Drive masks every authored step to its compass direction at 4B1396
+    /// on entry and 735B72 on crossing a target.
+    #[test]
+    fn tube_movement_uses_the_low_three_bits_of_each_authored_word() {
+        let (mut sim, rules) = unit_driving_on(0, explicit_terrain(vec![10, -6]));
+        assert!(
+            sim.track_tube_head(
+                1,
+                TrackFamily::Drive,
+                &rules,
+                None,
+                &mut FrameEffects::default()
+            )
+            .unwrap()
+        );
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let first = unit.low_bridge_tube_state.unwrap().target;
+        assert_eq!(first, DriveCoord::cell(1, 0, 0));
+        unit.position.put_location(first);
+        sim.tube_object_turn(1, &rules, None, &mut FrameEffects::default())
+            .unwrap();
+        let state = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .low_bridge_tube_state
+            .unwrap();
+        assert_eq!((state.cursor, state.target), (1, DriveCoord::cell(2, 0, 0)));
+    }
+
+    /// Entry builds its first target from the full map index, then stores
+    /// only a byte at Foot+684. Unit AI 7363A4 runs travel on a signed
+    /// nonnegative byte; 255 is the constructor's empty sentinel.
+    #[test]
+    fn a_large_map_tube_index_keeps_the_native_byte_at_entry() {
+        for (index, retained, advances) in [
+            (128, Some(128), false),
+            (255, None, false),
+            (256, Some(0), true),
+        ] {
+            let cells = (0..4)
+                .map(|x| flat_cell(x, 0, (x == 0).then_some(TubeId(index))))
+                .collect();
+            let routes =
+                vec![TubeFact::explicit((0, 0), (2, 0), 2, vec![2, 2]); usize::from(index) + 1];
+            let (mut sim, rules) = unit_driving_on(
+                0,
+                ResolvedTerrainGrid::from_cells_with_tubes(4, 1, cells, routes),
+            );
+            let mut effects = FrameEffects::default();
+            assert!(
+                sim.track_tube_head(1, TrackFamily::Drive, &rules, None, &mut effects)
+                    .unwrap()
+            );
+            let unit = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(unit.low_bridge_tube_state.map(|s| s.tube_id.0), retained);
+            assert_eq!(unit.navigation.path_replay().remaining_directions(), [2]);
+            let before = ground_pose::position_world_coord(&unit.position);
+            sim.tube_object_turn(1, &rules, None, &mut effects).unwrap();
+            assert_eq!(
+                ground_pose::position_world_coord(&sim.substrate.entities.get(1).unwrap().position)
+                    != before,
+                advances
+            );
+        }
+    }
+
     /// The unit of [`unit_driving_into`] at the end of the tube: at the exit
     /// Cell (2, 0)'s centre, unlisted, its cursor past the path, with HeadTo
     /// at that centre as the entry stored it.
@@ -1449,7 +1603,7 @@ mod tests {
             .unwrap()
             .set_in_playfield(false);
         let turn = sim
-            .tube_object_turn(1, &rules, None, FrameEffects::default())
+            .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
             .expect("tube turn");
         assert!(turn.per_cell_ran);
         let vehicle = sim.substrate.entities.get(1).unwrap();
@@ -1461,7 +1615,7 @@ mod tests {
         assert!(vehicle.lifecycle.cell_marked());
         assert!(sim.substrate.occupancy.contains_entity(2, 0, 1));
         assert_ne!(vehicle_bits(&sim, 2), 0);
-        assert!(vehicle.runtime_bridge_transition.pending_mismatch());
+        assert!(vehicle.seldom.runtime_bridge_transition.pending_mismatch());
         assert!(vehicle.in_playfield());
         assert_eq!(vehicle.foot_speed.applied_fraction(), SIM_ONE);
         assert_eq!(
@@ -1488,9 +1642,9 @@ mod tests {
                 cursor: 0,
                 target: DriveCoord::cell(2, 0, 0),
             });
-            assert!(!rider.discovery.discovered_by_current_house());
+            assert!(!rider.seldom.discovery.discovered_by_current_house());
             let turn = sim
-                .tube_object_turn(1, &rules, None, FrameEffects::default())
+                .tube_object_turn(1, &rules, None, &mut FrameEffects::default())
                 .unwrap();
             assert!(
                 !turn.per_cell_ran,
@@ -1499,8 +1653,8 @@ mod tests {
             let rider = sim.substrate.entities.get(1).unwrap();
             assert!(rider.low_bridge_tube_state.is_some());
             assert!(!rider.lifecycle.cell_marked());
-            assert!(rider.discovery.discovered_by_current_house());
-            assert!(!rider.discovery.discovered_by_other_house());
+            assert!(rider.seldom.discovery.discovered_by_current_house());
+            assert!(!rider.seldom.discovery.discovered_by_other_house());
         }
     }
 }

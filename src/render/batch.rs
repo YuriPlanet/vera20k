@@ -750,6 +750,7 @@ impl InstanceBufferPool {
 }
 
 /// Exact world and UI uniforms uploaded this frame, owned together.
+#[derive(Clone, Copy)]
 struct UploadedCameras {
     world: CameraUniform,
     ui: CameraUniform,
@@ -839,8 +840,10 @@ pub struct BatchRenderer {
     // Exact bytes last written by the camera owner; scissor consumers read
     // this record instead of independently reconstructing scroll/zoom/origin.
     // It is what the two buffers hold, from their creation on, so a write of
-    // the same bytes is skipped.
-    uploaded_camera: std::sync::RwLock<UploadedCameras>,
+    // the same bytes is skipped. A `Cell`: every shell, loading and match
+    // pass writes the camera through the `&BatchRenderer` it draws with,
+    // beside textures it borrows from the same state; one thread only.
+    uploaded_camera: std::cell::Cell<UploadedCameras>,
     camera_buffer: wgpu::Buffer,
     /// World blitters use the shared A texture for source palette selection.
     camera_bind_group: wgpu::BindGroup,
@@ -1621,7 +1624,7 @@ impl BatchRenderer {
             voxel_passthrough_pipeline,
             camera_bind_group_layout,
             camera_buffer,
-            uploaded_camera: std::sync::RwLock::new(UploadedCameras {
+            uploaded_camera: std::cell::Cell::new(UploadedCameras {
                 world: camera_uniform,
                 ui: ui_camera(camera_uniform),
             }),
@@ -2046,8 +2049,7 @@ impl BatchRenderer {
     /// scrolling, with the rows the Z seed has panned. The origin uses
     /// unscaled native rows, not target pixels.
     pub(crate) fn update_native_z_origin(&self, queue: &wgpu::Queue, origin_y: f32, pan: i32) {
-        let mut guard = self.uploaded_camera.write().expect("camera owner lock");
-        let uploaded = &mut *guard;
+        let mut uploaded = self.uploaded_camera.get();
         let fields = [origin_y, pan as f32];
         // Each queue write costs a staging buffer, and a frame's origin is
         // usually the one `write_camera` already uploaded.
@@ -2060,30 +2062,29 @@ impl BatchRenderer {
         for camera in [&mut uploaded.world, &mut uploaded.ui] {
             [camera.native_z_origin_y, camera.native_z_pan] = fields;
         }
+        self.uploaded_camera.set(uploaded);
         let offset = std::mem::offset_of!(CameraUniform, native_z_origin_y) as u64;
         queue.write_buffer(&self.camera_buffer, offset, bytemuck::bytes_of(&fields));
         queue.write_buffer(&self.ui_camera_buffer, offset, bytemuck::bytes_of(&fields));
     }
 
     pub(crate) fn camera_uniform(&self) -> CameraUniform {
-        self.uploaded_camera
-            .read()
-            .expect("camera owner lock")
-            .world
+        self.uploaded_camera.get().world
     }
 
     /// The UI camera's exact uploaded viewport, independent of world resolution.
     pub(crate) fn ui_camera_uniform(&self) -> CameraUniform {
-        self.uploaded_camera.read().expect("camera owner lock").ui
+        self.uploaded_camera.get().ui
     }
 
     /// Render the world at native texel resolution while UI keeps frame pixels.
     /// These are distinct GPU buffers; no camera is rewritten between encoded
     /// passes, since queue writes would otherwise affect every draw this frame.
     pub(crate) fn set_native_world_resolution(&self, queue: &wgpu::Queue, size: [u32; 2]) {
-        let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
+        let mut uploaded = self.uploaded_camera.get();
         uploaded.world.screen_size = size.map(|v| v as f32);
         uploaded.world.zoom = 1.0;
+        self.uploaded_camera.set(uploaded);
         queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uploaded.world));
     }
 
@@ -2154,8 +2155,7 @@ impl BatchRenderer {
     }
 
     pub(crate) fn write_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
-        let mut guard = self.uploaded_camera.write().expect("camera owner lock");
-        let uploaded = &mut *guard;
+        let mut uploaded = self.uploaded_camera.get();
         let ui = ui_camera(uniform);
         // Each queue write costs a staging buffer; a camera that has not
         // moved is already in its buffer.
@@ -2168,6 +2168,7 @@ impl BatchRenderer {
                 *held = camera;
             }
         }
+        self.uploaded_camera.set(uploaded);
     }
 
     /// Create a standalone instance buffer (not stored in the renderer).

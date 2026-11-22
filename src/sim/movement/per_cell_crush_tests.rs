@@ -121,6 +121,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
             .entities
             .get(captive)
             .unwrap()
+            .seldom
             .mind_control
             .controller()
             == Some(controller)
@@ -130,7 +131,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
     }
     let captured = sim.substrate.entities.get(captive).unwrap();
     assert_eq!(
-        captured.mind_control.controller(),
+        captured.seldom.mind_control.controller(),
         Some(controller),
         "ordinary weapon captures; controller={:?}, captive={:?}",
         sim.substrate.entities.get(controller).map(|entity| (
@@ -247,7 +248,7 @@ fn retail_crush_releases_captives_before_destroyed_tag_changes_house() {
                 "the controlled animation was released"
             );
             let released = sim.substrate.entities.get(captive).unwrap();
-            assert_eq!(released.mind_control.controller(), None);
+            assert_eq!(released.seldom.mind_control.controller(), None);
             assert_eq!(
                 released.owner(),
                 controller_owner,
@@ -313,7 +314,7 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
         PerCellReason::Arrival,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -382,7 +383,7 @@ fn ares_crush_damage_hurts_the_crusher() {
             PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let crushed = sim

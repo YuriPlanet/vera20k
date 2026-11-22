@@ -68,7 +68,7 @@ pub(crate) fn ordered_assault(extra: &str) -> Option<AssaultScene> {
                 occupant,
                 bunker,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         );

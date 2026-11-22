@@ -173,6 +173,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             .veterancy
             .set_raw_for_test(NativeF32Bits::from_bits(word(&input["veterancy_bits"])));
         target
+            .seldom
             .crate_multipliers
             .set_armor_multiplier_for_test(NativeF64Bits::from_bits(
                 u64::from_str_radix(
@@ -189,9 +190,9 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             y: int(&before["xyz"][1]),
             z: int(&before["xyz"][2]),
         });
-        target.disguise = Some(restore_disguise(before, &mut interner));
+        target.seldom.disguise = Some(restore_disguise(before, &mut interner));
         assert_disguise(
-            target.disguise.as_ref().unwrap(),
+            target.seldom.disguise.as_ref().unwrap(),
             before,
             &interner,
             context,
@@ -243,7 +244,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             &mut world,
             &rules,
             Some(resolved),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         )
         .expect("ordinary Object/Techno health commit");
@@ -258,7 +259,12 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
             int(&after["health"]),
             "{context}: committed HP"
         );
-        assert_disguise(target.disguise.as_ref().unwrap(), after, &interner, context);
+        assert_disguise(
+            target.seldom.disguise.as_ref().unwrap(),
+            after,
+            &interner,
+            context,
+        );
         let native_packet = int(&row["modified_damage"]);
         if let Some((packet, _, _)) = receipt.positive_postlude {
             // This is the Object owner's final packet, including lethal
@@ -283,7 +289,7 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
                 "{context}: staged death continuation"
             );
             assert_eq!(
-                target.disguise.as_ref().unwrap(),
+                target.seldom.disguise.as_ref().unwrap(),
                 &restore_disguise(before, &mut interner),
                 "result4 skips every disguise/reveal mutation"
             );

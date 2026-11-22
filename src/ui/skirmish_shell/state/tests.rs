@@ -52,7 +52,7 @@ fn test_scenario_record(
     let ini = IniFile::from_str(&format!("[Basic]\nName={name}\nGameMode={game_modes}\n"));
     SkirmishScenarioRecord::concrete_from_ini(
         source_ordinal,
-        SkirmishScenarioSource::LooseYrm(format!("{name}.yrm")),
+        SkirmishScenarioSource::LooseMap(format!("{name}.yrm")),
         &format!("{name}.yrm"),
         &ini,
     )
@@ -2678,4 +2678,58 @@ fn a_low_row_of_the_longer_list_opens_its_list_upward() {
     assert_eq!(list.y + list.h, face.y - 1);
     let (list, face) = list_and_face(SkirmishComboId::Start(1));
     assert_eq!(list.y, face.y + face.h + 1);
+}
+
+/// Bulk Seat Actions and a quick team on a four-start map: Fill with AI
+/// fills only the empty rows, AIs in 2 teams deals the three AIs onto
+/// Teams A and B, the bigger first, the player keeping Team A, and Remove
+/// all AI empties them again.
+#[test]
+fn seat_actions_and_ai_teams_go_through_the_rows() {
+    use crate::skirmish_launch::AiDifficulty;
+    use crate::ui::team_tools::{SeatAction, TeamPreset};
+    let maps = [test_map_entry_with_starts("four.mmx", 4)];
+    let mut shell = SkirmishShellState::default();
+    initialize_rows_for_selected_map(&mut shell, &maps);
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::AiType(0),
+        SkirmishComboItem::AiType(SkirmishAiRowType::Easy),
+    );
+    apply_combo_selection_for_test(
+        &mut shell,
+        SkirmishComboId::Team(0),
+        SkirmishComboItem::Team(0),
+    );
+    apply_seat_action(&mut shell, &maps, SeatAction::FillAi(None), || {
+        AiDifficulty::Hard
+    });
+    let types: Vec<SkirmishAiRowType> = shell.opponents[..4]
+        .iter()
+        .map(|opponent| opponent.row_type)
+        .collect();
+    assert_eq!(
+        types,
+        [
+            SkirmishAiRowType::Easy,
+            SkirmishAiRowType::Hard,
+            SkirmishAiRowType::Hard,
+            SkirmishAiRowType::None,
+        ]
+    );
+    assert!(apply_team_preset(&mut shell, &maps, TeamPreset::AiTeams(2)));
+    let teams: Vec<i32> = shell.opponents[..3]
+        .iter()
+        .map(|opponent| opponent.team)
+        .collect();
+    assert_eq!((shell.player_team, teams), (0, vec![0, 0, 1]));
+    assert!(!apply_team_preset(
+        &mut shell,
+        &maps,
+        TeamPreset::AiTeams(4)
+    ));
+    apply_seat_action(&mut shell, &maps, SeatAction::RemoveAi, || {
+        AiDifficulty::Hard
+    });
+    assert!(shell.opponents.iter().all(|opponent| !opponent.is_active()));
 }

@@ -3,6 +3,13 @@
 
 use crate::rules::ini_parser::IniSection;
 
+/// VERA's bound on `Survivor.Pilots=`. Ares reads it with no upper bound,
+/// and a dying crewed unit rolls and constructs one pilot per count
+/// (`sim::crew_survival::ares_survivors`), so a value near `i32::MAX` hangs
+/// the tick. Units carry one pilot by default; every count below the bound
+/// draws as before.
+const SURVIVOR_PILOTS_LIMIT: i32 = 256;
+
 /// TypeExt constructor1003C72E..1003C76E: all survivor counts/chances -1,
 /// side-specific pilot pointers empty, Crew.TechnicianChance unset.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -37,7 +44,9 @@ impl CrewTypeRules {
         side_pilots: &[Option<Option<String>>],
     ) {
         let _ares = crate::rules::ares_switch::ares_reads();
-        self.pilots = section.read_ares_int("Survivor.Pilots", self.pilots);
+        self.pilots = section
+            .read_ares_int("Survivor.Pilots", self.pilots)
+            .min(SURVIVOR_PILOTS_LIMIT);
         read_ranked_chances(section, "Pilot", &mut self.pilot_chances);
         read_ranked_chances(section, "Passenger", &mut self.passenger_chances);
         self.side_pilots.resize(side_pilots.len(), None);
@@ -89,5 +98,19 @@ fn read_ranked_chances(section: &IniSection, kind: &str, chances: &mut [i32; 3])
     }
     for (rank, chance) in ["Rookie", "Veteran", "Elite"].into_iter().zip(chances) {
         *chance = section.read_ares_int(&format!("Survivor.{rank}{kind}Chance"), *chance);
+    }
+}
+
+#[cfg(all(test, tests_rules_a_n))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_huge_pilot_count_stops_at_the_pilot_bound() {
+        let ini =
+            crate::rules::ini_parser::IniFile::from_str("[UNIT]\nSurvivor.Pilots=2147483647\n");
+        let mut crew = CrewTypeRules::default();
+        crew.read_pass(ini.section_or_empty("UNIT"), &[]);
+        assert_eq!(crew.pilot_count(1), SURVIVOR_PILOTS_LIMIT);
     }
 }

@@ -627,9 +627,9 @@ impl ProjectileCollisionWorld<'_> {
         let owner = self.entities.get(projectile.source_id());
         cell_blocks_line_of_fire(
             CellObstructionProbe {
-                source,
-                target,
-                previous,
+                source: &source,
+                target: &target,
+                previous: &previous,
                 sample: crate::sim::components::DriveCoord {
                     x: candidate.x,
                     y: candidate.y,
@@ -834,7 +834,7 @@ mod tests {
                         facing,
                         0,
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
                 // OnBridge is an explicit caller prior, as in the existing
@@ -856,7 +856,7 @@ mod tests {
                             PlacementEvidence::EvaluateMark,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )
                         .is_some()
                     }),
@@ -899,7 +899,7 @@ mod tests {
                 },
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             let bullet = sim
                 .projectiles
@@ -1328,6 +1328,7 @@ mod tests {
                 if category == EntityCategory::Structure {
                     // Construction stamps the type's ART `Foundation=`.
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(dimensions.clone().into());
                 }
@@ -1542,6 +1543,7 @@ mod tests {
             for entity in sim.substrate.entities.values_mut() {
                 if entity.category() == EntityCategory::Structure {
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(foundation.clone().into());
                 }
@@ -1738,7 +1740,7 @@ mod tests {
                     &[],
                     16,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let detonate = !source_present || shared_wall;
@@ -1829,7 +1831,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let saved = runtime.simulation.projectiles.get(id).unwrap().clone();
@@ -1912,7 +1914,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let _ = resumed
@@ -1920,7 +1922,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert!(
@@ -2049,7 +2051,7 @@ mod tests {
                         &[],
                         16,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 assert_eq!(
@@ -2163,7 +2165,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert_eq!(
@@ -2280,7 +2282,7 @@ mod tests {
                                 &[],
                                 16,
                                 TickLane::Ordinary,
-                                crate::sim::world::FrameEffects::default(),
+                                &mut crate::sim::world::FrameEffects::default(),
                             )
                             .expect("fixture frame must complete");
                     }
@@ -2369,7 +2371,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let projectile = runtime

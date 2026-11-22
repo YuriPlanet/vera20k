@@ -23,17 +23,21 @@ fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
     )
 }
 
-/// Where VERA's roster's entries end in this window, in 800x600 pixels:
-/// over the team bar, which holds the Teams count in a room with teams and
-/// the host's Room size.
-pub(crate) fn roster_bottom(state: &AppState, teams: bool, room_size: bool) -> i32 {
+/// Where VERA's roster's entries fit in this window: over the team bar,
+/// which holds the Teams count in a room with teams and the host's Room
+/// size, and two groups abreast on a wide one.
+pub(crate) fn roster_frame(
+    state: &AppState,
+    teams: bool,
+    room_size: bool,
+) -> crate::ui::multiplayer_setup::RosterFrame {
     let mut layout = page_layout(state);
     layout.fit_team_bar(
         crate::app::shell_network_setup::dialog(state),
         teams,
         room_size,
     );
-    layout.roster_bottom
+    layout.roster_frame()
 }
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
@@ -296,9 +300,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         && layout.map_preview.contains(x, y)
         && preview_box_shows(state, &view, &layout);
     // VERA's online room names the badge, rank and OS of the player whose
-    // name is under the pointer.
-    let player =
-        over.and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
+    // name or badge is under the pointer.
+    let player = layout
+        .badge_at(&view, x, y)
+        .or(over)
+        .and_then(|id| crate::app::shell_network_setup::view::player_help(state, &view, id));
     let help = player
         .or_else(|| {
             over.or(over_preview.then_some(MAP_PREVIEW))
@@ -419,14 +425,19 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             let press = ui.popup.press_list(popup, x, y, Instant::now());
             if let ComboPress::Pick(index) = press
                 && let Some(control) = open
-                && let Some(item) = view
-                    .combo(control)
-                    .and_then(|combo| combo.choices.get(index))
+                && let Some(combo) = view.combo(control)
+                && let Some(item) = combo.choices.get(index)
             {
-                action = Some(SetupAction::Select {
-                    control,
-                    value: item.value,
-                });
+                if item.greyed {
+                    // A team bar list stays open on an item it cannot
+                    // have now.
+                    ui.open_list(control, combo.row, combo.selected);
+                } else {
+                    action = Some(SetupAction::Select {
+                        control,
+                        value: item.value,
+                    });
+                }
             }
             cue = press.cue().map(LauncherCue::from);
         } else if view.open_box.is_none()
@@ -459,7 +470,10 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                     ))
                 };
                 cue = press.and_then(ComboPress::cue).map(LauncherCue::from);
-            } else if CHECKBOXES.contains(&control) || ROOM_CHECKBOXES.contains(&control) {
+            } else if CHECKBOXES.contains(&control)
+                || SESSION_CHECKBOXES.contains(&control)
+                || ROOM_CHECKBOXES.contains(&control)
+            {
                 if crate::ui::skirmish_shell::checkbox_icon_rect(
                     layout.control_rect(control).expect("checkbox rect"),
                     layout.page.scale,
@@ -519,9 +533,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 GAME_OPTIONS => Some(SetupAction::OpenBox(Some(RoomBox::GameOptions))),
                 GAME_OPTIONS_OK => Some(SetupAction::OpenBox(None)),
-                TEAM_STARTS => Some(SetupAction::TeamStarts),
-                TEAM_COLORS => Some(SetupAction::TeamColors),
-                BALANCE => Some(SetupAction::Balance),
+                GAME_OPTIONS_PAGE => {
+                    Some(SetupAction::OpenBox(view.open_box.map(RoomBox::other_page)))
+                }
                 LOBBY => Some(SetupAction::Lobby),
                 MAP_OFFER_DOWNLOAD => Some(SetupAction::MapOffer { download: true }),
                 MAP_OFFER_LEAVE => Some(SetupAction::MapOffer { download: false }),

@@ -46,6 +46,7 @@ fn self_click(
             OrderModifier::Normal,
             false,
             planning,
+            &mut Default::default(),
         ),
         self_click_command(sim, rules, None, owner, &[id], Some(&hover), planning),
     )

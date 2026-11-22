@@ -34,8 +34,7 @@ fn xyz(value: &Value) -> [i32; 3] {
 }
 
 fn install_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
+    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
     sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
@@ -105,7 +104,7 @@ impl Scene {
             &native()["lifecycle_priors"]["source_report_selector"],
         ) as u16);
         assert!(!input["on_bridge"].as_bool().unwrap());
-        assert_eq!(entity.weapon_burst.index(), int(&input["burst"]));
+        assert_eq!(entity.seldom.weapon_burst.index(), int(&input["burst"]));
         sim.resolve_type_handles(rules);
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
@@ -316,11 +315,11 @@ fn assert_laser(actual: LaserBirth, expected: &Value, context: &str) {
     );
 }
 
-fn sounds(sim: &Simulation, begin: usize) -> Vec<Value> {
+fn sounds(rules: &RuleSet, sim: &Simulation, begin: usize) -> Vec<Value> {
     sim.sound_events[begin..].iter().filter_map(|event| match event {
         SimSoundEvent::VocAt { sound_id, audible_to, rx, ry, sub_x, sub_y, world_z_leptons } => {
             assert!(audible_to.is_none(), "Disk native NULL handle has no House admission gate");
-            Some(json!({"name": sound_id, "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
+            Some(json!({"name": sound_id.name_in(rules), "coords": [i32::from(*rx) * 256 + sub_x.to_num::<i32>(), i32::from(*ry) * 256 + sub_y.to_num::<i32>(), *world_z_leptons]}))
         }
         _ => None,
     }).collect()
@@ -429,9 +428,11 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                     let output_start = scene.sim.lifecycle_outputs.len();
                     let sound_start = scene.sim.sound_events.len();
                     let (_, receipts) = trace_area_visits(|| {
-                        scene
-                            .sim
-                            .tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        scene.sim.tick_disk_lasers(
+                            rules,
+                            Some(&registry),
+                            &mut FrameEffects::default(),
+                        )
                     });
                     let lasers: Vec<_> = scene.sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -483,10 +484,14 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                         paired = false;
                         damage_count += 1;
                     }
-                    for actual in sounds(&scene.sim, sound_start).into_iter().filter(|event| {
-                        event["name"] == rules.general.disk_laser_charge_up().unwrap()
-                            || event["name"] == weapon.report[0]
-                    }) {
+                    for actual in
+                        sounds(&rules, &scene.sim, sound_start)
+                            .into_iter()
+                            .filter(|event| {
+                                event["name"] == rules.general.disk_laser_charge_up().unwrap()
+                                    || event["name"] == weapon.report[0]
+                            })
+                    {
                         let call = &row["sound_calls"][sound_count];
                         let name = match int(&call["sound_id"]) {
                             0 => rules.general.disk_laser_charge_up().unwrap(),
@@ -508,9 +513,12 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                 "laser_update" => {}
                 "drain" => {
                     let begin = scene.sim.lifecycle_test_events_for_test().len();
-                    scene
-                        .sim
-                        .process_pending_delete_with(rules, FrameEffects::default(), 1, false);
+                    scene.sim.process_pending_delete_with(
+                        rules,
+                        &mut FrameEffects::default(),
+                        1,
+                        false,
+                    );
                     selected.extend(
                         scene.sim.lifecycle_test_events_for_test()[begin..]
                             .iter()
@@ -591,7 +599,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
             scene.sim.session.set_tick_for_test(u64::from(frame));
             scene
                 .sim
-                .tick_disk_lasers(rules, Some(&registry), FrameEffects::default());
+                .tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default());
         }
         if pending {
             for _ in 0..2 {
@@ -658,7 +666,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                     let output_start = sim.lifecycle_outputs.len();
                     let sound_start = sim.sound_events.len();
                     let (_, area) = trace_area_visits(|| {
-                        sim.tick_disk_lasers(rules, Some(&registry), FrameEffects::default())
+                        sim.tick_disk_lasers(rules, Some(&registry), &mut FrameEffects::default())
                     });
                     let lasers: Vec<_> = sim.lifecycle_outputs[output_start..]
                         .iter()
@@ -667,8 +675,8 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                             _ => None,
                         })
                         .collect();
-                    let sound = sounds(sim, sound_start);
-                    sim.process_pending_delete_with(rules, FrameEffects::default(), 1, false);
+                    let sound = sounds(&rules, sim, sound_start);
+                    sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 1, false);
                     (
                         lasers,
                         sound,
@@ -739,7 +747,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
                 &std::mem::take(&mut commands),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary frame");
         assert!(
@@ -818,7 +826,7 @@ fn ares_disk_hit_flashes_and_plays_the_enabled_damage_anim() {
                     &std::mem::take(&mut commands),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .unwrap();
             flashed |= output.combat_lights.iter().any(|request| {

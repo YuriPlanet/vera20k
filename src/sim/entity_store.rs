@@ -11,11 +11,18 @@
 //!   ordered iterators. Store operations maintain the indexes when an entity
 //!   enters, leaves, or changes owner.
 //! - Within simulation, `store.get_mut(id)` borrows one actor for an update.
-//! - Cross-entity reads during mutation: read target first (clone needed data),
-//!   then get_mut on the other entity
-//! - Batch iteration with mutation: collect `keys_sorted()`, loop with
-//!   `get_mut_if()` so an entity the walk leaves unchanged is not handed out
-//!   (every hand-out enters the touch logs; see `touched`)
+//! - Cross-entity reads during mutation: read target first (copy the facts
+//!   needed), then get_mut on the other entity
+//! - A walk that writes only each visited entity's own fields (and fields
+//!   beside the store, such as an output channel): `for_each_entry_mut`,
+//!   which needs no id list or lookup by id, and hands an entity out only
+//!   through `EntryMut::into_mut` (every hand-out enters the touch logs; see
+//!   `touched`)
+//! - A sweep from the highest id down whose visits mutate the world:
+//!   `descending_ids`, a cursor that copies no ids
+//! - Only where neither fits, a copy of the ids: `keys_sorted()`, looping
+//!   with `get_mut_if()` so an entity the walk leaves unchanged is not
+//!   handed out
 //!
 //! ## Dependency rules
 //! - Part of sim/ — stores sim/game_entity; the shared AirTracker query reads
@@ -378,9 +385,8 @@ impl EntityStore {
         if cell.owed == 0 {
             return;
         }
-        // Through a shared reference, as the per-visit step does: waking is
-        // not a hand-out.
-        if let Some(entity) = self.entities[slot].as_deref() {
+        // Waking is not a hand-out: no note in the touch logs.
+        if let Some(entity) = self.entities[slot].as_deref_mut() {
             entity.settle_sleep(cell.owed);
         }
     }
@@ -666,17 +672,18 @@ impl EntityStore {
         let stored = self.len();
         self.touched.note(stable_id, stored);
         for entity in self.entities.iter_mut().filter_map(Option::as_deref_mut) {
-            if entity.has_live_contact_with(stable_id) || entity.tether.partner() == Some(stable_id)
+            if entity.has_live_contact_with(stable_id)
+                || entity.seldom.tether.partner() == Some(stable_id)
             {
                 self.touched.note(entity.stable_id(), stored);
             }
             entity.clear_live_contact_with(stable_id);
             // Drop a dangling tether to the departing entity (the BREAK
             // cascade a limbo'd dock partner would otherwise miss).
-            entity.tether.forget(stable_id);
+            entity.seldom.tether.forget(stable_id);
             if entity.stable_id() == stable_id {
-                entity.radio_contacts.clear_all();
-                entity.tether.release();
+                entity.seldom.radio_contacts.clear_all();
+                entity.seldom.tether.release();
             }
         }
     }
@@ -763,14 +770,35 @@ impl EntityStore {
         self.entities[slot].as_deref_mut()
     }
 
+    /// Visit the stored entities whose category `keep` selects, in ascending
+    /// stable_id order, without an id list or a lookup by id. `visit` reads
+    /// each through [`EntryMut::get`] and borrows it for writing through
+    /// [`EntryMut::into_mut`], which is a hand-out as [`Self::get_mut`] makes
+    /// one; an entity only read stays out of the touch logs. For walks that
+    /// write only the visited entity's own fields.
+    pub(super) fn for_each_entry_mut(
+        &mut self,
+        keep: impl Fn(EntityCategory) -> bool,
+        mut visit: impl FnMut(EntryMut<'_>),
+    ) {
+        self.check_attached();
+        for slot in 0..self.entities.len() {
+            if self.entities[slot].is_some() && keep(self.categories[slot]) {
+                visit(EntryMut { store: self, slot });
+            }
+        }
+    }
+
     /// Step `stable_id`'s mission AI counter (`+0xC4`) for one AI visit
     /// (`0x006FA646..0x006FA64F`) without a note in the touch logs: every
     /// techno steps it every frame, and no product derived from the logs
     /// reads it. No-op if the entity is absent.
     pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
-        // Through a shared reference: the counter steps without a mutable
-        // hand-out, which would wake the object and note it in the logs.
-        if let Some(entity) = self.get(stable_id) {
+        // Not a hand-out: stepping the counter neither wakes the object nor
+        // notes it in the logs.
+        if let Some(slot) = self.slot(stable_id)
+            && let Some(entity) = self.entities[slot as usize].as_deref_mut()
+        {
             entity.mission.count_ai_visit();
         }
     }
@@ -837,17 +865,23 @@ impl EntityStore {
         self.slot_of.is_empty()
     }
 
-    /// Get sorted keys for deterministic iteration.
-    ///
-    /// Callers typically iterate with `get()` or `get_mut_if()`:
-    /// ```ignore
-    /// let keys = store.keys_sorted();
-    /// for &id in &keys {
-    ///     if let Some(entity) = store.get_mut_if(id, |entity| entity.rocking.is_some()) { ... }
-    /// }
-    /// ```
+    /// A copy of the stored ids in ascending order. Right only where the
+    /// walk needs the ids as they stood when it began, in ascending order,
+    /// while its visits change the store through the whole world: a visit
+    /// that may insert or remove entities below the walk, or callers outside
+    /// the simulation. A walk that writes only the visited entity uses
+    /// [`Self::for_each_entry_mut`]; a sweep from the highest id down uses
+    /// [`Self::descending_ids`]; both copy no ids.
     pub fn keys_sorted(&self) -> Vec<u64> {
         self.stored().map(|(id, _)| id).collect()
+    }
+
+    /// A walk of the stored ids whose category `keep` selects, from the
+    /// highest down, that holds no borrow of the store between steps
+    /// ([`DescendingIds::next`]): for sweeps whose visits mutate the world,
+    /// without a copy of every id.
+    pub(crate) fn descending_ids(keep: fn(EntityCategory) -> bool) -> DescendingIds {
+        DescendingIds { below: None, keep }
     }
 
     /// The stored ids of the entities whose category `keep` selects, in
@@ -997,7 +1031,7 @@ impl EntityStore {
     /// check).
     pub(crate) fn values_of_owners(
         &self,
-        keep: impl Fn(u64, InternedId) -> bool,
+        mut keep: impl FnMut(u64, InternedId) -> bool,
     ) -> impl Iterator<Item = &GameEntity> {
         self.ids
             .iter()
@@ -1215,18 +1249,20 @@ impl EntityStore {
         entries.into_iter().filter_map(|(_, id)| self.get(id))
     }
 
-    /// Materialize AircraftTracker412B40/4137A0 in retained per-bucket entry
+    /// AircraftTracker412B40/4137A0's copy, in retained per-bucket entry
     /// order. Shared by GreatestThreat6F91D3 and area damage4892D8. Current
     /// object coordinates do not relocate entries; FootAir owns that update.
     /// Repeated query buckets deliberately copy their vectors again. Each
     /// bucket's entries come from the airborne set, which debug builds check
     /// against a walk of every entity on every call (the live-read check).
+    /// The ids are read as the caller takes them, from the store it borrows,
+    /// so the copy needs no list of its own.
     pub(crate) fn airborne_in_query_order(
         &self,
         center_cell: &crate::sim::cell_rect::CellRef<'_>,
         radius_cells: i32,
         map_extent: (u16, u16),
-    ) -> Vec<u64> {
+    ) -> impl Iterator<Item = u64> + use<'_> {
         //412B6E calls Cell vt+48;413A30 truncates the returned XYZ's
         // X/Y toward zero and packs16. Read the resolved live Cell rather
         // than its lookup argument: aliases and the shared Dummy can differ.
@@ -1242,21 +1278,18 @@ impl EntityStore {
                 || self.airborne == self.walk_airborne(),
             "the airborne set disagrees with the entities"
         );
-        let mut ordered = Vec::new();
-        for bucket in crate::sim::occupancy::air_spatial_query_bucket_order(
+        crate::sim::occupancy::air_spatial_query_bucket_order(
             center.0,
             center.1,
             radius_cells,
             map_extent.0,
             map_extent.1,
-        ) {
-            ordered.extend(
-                self.airborne
-                    .range((bucket, 0, 0)..=(bucket, u64::MAX, u64::MAX))
-                    .map(|&(_, _, id)| id),
-            );
-        }
-        ordered
+        )
+        .flat_map(|bucket| {
+            self.airborne
+                .range((bucket, 0, 0)..=(bucket, u64::MAX, u64::MAX))
+                .map(|&(_, _, id)| id)
+        })
     }
 
     /// `(bucket, enter order, stable_id)` of every stored entity the tracker
@@ -1342,6 +1375,78 @@ impl DoubleEndedIterator for Stored<'_> {
 
 impl ExactSizeIterator for Stored<'_> {}
 
+/// One stored entity of an [`EntityStore::for_each_entry_mut`] walk. It holds
+/// the store, so the visit can neither add nor remove an entity: the slot
+/// stays filled for as long as the entry lives.
+pub(super) struct EntryMut<'a> {
+    store: &'a mut EntityStore,
+    slot: usize,
+}
+
+impl<'a> EntryMut<'a> {
+    pub(super) fn id(&self) -> u64 {
+        self.store.ids[self.slot]
+    }
+
+    /// Read the entity without handing it out.
+    pub(super) fn get(&self) -> &GameEntity {
+        self.store.entities[self.slot]
+            .as_deref()
+            .expect("the walk visits filled slots only")
+    }
+
+    /// Hand the entity out for writing, as [`EntityStore::get_mut`] does:
+    /// noted in the touch logs and woken first.
+    pub(super) fn into_mut(self) -> &'a mut GameEntity {
+        let id = self.id();
+        self.store.touched.note(id, self.store.slot_of.len());
+        self.store.wake_slot(self.slot);
+        self.store.entities[self.slot]
+            .as_deref_mut()
+            .expect("the walk visits filled slots only")
+    }
+}
+
+/// A descending walk of an [`EntityStore`]'s stored ids
+/// ([`EntityStore::descending_ids`]). Each step looks up the highest stored id
+/// below the last one it gave, so between steps the store may change:
+///
+/// - An entity removed before the walk reaches it is not visited, as a
+///   snapshot walk's lookup of it finds nothing.
+/// - An entity stored during the walk has a fresh id, above every id the
+///   store held ([`crate::sim::world::StableIdCursor::allocate`] counts
+///   up and a load refuses a counter behind the highest id), so the walk,
+///   which only goes down, never visits it: again as a snapshot taken at
+///   the start would not. This holds for allocated ids only; a test that
+///   stores hand-picked ids with gaps can be handed an id in a gap.
+/// - Compaction moves slots, not ids, and the cursor is an id.
+///
+/// The walk therefore visits exactly the ids a copy of the stored ids taken
+/// at its start would, in the same order, less those removed before their
+/// turn.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DescendingIds {
+    /// The last id given; `None` before the first step.
+    below: Option<u64>,
+    keep: fn(EntityCategory) -> bool,
+}
+
+impl DescendingIds {
+    /// The next stored id down whose category the walk keeps.
+    pub(crate) fn next(&mut self, store: &EntityStore) -> Option<u64> {
+        store.check_attached();
+        let end = self.below.map_or(store.ids.len(), |below| {
+            store.ids.partition_point(|&id| id < below)
+        });
+        let slot = (0..end)
+            .rev()
+            .find(|&slot| store.entities[slot].is_some() && (self.keep)(store.categories[slot]))?;
+        let id = store.ids[slot];
+        self.below = Some(id);
+        Some(id)
+    }
+}
+
 impl serde::Serialize for EntityStore {
     /// The stored entities as a map from stable_id, in ascending order: the
     /// form the former `BTreeMap` storage wrote.
@@ -1355,7 +1460,7 @@ impl serde::Serialize for EntityStore {
             match self.owed_visits(id) {
                 0 => map.serialize_entry(&id, entity)?,
                 owed => {
-                    let settled = entity.clone();
+                    let mut settled = entity.clone();
                     settled.settle_sleep(owed);
                     map.serialize_entry(&id, &settled)?;
                 }
@@ -1419,6 +1524,82 @@ mod tests {
         assert_eq!(store.get(7).unwrap().mission.ai_counter(), 2);
     }
 
+    /// The entry walk skips removed slots and unkept categories, and only an
+    /// entry taken for writing is handed out and woken, as `get_mut` would.
+    #[test]
+    fn the_entry_walk_hands_out_only_entries_taken_for_writing() {
+        let mut store = EntityStore::new();
+        for id in [3, 5, 8, 9] {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.insert(GameEntity::test_default_of_category(
+            11,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        ));
+        store.remove(5);
+        store.sleep_until(3, 100, 0);
+        store.sleep_until(8, 100, 0);
+        let handed_out = store.hand_outs();
+        let mut visited = Vec::new();
+        store.for_each_entry_mut(
+            |category| category == EntityCategory::Unit,
+            |entry| {
+                visited.push(entry.id());
+                if entry.id() == 8 {
+                    entry.into_mut();
+                }
+            },
+        );
+        assert_eq!(visited, [3, 8, 9]);
+        assert_eq!(store.hand_outs() - handed_out, 1);
+        assert_eq!(
+            store.sleeps_until(3),
+            Some((100, 0)),
+            "only read: still asleep"
+        );
+        assert_eq!(store.sleeps_until(8), None, "taken for writing: woken");
+    }
+
+    /// The descending cursor visits what a copy of the ids taken at its
+    /// start would, in the same order: an entity removed before its turn is
+    /// passed over, one stored during the walk (a fresh, higher id) is not
+    /// visited, unkept categories are skipped, and a compaction mid-walk
+    /// loses nothing.
+    #[test]
+    fn the_descending_cursor_walks_as_a_snapshot_would() {
+        let mut store = EntityStore::new();
+        for id in 1..=100 {
+            store.insert(GameEntity::test_default(id, "MTNK", "Americans", 5, 5));
+        }
+        store.insert(GameEntity::test_default_of_category(
+            101,
+            "GI",
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        ));
+        let mut visited = Vec::new();
+        let mut cursor = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = cursor.next(&store) {
+            visited.push(id);
+            if id == 90 {
+                // Enough removals below the cursor to compact the store.
+                for removed in 2..80 {
+                    store.remove(removed);
+                }
+                store.insert(GameEntity::test_default(200, "MTNK", "Americans", 5, 5));
+            }
+        }
+        assert!(store.ids.len() < 100, "the walk crossed a compaction");
+        let expected: Vec<u64> = (80..=100).rev().chain([1]).collect();
+        assert_eq!(visited, expected);
+    }
+
     /// Populated original412B40 ->4137A0 controls. Buckets hold opaque
     /// tokens; the last numeric row deliberately repeats a token in two
     /// buckets, which is not a legal EntityStore membership. Its bucket walk
@@ -1443,9 +1624,10 @@ mod tests {
             let center = point("center_cell");
             let extent = point("map_extent");
             let radius = input["radius_cells"].as_i64().unwrap() as i32;
-            let actual = crate::sim::occupancy::air_spatial_query_bucket_order(
+            let actual: Vec<_> = crate::sim::occupancy::air_spatial_query_bucket_order(
                 center.0, center.1, radius, extent.0, extent.1,
-            );
+            )
+            .collect();
             let expected: Vec<_> = row["copied_bucket_order"]
                 .as_array()
                 .unwrap()
@@ -1476,11 +1658,13 @@ mod tests {
                 .collect();
             let cell = crate::map::resolved_terrain::test_flat_cell(center.0, center.1);
             assert_eq!(
-                store.airborne_in_query_order(
-                    &crate::sim::cell_rect::CellRef::Real(&cell),
-                    radius,
-                    extent
-                ),
+                store
+                    .airborne_in_query_order(
+                        &crate::sim::cell_rect::CellRef::Real(&cell),
+                        radius,
+                        extent
+                    )
+                    .collect::<Vec<_>>(),
                 expected,
                 "{}",
                 row["name"]
@@ -1978,15 +2162,15 @@ mod tests {
 
         store.clear_radio_contacts_for(1);
 
-        assert!(store.get(1).unwrap().radio_contacts.is_empty());
-        assert!(store.get(2).unwrap().radio_contacts.is_empty());
+        assert!(store.get(1).unwrap().seldom.radio_contacts.is_empty());
+        assert!(store.get(2).unwrap().seldom.radio_contacts.is_empty());
     }
 
     #[test]
     fn clear_radio_contacts_preserves_remaining_order() {
         let mut store = EntityStore::new();
         let mut entity = make_entity(1);
-        entity.radio_contacts.set_capacity(4); // hold more than one contact
+        entity.seldom.radio_contacts.set_capacity(4); // hold more than one contact
         entity.mark_live_contact_with(2);
         entity.mark_live_contact_with(3);
         entity.mark_live_contact_with(4);
@@ -1996,7 +2180,7 @@ mod tests {
         store.clear_radio_contacts_for(3);
 
         // Removal nulls slot 1 in place (no compaction): 2 and 4 keep their slots.
-        let contacts = &store.get(1).unwrap().radio_contacts;
+        let contacts = &store.get(1).unwrap().seldom.radio_contacts;
         assert_eq!(contacts.len(), 2);
         assert!(contacts.contains(2) && contacts.contains(4) && !contacts.contains(3));
         assert_eq!(contacts.find_slot(2), Some(0));

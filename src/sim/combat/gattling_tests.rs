@@ -172,8 +172,9 @@ fn original_stage_histories() {
                         i32_of(&call["arg"]),
                         None,
                         |weapon| ty.report(weapon, elite).map(|items| items.len() as i32),
-                        || reached_stops += 1,
-                        || {
+                        &mut (),
+                        |_| reached_stops += 1,
+                        |_| {
                             let draw = rng.next_u32();
                             draws.push(i64::from(draw));
                             draw
@@ -273,8 +274,9 @@ fn original_fault_inputs_play_nothing() {
             1,
             None,
             |weapon| ty.report(weapon, false).map(|items| items.len() as i32),
-            || {},
-            || panic!("no draw without a WeaponType"),
+            &mut (),
+            |_| {},
+            |_| panic!("no draw without a WeaponType"),
         );
         assert!(effects.report.is_none());
         assert!(!state.report_latch());
@@ -383,14 +385,14 @@ fn original_unit_fire_update_rows() {
                 entity.veterancy.set_elite();
             }
         }
-        sim.main_rng = SimRng::new(0x2A61).into();
+        sim.main_rng = SimRng::new(0x2A61);
         sim.sound_events.clear_for_test();
         let mut probe = SimRng::new(0x2A61);
         sim.unit_fire_update_tail(
             id,
             outcome,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
@@ -423,7 +425,7 @@ fn original_unit_fire_update_rows() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                    Some(sound_id.clone())
+                    Some(sound_id.name_in(&rules).to_string())
                 }
                 _ => None,
             })
@@ -629,7 +631,7 @@ fn a_gattling_tank_spins_up_while_it_fights() {
             for sound in sounds {
                 match sound {
                     crate::sim::world::SimSoundEvent::GattlingLoop { sound_id, .. } => {
-                        loops.push(sound_id);
+                        loops.push(sound_id.name_in(&spin.rules).to_string());
                     }
                     crate::sim::world::SimSoundEvent::GattlingLoopStop { .. } => {
                         loops.push("stop".to_string());
@@ -727,7 +729,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         arrival,
         &spin.rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     {
         let tank = spin.sim.substrate.entities.get_mut(spin.tank).unwrap();
@@ -747,7 +749,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
             &spin.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
     );
@@ -758,7 +760,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::movement::PerCellReason::Arrival,
             &spin.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let tank = spin.sim.substrate.entities.get(spin.tank).unwrap();
@@ -823,8 +825,9 @@ fn ares_cycle_hook_tests_the_charged_value_and_restarts_a_cyclic_type() {
             1,
             ares_cycle,
             |_| Some(0),
-            || stops += 1,
-            || 0,
+            &mut (),
+            |_| stops += 1,
+            |_| 0,
         );
         let stage_up = effects.stage_up;
         (

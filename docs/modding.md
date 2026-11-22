@@ -74,7 +74,7 @@ first, and the game folder is never changed.
 | What you can put here | What it does |
 | --- | --- |
 | A folder for your mod, inside `Mods` | Holds the mod's files. See [The Mods folder](#the-mods-folder). |
-| A `Maps` folder of `.yrm` files | Adds your maps to the map list, with or without a mod. Create the folder if it isn't there. Maps you download online go here too. |
+| A `Maps` folder of `.yrm`, `.map` or `.mpr` files | Adds your maps to Skirmish. Mods with their own client catalog use that catalog. Create the folder if it isn't there. Maps you download online go here too. |
 | `vera20k.<language>.ini` | Adds a language, or changes the game's text. See [translating](../src/i18n/README.md). |
 
 `config.toml` is here too. It says where the game folder is and which mod to play; the
@@ -90,6 +90,22 @@ sign-in.
 `Mods` holds one folder for each mod. The game makes `Mods` the first time it starts,
 with a `README.txt` in it.
 
+In the desktop game, open **Options → Mods → Add Mod** to import a download.
+Select all the ZIPs or extracted folders for one mod, including any patches. On
+macOS, hold Command while clicking to select several items. Use **Add More** to
+select another part, or drop parts onto the window on desktops that support it.
+The Linux chooser uses Zenity or KDialog. For an extracted mod, select the folder
+that contains the mod's game files.
+
+The preview starts in filename order, ignoring letter case and the ZIP extension.
+Select a row and use **Move Up** or **Move Down** to follow the mod's install order.
+Later parts replace files at the same path.
+
+**Install & Play** makes one ready-to-use folder in `Mods` and restarts into it.
+**Install Only** adds the mod to the list for later. Both keep the original downloads.
+
+You can also install a mod manually.
+
 1. Make a folder inside `Mods` and give it your mod's name, such as `Mods/MyMod`.
    Or press **New Mod** in the Mods menu, which makes one with the original game's
    files in it: see [Start a new mod](#start-a-new-mod).
@@ -98,8 +114,13 @@ with a `README.txt` in it.
 3. [Pick the mod](#pick-a-mod).
 
 The game then reads the mod's files as if you had copied them on top of the game folder.
-Nothing is copied, and the game folder isn't touched. A mod made to be copied into the
-game folder works the same from its own folder.
+A mod made to be copied into the game folder works the same from its own folder.
+
+A classic Red Alert 2 mod can keep its original filenames. When the selected mod
+supplies the RA2 rules, art, AI or multiplayer mode files, VERA uses the RA2
+file family for Skirmish. A mod can replace just part of that family. For
+example, one that supplies its own `rules.ini` and `mpmodes.ini` can use the
+installed game's `ai.ini`. See [how VERA chooses the files](ini-roots.md).
 
 With **No mod** selected, an `ares.mix` already in the game folder is ignored, unless
 the [Ares setting](ares.md#the-ares-setting) is On; set to Off, no `ares.mix` is used.
@@ -125,6 +146,20 @@ it does not install new engine code.
 | `veraui.ini` | Lays out the match screen: which edge the sidebar and the command bar sit on, where the sidebar's parts sit, which it has, and how big it is. See [interface layout](interface-layout.md). |
 | `mod.ini` | Supplies display information, resource filenames and extension requirements. Optional. |
 | `mod-files.txt` | Lists the mod's files, so players can check their copy. The game writes it for you: see [Check a mod's files](#check-a-mods-files). Optional. |
+
+#### Mods distributed in parts
+
+In the desktop game, put the downloads for one mod inside one `Mods` folder
+entry. Each part can be a ZIP archive or a folder containing the files from
+that archive. For example, with ZIPs use `Mods/My Mod/01 Base.zip` and
+`Mods/My Mod/02 Patch.zip`. If already extracted, use `Mods/My Mod/01 Base/`
+and `Mods/My Mod/02 Patch/`.
+
+VERA sorts the parts by name, ignoring letter case and the `.zip` extension.
+A later part replaces files at matching paths. Keep the shipped names if
+they already sort in install order, or prefix the parts with `01`, `02`,
+and so on. Choose the containing mod in the **Mods** menu as usual. VERA
+assembles its files for the launch and keeps the downloads in place.
 
 #### mod.ini
 
@@ -268,6 +303,7 @@ a folder that is already there, and your original game isn't changed.
 
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
+For a mod distributed in parts, this checks the assembled files.
 Two copies with the same code hold the same compared data files. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 
@@ -383,8 +419,14 @@ maps. The game's log says which files it adds.
 
 ### Add a map
 
-Give the map a `.yrm` ending and put it in the `Maps` folder, or in your mod's folder if
-the map needs the mod. As in the original, a map can change any rule for that match.
+Put your `.yrm`, `.map` or `.mpr` file in VERA20k's `Maps` folder and restart the
+game to find it in Skirmish. Skirmish also finds loose multiplayer `.mpr` and
+`.yrm` files directly in the game folder or the selected mod's folder. Put a
+map that needs a particular mod in that mod's folder. As in the original, a
+map can change any rule for that match.
+
+New map exports and downloads use `.map`. If you already have an identical
+copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
 
 VERA20k adds two things. Open the map in a text editor to set them:
 

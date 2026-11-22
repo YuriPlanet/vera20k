@@ -396,7 +396,7 @@ mod tests {
                 &rules,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         let headless_tick = headless_sim.advance_tick(&[], Some(&rules), None, None, 67);

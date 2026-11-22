@@ -75,13 +75,13 @@ impl Simulation {
         occupier_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return;
         };
         let owner = building.owner();
-        if owner == occupier_owner || building.ares.ares_raid.raided() {
+        if owner == occupier_owner || building.seldom.ares.ares_raid.raided() {
             return;
         }
         let Some(object) = self.object_type(building.type_ref(), rules) else {
@@ -96,7 +96,7 @@ impl Simulation {
             return;
         }
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.ares.ares_raid.owner_before_raid = Some(owner);
+            building.seldom.ares.ares_raid.owner_before_raid = Some(owner);
         }
         self.announce_building_capture(building_id, occupier_owner, rules);
         self.change_owner_with_rules(building_id, occupier_owner, rules, registry, effects);
@@ -111,12 +111,12 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return;
         };
-        let Some(owner) = building.ares.ares_raid.owner_before_raid else {
+        let Some(owner) = building.seldom.ares.ares_raid.owner_before_raid else {
             return;
         };
         if !building.passenger_role().occupants().is_empty() {
@@ -130,7 +130,7 @@ impl Simulation {
             self.change_owner_with_rules(building_id, owner, rules, registry, effects);
         }
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
-            building.ares.ares_raid.owner_before_raid = None;
+            building.seldom.ares.ares_raid.owner_before_raid = None;
         }
     }
 }
@@ -196,7 +196,7 @@ impl Simulation {
         moved: usize,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         for _ in 0..moved {
             if !self.substrate.transfer_garrison_head(source_id, target_id) {
@@ -281,7 +281,7 @@ impl Simulation {
         event: &AresTrenchRedirectRecord,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((source, target, moved)) =
             self.ares_trench_redirect_transfer(sender, event, rules)
@@ -315,7 +315,7 @@ pub(crate) fn occupier_admitted(
     }
     let full = occupants as u32 == building_obj.max_number_occupants;
     let ineligible = (sim.object_tech_level(building_obj) == -1 && red_health)
-        || passenger.mind_control.is_mind_controlled();
+        || passenger.seldom.mind_control.is_mind_controlled();
     if full || ineligible {
         return false;
     }

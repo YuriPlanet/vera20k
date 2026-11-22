@@ -27,7 +27,7 @@ fn spawn_mobile(store: &mut EntityStore, sid: u64, rx: u16, ry: u16, owner: &str
         5,
         false,
     );
-    entity.selection.set_selected_for_test(selected);
+    entity.seldom.selection.set_selected_for_test(selected);
     // Revealed onto the map — the picker refuses limbo objects.
     entity.lifecycle.set_in_limbo_for_test(false);
     store.insert(entity);
@@ -45,7 +45,7 @@ fn encounter_order(store: &EntityStore) -> Vec<u64> {
 fn selected_order(store: &EntityStore) -> Vec<u64> {
     store
         .values()
-        .filter(|entity| entity.selection.is_selected())
+        .filter(|entity| entity.seldom.selection.is_selected())
         .map(|entity| entity.stable_id())
         .collect()
 }
@@ -199,6 +199,7 @@ fn test_box_skips_a_miner_docked_on_a_refinery() {
     store
         .get_mut_for_test(2)
         .expect("miner")
+        .seldom
         .tether
         .set_for_test(Some(3));
 
@@ -219,6 +220,7 @@ fn test_box_keeps_a_vehicle_that_drove_clear_of_its_factory() {
     store
         .get_mut_for_test(2)
         .expect("vehicle")
+        .seldom
         .tether
         .set_for_test(Some(3));
 

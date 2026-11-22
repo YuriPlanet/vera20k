@@ -66,6 +66,7 @@ impl ObjectView {
                 _ => None,
             },
             rearm_frames_left: entity
+                .seldom
                 .rearm_timer
                 .remaining(sim.session().binary_frame() as i32),
             weapon_range_cells: cells_of_leptons(range_leptons),

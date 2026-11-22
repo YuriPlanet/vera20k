@@ -19,7 +19,9 @@ pub(crate) enum BallisticGravity {
 fn ballistic_gravity(gravity: BallisticGravity, floater: bool) -> X87Value {
     let mut gravity = match gravity {
         BallisticGravity::Rules(value) => X::load_i32(value),
-        BallisticGravity::Value(bits) => X::load_f64(bits).expect("finite type gravity"),
+        BallisticGravity::Value(bits) => {
+            X::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
     };
     if floater {
         gravity = X::mul(gravity, X::load_f64(NativeF64Bits::HALF).unwrap());

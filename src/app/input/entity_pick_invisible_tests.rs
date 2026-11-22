@@ -66,6 +66,7 @@ fn own_invisible_object_and_nonselectable_visible_object_still_answer_hover() {
         sim.entities()
             .get(own)
             .unwrap()
+            .seldom
             .discovery
             .owned_by_current_house()
     );

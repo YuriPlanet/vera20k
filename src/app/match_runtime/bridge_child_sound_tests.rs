@@ -121,8 +121,13 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         // child's entire timer/Middle/Scenario RNG trajectory.
         for frame in 0..100 {
             sim.session_mut_for_test().set_binary_frame_for_test(frame);
-            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default())
-                .unwrap();
+            sim.visit_anim(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
             if sim.pending_delete().contains_object(&id) {
                 break;
             }
@@ -137,7 +142,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
             matches!(events.as_slice(), [
             GameSoundEvent::AnimationStarted { anim_id, sound_id, .. },
             GameSoundEvent::AnimationReleased { anim_id: released },
-        ] if *anim_id == id && *released == id && sound_id.eq_ignore_ascii_case(sound_name)),
+        ] if *anim_id == id && *released == id && sound_id.name_in(&rules).eq_ignore_ascii_case(sound_name)),
             "{name}: {events:?}"
         );
         // Original406060 leaves every byte of the selected playing event

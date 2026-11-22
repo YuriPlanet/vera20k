@@ -356,6 +356,20 @@ pub(crate) enum ShellExitThen {
 }
 
 impl ShellExitThen {
+    /// Whether this exit opens its next dialog in place of the one leaving
+    /// (`moves_in_place`): Options' Keyboard button and the Keyboard page's
+    /// Back or Cancel. Retail slides `0xD5` out before `0xA3` (`0x0055FD06`)
+    /// and `0xA3` out before the new `0xD5` (`0x005FBEF0`); VERA's Options
+    /// window is its own layout, and its Keyboard page comes and goes like
+    /// its other pages, so neither slides out and neither plays the cue.
+    pub(crate) fn in_place(&self) -> bool {
+        matches!(
+            self,
+            Self::Options(crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard)
+                | Self::KeyboardClose(_)
+        )
+    }
+
     /// The dialog whose result this is.
     pub(crate) fn dialog(&self) -> ShellSlideKind {
         match self {
@@ -418,6 +432,15 @@ pub(crate) struct ShellExit {
     completed_at: Option<Instant>,
 }
 
+impl ShellExit {
+    /// Keep an accepted map bound to its local row during the closing slide.
+    pub(crate) fn remap_choose_map_selection(&mut self, remap: impl FnOnce(usize) -> usize) {
+        if let ShellExitThen::ChooseMapUse(selection) = &mut self.then {
+            selection.record_index = selection.record_index.map(remap);
+        }
+    }
+}
+
 /// After tearing `0x94` down, state 8 waits while the campaign voice still
 /// plays, at most this long (`0x0052E036..0x0052E089`, `0xBB8` ms).
 const CAMPAIGN_VOICE_WAIT: Duration = Duration::from_millis(3000);
@@ -470,6 +493,7 @@ pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> She
         state.frontend.shell_first_paint_slide.is_some(),
         kind,
     ) {
+        ExitStartRule::Slide if then.in_place() => ShellExitStart::Immediate(then),
         ExitStartRule::Slide => {
             let column = kind.column(
                 panel_rows(state, Some(kind)),
@@ -568,6 +592,22 @@ enum ShellEntryEffect {
     Unchanged,
     LeftShells,
     Started(ShellSlideKind),
+    /// A dialog that opened in place of the one before it (`moves_in_place`):
+    /// no entry slide is armed, and its statics start at once.
+    StartedInPlace(ShellSlideKind),
+}
+
+/// Whether `to` opens in place of `from`, as a page of VERA's Options window
+/// replaces another: Options `0xD5` and its Keyboard page `0xA3`, in either
+/// direction (`ShellExitThen::in_place` has the matching exits). Such an
+/// entry arms no slide; the page's statics start as a slide's SHOW
+/// completion would start them (`show_menu_page_statics`).
+fn moves_in_place(from: Option<ShellSlideKind>, to: ShellSlideKind) -> bool {
+    matches!(
+        (from, to),
+        (Some(ShellSlideKind::Options), ShellSlideKind::Keyboard)
+            | (Some(ShellSlideKind::Keyboard), ShellSlideKind::Options)
+    )
 }
 
 #[derive(Debug)]
@@ -628,7 +668,8 @@ impl<'a> ShellLifecycleReducer<'a> {
     }
 
     fn observe_target(&mut self, target: Option<ShellSlideKind>, now: Instant) -> ShellEntryEffect {
-        if target == *self.active_shell {
+        let previous = *self.active_shell;
+        if target == previous {
             return ShellEntryEffect::Unchanged;
         }
         if target == Some(ShellSlideKind::MainMenu)
@@ -644,6 +685,10 @@ impl<'a> ShellLifecycleReducer<'a> {
                 *self.monitor = Default::default();
                 self.page_title.reset();
                 self.status_line.reset();
+                if moves_in_place(previous, kind) {
+                    *self.first_paint_slide = None;
+                    return ShellEntryEffect::StartedInPlace(kind);
+                }
                 *self.first_paint_slide = Some(if kind == ShellSlideKind::MainMenu {
                     *self.slide_generation = self.slide_generation.wrapping_add(1);
                     if *self.slide_generation == 0 {
@@ -1087,10 +1132,22 @@ pub(crate) fn activate_shell_first_paint_after_acquire(state: &mut AppState) {
         }
         return;
     }
-    let effect = ShellLifecycleReducer::from_state(state).observe_target(target, Instant::now());
-    if let ShellEntryEffect::Started(_) = effect {
-        crate::app::App::play_shell_slide_in_sound(state);
+    match ShellLifecycleReducer::from_state(state).observe_target(target, Instant::now()) {
+        ShellEntryEffect::Started(_) => crate::app::App::play_shell_slide_in_sound(state),
+        // No slide to complete: the page's statics start now.
+        ShellEntryEffect::StartedInPlace(kind) => show_menu_page_statics(state, kind),
+        ShellEntryEffect::Unchanged | ShellEntryEffect::LeftShells => {}
     }
+}
+
+/// A menu page's SHOW completion: its heading reveal and status line start.
+fn show_menu_page_statics(state: &mut AppState, kind: ShellSlideKind) {
+    let now = Instant::now();
+    let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
+    let frontend = &mut state.frontend;
+    frontend.shell_page_title.set_text(&title, now);
+    frontend.shell_page_title.start(now);
+    frontend.shell_status_line.start(now);
 }
 
 /// Render the currently-showing shell while its first-paint slide is live, then
@@ -1309,14 +1366,7 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         // Menu pages start their heading reveal on the same edge (0xE2 starts
         // its own in the presented-entry completion transaction).
-        Some(ShellWaveCompletion::MenuPage) => {
-            let now = Instant::now();
-            let title = crate::app::frontend::menu_page_render::active_page_title_text(state, kind);
-            let frontend = &mut state.frontend;
-            frontend.shell_page_title.set_text(&title, now);
-            frontend.shell_page_title.start(now);
-            frontend.shell_status_line.start(now);
-        }
+        Some(ShellWaveCompletion::MenuPage) => show_menu_page_statics(state, kind),
         // 0x108's SHOW completion starts every kind-1 static at once: the
         // heading, the status line and the 47 table texts.
         Some(ShellWaveCompletion::Score) => {
@@ -1605,7 +1655,7 @@ mod tests {
         let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
         assert_eq!(
             (column.top_buttons, column.bottom_button, column.top_panel),
-            (4, true, false)
+            (6, true, false)
         );
         assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
         let retail = ShellSlideKind::WolLobby.column(9, None);
@@ -1632,6 +1682,78 @@ mod tests {
         assert!(branch.contains("render_active_menu_page"));
         assert!(branch.contains("destination"));
         assert!(!branch.contains("target"));
+    }
+
+    /// Options and its Keyboard page replace each other in place, as the
+    /// pages of VERA's Options window do: no entry slide either way, and the
+    /// matching exits are immediate, while the Main Menu's way into Options
+    /// still slides.
+    #[test]
+    fn options_and_its_keyboard_page_replace_each_other_without_a_slide() {
+        use crate::app::input::keyboard::KeyboardExit;
+        use crate::ui::main_menu_dialogs::options::LauncherParentResult;
+        assert!(ShellExitThen::Options(LauncherParentResult::Keyboard).in_place());
+        assert!(ShellExitThen::KeyboardClose(KeyboardExit::Back).in_place());
+        assert!(!ShellExitThen::Options(LauncherParentResult::Back).in_place());
+        assert!(!ShellExitThen::Options(LauncherParentResult::Mods).in_place());
+
+        let start = Instant::now();
+        let mut title_reveal = Kind1StaticReveal::default();
+        let mut monitor = crate::ui::shell::warning_monitor::WarningMonitor::default();
+        let mut page_title = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::HEADING_KIND1,
+        );
+        let mut status_line = crate::ui::shell::static_reveal::PresentedKind1Static::new(
+            crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
+        );
+        let mut active_shell = Some(ShellSlideKind::Options);
+        let mut first_paint_slide = None;
+        let mut slide_generation = 1;
+        let mut observe = |active_shell: &mut Option<ShellSlideKind>,
+                           first_paint_slide: &mut Option<ShellFrameWave>,
+                           target| {
+            ShellLifecycleReducer {
+                panel_rows: 9,
+                page_spec: None,
+                active_shell,
+                first_paint_slide,
+                slide_generation: &mut slide_generation,
+                title_reveal: &mut title_reveal,
+                monitor: &mut monitor,
+                page_title: &mut page_title,
+                status_line: &mut status_line,
+            }
+            .observe_target(Some(target), start)
+        };
+        assert_eq!(
+            observe(
+                &mut active_shell,
+                &mut first_paint_slide,
+                ShellSlideKind::Keyboard
+            ),
+            ShellEntryEffect::StartedInPlace(ShellSlideKind::Keyboard)
+        );
+        assert!(first_paint_slide.is_none());
+        assert_eq!(active_shell, Some(ShellSlideKind::Keyboard));
+        assert_eq!(
+            observe(
+                &mut active_shell,
+                &mut first_paint_slide,
+                ShellSlideKind::Options
+            ),
+            ShellEntryEffect::StartedInPlace(ShellSlideKind::Options)
+        );
+        assert!(first_paint_slide.is_none());
+        active_shell = Some(ShellSlideKind::MainMenu);
+        assert_eq!(
+            observe(
+                &mut active_shell,
+                &mut first_paint_slide,
+                ShellSlideKind::Options
+            ),
+            ShellEntryEffect::Started(ShellSlideKind::Options)
+        );
+        assert!(first_paint_slide.is_some());
     }
 
     #[test]

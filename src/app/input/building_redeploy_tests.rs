@@ -11,7 +11,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
         rules,
         33,
         crate::sim::world::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap();
 }
@@ -77,11 +77,13 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             // sides, rather than requiring an empty link at input time.
             sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
             sim.entity_mut_for_test(peer)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(yard)
                 .unwrap();
@@ -139,7 +141,14 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             ))
         );
         let converted = converted.expect("MCV must return");
-        assert!(sim.entities().get(peer).unwrap().radio_contacts.is_empty());
+        assert!(
+            sim.entities()
+                .get(peer)
+                .unwrap()
+                .seldom
+                .radio_contacts
+                .is_empty()
+        );
         let unit = sim.entities().get(converted).unwrap();
         assert!(
             [unit.mission.current(), unit.mission.queued()]
@@ -197,6 +206,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
         if contact {
             sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
@@ -210,6 +220,45 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
             building_cell_orders(&sim, &rules, &[yard], owner, (23, 20), false, false);
         assert_eq!(!orders.is_empty(), admitted, "{name}");
     }
+}
+
+#[test]
+fn a_rally_yard_issues_no_ground_orders_when_redeploy_is_disabled() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::world::{CellActionQuery, MoveAction};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[GACNST]\nFactory=UnitType\n"),
+    ) else {
+        return;
+    };
+    let rules = retail.rules;
+    let (mut sim, owner) = yard_arena(&rules);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .mcv_redeploy = false;
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let cell = (23, 20);
+    assert_eq!(
+        sim.cell_move_action(
+            owner,
+            yard,
+            cell,
+            CellActionQuery {
+                mouse_over: true,
+                shift: false,
+            },
+            &rules,
+        ),
+        Ok(MoveAction::Move)
+    );
+    assert_eq!(
+        click(&sim, &rules, &[yard], None, cell, OrderModifier::Normal),
+        BuildingClick::Orders(Vec::new(), false)
+    );
 }
 
 #[test]
@@ -812,6 +861,7 @@ fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
             OrderModifier::ForceMove,
             true,
             false,
+            &mut Default::default(),
         )
     };
     let alt = |building, target| {

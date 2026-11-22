@@ -17,21 +17,22 @@ use super::{
     CUSTOM_END_GAME_SCORE_LABEL, Category, ColorVisionMode, DETAILED_EVA_TEXT_HELP,
     DETAILED_EVA_TEXT_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget,
     EDIT_LAYOUT_HELP, EDIT_LAYOUT_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, GENERAL_LABEL,
-    GROUPED_SUPER_TIMERS_HELP, GROUPED_SUPER_TIMERS_LABEL, HAS_CHECK_FOR_UPDATES, HAS_MODS,
-    HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
-    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
-    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP,
-    LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP,
-    MOUSE_WHEEL_ZOOM_LABEL, NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
-    OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL,
-    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL,
-    SIDEBAR_COLUMNS_HELP, SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
-    SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
-    SMOOTH_SIDEBAR_LABEL, Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    GRAPHICS_API_HELP, GRAPHICS_API_LABEL, GROUPED_SUPER_TIMERS_HELP, GROUPED_SUPER_TIMERS_LABEL,
+    GraphicsApi, HAS_CHECK_FOR_UPDATES, HAS_MODS, HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP,
+    HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL,
+    HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
+    IN_GAME_OPTIONS_BACK_HELP, IN_GAME_OPTIONS_HELP, LANGUAGE_HELP, LANGUAGE_LABEL,
+    LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId,
+    LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
+    MINIMAP_BEACONS_HELP, MINIMAP_BEACONS_LABEL, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL,
+    NOT_IN_MATCH_HELP, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_HELP, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP,
+    SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_COLUMNS_HELP,
+    SIDEBAR_COLUMNS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarColumns, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -299,10 +300,18 @@ fn page_rows(settings: &[Setting], first_row: i32, px: impl Fn(RectPx) -> RectPx
                 rows.end += SLIDER_PITCH;
             }
             Setting::Slider(id) => {
+                // A level number needs a narrow box; a step name, such as
+                // Visual Details' "Medium", half the track.
+                let step_w = match id {
+                    LauncherTrackbarId::HouseColorStrength => 20,
+                    _ => 60,
+                };
                 rows.labels
-                    .push((dlu(ROW_X, top, 60, 10), PageLabel::Slider(id)));
-                rows.labels
-                    .push((dlu(ROW_X + 60, top, 60, 10), PageLabel::Step(id)));
+                    .push((dlu(ROW_X, top, 120 - step_w, 10), PageLabel::Slider(id)));
+                rows.labels.push((
+                    dlu(ROW_X + 120 - step_w, top, step_w, 10),
+                    PageLabel::Step(id),
+                ));
                 rows.trackbars.push((id, slider(ROW_X, top + 15, 120, 13)));
                 rows.end += SLIDER_PITCH;
             }
@@ -764,7 +773,7 @@ impl OptionsDialogState {
                 PageLabel::List(id) => (Cow::Owned(list_caption(id)), Left),
                 PageLabel::Localized(key) => (Cow::Owned(tr(key)), Left),
                 PageLabel::Slider(id) => (self.slider_caption(id), Left),
-                PageLabel::Step(id) => (Cow::Borrowed(self.slider_step(id)), Right),
+                PageLabel::Step(id) => (self.slider_step(id), Right),
                 PageLabel::Blank => (Cow::Borrowed(self.labels.blank.as_str()), Left),
             };
             LauncherShellLabel {
@@ -808,9 +817,11 @@ impl OptionsDialogState {
     }
 
     /// The step name a plaque-less slider prints; a plaque slider shows its
-    /// value on the plaque instead.
-    fn slider_step(&self, id: LauncherTrackbarId) -> &str {
-        match id {
+    /// value on the plaque instead. VERA's Team Color Strength prints the
+    /// level its position stands for, so the player never sees a 0 for
+    /// gamemd's own colours.
+    fn slider_step(&self, id: LauncherTrackbarId) -> Cow<'_, str> {
+        Cow::Borrowed(match id {
             LauncherTrackbarId::Detail => &self.detail_caption,
             LauncherTrackbarId::Difficulty => &self.difficulty_caption,
             LauncherTrackbarId::Scroll => &self.scroll_caption,
@@ -818,8 +829,11 @@ impl OptionsDialogState {
                 .game_speed_names
                 .get(usize::from(self.game_speed_position))
                 .map_or("", String::as_str),
+            LauncherTrackbarId::HouseColorStrength => {
+                return Cow::Owned(self.house_color_strength().to_string());
+            }
             _ => "",
-        }
+        })
     }
 
     /// In the two-column form the setting is already named on the left.
@@ -855,6 +869,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
             LauncherCheckboxId::VSync => super::VSYNC_LABEL,
+            LauncherCheckboxId::HighRefreshRateInBattle => super::HIGH_REFRESH_RATE_IN_BATTLE_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::AutoRepair => AUTO_REPAIR_LABEL,
@@ -941,6 +956,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::SmoothOnlineMenus => self.values.smooth_online_menus,
             LauncherCheckboxId::VSync => self.values.vsync,
+            LauncherCheckboxId::HighRefreshRateInBattle => self.values.high_refresh_rate_in_battle,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::AutoRepair => self.values.auto_repair,
@@ -998,6 +1014,11 @@ impl OptionsDialogState {
     /// The Colour Vision face's text: the retained choice.
     pub(crate) fn shell_selected_color_vision(&self) -> ColorVisionMode {
         self.values.color_vision
+    }
+
+    /// The Graphics API face's text: the retained choice.
+    pub(crate) fn shell_selected_graphics_api(&self) -> GraphicsApi {
+        self.values.graphics_api
     }
 
     /// The Display list's rows, top to bottom: Auto, then every screen the
@@ -1108,6 +1129,13 @@ impl OptionsDialogState {
                 let selected = choices
                     .iter()
                     .position(|setting| *setting == self.values.ares);
+                (choices.len(), selected)
+            }
+            LauncherComboId::GraphicsApi => {
+                let choices = GraphicsApi::choices();
+                let selected = choices
+                    .iter()
+                    .position(|api| *api == self.values.graphics_api);
                 (choices.len(), selected)
             }
             LauncherComboId::Language => {
@@ -1270,6 +1298,9 @@ impl OptionsDialogState {
                     LauncherStatusHelp::Vera(SMOOTH_ONLINE_MENUS_HELP)
                 }
                 LauncherCheckboxId::VSync => LauncherStatusHelp::Vera(super::VSYNC_HELP),
+                LauncherCheckboxId::HighRefreshRateInBattle => {
+                    LauncherStatusHelp::Vera(super::HIGH_REFRESH_RATE_IN_BATTLE_HELP)
+                }
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::AutoRepair => LauncherStatusHelp::Vera(AUTO_REPAIR_HELP),
@@ -1322,6 +1353,7 @@ impl OptionsDialogState {
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::ColorVision => COLOR_VISION_HELP,
                     LauncherComboId::Ares => ARES_HELP,
+                    LauncherComboId::GraphicsApi => GRAPHICS_API_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
                 })
             })
@@ -1373,6 +1405,12 @@ impl OptionsDialogState {
                 LauncherComboId::Ares => {
                     match row.and_then(|row| super::ares_choices().get(row).copied()) {
                         Some(setting) => self.select_ares(setting),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::GraphicsApi => {
+                    match row.and_then(|row| GraphicsApi::choices().get(row).copied()) {
+                        Some(api) => self.select_graphics_api(api),
                         None => self.open_combo = None,
                     }
                 }
@@ -1490,6 +1528,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::ColorVision => COLOR_VISION_LABEL,
         LauncherComboId::Ares => ARES_LABEL,
+        LauncherComboId::GraphicsApi => GRAPHICS_API_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
     })
 }
@@ -2289,6 +2328,26 @@ mod tests {
         }
     }
 
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[test]
+    fn high_refresh_checkbox_sends_both_choices_with_vsync_off() {
+        let layout = LauncherOptionsLayout::new(640, 480, Category::Display);
+        let mut dialog = state();
+        dialog.values.vsync = false;
+        let id = LauncherCheckboxId::HighRefreshRateInBattle;
+        let rect = checkbox(&layout, id);
+        assert!(!dialog.shell_checkbox_checked(id));
+        for enabled in [true, false] {
+            dialog.shell_mouse_down(rect.x + 2, rect.y + 2, &layout);
+            dialog.shell_mouse_up(rect.x + 2, rect.y + 2, &layout);
+            assert_eq!(dialog.shell_checkbox_checked(id), enabled);
+            assert!(dialog.drain_output().events.contains(
+                &LauncherOptionsEvent::HighRefreshRateInBattleChanged(enabled)
+            ));
+            assert!(!dialog.shell_checkbox_checked(LauncherCheckboxId::VSync));
+        }
+    }
+
     #[test]
     fn status_help_names_the_control_under_the_pointer() {
         let csf = |key| Some(LauncherStatusHelp::Csf(key));
@@ -2910,7 +2969,7 @@ mod tests {
             .unwrap();
         assert_eq!(state.house_color_strength(), STRENGTH_RETAIL);
         assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::HouseColorStrength),
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
             "1"
         );
 
@@ -2920,7 +2979,7 @@ mod tests {
         state.shell_mouse_up(slider.x + slider.w - 2, slider.y + slider.h - 3, &layout);
         assert_eq!(state.house_color_strength(), STRENGTH_MAX);
         assert_eq!(
-            state.trackbar_plaque_text(LauncherTrackbarId::HouseColorStrength),
+            state.slider_step(LauncherTrackbarId::HouseColorStrength),
             "10"
         );
         assert_eq!(

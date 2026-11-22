@@ -551,7 +551,7 @@ pub(super) fn advance(
     if turn > 0 {
         fighters.rotate_left((tick as usize) % turn);
     }
-    if std::env::var("AUTOPLAY_TRACE_PUSH").is_ok() {
+    if super::trace_enabled("AUTOPLAY_TRACE_PUSH") {
         let distances: Vec<i32> = fighters
             .iter()
             .map(|unit| {
@@ -613,7 +613,7 @@ pub(super) fn advance(
         .unwrap_or(target_cell);
     let left_behind = |unit: &Unit| cell_distance(unit.cell, tip) > STAGGER_BEHIND;
 
-        if std::env::var("AUTOPLAY_TRACE_SKIP").is_ok() && tick % 600 == 0 {
+        if super::trace_enabled("AUTOPLAY_TRACE_SKIP") && tick % 600 == 0 {
             let mut deployed = 0;
             let mut attacking = 0;
             let mut walking = 0;
@@ -798,7 +798,7 @@ pub(super) fn advance(
         if !super::orders::issue(brain, out, rules, obs, unit.entity_id, goal) {
             brain.tracked.void(unit.entity_id, kind);
             refused += 1;
-            if std::env::var("AUTOPLAY_TRACE_REFUSE").is_ok() && tick % 600 == 0 {
+            if super::trace_enabled("AUTOPLAY_TRACE_REFUSE") && tick % 600 == 0 {
                 let dx = i32::from(unit.cell.0) - i32::from(target_cell.0);
                 let dy = i32::from(unit.cell.1) - i32::from(target_cell.1);
                 let reachable = super::orders::reachable(rules, obs, unit.entity_id, target_cell);
@@ -819,7 +819,7 @@ pub(super) fn advance(
         }
         issued += 1;
     }
-    if std::env::var("AUTOPLAY_TRACE_REFUSE").is_ok() && tick % 600 == 0 {
+    if super::trace_enabled("AUTOPLAY_TRACE_REFUSE") && tick % 600 == 0 {
         log::info!(
             "budget probe: tick={} issued={} refused={}",
             tick,

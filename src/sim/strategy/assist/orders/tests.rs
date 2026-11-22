@@ -289,7 +289,7 @@ fn a_building_this_house_owns_is_not_a_target() {
         "the house does not shell its own refinery"
     );
     // The same building in enemy hands is a target again.
-    sim.change_owner_with_rules(refinery, enemy, &rules, None, Default::default());
+    sim.change_owner_with_rules(refinery, enemy, &rules, None, &mut Default::default());
     assert!(
         admits(&rules, &Observation::new(&sim, owner), rifleman, &attack),
         "and it is a target once the enemy holds it"

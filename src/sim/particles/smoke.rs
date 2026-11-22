@@ -208,7 +208,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
     owner
         .and_then(|id| sim.substrate.entities.get(id))
-        .is_some_and(|owner| owner.category().is_foot() && owner.low_bridge_tube_state.is_some())
+        .is_some_and(|owner| owner.category().is_foot() && owner.active_tube().is_some())
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.

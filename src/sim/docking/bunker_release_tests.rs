@@ -68,6 +68,7 @@ fn release_fixture() -> Simulation {
     let mut sim = super::tests::installed_sim();
     let building = sim.substrate.entities.get_mut(2).unwrap();
     building
+        .seldom
         .type_facts
         .set_foundation_for_test("2x3".to_owned().into());
     building.position.set_sub_x_for_test(SimFixed::from_num(64));
@@ -75,9 +76,9 @@ fn release_fixture() -> Simulation {
         .position
         .set_sub_y_for_test(SimFixed::from_num(192));
     building.position.set_exact_z_leptons_for_test(Some(731));
-    building.radio_contacts.insert(1);
+    building.seldom.radio_contacts.insert(1);
     let unit = sim.substrate.entities.get_mut(1).unwrap();
-    unit.radio_contacts.insert(2);
+    unit.seldom.radio_contacts.insert(2);
     unit.locomotor.as_mut().unwrap().power_off();
     unit.foot_speed.set_speed_fraction(SimFixed::lit("0.25"));
     let drive = unit.locomotor.as_mut().unwrap();
@@ -127,7 +128,7 @@ fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(
@@ -170,13 +171,14 @@ fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed
         (0x47, 0, 971)
     );
     assert!(drive.track().reversed());
-    assert!(!unit.lifecycle.in_limbo() && unit.in_logic_vector.is_member());
-    assert!(!unit.radio_contacts.contains(2));
+    assert!(!unit.lifecycle.in_limbo() && unit.seldom.in_logic_vector.is_member());
+    assert!(!unit.seldom.radio_contacts.contains(2));
     assert!(
         !sim.substrate
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(1)
     );
@@ -215,7 +217,7 @@ fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
         &mut sim,
         2,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(trace[1].name, "force");
@@ -250,7 +252,7 @@ fn normal_release_runs_the_foot_setters_timer_tail() {
         &mut sim,
         2,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let _ = take_trace();
 
@@ -276,7 +278,7 @@ fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
         &mut sim,
         2,
         &super::tests::rules(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let trace = take_trace();
     assert_eq!(
@@ -332,7 +334,7 @@ fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(1).unwrap();
     assert!(
@@ -341,7 +343,7 @@ fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
     );
     assert_eq!(unit.foot_speed.applied_fraction(), SIM_ONE);
     assert_eq!(unit.bunker.link(), BunkerLink::None);
-    assert!(!unit.radio_contacts.contains(2));
+    assert!(!unit.seldom.radio_contacts.contains(2));
     let drive = unit
         .locomotor
         .as_ref()
@@ -362,23 +364,24 @@ fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
 fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
     let mut sim = release_fixture();
     let mut contact = GameEntity::test_default(3, "TANK", "Americans", 14, 14);
-    contact.radio_contacts.insert(2);
+    contact.seldom.radio_contacts.insert(2);
     sim.substrate.entities.insert(contact);
     let building = sim.substrate.entities.get_mut(2).unwrap();
-    building.radio_contacts = Contacts::with_capacity(2);
-    building.radio_contacts.insert(3);
-    building.radio_contacts.insert(1);
+    building.seldom.radio_contacts = Contacts::with_capacity(2);
+    building.seldom.radio_contacts.insert(3);
+    building.seldom.radio_contacts.insert(1);
     release_sell_destroy(
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         !sim.substrate
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(2)
     );
@@ -387,6 +390,7 @@ fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(2)
     );
@@ -395,6 +399,7 @@ fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(1)
     );
@@ -404,21 +409,22 @@ fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
 fn empty_slot_zero_does_not_scan_later_contacts() {
     let mut sim = release_fixture();
     let building = sim.substrate.entities.get_mut(2).unwrap();
-    building.radio_contacts = Contacts::with_capacity(2);
-    building.radio_contacts.insert(3);
-    building.radio_contacts.insert(1);
-    building.radio_contacts.remove(3);
+    building.seldom.radio_contacts = Contacts::with_capacity(2);
+    building.seldom.radio_contacts.insert(3);
+    building.seldom.radio_contacts.insert(1);
+    building.seldom.radio_contacts.remove(3);
     release_sell_destroy(
         &mut sim,
         2,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(2)
     );
@@ -427,6 +433,7 @@ fn empty_slot_zero_does_not_scan_later_contacts() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .contains(1)
     );
@@ -447,14 +454,14 @@ fn nonunit_link_does_not_release_or_reset_bunker() {
                 &mut sim,
                 2,
                 &super::tests::rules(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         } else {
             release_sell_destroy(
                 &mut sim,
                 2,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         assert!(take_trace().is_empty());

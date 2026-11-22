@@ -22,7 +22,6 @@ fn scene(
     scene_with_firer(warheads, wh_ini, target_ini, sections, "", target_house)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn scene_with_firer(
     warheads: &str,
     wh_ini: &str,
@@ -411,7 +410,7 @@ fn direct_area_damage_applies_the_warhead_attach_effects() {
         warhead,
         false,
         (firer, None, warhead_ref),
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let attached = sim
         .entities()

@@ -676,7 +676,7 @@ fn next_building<'r>(
     // step that is holding the list before it can be fixed, and reading the
     // plan's own choice out of a match log is cheaper than guessing which gate
     // never opened.
-    if std::env::var("AUTOPLAY_TRACE_BUILD").is_ok() && obs.tick() % 600 == 0 {
+    if super::trace_enabled("AUTOPLAY_TRACE_BUILD") && obs.tick() % 600 == 0 {
         log::info!(
             "build trace: item={:?} step={:?} free={} income={} refineries={} harvesters={}",
             chosen.item,

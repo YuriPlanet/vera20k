@@ -2,6 +2,12 @@
 //! exposes RENDER_ATTACHMENT only and unorm canvas formats. Render the existing
 //! sRGB frame offscreen, then load its encoded bytes through an unorm view so
 //! presenting to an unorm canvas does not apply a second color conversion.
+//!
+//! The desktop's OpenGL compatibility mode presents the same way: wgpu-hal 30
+//! `gles/adapter.rs::surface_capabilities` gives its window surface
+//! COLOR_TARGET usage only. There the surface is sRGB (`GpuContext::new_async`
+//! requires it), so the view below has the frame's own format and the draw is a
+//! plain copy.
 pub(super) struct WebPresent {
     pub texture: wgpu::Texture,
     device: wgpu::Device,

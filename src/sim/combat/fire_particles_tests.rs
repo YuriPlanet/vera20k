@@ -54,6 +54,7 @@ fn fire_link(sim: &Simulation, id: u64) -> Option<u64> {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .fire_particle_system
         .system()
 }
@@ -167,14 +168,14 @@ fn a_move_order_releases_the_fire_system_link() {
 fn a_destination_releases_the_fire_link_and_a_null_one_keeps_it() {
     use crate::sim::mission::concrete_effects::represented_assign_destination;
     let mut tank = crate::sim::game_entity::GameEntity::test_default(1, "MTNK", "Americans", 4, 4);
-    tank.fire_particle_system.bind(Some(7));
+    tank.seldom.fire_particle_system.bind(Some(7));
     represented_assign_destination(&mut tank, None);
-    assert_eq!(tank.fire_particle_system.system(), Some(7));
+    assert_eq!(tank.seldom.fire_particle_system.system(), Some(7));
     represented_assign_destination(
         &mut tank,
         Some(crate::sim::components::NavTargetRef::cell(5, 5)),
     );
-    assert_eq!(tank.fire_particle_system.system(), None);
+    assert_eq!(tank.seldom.fire_particle_system.system(), None);
 }
 
 /// AI_Fire sweeps toward the owner's FLH while its Target pointer (`+0x2B4`)

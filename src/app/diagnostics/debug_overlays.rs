@@ -60,7 +60,7 @@ pub(crate) fn resolve_debug_speed_type(state: &AppState) -> SpeedType {
         .and_then(|sim| {
             sim.entities()
                 .values()
-                .find(|e| e.selection.is_selected())
+                .find(|e| e.seldom.selection.is_selected())
                 .and_then(|e| e.locomotor.as_ref())
                 .map(|l| l.speed_type())
         })
@@ -112,9 +112,8 @@ pub(crate) fn build_terrain_cost_overlay_instances(
     let height: u16 = terrain.height();
 
     // One-shot diagnostic on first call.
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static LOGGED: AtomicBool = AtomicBool::new(false);
-    if !LOGGED.swap(true, Ordering::Relaxed) {
+    static LOGGED: std::sync::Once = std::sync::Once::new();
+    LOGGED.call_once(|| {
         // Sample a few cells to verify the grid has non-zero data.
         let sample_costs: Vec<u8> = (0..width.min(20)).map(|x| row_at(x, height / 2)).collect();
         log::info!(
@@ -128,7 +127,7 @@ pub(crate) fn build_terrain_cost_overlay_instances(
             sh,
             sample_costs,
         );
-    }
+    });
 
     let mut instances: Vec<SpriteInstance> = Vec::with_capacity(2048);
     let cam_x: f32 = state.match_state.input.camera_x;
@@ -339,7 +338,7 @@ pub(crate) fn build_path_overlay_instances(
     const PATH_DEPTH: f32 = 0.0002;
 
     for entity in sim.entities().values() {
-        if !entity.selection.is_selected() {
+        if !entity.seldom.selection.is_selected() {
             continue;
         }
         if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {
@@ -668,7 +667,7 @@ pub(crate) fn build_foot_path_overlay_instances(
     };
 
     for entity in sim.entities().values() {
-        if !entity.selection.is_selected() {
+        if !entity.seldom.selection.is_selected() {
             continue;
         }
         if crate::sim::movement::motion_query::is_moving(entity) != Some(true) {

@@ -108,7 +108,7 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;
-        let context = UninitContext::new(self.rules).with_effects(self.effects);
+        let context = UninitContext::new(self.rules).with_effects(&mut self.effects);
         match callback {
             //5F5486: a heal that changed Strength calls vt+148 Flash(7).
             HealthCallback::Changed => {
@@ -189,7 +189,7 @@ pub(super) fn commit_receiver_health(
     world: &mut Simulation,
     rules: &RuleSet,
     receiver_outcome: Option<ResolvedReceiveDamage>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
     execute_world_callbacks: bool,
 ) -> Option<ReceiverHealthCommit> {
     let target_id = event.target_id;
@@ -273,7 +273,7 @@ pub(super) fn commit_receiver_health(
         event,
         caller_damage,
         rules,
-        effects,
+        effects: effects.reborrow(),
         execute_world_callbacks,
         #[cfg(any(test, feature = "test-support"))]
         reached_exact_zero: false,
@@ -415,6 +415,7 @@ pub(super) fn commit_receiver_health(
             )
         {
             target
+                .seldom
                 .radar_combat_flash
                 .start(binary_frame as i32, rules.general.radar_combat_flash_time);
         }

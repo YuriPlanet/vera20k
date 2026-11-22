@@ -132,7 +132,7 @@ impl Simulation {
         id: u64,
         bypass_admission: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -161,7 +161,7 @@ impl Simulation {
         id: u64,
         variant: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .substrate
@@ -186,7 +186,7 @@ impl Simulation {
         requested: i32,
         force: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -238,7 +238,7 @@ impl Simulation {
         force: bool,
         facts: &DoActionType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         //51D701: -1 returns before the type record or water-state reads.
         if requested == -1 {
@@ -288,7 +288,7 @@ impl Simulation {
         //The original requested sequence was checked above; do not recheck
         //Carry's count after remapping. The slave owner retains the only cargo.
         let mut requested = if requested == DO_WALK
-            && actor.slave.owner().is_some()
+            && actor.seldom.slave.owner().is_some()
             && self.slave_is_full(id, rules)
         {
             DO_CARRY
@@ -337,7 +337,7 @@ impl Simulation {
                 // the app's audio gate and playback own audible output.
                 self.sound_events
                     .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                        sound_id.clone(),
+                        rules.sound_name(sound_id),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ));
@@ -457,7 +457,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<DamageCommitReceipt, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(DamageCommitReceipt::default());
@@ -558,7 +558,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -727,7 +727,7 @@ impl Simulation {
         for sound in sounds.filter(|sound| sound.frame == frame) {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    sound.sound_id.clone(),
+                    rules.sound_name(&sound.sound_id),
                     actor,
                     self.resolved_terrain.as_ref(),
                 ));
@@ -744,7 +744,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -808,7 +808,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -854,7 +854,7 @@ impl Simulation {
             .get(id)
             .ok_or("the recovery's infantryman disappeared")?;
         if super::motion_query::is_moving(actor) != Some(false)
-            || actor.tether.partner().is_some()
+            || actor.seldom.tether.partner().is_some()
             || !actor.in_playfield()
             || self.foot_can_reach_navigation_cell(id, destination, rules)?
         {
@@ -918,7 +918,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let stopped_move = self.substrate.entities.get(id).is_some_and(|actor| {
             actor.category() == EntityCategory::Infantry
@@ -1038,7 +1038,7 @@ impl Simulation {
             requested,
             false,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ) {
             log::debug!("infantry {id} target change action: {cause}");
         }
@@ -1053,7 +1053,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -1098,7 +1098,7 @@ impl Simulation {
         id: u64,
         action: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;

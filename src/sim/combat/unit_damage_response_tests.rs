@@ -142,6 +142,7 @@ fn hit_by(
         None,
         rules,
         None,
+        &mut Vec::new(),
     );
 }
 
@@ -234,6 +235,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
             .entities
             .get_mut(rhino)
             .unwrap()
+            .seldom
             .tether
             .set_for_test(Some(gi));
         gi
@@ -338,6 +340,7 @@ fn damaged_computer_miner_heads_for_its_refinery() {
             .entities
             .get(miner)
             .unwrap()
+            .seldom
             .radio_contacts
             .slot(0);
         (queued(&sim, miner) == ENTER, contact == Some(refinery))
@@ -348,7 +351,7 @@ fn damaged_computer_miner_heads_for_its_refinery() {
     assert_eq!(retreat(10, strength - 10, &alone), (false, false));
     let in_contact = |sim: &mut Simulation, miner: u64, refinery: u64| {
         let entity = sim.substrate.entities.get_mut(miner).unwrap();
-        entity.radio_contacts.insert(refinery).unwrap();
+        entity.seldom.radio_contacts.insert(refinery).unwrap();
     };
     assert_eq!(retreat(10, strength / 2, &in_contact), (false, true));
     let nearer_garefn = |sim: &mut Simulation, _: u64, _: u64| {
@@ -409,6 +412,7 @@ fn damaged_miner_retreat_consumes_original_signed_storage_fill() {
                     .entities
                     .get(miner)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .slot(0)
                     == Some(refinery),
@@ -445,7 +449,7 @@ fn vehicle_inside_its_war_factory_takes_no_hit() {
         let entity = sim.substrate.entities.get_mut(rhino).unwrap();
         entity.position.set_rx_for_test(inside.0);
         entity.position.set_ry_for_test(inside.1);
-        entity.radio_contacts.insert(factory).unwrap();
+        entity.seldom.radio_contacts.insert(factory).unwrap();
         let before = entity.health.current();
         hit_with(&mut sim, &rules, rhino, gi, 50, ignore_defenses);
         before - sim.substrate.entities.get(rhino).unwrap().health.current()
@@ -479,7 +483,7 @@ fn damage_starts_the_radar_combat_flash() {
         sim.substrate
             .entities
             .get(rhino)
-            .map(|rhino| rhino.radar_combat_flash.remaining(frame))
+            .map(|rhino| rhino.seldom.radar_combat_flash.remaining(frame))
     };
     assert_eq!(flash(10), Some(49));
     assert_eq!(flash(0), Some(0), "a hit that does no damage");

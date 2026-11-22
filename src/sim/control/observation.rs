@@ -818,7 +818,7 @@ impl<'a> Observation<'a> {
         self.sim
             .entities()
             .get(entity_id)
-            .is_some_and(|entity| entity.rearm_timer.remaining(frame) <= 0)
+            .is_some_and(|entity| entity.seldom.rearm_timer.remaining(frame) <= 0)
     }
 
     /// Whether `entity_id` has emptied its rack: it carries an ammo count and

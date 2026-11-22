@@ -1358,12 +1358,15 @@ mod tests {
         let natural = font.text_width(text) as f32;
         let fits = natural + READY_PAD_X * 2.0;
         assert_eq!(status_label_fit(&font, text, fits, None), Fit::NONE);
-        let slot_w = natural * 0.9 + READY_PAD_X * 2.0;
+        // The narrowest letters are as far as a label squeezes; past them it is cut.
+        let tightest = font.fitted(Fit::TIGHTEST, |font| font.text_width(text)) as f32;
+        assert!(tightest < natural);
         for badge in [None, Some("3")] {
-            let fit = status_label_fit(&font, text, slot_w, badge);
             let badge_w = badge.map_or(0.0, |badge| {
                 font.text_width(badge) as f32 + QUEUE_COUNT_PAD_X
             });
+            let slot_w = tightest + READY_PAD_X * 2.0 + badge_w;
+            let fit = status_label_fit(&font, text, slot_w, badge);
             let width = font.fitted(fit, |font| font.text_width(text)) as f32;
             assert!(fit > Fit::NONE, "{badge:?}");
             assert!(

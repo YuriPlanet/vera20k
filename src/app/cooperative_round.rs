@@ -193,7 +193,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         .flatten();
     // BC6 keeps the match's route; the shared teardown then finds no match
     // transport to return.
-    crate::app::lan_service::cooperative::hold_transport(state);
+    crate::app::lan_service::hold_transport_for_continuation(state);
     App::retire_finished_scenario(state);
     if let Err(error) = state.match_state.session.enter_cooperative_round(
         next_map,
@@ -472,6 +472,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
                     text: crate::app::frontend::shell_pass::resolve_csf(state, "GUI:Random")
                         .into_owned(),
                     swatch: None,
+                    greyed: false,
                 },
                 -2,
             )

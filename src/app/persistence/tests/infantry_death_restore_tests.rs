@@ -56,7 +56,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     assert!(!output.tick.frame_committed);
@@ -64,7 +64,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(
         object.death.is_dying() && object.lifecycle.in_limbo() && !object.lifecycle.object_alive()
     );
-    assert!(!object.in_logic_vector.is_member());
+    assert!(!object.seldom.in_logic_vector.is_member());
     assert!(!saved.occupancy().contains_entity(2, 1, victim));
     assert_eq!(
         saved
@@ -98,7 +98,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             .sound_events
             .iter()
             .filter(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT"))
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT"))
             .count(),
         1
     );
@@ -125,7 +125,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             &rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
     // Exit requests are transient: production load resumes the match and the
@@ -135,7 +135,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     assert!(!restored.pending_delete().contains_object(&victim));
     assert_eq!(death_ids(&restored), effects);
     assert!(!next.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT")));
+        SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id.name_in(&rules) == "DEATHREPORT")));
 }
 
 /// A corpse saved mid-sequence keeps its action and Stage through the load
@@ -172,7 +172,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
             victim,
             sequence,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // DoAction starts the native one-frame countdown at frame0.
         // Its frame0 Logic visit holds; frame1 performs the first step.

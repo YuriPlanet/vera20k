@@ -46,6 +46,8 @@ move VERA20K forward.
 Maintainers will help with review, integration and merging. You'll keep full credit for your
 contribution.
 
+Admins: [hrusten](https://github.com/hrusten), [996666925](https://github.com/996666925), [EncoreAlpha](https://github.com/EncoreAlpha), [HaoJun0823](https://github.com/HaoJun0823), [libi](https://github.com/libi), [zzzzzzh123](https://github.com/zzzzzzh123)
+
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Architecture

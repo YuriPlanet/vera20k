@@ -15,6 +15,9 @@ pub(crate) struct RendererState {
     pub(crate) performance_overlay:
         crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
+    /// Logs each frame's render pass and submission counts while they are
+    /// new or growing, for a player's log of a GPU that cannot keep up.
+    pub(crate) pass_log: crate::app::presentation::render::FramePassLog,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Process GPU resources for the native final client-pixel shake copy.
     pub(crate) screen_presentation: crate::render::screen_presentation::ScreenPresentationPass,
@@ -49,7 +52,8 @@ pub(crate) struct RendererState {
     pub(crate) outcome_banner_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
     /// This frame's posed bodies: crash tilts and pitched rockets
-    /// (`render::unit_pose_cache`).
+    /// (`render::unit_pose_cache`). A `RefCell`: the unit and building
+    /// visitors, alive at once over `&AppState`, pose bodies through it.
     pub(crate) vxl_pose_frame_cache:
         std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     /// Previous presented pre-cursor composition, retained for input-time

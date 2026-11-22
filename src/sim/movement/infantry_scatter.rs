@@ -14,15 +14,20 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 /// Whether the Infantry class setter (`0x0051AA40`) is represented for this
-/// infantryman: his active locomotor is Walk, Teleport or Jumpjet, whose
-/// `Move_To` its Foot tail reaches.
+/// infantryman: the Foot tail (0x004D965D) dispatches to the active
+/// locomotor supplied by the type or a temporary controller.
 fn represented_infantry_destination(actor: &crate::sim::game_entity::GameEntity) -> bool {
     actor.category() == crate::map::entities::EntityCategory::Infantry
         && actor
             .locomotor
             .as_ref()
             .is_some_and(|loco| match loco.active_kind() {
-                LocomotorKind::Walk | LocomotorKind::Teleport => true,
+                LocomotorKind::Walk
+                | LocomotorKind::Drive
+                | LocomotorKind::Ship
+                | LocomotorKind::Hover
+                | LocomotorKind::Mech
+                | LocomotorKind::Teleport => true,
                 LocomotorKind::Jumpjet => loco.jumpjet_runtime().is_some(),
                 _ => false,
             })
@@ -108,7 +113,7 @@ impl Simulation {
         id: u64,
         flags: ScatterFlags,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let infantry = self
             .substrate
@@ -190,7 +195,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if !self.infantry_scatter_admitted(id, flags, rules, frame_effects)? {
             return Ok(false);
@@ -244,7 +249,7 @@ impl Simulation {
         flags: ScatterFlags,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         if !self.infantry_scatter_admitted(id, flags, rules, frame_effects)? {
             return Ok(());
@@ -296,7 +301,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         process_now: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let infantry = self
             .substrate
@@ -333,9 +338,9 @@ impl Simulation {
             .process_active_locomotor(
                 id,
                 rules,
-                crate::sim::world::ObjectAiCtx {
+                &mut crate::sim::world::ObjectAiCtx {
                     overlay_registry: registry,
-                    effects: frame_effects,
+                    effects: frame_effects.reborrow(),
                     ..Default::default()
                 },
             )
@@ -478,7 +483,7 @@ impl Simulation {
     }
 
     /// The Infantry class setter `vt+0x480(target, 1)` (`0x0051AA40`) for a
-    /// Walk, Teleport or Jumpjet infantryman: Infantry51AA40 -> Foot4D94B0 ->
+    /// ground, Teleport or Jumpjet infantryman: Infantry51AA40 -> Foot4D94B0 ->
     /// the active locomotor's Move_To (Walk75ACB0, Teleport `0x00718100`, or
     /// Jumpjet through [`Self::jumpjet_foot_destination`]; the setter never
     /// reads `Teleporter=`). Every represented Infantry destination comes
@@ -525,21 +530,8 @@ impl Simulation {
     /// Rocketeer. Risk: RNG drift against native, not a visible movement
     /// difference.
     ///
-    /// RESIDUAL: a `JumpJet=` infantryman's Walk piggyback is not modelled.
-    /// The setter swaps the Jumpjet of one that is not moving for a Walk
-    /// (`0x0051AE5A..0x0051B1CA`) unless `0x005221D0` says fly or the type has
-    /// `HoverAttack=` (`+0x390`), ends the piggyback when it says fly, and
-    /// pushes the destination onto the navigation list's front (`+0x5AC`,
-    /// `0x0051AD1F..0x0051AE57`) for a walking one. `0x005221D0` says fly when airborne; on
-    /// the ground it says walk for a reachable hop of one cell, for two or
-    /// three cells in the playfield whose zone cost is at most 7, and in two
-    /// house and cell cases (`0x0053A130`, `0x00484AE0`). VERA flies every
-    /// hop. Trigger: a grounded `JumpJet=` infantry without `HoverAttack=`
-    /// given a short hop. Effect: it lifts off instead of walking. Frequency:
-    /// dormant in retail `rulesmd.ini`, where each `JumpJet=` infantry type
-    /// also sets `HoverAttack=` (production reader:
-    /// `retail_jumpjet_infantry_all_hover_attack`); a map or mode layer could
-    /// clear it. Risk: a mod's walking jumpjet infantry fly.
+    /// For a JumpJet type the Walk/Jumpjet choice and its navigation list
+    /// are owned by [`Self::prepare_jumpjet_infantry_destination`].
     ///
     /// Returns false for the other unmigrated class setters.
     /// DirectRocker reciprocal links, retained fire particles and the
@@ -550,7 +542,7 @@ impl Simulation {
         requested: NavTargetRef,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -570,11 +562,7 @@ impl Simulation {
         if jumpjet_type && self.jumpjet_destination_in_own_cell(actor, requested) {
             return Ok(true);
         }
-        let kind = actor
-            .locomotor
-            .as_ref()
-            .map(|l| l.active_kind())
-            .expect("represented receiver");
+        let hover_attack = object.hover_attack;
         let human = self.owner_is_human(actor.owner());
         if !self.infantry_destination_inputs_available(id, requested, rules, registry) {
             return Err("Infantry destination requires available class inputs".into());
@@ -638,9 +626,28 @@ impl Simulation {
                 EnterRadioArm::Docking => return Ok(true),
             }
         }
+        let requested = if jumpjet_type {
+            let Some(target) =
+                self.prepare_jumpjet_infantry_destination(id, requested, hover_attack, rules)?
+            else {
+                self.foot_null_destination(id, rules, registry, frame_effects);
+                return Ok(true);
+            };
+            target
+        } else {
+            requested
+        };
         if !self.begin_foot_destination(id, true, rules, registry, frame_effects) {
             return Ok(true);
         }
+        let Some(kind) = self
+            .entities()
+            .get(id)
+            .and_then(|actor| actor.locomotor.as_ref())
+            .map(|loco| loco.active_kind())
+        else {
+            return Ok(false);
+        };
         match kind {
             LocomotorKind::Teleport => {
                 // Foot tail: NavCom, then Teleport Move_To, then the accepted
@@ -674,13 +681,12 @@ impl Simulation {
                     self.resolved_terrain.as_ref(),
                     Some((rules, &self.interner)),
                 )?;
-                super::prepare_walk_destination(
-                    &mut self.substrate.entities,
-                    id,
-                    (requested, coord),
-                    self.resolved_terrain.as_ref(),
-                    super::DestinationTiming::from_rules(self.session.binary_frame(), rules),
-                );
+                self.ground_foot_move_to(id, requested, coord, rules, frame_effects)
+                    .map_err(|error| error.cause)?;
+                if let Some(actor) = self.substrate.entities.get_mut(id) {
+                    super::DestinationTiming::from_rules(self.session.binary_frame(), rules)
+                        .accept(actor);
+                }
                 Ok(true)
             }
         }
@@ -703,7 +709,7 @@ impl Simulation {
         id: u64,
         target: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> EnterRadioArm {
         use crate::map::entities::EntityCategory;
         use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse};
@@ -711,7 +717,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target)
-            .map(|target| (!target.radio_contacts.is_empty(), target.category()));
+            .map(|target| (!target.seldom.radio_contacts.is_empty(), target.category()));
         if let Some((true, category)) = busy {
             let Some(actor) = self.substrate.entities.get_mut(id) else {
                 return EnterRadioArm::Continue;
@@ -803,7 +809,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;

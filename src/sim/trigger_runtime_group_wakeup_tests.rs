@@ -77,7 +77,7 @@ fn authored_signed_group_queues_guard_across_houses() {
     sim.advance_triggers(
         rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     for (index, id) in ids.into_iter().enumerate() {
         let mission = sim.entities().get(id).unwrap().mission.clone();

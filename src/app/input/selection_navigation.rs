@@ -756,7 +756,7 @@ mod tests {
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 67,
                 TickLane::Ordinary,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             )
             .unwrap();
             let mut input = crate::app::input::state::MatchInputState::new(Default::default());
@@ -780,6 +780,7 @@ mod tests {
             // Deselect and its normal app reconciliation have no expiry fact.
             sim.entity_mut_for_test(20)
                 .unwrap()
+                .seldom
                 .selection
                 .set_selected_for_test(false);
             super::super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
@@ -788,7 +789,7 @@ mod tests {
             if conceal {
                 assert_eq!(sim.object_conceal(20), ConcealOutcome::Concealed);
             } else {
-                sim.detach_all_pointer_expired(20, &rules, FrameEffects::empty());
+                sim.detach_all_pointer_expired(20, &rules, &mut FrameEffects::empty());
             }
             assert!(sim.entities().get(20).unwrap().is_object_alive());
             let frame = sim
@@ -797,7 +798,7 @@ mod tests {
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 )
                 .unwrap();
             assert_eq!(
@@ -861,7 +862,7 @@ mod tests {
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     67,
                     TickLane::Ordinary,
-                    FrameEffects::empty(),
+                    &mut FrameEffects::empty(),
                 )
                 .unwrap();
             assert!(

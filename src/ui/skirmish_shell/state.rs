@@ -10,6 +10,7 @@ mod random_map_extras;
 mod random_map_setup;
 mod saved_seed_browser;
 mod saved_setup;
+mod team_menus;
 mod team_starts;
 mod trackbars;
 
@@ -54,7 +55,7 @@ pub use player_name::{
     handle_player_name_tab, initialize_rows_for_selected_map, insert_player_name_text,
     player_name_caret_prefix, player_name_edit_rect_hit, player_row_visible,
     repair_teams_for_selected_mode, selected_player_rows, set_status_help_text,
-    update_player_name_scroll_for_caret,
+    skirmish_session_options, update_player_name_scroll_for_caret,
 };
 pub use random_map_extras::{
     EXTRAS_ROWS, ExtrasAction, ExtrasOutcome, ExtrasRow, ExtrasValue, extras_page_count,
@@ -69,6 +70,10 @@ pub use saved_seed_browser::{
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
 pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
+pub use team_menus::{
+    MenuPick, apply_seat_action, apply_team_colors, apply_team_preset, apply_team_starts,
+    balance_teams_by_strength, team_start_seats,
+};
 pub use team_starts::starts_by_team;
 pub use trackbars::{
     SkirmishTrackbarBounds, handle_option_mouse_down, handle_option_mouse_move,
@@ -133,6 +138,10 @@ pub enum SkirmishComboId {
     Color(usize),
     Start(usize),
     Team(usize),
+    /// VERA's Quick Team Setup under the rows ([`team_menus`]).
+    TeamMenu,
+    /// VERA's Bulk Seat Actions beside it.
+    SeatMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +158,31 @@ pub enum SkirmishComboItem {
     Color(usize),
     Start(LaunchStartPosition),
     Team(i32),
+    /// A Quick Team Setup item, greyed with why while `refusal` is set.
+    TeamTool {
+        tool: crate::ui::team_tools::TeamTool,
+        refusal: Option<crate::ui::team_tools::ToolRefusal>,
+    },
+    /// The heading over the quick teams, which picks nothing.
+    TeamHeading,
+    /// A Bulk Seat Actions item.
+    SeatAction {
+        action: crate::ui::team_tools::SeatAction,
+        enabled: bool,
+    },
+}
+
+impl SkirmishComboItem {
+    /// Whether a click on this item picks it: a menu's greyed items and
+    /// heading take none.
+    pub fn pickable(self) -> bool {
+        match self {
+            Self::TeamTool { refusal, .. } => refusal.is_none(),
+            Self::TeamHeading => false,
+            Self::SeatAction { enabled, .. } => enabled,
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -160,6 +160,7 @@ impl SoundPlaybackInputs<'_> {
         sfx: &mut crate::audio::sfx::SfxPlayer,
         events: &[crate::audio::events::GameSoundEvent],
         sim: Option<&crate::sim::world::Simulation>,
+        names: Option<&crate::rules::ruleset::SoundNames>,
         local_owner: Option<&str>,
     ) {
         use crate::audio::events::GameSoundEvent;
@@ -196,6 +197,8 @@ impl SoundPlaybackInputs<'_> {
             } else {
                 event
             };
+            // The event's sound by name, as its rules' table holds it.
+            let sound_id = event.sound_id(names);
             match event {
                 GameSoundEvent::TriggerAudio { .. } => continue,
                 GameSoundEvent::UnitVoiceVisit { owner } => sfx.visit_unit_voice(*owner, registry),
@@ -209,7 +212,7 @@ impl SoundPlaybackInputs<'_> {
                 | GameSoundEvent::UnitMoveOrder { speaker_id, .. }
                 | GameSoundEvent::UnitAttackOrder { speaker_id, .. }
                 | GameSoundEvent::UnitVoiceRequested { speaker_id, .. } => {
-                    sfx.queue_unit_voice(*speaker_id, event.sound_id());
+                    sfx.queue_unit_voice(*speaker_id, sound_id);
                 }
                 // `VoxClass::PlayEVA @ 0x00752700`: routing (pending slot, the
                 // QUEUE FIFOs, critical/interrupt lists), the same-type duplicate
@@ -247,18 +250,16 @@ impl SoundPlaybackInputs<'_> {
                 }
                 // UI events — always full volume (non-positional).
                 GameSoundEvent::UiSound { .. } => {
-                    sfx.play_sound(event.sound_id(), registry);
+                    sfx.play_sound(sound_id, registry);
                 }
                 // `CreditsClass::Draw @ 0x004A2519`: `PUSH 0x3f000000` — the
                 // credit tick is the one UI cue native plays at half volume,
                 // centred (`EDX = 0x2000`).
                 GameSoundEvent::CreditTick { .. } => {
-                    sfx.play_sound_with_volume(event.sound_id(), 0.5, registry);
+                    sfx.play_sound_with_volume(sound_id, 0.5, registry);
                 }
                 GameSoundEvent::AnimationStarted {
-                    anim_id,
-                    sound_id,
-                    source,
+                    anim_id, source, ..
                 } => match gain_for(sound_id, *source) {
                     Some(gain) => {
                         sfx.play_animation_sound_spatial(*anim_id, sound_id, gain, registry);
@@ -272,28 +273,25 @@ impl SoundPlaybackInputs<'_> {
                     sfx.detach_animation_sound(*anim_id);
                 }
                 GameSoundEvent::AnimationStopped {
-                    anim_id,
-                    stop_sound_id,
-                    source,
+                    anim_id, source, ..
                 } => {
                     sfx.stop_animation_sound(*anim_id);
-                    if let Some(stop_sound_id) =
-                        stop_sound_id.as_deref().filter(|id| !id.is_empty())
-                        && let Some(gain) = gain_for(stop_sound_id, *source)
+                    if !sound_id.is_empty()
+                        && let Some(gain) = gain_for(sound_id, *source)
                     {
-                        sfx.play_sound_spatial(stop_sound_id, gain, registry);
+                        sfx.play_sound_spatial(sound_id, gain, registry);
                     }
                 }
-                GameSoundEvent::CloakSound { sound_id, source }
-                | GameSoundEvent::WallCrushed { sound_id, source }
-                | GameSoundEvent::VocAt { sound_id, source } => {
+                GameSoundEvent::CloakSound { source, .. }
+                | GameSoundEvent::WallCrushed { source, .. }
+                | GameSoundEvent::VocAt { source, .. } => {
                     play_voc(sfx, sound_id, *source);
                 }
                 GameSoundEvent::VocAtCoord {
-                    sound_id,
                     coordinate,
                     flags,
                     source,
+                    ..
                 } => {
                     sfx.play_sound_at_coord(
                         sound_id,
@@ -307,7 +305,7 @@ impl SoundPlaybackInputs<'_> {
                 GameSoundEvent::VocStopAtCoord { coordinate, flags } => {
                     sfx.stop_sound_at_coord(*coordinate, *flags);
                 }
-                GameSoundEvent::BaseUnderAttackSfx { sound_id } => {
+                GameSoundEvent::BaseUnderAttackSfx { .. } => {
                     // `0x004F95BF MOV EDX,0x2000` / `0x004F95C4 PUSH 0x3F800000`:
                     // pan centred, volume 1.0f, no handle — an ordinary pooled
                     // event, not a voice. `RulesClass::ReadAudioVisual` keeps only
@@ -323,9 +321,7 @@ impl SoundPlaybackInputs<'_> {
                     );
                 }
                 GameSoundEvent::SuperWeaponActivated {
-                    sound_id,
-                    source,
-                    eva_event,
+                    source, eva_event, ..
                 } => {
                     // `RulesClass::ReadAudioVisual @ 0x006691E0` and
                     // `SuperWeaponTypeClass::ReadINI @ 0x006CEBE5` both store only
@@ -362,9 +358,7 @@ impl SoundPlaybackInputs<'_> {
                     }
                 }
                 GameSoundEvent::BridgeRepaired {
-                    sound_id,
-                    source,
-                    eva_event,
+                    source, eva_event, ..
                 } => {
                     if !sound_id.is_empty()
                         && let Some(gain) = gain_for(sound_id, *source)
@@ -378,8 +372,8 @@ impl SoundPlaybackInputs<'_> {
                 // Spatial events — distance volume and pan from the sound's
                 // Range/Type/MinVolume against the tactical view.
                 _ => {
-                    if let Some(gain) = gain_for(event.sound_id(), event.source()) {
-                        sfx.play_sound_spatial(event.sound_id(), gain, registry);
+                    if let Some(gain) = gain_for(sound_id, event.source()) {
+                        sfx.play_sound_spatial(sound_id, gain, registry);
                     }
                 }
             }
@@ -449,9 +443,9 @@ fn radar_availability_sound(
         RadarAvailabilityCue::Off => &rules.general.radar_off,
     };
     sound
-        .clone()
+        .as_deref()
         .map(|sound_id| crate::audio::events::GameSoundEvent::VocAt {
-            sound_id,
+            sound_id: rules.sound_name(sound_id),
             source: None,
         })
 }
@@ -554,11 +548,11 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
     // The bombs' and owners' coordinates are the frame's
     // (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
-    let sim = state
-        .match_state
-        .sim_runtime
-        .presentation()
-        .map(|rt| &rt.simulation);
+    let runtime = state.match_state.sim_runtime.presentation();
+    let sim = runtime.map(|rt| &rt.simulation);
+    // The queue's sounds name the match rules' table: every producer runs
+    // in the match ([`crate::rules::ruleset::SoundNames`]).
+    let names = runtime.map(|rt| rt.resources.rules.sound_names());
     let frame = state.match_state.sim_runtime.frame();
     let (Some(sfx), Some(assets), Some(catalog)) = (
         &mut state.audio.sfx_player,
@@ -580,7 +574,7 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
         catalog,
         listener,
     };
-    inputs.consume(sfx, &events, sim, local_owner.as_deref());
+    inputs.consume(sfx, &events, sim, names, local_owner.as_deref());
     let spatial = inputs.spatial_context(sim, local_owner.as_deref());
     let shrouded = |rx, ry| spatial.shrouded(rx, ry);
 

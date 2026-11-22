@@ -375,20 +375,25 @@ impl FootPathQueue {
                 i32::from(direction)
             })
             .collect();
-        self.install_directions(&words);
+        self.install_directions(&words, false);
         self.rebase((reference.0 as i16, reference.1 as i16));
     }
 
     /// Find_Path's direction copy (`0x004D3E82..0x004D3EA1`) precedes
     /// follower callbacks; its separate reference write is at `0x004D4003`.
-    /// Copy at most 24 finished words. The Vec's end represents the native
-    /// terminator. Keep the previous reference until that continuation publishes it.
-    pub(crate) fn install_directions(&mut self, directions: &[i32]) {
+    /// Copy up to the end of the 24-word window. A train's one retained
+    /// head is the current word after the consumed prefix. The Vec's end
+    /// represents the native terminator.
+    pub(crate) fn install_directions(&mut self, directions: &[i32], retain_head: bool) {
+        let head = self.directions.get(usize::from(self.cursor)).copied();
         self.directions.clear();
+        if retain_head {
+            self.directions.push(head.unwrap_or(u8::MAX));
+        }
         self.directions.extend(
             directions
                 .iter()
-                .take(FIND_PATH_WINDOW_WORDS)
+                .take(FIND_PATH_WINDOW_WORDS - usize::from(retain_head))
                 .map(|&dir| dir as u8),
         );
         self.cursor = 0;

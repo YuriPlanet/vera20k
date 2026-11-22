@@ -46,7 +46,7 @@ fn shoreline_runtime(loaded: &crate::headless_scenario::HeadlessScenario) -> Sim
 
 fn ordinary_frame(runtime: &mut SimRuntime) {
     let output = runtime
-        .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::default())
         .expect("ordinary bound-resource shoreline frame");
     assert!(output.tick.frame_committed);
 }
@@ -143,7 +143,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
         miner,
         rules,
         Some(resources.rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let pieces = sim.voxel_anims().ids();
     assert_eq!(

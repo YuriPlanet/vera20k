@@ -592,6 +592,9 @@ impl MultiplayerShellRuntime {
         if let Some(room) = snapshot.room {
             options.set_room_options(room);
         }
+        if let Some(session) = snapshot.session {
+            options.set_session_options(session);
+        }
         let mut local = self.local_participant();
         local.set_observer(observe);
         local.slot.team = if mode.must_ally {
@@ -697,6 +700,7 @@ impl MultiplayerShellRuntime {
         snapshot.mcv_repacks = launch.options.mcv_redeploy;
         snapshot.crates_appear = launch.options.crates;
         snapshot.room = Some(launch.options.room_options());
+        snapshot.session = Some(launch.options.session_options());
         for (index, slot) in snapshot.slots.iter_mut().enumerate() {
             let row = (index + 1) as u8;
             *slot = if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
@@ -1191,6 +1195,15 @@ impl MultiplayerShellRuntime {
         state.build_off_ally = self.snapshot.build_off_ally;
         state.mcv_redeploy = self.snapshot.mcv_repacks;
         state.crates = self.snapshot.crates_appear;
+        if let Some(session) = self.snapshot.session {
+            state.session = crate::skirmish_launch::SessionOptions {
+                tech_level: crate::ui::skirmish_shell::game_options::admitted_tech_level(
+                    session.tech_level,
+                )
+                .unwrap_or(state.session.tech_level),
+                ..session
+            };
+        }
 
         state.player_name_edit = PlayerNameEditState::with_name(&self.handle_text());
         state.player_country =
@@ -1853,6 +1866,7 @@ fn pack_snapshot_options(snapshot: &mut MultiplayerSetupSnapshot, state: &Skirmi
     snapshot.build_off_ally = state.build_off_ally;
     snapshot.mcv_repacks = state.mcv_redeploy;
     snapshot.crates_appear = state.crates;
+    snapshot.session = Some(state.session);
 }
 
 pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGlobalDefaults {
@@ -1867,6 +1881,7 @@ pub(crate) fn skirmish_global_defaults(state: &SkirmishShellState) -> SkirmishGl
         build_off_ally: state.build_off_ally,
         mcv_repacks: state.mcv_redeploy,
         crates_appear: state.crates,
+        session: state.session,
     }
 }
 
@@ -2653,7 +2668,7 @@ mod tests {
     /// A room reopened after its game keeps VERA's room options, as it keeps
     /// the native checkboxes.
     #[test]
-    fn a_reopened_room_keeps_its_bans_bridges_allying_and_teams() {
+    fn a_reopened_room_keeps_its_bans_bridges_allying_teams_and_session() {
         use crate::map::skirmish_scenarios::{SkirmishScenarioRecord, SkirmishScenarioSource};
         let mut owner = runtime(
             MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish),
@@ -2693,8 +2708,17 @@ mod tests {
             },
             teams: Some(3),
         };
+        let session = crate::skirmish_launch::SessionOptions {
+            tech_level: 7,
+            bases: false,
+            fog_of_war: true,
+            multi_engineer: true,
+            harvester_truce: true,
+        };
         assert_ne!(launch.options.room_options(), room);
+        assert_ne!(launch.options.session_options(), session);
         launch.options.set_room_options(room);
+        launch.options.set_session_options(session);
         owner.remember_network_setup(
             SetupProfile::Lan,
             &launch,
@@ -2702,7 +2726,9 @@ mod tests {
             std::array::from_fn(|_| None),
             &catalog,
         );
-        assert_eq!(open(&mut owner).0.options.room_options(), room);
+        let reopened = open(&mut owner).0.options;
+        assert_eq!(reopened.room_options(), room);
+        assert_eq!(reopened.session_options(), session);
     }
 
     #[test]

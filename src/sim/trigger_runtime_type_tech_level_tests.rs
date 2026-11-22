@@ -90,7 +90,7 @@ fn apply(sim: &mut Simulation, rules: &RuleSet, raw: &str) -> bool {
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -125,7 +125,7 @@ fn type_tech_level_dispatch_matches_original_identity_signed_values_house_dirty_
             .collect();
         let seed = row["rng_seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng_hashes(&sim), row["rng_before"], "{name}");
         let raw = input["raw_action"].as_str().unwrap();

@@ -40,18 +40,18 @@ fn high_flight_cell_tag_is_queried_before_the_locomotor_crosses_the_threshold() 
     sim.classify_map_triggers(&rules);
     // Controlled prior at a real ascent: the production integration test
     // separately establishes natural construction, liftoff and hover.
-    sim.advance_live_object_turn(actor, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     sim.set_object_z(
         actor,
         200,
         &rules,
         Some(&registry),
-        super::super::FrameEffects::default(),
+        &mut super::super::FrameEffects::default(),
     );
     sim.session.set_binary_frame_for_test(16);
     sim.clear_tag_dispatch_trace_for_test();
-    sim.advance_live_object_turn(actor, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     assert!(
         sim.tag_dispatch_trace_for_test().is_empty(),
@@ -65,7 +65,7 @@ fn high_flight_cell_tag_is_queried_before_the_locomotor_crosses_the_threshold() 
         ),
         "Process crosses208 after the periodic query"
     );
-    sim.advance_live_object_turn(actor, &rules, techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, &rules, &mut techno_ai::ObjectAiCtx::default())
         .unwrap();
     assert_eq!(
         sim.tag_dispatch_trace_for_test()
@@ -81,7 +81,7 @@ fn high_flight_cell_tag_is_queried_before_the_locomotor_crosses_the_threshold() 
         crate::sim::movement::PerCellReason::Arrival,
         &rules,
         Some(&registry),
-        super::super::FrameEffects::default(),
+        &mut super::super::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(

@@ -220,10 +220,13 @@ impl EntityAtlasGrowth {
             sprite_atlas,
             Some(sim.interner()),
         );
-        let PreparedSpriteAtlas::Raster(work, upload) = prepared else {
-            return;
-        };
-        self.grow_sprites(work, upload, began);
+        match prepared {
+            PreparedSpriteAtlas::Unchanged => {}
+            PreparedSpriteAtlas::Abandoned(failure) => {
+                log::warn!("{failure}; keeping the previous valid sprite atlas");
+            }
+            PreparedSpriteAtlas::Raster(work, upload) => self.grow_sprites(work, upload, began),
+        }
     }
 
     /// Hand a prepared SHP raster to a worker as the sprite atlas's growth.

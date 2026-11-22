@@ -5,7 +5,7 @@
 //! sends the local commands. Simulation owns the OutList and DoList
 //! (`sim::command_queue`).
 
-use std::num::NonZeroU32;
+use std::num::{NonZeroU8, NonZeroU32};
 
 use crate::sim::game_options::GAME_SPEED_90_TPS;
 
@@ -45,8 +45,8 @@ pub struct WolIpxTiming {
 pub struct WolStartTiming {
     /// MaxAhead `0xA8B550`.
     pub max_ahead: i32,
-    /// FrameSendRate `0xA8B554`.
-    pub frame_send_rate: i32,
+    /// FrameSendRate `0xA8B554`: 10 or 5.
+    pub frame_send_rate: NonZeroU8,
     /// PreCalcMaxAhead `0xA8B56C`.
     pub precalc_max_ahead: i32,
     /// PreCalcFrameRate `0xA8B570`.
@@ -84,9 +84,9 @@ pub fn wol_start_timing(
     let (max_ahead, owner_frame_rate) = speed_frame_budget(game_speed);
     let frame_send_rate =
         if matches!(game_speed, 0 | 1) || game_speed == i32::from(GAME_SPEED_90_TPS) {
-            10
+            const { NonZeroU8::new(10).unwrap() }
         } else {
-            5
+            const { NonZeroU8::new(5).unwrap() }
         };
     let ping = pings.into_iter().fold(0, i32::max);
     let mut timing = WolStartTiming {
@@ -315,7 +315,7 @@ mod tests {
         let speed = i32::from(super::GAME_SPEED_90_TPS);
         let timing = super::wol_start_timing(speed, [0; 2], true);
         assert_eq!(timing.precalc_frame_rate, 90);
-        assert_eq!(timing.frame_send_rate, 10);
+        assert_eq!(timing.frame_send_rate.get(), 10);
         assert_eq!((timing.max_ahead, timing.precalc_max_ahead), (60, 60));
         assert_eq!(super::speed_frame_budget(7), (10, 10));
     }
@@ -362,7 +362,10 @@ mod tests {
                 });
             let expected = super::WolStartTiming {
                 max_ahead: int(&case["max_ahead"]),
-                frame_send_rate: int(&case["frame_send_rate"]),
+                frame_send_rate: NonZeroU8::new(
+                    u8::try_from(case["frame_send_rate"].as_u64().unwrap()).unwrap(),
+                )
+                .unwrap(),
                 precalc_max_ahead: int(&case["precalc_max_ahead"]),
                 precalc_frame_rate: int(&case["precalc_frame_rate"]),
                 max_max_ahead: int(&case["max_max_ahead"]),

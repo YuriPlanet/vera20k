@@ -180,7 +180,7 @@ fn retail_exploding_overlay_clears_only_identity_and_recurses_with_the_original_
         warhead,
         true,
         (0, Some(house), warhead_ref),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.rng_state(),
@@ -196,7 +196,7 @@ fn retail_exploding_overlay_clears_only_identity_and_recurses_with_the_original_
         warhead,
         true,
         (0, Some(house), warhead_ref),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let overlay = sim.overlay_grid().unwrap().cell(cell.0, cell.1);
     assert_eq!(
@@ -210,7 +210,12 @@ fn retail_exploding_overlay_clears_only_identity_and_recurses_with_the_original_
         "the recursive C4 actually kills the ordinary receiver"
     );
     assert_eq!(
-        sim.entities().get(target).unwrap().kill_record.killer(),
+        sim.entities()
+            .get(target)
+            .unwrap()
+            .seldom
+            .kill_record
+            .killer(),
         Some(house)
     );
     assert!(
@@ -259,7 +264,7 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         barrel,
         &rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.overlay_grid()
@@ -344,12 +349,17 @@ fn retail_voxel_contact_cap_survives_snapshot_and_piece_retirement() {
         BounceContactDamage::VoxelType(type_id),
         warhead,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.entities().get(victim).unwrap().health.current(), 0);
     assert_eq!(sim.voxel_type_damage(type_id, &rules), 3);
     sim.uninit_with_context(piece, UninitContext::new(&rules));
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session().started());
+    sim.process_pending_delete_with(
+        &rules,
+        &mut FrameEffects::default(),
+        1,
+        sim.session().started(),
+    );
     assert!(sim.voxel_anims().is_empty());
     // Isolated snapshot continuation: the native full-load RNG reset remains
     // separate; restore the supplied pre-save cursor for this equality check.
@@ -411,7 +421,7 @@ fn ares_overlay_explode_threshold_gates_the_explodes_tail() {
             warhead,
             true,
             (0, Some(house), warhead_ref),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.overlay_grid()

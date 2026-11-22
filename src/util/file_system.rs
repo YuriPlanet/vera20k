@@ -103,6 +103,10 @@ mod memory {
         bytes: Arc<[u8]>,
         modified_ms: u64,
     }
+    /// The browser build's stand-in for the disk that `std::fs` reaches
+    /// process-wide: callers use these free functions as they would `std::fs`
+    /// and hold no file-system owner, so the store is a `static`, and a
+    /// `static` must be `Sync`, hence the lock.
     static FILES: OnceLock<Mutex<BTreeMap<PathBuf, Entry>>> = OnceLock::new();
     /// The imported files. Each change to the map or the folder set is one
     /// insert, remove or retain, so a panic elsewhere while one is locked
@@ -126,6 +130,7 @@ mod memory {
         }
         result
     }
+    /// Beside [`FILES`] for its reason.
     static DIRECTORIES: OnceLock<Mutex<std::collections::BTreeSet<PathBuf>>> = OnceLock::new();
     /// The created folders; locked as [`files`] is.
     fn directories() -> MutexGuard<'static, std::collections::BTreeSet<PathBuf>> {
@@ -150,8 +155,7 @@ mod memory {
             Err(error) => Err(error),
         }
     }
-    // Network cache pins use the same normalized identity as stored bytes.
-    #[cfg(feature = "wasm-net")]
+    // Imported paths have no symlinks. The stored key is their canonical path.
     pub fn canonicalize(path: impl AsRef<Path>) -> io::Result<PathBuf> {
         let path = key(path.as_ref());
         metadata(&path)?;
@@ -378,14 +382,11 @@ mod tests {
         let first = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         let second = memory::read_shared(format!("{root}/RA2MD.MIX")).unwrap();
         assert!(std::sync::Arc::ptr_eq(&first, &second));
-        #[cfg(feature = "wasm-net")]
-        {
-            assert_eq!(
-                memory::canonicalize(format!("{root}/Taunts/../RA2MD.MIX")).unwrap(),
-                std::path::PathBuf::from(format!("{root}/RA2MD.MIX"))
-            );
-            assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
-        }
+        assert_eq!(
+            memory::canonicalize(format!("{root}/Taunts/../RA2MD.MIX")).unwrap(),
+            std::path::PathBuf::from(format!("{root}/RA2MD.MIX"))
+        );
+        assert!(memory::canonicalize(format!("{root}/missing.map")).is_err());
     }
 
     #[test]

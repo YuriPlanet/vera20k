@@ -42,7 +42,6 @@ use crate::sim::world::{FrameEffects, Simulation};
 ///   ([`Simulation::emp_cannon_detonate_self`]; nothing without a weapon).
 ///
 /// Always activates.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -51,11 +50,11 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlays: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(emp) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().emp_pulse().clone())
+        .map(|metadata| metadata.launch().emp_pulse())
     else {
         return true;
     };
@@ -73,6 +72,8 @@ pub(super) fn launch(
     let firing_type = rules
         .super_weapon_index(&sw.id)
         .map_or(-1, |index| index as i32);
+    // A copy, as the launch began: a cannon that fires at itself detonates
+    // through the whole simulation, which can destroy listed buildings.
     let buildings = sim
         .houses
         .get(&owner)

@@ -104,6 +104,7 @@ impl RadarAction {
             | Kind::FriendlyUnit
             | Kind::FriendlyStructure
             | Kind::Grind
+            | Kind::EnterTunnel
             | Kind::EngineerDamage
             | Kind::RepairAction(_)
             | Kind::NoDeploy
@@ -282,11 +283,19 @@ pub(crate) fn action(
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
         Armed::Dropped => None,
         Armed::Unlisted if query.selected.is_empty() => None,
-        Armed::Unlisted => query.selection_action(cell, object).and_then(|kind| {
-            // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
-            // 0x653CA6).
-            crate::app::input::ares_cursor::radar_action(query, kind, RadarAction::kept(kind))
-        }),
+        Armed::Unlisted => {
+            let (kind, overrides) = query.selection_action(cell, object);
+            kind.and_then(|kind| {
+                // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
+                // 0x653CA6).
+                crate::app::input::ares_cursor::radar_action(
+                    query,
+                    kind,
+                    &overrides,
+                    RadarAction::kept(kind),
+                )
+            })
+        }
     };
     // Planning Mode (`0x00637AA0`) wants every selected object to take
     // waypoints (`0x00639DA0`).

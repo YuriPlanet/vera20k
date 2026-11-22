@@ -96,7 +96,6 @@ impl DropPodFlight {
 /// the first of the eight neighbours of that cell, walked from it, the
 /// object may enter (`IsCellOccupied`, vt+0x1AC, `(-1, -1, NULL, 1)`), which
 /// becomes the current cell; an object still in limbo is deleted.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn launch(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -104,19 +103,19 @@ pub(super) fn launch(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(config) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().drop_pod().clone())
+        .map(|metadata| metadata.launch().drop_pod())
     else {
         return false;
     };
     let globals = rules.ares_drop_pod();
     let types = if config.types.is_empty() {
-        globals.types.clone()
+        &globals.types
     } else {
-        config.types
+        &config.types
     };
     let minimum = config.minimum.unwrap_or(globals.minimum);
     let maximum = config.maximum.unwrap_or(globals.maximum);
@@ -136,7 +135,6 @@ pub(super) fn launch(
         );
         return false;
     }
-    let owner_name = sim.interner.resolve(owner).to_owned();
     let last = i32::try_from(types.len()).map_or(i32::MAX, |count| count - 1);
     let mut target = (cell.0 as i16, cell.1 as i16);
     let mut count = sim.scenario_rng.next_range_i32_inclusive(minimum, maximum);
@@ -160,16 +158,9 @@ pub(super) fn launch(
         let Some(object) = rules.object_in_category(ty.category, &ty.id) else {
             continue;
         };
-        let Some(id) = sim.construct_resolved_object_limbo_at_height(
-            object,
-            &owner_name,
-            0,
-            0,
-            0,
-            0,
-            rules,
-            effects,
-        ) else {
+        let Some(id) = sim
+            .construct_resolved_object_limbo_at_height(object, owner, 0, 0, 0, 0, rules, effects)
+        else {
             continue;
         };
         // 10070F1C..10070F2E: a float compare and store.
@@ -266,7 +257,7 @@ pub(crate) fn create_with_drop_pod(
     id: u64,
     coord: DriveCoord,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     // GetCellAt(CoordStruct), toward zero.
     let cell = ((coord.x / 256) as i16, (coord.y / 256) as i16);
@@ -344,7 +335,7 @@ impl Simulation {
         to: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(pod) = self
             .substrate
@@ -451,7 +442,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -514,7 +505,6 @@ impl Simulation {
     /// `Apply_area_damage @ 0x00489280` deals twice the weapon's Damage with
     /// its Warhead from the Foot, and the Warhead's explosion for that damage
     /// on Clear plays there (`0x0048A4F0`, `0x2600`).
-    #[allow(clippy::too_many_arguments)]
     fn drop_pod_strafe(
         &mut self,
         id: u64,
@@ -523,7 +513,7 @@ impl Simulation {
         location: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(owner) = self.substrate.entities.get(id).map(|entity| entity.owner()) else {
             return;
@@ -562,10 +552,10 @@ impl Simulation {
         let draw = self.main_rng.next_u32();
         if let Some(sound) = weapon.and_then(|weapon| {
             let count = weapon.report.len();
-            (count != 0).then(|| weapon.report[draw as usize % count].clone())
+            (count != 0).then(|| weapon.report[draw as usize % count].as_str())
         }) {
             self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                sound,
+                rules.sound_name(sound),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: location.x,
                     y: location.y,
@@ -589,7 +579,6 @@ impl Simulation {
     /// warhead's explosion for that damage on Clear at the coordinate
     /// (`0x0048A4F0`, flags `0x2600`, the `0x0048ACE0` Z adjust): the strafe
     /// and a refused landing (100 `C4Warhead=`).
-    #[allow(clippy::too_many_arguments)]
     fn drop_pod_blast(
         &mut self,
         id: u64,
@@ -598,7 +587,7 @@ impl Simulation {
         warhead: &crate::rules::warhead_type::WarheadType,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let warhead_ref = self.interner.intern(&warhead.id);
         let receipt = crate::sim::combat::world_receiver::apply_area_damage(
@@ -633,7 +622,7 @@ impl Simulation {
         pod: DropPodFlight,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.set_object_height(id, 0, rules, effects);
         let Some(entity) = self.substrate.entities.get(id) else {

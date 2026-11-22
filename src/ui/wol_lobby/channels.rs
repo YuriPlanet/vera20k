@@ -63,6 +63,20 @@ pub(crate) struct WolChannel {
     pub(crate) name: String,
     /// `+0xE0`: `"%d,%d,%d,%d,%d,%s"` (`0x0077E7A0`).
     pub(crate) ex_info: String,
+    /// Descriptive fields returned by VERA's public game list.
+    pub(crate) summary: Option<WolRoomSummary>,
+}
+
+/// A read-only view of a host's published setup, or of a running match's start.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub(crate) struct WolRoomSummary {
+    pub(crate) map: Option<String>,
+    /// Occupied seats per team number (index + 1). An empty list means FFA.
+    pub(crate) teams: Option<Vec<u8>>,
+    #[serde(default)]
+    pub(crate) forming: bool,
+    pub(crate) observers: Option<u8>,
+    pub(crate) computers: Option<u8>,
 }
 
 /// `0x0077E820`: the exInfo fields, each a CRT `strtok(",")` token through

@@ -103,6 +103,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
             .entities
             .get(actor)
             .unwrap()
+            .seldom
             .sight_refresh_timers
             .timer(viewer);
         raise(&mut sim, &rules, actor);
@@ -124,6 +125,7 @@ fn airborne_cell_tag_uses_the_signed_16_frame_boundary_without_rng_or_sight_time
                 .entities
                 .get(actor)
                 .unwrap()
+                .seldom
                 .sight_refresh_timers
                 .timer(viewer),
             timer
@@ -225,7 +227,7 @@ fn airborne_cell_tag_damage_and_remaining_actions_run_synchronously() {
     sim.advance_live_object_turn(
         actor,
         &rules,
-        techno_ai::ObjectAiCtx {
+        &mut techno_ai::ObjectAiCtx {
             overlay_registry: Some(&registry),
             ..Default::default()
         },
@@ -314,7 +316,7 @@ fn stationary_hostile_rocketeer_raises_the_airborne_cell_tag_on_frame_16() {
     sim.advance_live_object_turn(
         actor,
         &rules,
-        techno_ai::ObjectAiCtx {
+        &mut techno_ai::ObjectAiCtx {
             overlay_registry: Some(&registry),
             effects: FrameEffects::default(),
             ..Default::default()

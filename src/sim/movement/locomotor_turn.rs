@@ -29,6 +29,7 @@ pub(crate) fn locomotor_do_turn(entity: &mut GameEntity, desired: u16, frame: u3
         | LocomotorKind::Ship
         | LocomotorKind::Hover
         | LocomotorKind::Teleport
+        | LocomotorKind::Mech // Mech Do_Turn 0x005B0170 uses Facing::Set.
         | LocomotorKind::Tunnel => {
             super::drive_do_turn(entity, desired, frame);
         }

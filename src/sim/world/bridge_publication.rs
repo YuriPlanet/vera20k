@@ -72,7 +72,7 @@ pub(super) fn run_state_machine(
     rules: &RuleSet,
     input: CellCoord,
     family: Family,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> BodyResult {
     let terrain = sim
         .resolved_terrain
@@ -84,7 +84,7 @@ pub(super) fn run_state_machine(
             sim,
             rules,
             collapsed: false,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
         };
         let returned = publication::advance_bridgehead(&mut host, input, family);
         return BodyResult {
@@ -117,7 +117,7 @@ pub(super) fn run_state_machine(
         sim,
         rules,
         collapsed: false,
-        frame_effects,
+        frame_effects: frame_effects.reborrow(),
     };
     let returned = publication::advance_body_at_anchor(&mut host, input, anchor, family);
     BodyResult {
@@ -134,13 +134,13 @@ pub(super) fn update_adjacent_bridges(
     rules: &RuleSet,
     input: CellCoord,
     family: Family,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let mut host = LivePublication {
         sim,
         rules,
         collapsed: false,
-        frame_effects,
+        frame_effects: frame_effects.reborrow(),
     };
     rim_publication::update(&mut host, input, family);
     host.collapsed
@@ -256,7 +256,7 @@ impl BridgePublicationHost for LivePublication<'_> {
             x as u16,
             y as u16,
             Some(self.rules.overlay_registry()),
-            self.frame_effects,
+            &mut self.frame_effects,
         );
     }
     fn radar(&mut self, cell: Cell) {

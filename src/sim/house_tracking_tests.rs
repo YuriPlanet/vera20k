@@ -420,7 +420,7 @@ fn a_helipads_docks_follow_its_opening_capture_and_limbo() {
         second,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(docks(&sim), (-3, 4));
     add_docks(&mut sim, second, -2);
@@ -445,12 +445,12 @@ fn discarding_a_constructed_object_releases_its_tracking() {
     assert!(sim.discard_constructed_limbo(
         building,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.discard_constructed_limbo(
         unit,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let tracking = sim.houses[&house].tracking();
     assert_eq!((tracking.buildings(), tracking.units_for_test()), (0, 0));
@@ -765,7 +765,7 @@ fn a_captured_human_construction_yard_cancels_placement() {
     });
     let capture = |sim: &mut Simulation, id, to| {
         sim.lifecycle_outputs.clear_for_test();
-        sim.change_owner_with_rules(id, to, &rules, None, FrameEffects::default());
+        sim.change_owner_with_rules(id, to, &rules, None, &mut FrameEffects::default());
         sim.lifecycle_outputs
             .as_slice()
             .iter()

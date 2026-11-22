@@ -37,7 +37,8 @@ impl Houses {
     /// Append a constructed House to the array under its own name.
     ///
     /// Panics when a House of that name is already registered: scenario
-    /// construction admits distinct House names only.
+    /// construction admits distinct House names only (the map's `[Houses]`
+    /// reader, `parse_house_roster`, drops a repeated name).
     #[track_caller]
     pub fn register(&mut self, mut house: HouseState) -> &mut HouseState {
         house.configure_spatial_threat_grid(self.cell_grid);

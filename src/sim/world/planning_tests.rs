@@ -188,7 +188,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         );
         let entity = sim.substrate.entities.get_mut(actor).unwrap();
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.in_logic_vector.set_for_test(true);
+        entity.seldom.in_logic_vector.set_for_test(true);
         entity.locomotor = Some(
             crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("TEST").unwrap(),
@@ -279,7 +279,7 @@ fn execute_shared_plan(
         &[],
         rules,
         sim.session.tick(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -454,7 +454,7 @@ fn retired_planning_sources_acknowledge_in_flight_orders_and_skip_unstarted_work
         &Command::PlanningRecord { record: generated },
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(!sim.planning.paths[&1].executing);
     assert!(!sim.planning_start_actor(1, &rules));
@@ -489,7 +489,7 @@ fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 sim.planning_has_remaining_nodes(1),
                 "UnInit retains +514 until destruction"
             );
-            sim.process_pending_delete_with(&rules, Default::default(), 1, false);
+            sim.process_pending_delete_with(&rules, &mut Default::default(), 1, false);
         } else if action == "repair_dead" || action == "sale_dead" {
             sim.substrate
                 .entities
@@ -590,7 +590,7 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
             &command,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "accepted {kind} order"
     );
@@ -838,7 +838,7 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
         &due,
         &rules,
         sim.session.tick() + 1,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().navigation.nav_com(),
@@ -879,7 +879,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
-    sim.apply_due_commands(&batch, &rules, 1, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 1, &mut FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
@@ -894,7 +894,7 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         Command::PlanningRecord { record: commit },
     )];
     sim.session.set_tick_for_test(1);
-    sim.apply_due_commands(&batch, &rules, 2, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 2, &mut FrameEffects::default());
     sim.publish_planning_commands();
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
@@ -1998,7 +1998,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         entity
             .attack_target
             .set_for_test(Some(TargetKind::Entity(2)));
-        entity.mega_mission =
+        entity.seldom.mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(16, 15)), None, true);
     }
     let graph = sim.planning_draw_graph(owner, None, None);
@@ -2033,8 +2033,12 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
                 .collect(),
         ),
     );
-    sim.substrate.entities.get_mut(1).unwrap().mega_mission =
-        MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .seldom
+        .mega_mission = MegaMission::for_test(true, Some(TargetKind::Cell(5, 600)), None, true);
     let dummy = sim.effective_shared_cell_dummy().snapshot();
     let graph = sim.planning_draw_graph(owner, None, None);
     assert!(graph.actors[0].mega_leg.is_some());
@@ -2223,7 +2227,7 @@ fn an_aircraft_starts_its_planned_node_only_with_its_arrival_byte_set() {
     );
     let jet = sim.substrate.entities.get_mut(4).unwrap();
     jet.lifecycle.set_in_limbo_for_test(false);
-    jet.in_logic_vector.set_for_test(true);
+    jet.seldom.in_logic_vector.set_for_test(true);
     append(&mut sim, &rules, owner, 4, (12, 15));
     append(&mut sim, &rules, owner, 4, (16, 15));
     let path = sim.planning.paths.get_mut(&4).unwrap();
@@ -2240,7 +2244,7 @@ struct PlanningMode;
 
 impl crate::sim::world::LocalPlanningBoundary for PlanningMode {
     fn leave_planning(
-        &self,
+        &mut self,
         _: &Simulation,
         _: &RuleSet,
     ) -> Option<crate::sim::command::CommandEnvelope> {
@@ -2281,6 +2285,7 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             .entities
             .get_mut(2)
             .unwrap()
+            .seldom
             .discovery
             .set_discovered_by_current_house_for_test(discovered);
         sim.lifecycle_outputs.clear_for_test();
@@ -2289,8 +2294,8 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
             sim.techno_select(
                 1,
                 crate::sim::world::UninitContext::new(&rules).with_effects(
-                    crate::sim::world::FrameEffects::default()
-                        .with_local_planning(&PlanningMode)
+                    &mut crate::sim::world::FrameEffects::default()
+                        .with_local_planning(&mut PlanningMode)
                         .without_selection_voice()
                 ),
             )
@@ -2301,6 +2306,7 @@ fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             })
@@ -2378,9 +2384,9 @@ fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
         "the retired target remains registered until actual destruction"
     );
     let frame = sim.session.binary_frame();
-    let inputs =
+    let mut inputs =
         crate::sim::world::master_frame::FrameInputs::new(&rules, None, 33, Default::default());
-    assert!(sim.commit_frame_tail(inputs, sim.session.tick() + 1));
+    assert!(sim.commit_frame_tail(&mut inputs, sim.session.tick() + 1));
     assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
     assert!(!sim.substrate.entities.contains(3));
     assert!(!sim.planning_has_remaining_nodes(1));

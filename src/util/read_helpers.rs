@@ -16,6 +16,17 @@
 //! - Part of util/ — no dependencies on game modules.
 //! - Any asset parser or decoder may use these.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 /// Read `N` bytes at `offset`, or `None` when the slice ends first.
 fn read_array<const N: usize>(data: &[u8], offset: usize) -> Option<[u8; N]> {
     data.get(offset..)?.first_chunk::<N>().copied()

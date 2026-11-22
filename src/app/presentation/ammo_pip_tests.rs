@@ -113,11 +113,12 @@ fn stock_harrier_ammo_pips_follow_real_strike_return_reload_and_selection() {
             }
             let mission = entity.mission.current().known();
             saw_enter[index] |= saw_spent[index] && mission == Some(MissionType::Enter);
-            let linked = entity.radio_contacts.contains(airfield)
+            let linked = entity.seldom.radio_contacts.contains(airfield)
                 && sim
                     .entities()
                     .get(airfield)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(id);
             let height = crate::sim::movement::air_movement::current_fly_height(

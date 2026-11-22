@@ -30,13 +30,6 @@
 //!   no player sees.
 //! - The vein tag (0x00486920) is not ported: the vein cell has no retail
 //!   user.
-//! - Hover's own tube entry (0x0051503B..0x005152CE: Mark(UP) 0x0051508B, the
-//!   raw receiver 0x005150B9, the exit Cell's centre as head, the path shift)
-//!   is not ported, so an explicit map tube word (direction 8) takes the
-//!   invalid-tube arm. Walk, Drive and Ship enter tubes
-//!   (`Simulation::walk_tube_head`, `Simulation::track_tube_head`). Trigger: a
-//!   Hover route through a map `[Tubes]` tube.
-//!   Frequency: no retail YR map is known to author one.
 //! - Crates (0x00481A00 at 0x005153E9) run through `Simulation::pickup_crate_at`,
 //!   as in Drive; a host called without the OverlayType table answers as a
 //!   cell without a crate.
@@ -218,14 +211,14 @@ impl Simulation {
     /// `0x005152D7..0x0051531E` and its twin `0x0051541F..0x0051546D`: the
     /// Foot's path head (+0x5E0 = -1), the dummy head, `SetDestination(NULL,
     /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
-    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.navigation.path_replay_mut().clear_live_head();
             if let Some(hover) = runtime_mut(entity) {
                 hover.head = None;
             }
         }
-        self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
         self.substrate.hover_halt(id);
     }
 
@@ -299,45 +292,6 @@ impl Simulation {
         }
     }
 
-    /// Hover ILocomotion+9C, `Mark_All_Occupation_Bits` at5171C0: mode0
-    /// asks the existing Head_To projection (514D10), then linked Foot+F4.
-    /// Mode1 does nothing; neither mode changes the retained head. Foot Limbo
-    /// calls this after Stop_Driver (4DB324), and Chrono Warp shares the slot.
-    /// Steam gamemd executable controls:
-    /// tools/spatial_oracle/locomotor_force_track.hover_mark_all.{json,meta.json}.
-    /// Ledger: no RNG draws, timer writes or detaches in this body/Unit744210.
-    pub(crate) fn hover_mark_all_occupation_bits(
-        substrate: &mut ObjectSubstrate,
-        path_grid: &Option<Arc<PathGrid>>,
-        resolved_terrain: &Option<ResolvedTerrainGrid>,
-        id: u64,
-        put: bool,
-        ares: bool,
-    ) {
-        if put {
-            return;
-        }
-        let Some(entity) = substrate.entities.get(id) else {
-            return;
-        };
-        if runtime(entity).is_none() {
-            return;
-        }
-        let coord = super::super::foot_coordinate::head_or_current(
-            super::super::foot_coordinate::stored_head(entity),
-            super::super::foot_coordinate::current_coordinate(entity),
-        );
-        Self::object_raw_receiver_at(
-            substrate,
-            path_grid,
-            resolved_terrain,
-            id,
-            coord,
-            false,
-            ares,
-        );
-    }
-
     /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
     fn hover_foot_speed(&self, id: u64, rules: &RuleSet) -> i32 {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -362,7 +316,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let registry = Some(rules.overlay_registry());
         self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
@@ -378,7 +332,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<HoverProcessOutcome, FrameAdvanceError> {
         let mut out = HoverProcessOutcome::default();
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
@@ -396,7 +350,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let frame = self.session.binary_frame();
         self.hover_speed_update(id, rules, registry, out, effects)?;
@@ -463,7 +417,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<Arrival, FrameAdvanceError> {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.foot_occupation_enabled.resume();
@@ -486,7 +440,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(Arrival::Return);
         };
-        let contact_cell = match entity.radio_contacts.slot(0) {
+        let contact_cell = match entity.seldom.radio_contacts.slot(0) {
             Some(contact) => {
                 let coord = super::super::navcom::nav_target_coordinate(
                     NavTargetRef::Object { id: contact },
@@ -543,11 +497,11 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .is_some_and(|e| e.low_bridge_tube_state.is_some())
+                .is_some_and(|e| e.active_tube().is_some())
             {
                 return Ok(Arrival::Return);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             self.substrate.hover_halt(id);
         } else if code != 0 {
             //514982..5149EA.
@@ -572,7 +526,7 @@ impl Simulation {
         speed: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let frame = self.session.binary_frame();
         let Some(location) = self.hover_location(id) else {
@@ -651,7 +605,7 @@ impl Simulation {
 
     /// Process 0x00514A21..0x00514C12: the altitude controller and the
     /// Shove tail and the water DropAsBomb gate.
-    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         Self::hover_altitude(
             &self.session,
             &mut self.substrate,
@@ -663,7 +617,7 @@ impl Simulation {
     }
 
     /// Original Process suffix514AD0..514C12, after altitude adjustment.
-    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
         //514AD0..514AD5: an object not spinning on entry skips the entire
         // tail, including water admission. Power_Off516BF0 starts the spin.
         let was_spinning = self
@@ -786,7 +740,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let frame = self.session.binary_frame();
         let terrain = self.resolved_terrain.as_ref();
@@ -875,7 +829,7 @@ impl Simulation {
         urgency: u8,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let frame = self.session.binary_frame();
         self.hover_trim_path(id, rules, registry);
@@ -897,7 +851,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         if path_word(entity, 0).is_some() {
@@ -946,7 +900,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -982,7 +936,7 @@ impl Simulation {
         cell: (i32, i32),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(false);
@@ -1021,12 +975,14 @@ impl Simulation {
             location.y.wrapping_sub(destination.y),
             location.z.wrapping_sub(destination.z),
         ) < rules.general.close_enough;
-        if close && entity.radio_contacts.is_empty() && self.track_stop_band(location, destination)
+        if close
+            && entity.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(location, destination)
         {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(true);
         }
         self.scatter_blocked_track_cell(
@@ -1046,7 +1002,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
         //5166BD..5166DD: the zone precheck on the live destination, which the
         //failed search's +500 receiver (Stop_Moving) may have nulled.
@@ -1055,7 +1011,7 @@ impl Simulation {
             .foot_path_zone_precheck(id, destination, rules)
             .map_err(|cause| self.hover_error(id, cause))?
         {
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             return Ok(());
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1072,7 +1028,7 @@ impl Simulation {
             ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1090,7 +1046,7 @@ impl Simulation {
             }
         } else {
             //5167D5..51681B: give up, with the retained scold sound.
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1163,7 +1119,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         out: &mut HoverProcessOutcome,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<u8, FrameAdvanceError> {
         let frame = self.session.binary_frame();
         //514F83..514FCA: the old head's claim goes first.
@@ -1192,10 +1148,16 @@ impl Simulation {
             return Ok(0);
         };
         if direction == crate::util::direction::TUBE_STEP_DIRECTION {
-            //5152D1..51532E: the invalid-tube arm (module residual): the
-            //drop, then one more null destination.
-            self.hover_drop_track(id, rules, effects);
-            self.set_unit_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            if self
+                .enter_walk_or_hover_tube(id, rules, registry, effects)
+                .map_err(|cause| self.hover_error(id, cause))?
+                != crate::sim::movement::tube_movement::TubeEntry::Entered
+            {
+                // 5152D1..51532E: no valid tube. Drop the track, then send
+                // the second null destination through the Foot's class setter.
+                self.hover_drop_track(id, rules, effects);
+                self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            }
             return Ok(7);
         }
         let location = ground_pose::position_world_coord(&entity.position);
@@ -1395,7 +1357,7 @@ impl Simulation {
                     if let Some(entity) = self.substrate.entities.get_mut(id) {
                         hover_stop_moving(entity);
                     }
-                    self.set_unit_null_destination(
+                    self.assign_null_destination(
                         id,
                         rules,
                         Some(rules.overlay_registry()),
@@ -1463,6 +1425,34 @@ enum Arrival {
 mod tests {
     use super::*;
 
+    /// Hover::Path_And_Arrival stops at 51657C and sends NULL at 5166D7 through
+    /// Foot+480. Human Infantry in deploy Doing 27 refuses at 51AA7E.
+    #[test]
+    fn hover_arrival_obeys_the_infantry_destination_receiver() {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let house = sim.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                house, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let destination = crate::sim::components::NavTargetRef::cell(15, 15);
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        let at = ground_pose::position_world_coord(&actor.position);
+        actor.navigation.publish_nav_com(Some(destination));
+        actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+        runtime_mut(actor).unwrap().destination = Some(at);
+        sim.hover_path_and_arrival(id, 0, &rules, Some(&registry), &mut FrameEffects::default())
+            .unwrap();
+        let actor = sim.entities().get(id).unwrap();
+        assert_eq!(actor.navigation.nav_com(), Some(destination));
+        assert!(runtime(actor).unwrap().destination.is_none());
+    }
+
     #[test]
     fn production_hover_spin_exit_water_gate_matches_native() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -1498,7 +1488,7 @@ mod tests {
             hover.shove_steps = input["steps"].as_i64().unwrap_or(2) as i32;
             entity.locomotor = Some(loco);
             sim.substrate.entities.insert(entity);
-            sim.hover_spin_tail(1, &rules, FrameEffects::default());
+            sim.hover_spin_tail(1, &rules, &mut FrameEffects::default());
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
                 entity.was_dropped_as_bomb(),

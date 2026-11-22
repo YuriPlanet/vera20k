@@ -937,10 +937,6 @@ fn infantry_under_span_astar_keeps_ground_hierarchy_gate() {
                     marked_level0: &marked,
                     blocker_neighbor_counts: &counts,
                     level0_route: &[],
-                    progress: &Cell::new(RouteProgress {
-                        index: 0,
-                        cell: (0, 0),
-                    }),
                 }),
                 ..AStarOptions::new(&WalkableEntry::new(&grid))
             },
@@ -1045,6 +1041,39 @@ fn astar_uses_explicit_nonzero_tube_edge() {
         .expect("explicit nonzero tube should bridge blocked intermediate cells");
 
     assert_eq!(path, vec![(0, 0), (4, 0)]);
+}
+
+/// A refused tunnel exit that is the goal ends the path at the entrance,
+/// just as a refused compass candidate does (0x00429F54, 0x0042A17D).
+#[test]
+fn a_refused_tunnel_exit_ends_the_route_at_its_entrance() {
+    let mut cells: Vec<_> = (0..6).map(|x| make_resolved_cell(x, 0)).collect();
+    let (entrance, exit) = ((1, 0), (5, 0));
+    cells[1].tube_index = Some(TubeId(0));
+    let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+        6,
+        1,
+        cells,
+        vec![TubeFact::explicit(entrance, exit, 2, vec![2; 4])],
+    );
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+    let entry = RefusedGoal {
+        goal: exit,
+        passive_unit: false,
+    };
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    let path = astar_search(&grid, (0, 0), MovementLayer::Ground, exit, &options).unwrap();
+    assert_eq!(
+        path.iter().map(|s| (s.rx, s.ry)).collect::<Vec<_>>(),
+        [(0, 0), entrance]
+    );
+    assert!(matches!(
+        astar_search(&grid, entrance, MovementLayer::Ground, exit, &options),
+        Err(PathSearchFailure::CellSearchExhausted)
+    ));
 }
 
 #[test]
@@ -1272,10 +1301,6 @@ fn astar_hierarchy_rejects_unmarked_one_ring_zone_without_blocker_exception() {
                 marked_level0: &marked_zones,
                 blocker_neighbor_counts: &blocker_counts,
                 level0_route: &[],
-                progress: &Cell::new(RouteProgress {
-                    index: 0,
-                    cell: (0, 0),
-                }),
             }),
             ..AStarOptions::new(&WalkableEntry::new(&grid))
         },
@@ -1306,10 +1331,6 @@ fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
                 marked_level0: &marked_zones,
                 blocker_neighbor_counts: &blocker_counts,
                 level0_route: &[],
-                progress: &Cell::new(RouteProgress {
-                    index: 0,
-                    cell: (0, 0),
-                }),
             }),
             ..AStarOptions::new(&WalkableEntry::new(&grid))
         },
@@ -1336,16 +1357,18 @@ fn astar_hierarchy_marker_follows_the_marked_straight_path() {
         (0, 0),
         MovementLayer::Ground,
         (3, 0),
-        Some(HierarchyGate {
-            level0_zones: &level0_zones,
-            marked_level0: &marked_zones,
-            blocker_neighbor_counts: &blocker_counts,
-            level0_route: &[],
-            progress: &Cell::new(RouteProgress {
+        Some((
+            HierarchyGate {
+                level0_zones: &level0_zones,
+                marked_level0: &marked_zones,
+                blocker_neighbor_counts: &blocker_counts,
+                level0_route: &[],
+            },
+            &mut RouteProgress {
                 index: 0,
                 cell: (0, 0),
-            }),
-        }),
+            },
+        )),
         None,
         None,
         MoverSearchFacts {

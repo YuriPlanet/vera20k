@@ -134,6 +134,9 @@ impl FullscreenMovie {
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
     }
+    pub(crate) fn return_to(&self) -> &MovieReturn {
+        &self.return_to
+    }
     pub(crate) fn set_active(&mut self, active: bool) {
         self.playback.set_active(active);
     }

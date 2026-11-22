@@ -19,22 +19,14 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_paint::{self, ModalButton, PaintLabel};
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
-use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::list::list_frame_lines;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::wol_account::{FORM_CANCEL, FORM_OK, WolAccountForm};
-use crate::ui::wol_login::{WolLoginLayout, WolLoginState};
+use crate::ui::wol_login::{PLAY_AS_GUEST, SIGN_IN_AND_PLAY, WolLoginLayout, WolLoginState};
 use crate::util::time::Instant;
 
 /// VERA online's status line and counts, beside the shell's yellow captions.
 const ONLINE_TEXT_RGB: [f32; 3] = [0.80, 0.80, 0.80];
-/// An info panel ([`push_info_panel`]) sits over a page's art, under its
-/// popups.
-const INFO_FILL_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00001;
-const INFO_FRAME_DEPTH: f32 = shell_paint::CHROME_DEPTH - 0.00002;
-/// The panel darkens the art behind it, which still shows through.
-const INFO_FILL_ALPHA: f32 = 0.82;
 
 /// Sprites (skirmish atlas) and texts of `0x10F`'s children; `popup` paints
 /// after everything else.
@@ -76,12 +68,100 @@ pub(crate) fn paint_wol_login_children(
         )
     };
     let label = |key: &str| csf_label(state, key);
+    if let Some(choice) = layout.entry_choice() {
+        let dialog = choice.dialog;
+        // Use Create Room's original Red Alert 2 picture of the Tesla Trooper.
+        // The regular mode-2 picture covers installs without that RA2 art.
+        let background = atlas
+            .ra2_dialog_background
+            .or_else(|| atlas.mode_two_dialog_background(None));
+        if let Some(background) = background {
+            super::chrome::push_entry_fitted(
+                &mut paint.popup,
+                background,
+                dialog,
+                scale,
+                POPUP_DEPTHS.background,
+            );
+        } else {
+            super::chrome::push_solid_rect(
+                &mut paint.popup,
+                atlas,
+                dialog,
+                super::SHELL_MODAL_PANEL_RGB,
+                POPUP_DEPTHS.background,
+            );
+        }
+        let centre = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        let count = state
+            .frontend
+            .login_info
+            .players_online()
+            .map_or_else(|| "—".to_owned(), |count| count.to_string());
+        for (value, rect, size) in [
+            (label("VERA:OnlineWelcome"), choice.heading, 1.4),
+            (
+                crate::i18n::fill(&label("VERA:PlayersOnline"), &[("count", &count)]),
+                choice.players_online,
+                1.25,
+            ),
+        ] {
+            let glyph_scale = scale.factor() * size;
+            let fit = font.fit_line(&value, (rect.w as f32 / glyph_scale).max(1.0) as u32);
+            let shadow = scale.derive_rect(rect, |r| r.translate(1, 1));
+            font.fitted(fit, |font| {
+                for (bounds, rgb, depth) in [
+                    (shadow, [0.0; 3], POPUP_DEPTHS.button),
+                    (rect, SHELL_LABEL_TEXT_RGB, POPUP_DEPTHS.text),
+                ] {
+                    paint.popup_texts.push(shell_text::draw_in_rect_scaled(
+                        font,
+                        &value,
+                        rect_to_text_rect(bounds),
+                        rgb,
+                        centre,
+                        [0.0; 2],
+                        depth,
+                        glyph_scale,
+                    ));
+                }
+            });
+        }
+        for (id, key, rect) in [
+            (PLAY_AS_GUEST, "VERA:PlayAsGuest", choice.guest),
+            (SIGN_IN_AND_PLAY, "VERA:SignInAndPlay", choice.account),
+        ] {
+            let pressed = login.buttons.is_pressed(id);
+            let mut frames = super::type3_button_frames(atlas);
+            if login.buttons.hovered.unwrap_or(login.focused_control) == id {
+                frames.up = atlas.modal_button_mnbttn_frame2.or(frames.up);
+            }
+            if let Some(face) = frames.select(pressed, true) {
+                super::chrome::push_entry(&mut paint.popup, face, rect, POPUP_DEPTHS.button);
+            }
+            let caption = scale.derive_rect(rect, |r| {
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(r, pressed)
+            });
+            let value = label(key);
+            let face_width = (scale.base_rect(caption).w - 12).max(1) as u32;
+            let fit = font.fit_line(&value, face_width);
+            paint.popup_texts.push(font.fitted(fit, |_| {
+                text(
+                    &value,
+                    caption,
+                    centre,
+                    SHELL_LABEL_TEXT_RGB,
+                    POPUP_DEPTHS.text,
+                )
+            }));
+        }
+        return paint;
+    }
     if let (Some(online), Some(form)) = (layout.online, login.form.as_ref()) {
-        // VERA online: the welcome, the sign-in form and the counts, straight
-        // over the art.
+        // The chosen route, its fields and the lobby activity over the login art.
         let centred = ShellAlign::H_CENTER;
         paint.texts.push(text(
-            &label("VERA:OnlineWelcome"),
+            &label("VERA:SignInAndPlay"),
             online.heading,
             centred,
             SHELL_LABEL_TEXT_RGB,
@@ -285,43 +365,6 @@ pub(crate) fn paint_wol_login_children(
         }
     }
     paint
-}
-
-/// A panel's darkened backing and a list's two frame rings around it.
-pub(super) fn push_info_panel(
-    out: &mut Vec<SpriteInstance>,
-    atlas: &SkirmishShellChromeAtlas,
-    panel: RectPx,
-) {
-    let Some(pixel) = atlas.white_pixel else {
-        return;
-    };
-    let mut push = |rect: RectPx, tint: [f32; 3], alpha: f32, depth: f32| {
-        out.push(SpriteInstance {
-            position: [rect.x as f32, rect.y as f32],
-            size: [rect.w as f32, rect.h as f32],
-            uv_origin: pixel.uv_origin,
-            uv_size: pixel.uv_size,
-            depth,
-            tint,
-            alpha,
-            ..Default::default()
-        });
-    };
-    push(
-        RectPx::new(panel.x + 1, panel.y + 1, panel.w - 2, panel.h - 2),
-        super::SHELL_MODAL_PANEL_RGB,
-        INFO_FILL_ALPHA,
-        INFO_FILL_DEPTH,
-    );
-    for (rect, tone) in list_frame_lines(panel) {
-        push(
-            rect,
-            tone.rgb().map(|channel| f32::from(channel) / 255.0),
-            1.0,
-            INFO_FRAME_DEPTH,
-        );
-    }
 }
 
 /// VERA online's popups on Red Alert 2's box art, as the online Create Game

@@ -39,7 +39,10 @@
 
 // The module stays compiled on every host so its gestures keep their tests
 // there; only the call site is Windows-bound.
-#![cfg_attr(target_os = "linux", allow(dead_code))]
+#![cfg_attr(
+    target_os = "linux",
+    expect(dead_code, reason = "only the Windows input path calls it")
+)]
 
 use crate::util::time::{Duration, Instant};
 

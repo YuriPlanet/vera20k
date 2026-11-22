@@ -54,7 +54,7 @@ use crate::util::native_x87::{
 /// The fire state of an occupied building attacker
 /// ([`super::combat_weapon::is_occupied`]), read in Phase 1. Its weapon is
 /// GetWeapon's, read live ([`super::combat_weapon::get_weapon`]).
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(crate) struct GarrisonSnapshot {
     /// `+0x69C`, the firing occupant's index: the shot's muzzle port.
     pub fire_index: i32,
@@ -64,7 +64,7 @@ pub(crate) struct GarrisonSnapshot {
 
 /// Snapshot of an attacker's state for target scanning.
 /// Extracted to avoid borrow conflicts during entity iteration.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(crate) struct AttackerSnapshot {
     pub stable_id: u64,
     pub owner: InternedId,
@@ -308,7 +308,7 @@ pub(crate) fn should_retaliate(
         return false;
     }
     if !victim_type.can_retaliate
-        || victim.slave.owner().is_some()
+        || victim.seldom.slave.owner().is_some()
         || victim.slave_manager.is_some()
     {
         return false;

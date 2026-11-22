@@ -204,6 +204,18 @@ fn setup_values(setup: &SkirmishSavedSetup) -> Vec<(String, String)> {
         ("BuildOffAlly", yes_no(setup.build_off_ally).to_owned()),
         ("MCVRepacks", yes_no(setup.mcv_redeploy).to_owned()),
         ("CratesAppear", yes_no(setup.crates).to_owned()),
+        // VERA's Game Options, under the keys the room's options use.
+        ("TechLevel", setup.session.tech_level.to_string()),
+        ("Bases", yes_no(setup.session.bases).to_owned()),
+        ("FogOfWar", yes_no(setup.session.fog_of_war).to_owned()),
+        (
+            "MultiEngineer",
+            yes_no(setup.session.multi_engineer).to_owned(),
+        ),
+        (
+            "HarvesterTruce",
+            yes_no(setup.session.harvester_truce).to_owned(),
+        ),
     ] {
         values.push((key.to_owned(), value));
     }
@@ -230,6 +242,7 @@ fn read_setup(section: &IniSection) -> Option<SkirmishSavedSetup> {
     // Load checks every value against the page; a missing key reads as the
     // stock option.
     let stock = SkirmishLaunchOptions::default();
+    let session = crate::ui::skirmish_shell::skirmish_session_options(&stock);
     Some(SkirmishSavedSetup {
         player,
         computers,
@@ -241,6 +254,13 @@ fn read_setup(section: &IniSection) -> Option<SkirmishSavedSetup> {
         build_off_ally: section.read_bool("BuildOffAlly", stock.build_off_ally),
         mcv_redeploy: section.read_bool("MCVRepacks", stock.mcv_redeploy),
         crates: section.read_bool("CratesAppear", stock.crates),
+        session: crate::skirmish_launch::SessionOptions {
+            tech_level: section.read_int("TechLevel", session.tech_level),
+            bases: section.read_bool("Bases", session.bases),
+            fog_of_war: section.read_bool("FogOfWar", session.fog_of_war),
+            multi_engineer: section.read_bool("MultiEngineer", session.multi_engineer),
+            harvester_truce: section.read_bool("HarvesterTruce", session.harvester_truce),
+        },
     })
 }
 
@@ -311,6 +331,7 @@ mod tests {
                 build_off_ally: false,
                 crates: true,
                 mcv_redeploy: false,
+                session: Default::default(),
             },
         };
         let first = named("Rush [2v2]; 東", 5);
@@ -373,6 +394,13 @@ mod tests {
                 build_off_ally: true,
                 crates: false,
                 mcv_redeploy: true,
+                session: crate::skirmish_launch::SessionOptions {
+                    tech_level: 4,
+                    bases: false,
+                    fog_of_war: true,
+                    multi_engineer: false,
+                    harvester_truce: true,
+                },
             },
         };
         // Older files name maps this way; a semicolon would end the line.

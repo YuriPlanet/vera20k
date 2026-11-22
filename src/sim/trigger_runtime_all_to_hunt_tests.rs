@@ -141,7 +141,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
         let rng = &native["rng_full_seed31"];
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng["scenario"].as_str().unwrap());
-        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap()).into();
+        sim.main_rng = SimRng::from_native_state_hex_for_test(rng["main"].as_str().unwrap());
         sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng["mapgen"].as_str().unwrap());
         let action = sim.trigger_runtime.definitions.trigger_types[typ].actions[0].clone();
         let actual = sim.apply_live_trigger_action(
@@ -158,7 +158,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(actual, int(&control["result"]) != 0, "{input}");
         for (slot, house) in houses.iter().enumerate() {
@@ -372,7 +372,7 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
             let id = sim
                 .spawn_object("YTNK", "YuriCountry", x, y, 0, &rules)
                 .unwrap();
-            assert!(sim.team_add_member(team, id, false, &rules, FrameEffects::default()));
+            assert!(sim.team_add_member(team, id, false, &rules, &mut FrameEffects::default()));
             id
         })
         .collect();
@@ -416,12 +416,12 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
         &mut Vec::new(),
         &rules,
         None,
-        FrameEffects::default()
+        &mut FrameEffects::default()
     ));
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.advance_triggers(&rules, None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, &mut FrameEffects::default());
         for &id in &actors {
             assert_eq!(
                 sim.team_script_vm.team_for_member(id).is_none(),
@@ -468,7 +468,11 @@ fn all06_elapsed_enable_chain(with_enemy: bool) {
     for frame in 4051..4091 {
         sim.session.set_binary_frame_for_test(frame);
         for &id in &actors {
-            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                id,
+                Some(&rules),
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            );
         }
         if completed(&sim) {
             break;

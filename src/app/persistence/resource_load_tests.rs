@@ -206,14 +206,10 @@ fn bound_saved_world(
     let overlay_registry = rules.overlay_registry();
     let mut simulation = super::super::tests::load_fixture_simulation(false);
     let terrain = {
-        let main_rng = simulation.main_rng().draws();
+        let (mut fill_rng, main_rng) = simulation.terrain_load_draws();
         let mut main_draw = || main_rng.next_u32();
         let mut selector = cache.begin_load(&mut main_draw);
-        let mut fill_draw = |min, max| {
-            simulation
-                .scenario_rng_mut_for_test()
-                .next_range_u32_inclusive(min, max)
-        };
+        let mut fill_draw = |min, max| fill_rng.next_range_u32_inclusive(min, max);
         ResolvedTerrainGrid::build_with_variant_selector(
             &map,
             Some(&theater),
@@ -1849,7 +1845,7 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         .simulation
         .initialize_random_number_system(0xA123_4567);
     for _ in 0..7 {
-        outgoing.simulation.main_rng().next_u32();
+        outgoing.simulation.main_rng_mut_for_test().next_u32();
     }
     for _ in 0..11 {
         outgoing.simulation.mapgen_rng_mut_for_test().next_u32();

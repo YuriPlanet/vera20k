@@ -33,7 +33,7 @@ fn hunting_tank_scene(rules: &RuleSet) -> (Simulation, u64) {
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     )
     .unwrap();
-    sim.refresh_object_sight(hunter, rules, 0, FrameEffects::default());
+    sim.refresh_object_sight(hunter, rules, 0, &mut FrameEffects::default());
     (sim, hunter)
 }
 
@@ -43,7 +43,7 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<Tar
         sim,
         hunter,
         rules,
-        ObjectAiCtx::default(),
+        &mut ObjectAiCtx::default(),
     )
     .unwrap();
     let actor = sim.substrate.entities.get(hunter).unwrap();

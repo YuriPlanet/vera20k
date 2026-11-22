@@ -107,10 +107,10 @@ fn unpanic_uses_the_type_gate_and_preserves_stance_and_clocks() {
         let leaf = entity.mission_leaf;
         let rng = sim.rng_state();
 
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(panic_fear);
         assert_eq!(sim.entities().get(actor).unwrap().infantry, Some(expected));
-        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
         expected.set_fear_level_for_test(unpanic_fear);
         let entity = sim.entities().get(actor).unwrap();
         assert_eq!(entity.infantry, Some(expected), "{patch}");

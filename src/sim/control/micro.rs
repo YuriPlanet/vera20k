@@ -137,7 +137,7 @@ impl MicroTable {
                 {
                     Some(FallbackReason::Gone)
                 } else if entry.passenger_role().inside_transport().is_some()
-                    || entry.mind_control.controller().is_some()
+                    || entry.seldom.mind_control.controller().is_some()
                 {
                     Some(FallbackReason::Gone)
                 } else if sim.team_script_vm().team_for_member(entity).is_some_and(

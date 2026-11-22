@@ -87,7 +87,7 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
                 &mut Vec::new(),
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert!(returned, "{map_name}: 6E2513 returns true");

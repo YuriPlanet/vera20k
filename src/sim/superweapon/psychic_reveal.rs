@@ -173,9 +173,11 @@ pub(super) fn ares_launch(
                 && sim.session.rule_policy().ares_psychic_reveal_exclusions()
         })
         .map(|(w, h)| [(7, w + 5), (13, w + 11), (h + 13, w + h - 15)]);
-    let context = crate::sim::world::UninitContext::new(rules);
+    let mut context = crate::sim::world::UninitContext::new(rules);
     for final_pass in [false, true] {
-        let reveal = |sim: &mut Simulation, cell: (u16, u16)| {
+        let reveal = |sim: &mut Simulation,
+                      cell: (u16, u16),
+                      context: &mut crate::sim::world::UninitContext<'_>| {
             let (x, y) = (i32::from(cell.0), i32::from(cell.1));
             if size.is_some_and(|(w, h)| {
                 !crate::map::playfield::size_diamond_contains(w, h, (cell.0 as i16, cell.1 as i16))
@@ -190,14 +192,14 @@ pub(super) fn ares_launch(
                     final_pass,
                     vision::MapRevealProjection::Transient,
                     notify,
-                    context,
+                    context.reborrow(),
                 );
             }
         };
         if width < 0.0 {
             // 10075024..100750CB uses the shared Reset/Next allocated-cell
             // cursor, so discoveries may affect its next step.
-            sim.for_each_allocated_map_cell(context, reveal);
+            sim.for_each_allocated_map_cell(&mut context, reveal);
         } else {
             let (cx, cy) = (i32::from(center.0), i32::from(center.1));
             // 10074E40: a positive truncated width and height form a
@@ -235,7 +237,7 @@ pub(super) fn ares_launch(
                     let dx = f64::from(i32::from(x) - cx);
                     let dy = f64::from(i32::from(y) - cy);
                     if height > 0 || dx * dx + dy * dy < radius_sq {
-                        reveal(sim, (x as u16, y as u16));
+                        reveal(sim, (x as u16, y as u16), &mut context);
                     }
                 }
             }

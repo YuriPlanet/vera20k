@@ -67,6 +67,7 @@ pub fn discover(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("discovered object")
+        .seldom
         .discovery
         .set_discovered_by_current_house_for_test(true);
 }
@@ -80,6 +81,7 @@ pub fn own(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("owned object")
+        .seldom
         .discovery
         .set_owned_by_current_house_for_test(true);
 }
@@ -498,6 +500,8 @@ pub fn retail_harrier_dock_scene_on_map(
 /// Explicit status-consumer ammo prior. Construction, pending release/debit
 /// and rearm use their existing owner methods. These bounded transitions do
 /// not substitute for the physical Attack/return/dock production fixture.
+/// A "reloading" stage starts the reload clock at frame 0 once the count is
+/// installed (`GameEntity::start_reloading_ammo`).
 /// Returns (initialized Ammo, current Ammo, pending release).
 pub fn install_status_ammo_state(
     entity: &mut crate::sim::game_entity::GameEntity,
@@ -509,7 +513,7 @@ pub fn install_status_ammo_state(
     let ammo = entity.ammo_mut().expect("Foot ammo initialization");
     let initialized = ammo.current();
     match stage {
-        "full" => {}
+        "full" | "reloading" => {}
         "depleted" | "rearmed" => {
             ammo.begin_release();
             ammo.consume_release(false);
@@ -522,7 +526,11 @@ pub fn install_status_ammo_state(
     if let Some(current) = current {
         ammo.set_current_for_test(current);
     }
-    (initialized, ammo.current(), ammo.release_pending())
+    let installed = (initialized, ammo.current(), ammo.release_pending());
+    if stage == "reloading" {
+        entity.start_reloading_ammo(object, 0);
+    }
+    installed
 }
 /// Explicit DrawExtras consumer prior; repair lifecycle tests use ToggleRepair.
 pub fn install_status_repair(entity: &mut crate::sim::game_entity::GameEntity, repairing: bool) {

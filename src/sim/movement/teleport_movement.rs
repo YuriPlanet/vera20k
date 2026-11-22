@@ -574,7 +574,7 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         is_harvester: bool,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
         use crate::map::entities::EntityCategory;
         use crate::map::resolved_terrain::NativeCellQuery;
@@ -1266,7 +1266,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1322,7 +1322,7 @@ impl crate::sim::world::Simulation {
                     id,
                     rules,
                     Some(rules.overlay_registry()),
-                    ctx.effects,
+                    &mut ctx.effects,
                 );
             }
         }
@@ -1350,7 +1350,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        ctx: crate::sim::world::ObjectAiCtx<'_>,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
     ) -> Option<SpecialMovementOutcome> {
         let phase = self
             .substrate
@@ -1537,7 +1537,7 @@ mod tests {
             assert!(!sim.temporal_ai_prologue(
                 1,
                 &rules,
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
                 &mut bridge_changed,
             ));
             let actor = sim.substrate.entities.get(1).unwrap();
@@ -1587,7 +1587,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         let owner = sim.substrate.entities.get_mut(1).unwrap();
         assert!(owner.is_warping_in());
@@ -1656,7 +1656,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
 
         let entity = sim.substrate.entities.get(1).expect("should exist");
@@ -1700,7 +1700,7 @@ mod tests {
         sim.process_teleport(
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         let ts = sim
             .substrate

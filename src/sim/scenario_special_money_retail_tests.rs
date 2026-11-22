@@ -122,7 +122,7 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
                 &commands,
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary bound-resource command frame");
         effects.extend(frame.sound_events);

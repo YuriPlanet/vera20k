@@ -105,6 +105,18 @@
 //!   it needs can still be refused by `CanBuild`, and the recovery chain in
 //!   [`expand`] cannot run without a factory to buy it from.
 
+//! One place for the auto play brain's diagnostics, so the files that merely
+//! read a switch do not each carry a platform read of their own.
+
+/// Whether `name` is set to anything at all: the trace switches are read as
+/// `AUTOPLAY_TRACE_PUSH=1`, `AUTOPLAY_TRACE_BUILD=1` and so on, and the
+/// environment they read is the one the run was launched with. Off when the
+/// variable is absent.
+pub(crate) fn trace_enabled(name: &str) -> bool {
+    std::env::var(name).is_ok()
+}
+
+
 pub(super) mod advance;
 pub(super) mod army;
 pub(super) mod avoidance;

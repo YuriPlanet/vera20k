@@ -24,7 +24,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, entry: crate::map::actions::Action
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -731,7 +731,7 @@ fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
         .lighting_mut()
         .set_transition_timer_for_test(CdTimer::started(12, 8));
     sim.session.set_binary_frame_for_test(20);
-    sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(&overlays), &mut FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace

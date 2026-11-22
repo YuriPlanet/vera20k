@@ -200,7 +200,7 @@ fn fixture_with_art(input: &Value, art: &IniFile) -> (Simulation, RuleSet) {
         .veterancy
         .set_rank_for_test((input["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
     if input["flag_3d4"].as_bool().unwrap_or(false) {
-        owner.mission_only.mark();
+        owner.seldom.mission_only.mark();
     }
     if input["carryall_target"].as_bool().unwrap_or(false) {
         owner
@@ -733,7 +733,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
             &mut sim,
             &rules,
             carrier,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     let target = Some(NavTargetRef::cell(59, 64));
@@ -780,7 +780,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     let retained = sim.substrate.entities.get(ship).unwrap();
     assert!(retained.sinking.is_active());
     assert_eq!(retained.health.current(), 1);
@@ -799,7 +799,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
     );
     assert_eq!(sim.scenario_rng.logical_state(), before, "no ring search");
 
-    crate::sim::aircraft::dispatch_mission(&mut sim, hornet, &rules, ObjectAiCtx::default());
+    crate::sim::aircraft::dispatch_mission(&mut sim, hornet, &rules, &mut ObjectAiCtx::default());
     let actor = sim.substrate.entities.get(hornet).unwrap();
     assert_eq!(
         actor.mission.current().known(),

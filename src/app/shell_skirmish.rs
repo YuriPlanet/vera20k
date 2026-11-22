@@ -380,6 +380,7 @@ impl App {
             Vec::new()
         };
         let dialog_background = state.frontend.shell_dialog_background.clone();
+        let started = crate::util::time::Instant::now();
         state.frontend.skirmish_shell_chrome =
             crate::render::skirmish_shell_chrome::build_skirmish_shell_chrome_atlas(
                 &state.renderer.gpu,
@@ -392,6 +393,14 @@ impl App {
                     .map(|(image, palette)| (image.as_str(), palette.as_str())),
             );
         let ready = state.frontend.skirmish_shell_chrome.is_some();
+        if ready {
+            // The pack above logged the atlas size; this is the whole build,
+            // the decoding of its SHPs included.
+            log::info!(
+                "Skirmish shell chrome built in {:.0} ms",
+                started.elapsed().as_secs_f64() * 1e3
+            );
+        }
         if !ready {
             log::warn!(
                 "Could not prepare Skirmish shell chrome from the registered retail archives"
@@ -444,6 +453,8 @@ impl App {
             superweapon_limit: profile.superweapon_limit,
             terrain_deformation: profile.terrain_deformation,
             skirmish_cheats: profile.skirmish_cheats,
+            session: state.frontend.skirmish_shell_state.session,
+            short_game: state.frontend.skirmish_shell_state.short_game,
         };
         state.frontend.skirmish_shell_state.game_options = Some(GameOptionsBox::new(rules));
         state.platform.window.request_redraw();
@@ -452,10 +463,15 @@ impl App {
     /// OK, Enter or Esc on the Game Options box: it closes, and the next
     /// game's rules and VERA.INI take what it shows.
     pub(super) fn close_skirmish_game_options(state: &mut AppState) {
-        let Some(open) = state.frontend.skirmish_shell_state.game_options.take() else {
+        let shell = &mut state.frontend.skirmish_shell_state;
+        let Some(open) = shell.game_options.take() else {
             return;
         };
         let rules = open.rules;
+        // The page keeps the session options with its own, and the Short
+        // Game unticking Bases may have unticked.
+        shell.session = rules.session;
+        shell.short_game = rules.short_game;
         let profile = &mut state.persistence.options_profile;
         let shared_rules_changed = (profile.superweapon_limit, profile.terrain_deformation)
             != (rules.superweapon_limit, rules.terrain_deformation);
@@ -1760,6 +1776,7 @@ impl App {
                 y,
             );
             Self::drain_skirmish_shell_ui_sounds(state);
+            Self::run_skirmish_menu_pick(state);
             return;
         }
         if crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview) {
@@ -2055,7 +2072,7 @@ mod tests {
             crate::rules::ini_parser::IniFile::from_str(&format!("[Basic]\nName={file_name}\n"));
         crate::map::skirmish_scenarios::SkirmishScenarioRecord::concrete_from_ini(
             0,
-            crate::map::skirmish_scenarios::SkirmishScenarioSource::LooseYrm(file_name.to_string()),
+            crate::map::skirmish_scenarios::SkirmishScenarioSource::LooseMap(file_name.to_string()),
             file_name,
             &ini,
         )

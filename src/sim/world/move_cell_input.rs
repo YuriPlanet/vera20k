@@ -44,6 +44,8 @@ pub enum MoveAction {
     /// ClickedMission Harvest with the Cell as Destination and no Target
     /// (`0x004D7E8E`), before the MoveFlash and the Cell resolver.
     Harvest,
+    /// Action 0x23: enter the tunnel from its clicked mouth.
+    EnterTunnel,
 }
 
 impl MoveAction {
@@ -53,6 +55,7 @@ impl MoveAction {
             Self::Move => 1,
             Self::NoMove => 2,
             Self::Harvest => 6,
+            Self::EnterTunnel => 0x23,
         }
     }
 }
@@ -116,10 +119,7 @@ impl Simulation {
     ///
     /// Not modelled, each answering another action where native reaches it:
     /// the attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
-    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
-    /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
-    /// soldier over a tube's neighbourhood, which answers 0
-    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and
+    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); the fogged-object scans; and
     /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
     /// The harvest rungs' FogOfWar scan (`0x0074052A..0x0074056C`) needs a fog
     /// record of WhatAmI 0x14 (Overlay), which only FoggedObjectClass's overlay
@@ -212,13 +212,28 @@ impl Simulation {
             EntityCategory::Unit if action == MoveAction::Move => {
                 if !shrouded && unit_harvests_land(object, cells.land_type(cells.lookup(clicked))) {
                     action = MoveAction::Harvest;
+                } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                    // Unit 7406CF and Infantry 51F9AC: IsTubeCell, then
+                    // AllowsTubeEntry (484F10), which always returns true.
+                    action = MoveAction::EnterTunnel;
                 } else if entity.is_deployed() {
                     action = MoveAction::None;
                 }
             }
             EntityCategory::Infantry => {
-                if action == MoveAction::Move && object.deployer && entity.infantry_deploy_doing() {
-                    action = MoveAction::NoMove;
+                if object.jumpjet && matches!(action, MoveAction::Move | MoveAction::NoMove) {
+                    let cell = cells.lookup(clicked);
+                    if cells.is_near_tube_northwest(cell) || cells.is_at_tube_entrance(cell) {
+                        // InfantryClass::What_Action_OnCell 0x0051F860..0x0051F8A6.
+                        action = MoveAction::None;
+                    }
+                }
+                if action == MoveAction::Move {
+                    if object.deployer && entity.infantry_deploy_doing() {
+                        action = MoveAction::NoMove;
+                    } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                        action = MoveAction::EnterTunnel;
+                    }
                 }
                 if action == MoveAction::None && !object.jumpjet && controllable {
                     action = MoveAction::NoMove;
@@ -657,6 +672,7 @@ impl Simulation {
                     .get(target_id)
                     .is_some_and(|target| {
                         target
+                            .seldom
                             .disguise
                             .as_ref()
                             .is_some_and(|disguise| disguise.is_disguised())
@@ -789,6 +805,30 @@ impl Simulation {
             .ok_or("Cell click receiver disappeared")?;
         let refused = match action {
             MoveAction::None | MoveAction::Harvest => true,
+            MoveAction::EnterTunnel => {
+                // FootClass::ClickedAction_Cell 0x004D81A9..0x004D8231:
+                // follow both tube records. Issue Move one cell out from the
+                // far mouth, facing away from its own entry direction.
+                let Some(terrain) = self.resolved_terrain.as_ref() else {
+                    return Ok(None);
+                };
+                let cells = NativeCellQuery::isolated(terrain);
+                let Some(tube) = terrain
+                    .tube_for_native_cell(cells.lookup((clicked.0 as i16, clicked.1 as i16)))
+                else {
+                    return Ok(None);
+                };
+                let exit = cells.lookup((tube.exit.0 as i16, tube.exit.1 as i16));
+                let Some(reverse) = terrain.tube_for_native_cell(exit) else {
+                    return Ok(None);
+                };
+                let direction = (reverse.direction.wrapping_sub(4) & 7) as usize;
+                let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
+                return Ok(Some((
+                    tube.exit.0.wrapping_add_signed(dx as i16),
+                    tube.exit.1.wrapping_add_signed(dy as i16),
+                )));
+            }
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Unit => entity.is_fully_deployed(),
                 EntityCategory::Infantry => entity.infantry_deploy_doing(),
@@ -1022,6 +1062,7 @@ impl Simulation {
     fn worn_as_terrain(&self, viewer: InternedId, target: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(target).is_some_and(|target| {
             target
+                .seldom
                 .disguise
                 .as_ref()
                 .filter(|disguise| disguise.is_disguised())
@@ -1130,7 +1171,6 @@ impl Simulation {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn object_move_click_with(
         &self,
         control: &ControlProjection<'_>,
@@ -1155,8 +1195,8 @@ impl Simulation {
             .ok_or("Move click receiver lacks its type")?;
         let action = self.foot_object_class_action_with(control, viewer, id, target, action, rules);
         let refused = match action {
-            // Harvest is a Cell answer only.
-            MoveAction::None | MoveAction::Harvest => true,
+            // Both are Cell answers only.
+            MoveAction::None | MoveAction::Harvest | MoveAction::EnterTunnel => true,
             MoveAction::NoMove => match entity.category() {
                 EntityCategory::Aircraft => true,
                 EntityCategory::Unit => target == id,
@@ -1269,7 +1309,7 @@ impl Simulation {
             coordinate: self.foot_navigation_coordinate(id)?,
             marked: entity.lifecycle.cell_marked(),
             on_bridge: entity.on_bridge(),
-            in_tube: entity.low_bridge_tube_state.is_some(),
+            in_tube: entity.active_tube().is_some(),
             special_type: object.movement_zone == MovementZone::Subterranean
                 || entity.category() == EntityCategory::Aircraft
                 || (entity.category() == EntityCategory::Infantry && object.jumpjet),

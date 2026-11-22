@@ -27,7 +27,7 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         move_mission::move_visit(
             state,
@@ -35,7 +35,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                effects,
+                effects: effects.reborrow(),
             },
         )
     }
@@ -48,7 +48,7 @@ impl Simulation {
         id: u64,
         state: u8,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         crate::sim::aircraft::carryall::move_visit(
             state,
@@ -56,7 +56,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                effects,
+                effects: effects.reborrow(),
             },
         )
     }
@@ -209,7 +209,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -217,7 +217,7 @@ impl move_mission::MoveHost for WorldMove<'_> {
             .sim
             .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
         self.sim
-            .assign_aircraft_destination(self.id, cell, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, cell, self.rules, &mut self.effects);
     }
 
     fn move_to_nav_com(&mut self) {
@@ -270,7 +270,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        enter_idle_mode_for(self.sim, self.id, self.rules, self.effects);
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
     }
 
     fn tote_target(&mut self) -> Option<u64> {
@@ -282,14 +282,20 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             .substrate
             .entities
             .get(self.id)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
     }
 
     fn transmit_to_contact(
         &mut self,
         message: crate::sim::radio::RadioMessage,
     ) -> crate::sim::radio::RadioResponse {
-        crate::sim::radio::transmit_to_contact(self.sim, self.id, message, self.rules, self.effects)
+        crate::sim::radio::transmit_to_contact(
+            self.sim,
+            self.id,
+            message,
+            self.rules,
+            &mut self.effects,
+        )
     }
 
     fn transmit(
@@ -304,13 +310,13 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             message,
             crate::sim::radio::RadioPayload::default(),
             self.rules,
-            self.effects,
+            &mut self.effects,
         )
     }
 
     fn clear_destination(&mut self) {
         self.sim
-            .assign_aircraft_destination(self.id, None, self.rules, self.effects);
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
     }
 
     fn assign_attack_cell(&mut self) {
@@ -322,7 +328,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
             self.sim
-                .team_assign_mission_target(team, target, self.rules, self.effects);
+                .team_assign_mission_target(team, target, self.rules, &mut self.effects);
         }
     }
 
@@ -395,14 +401,14 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
                 self.id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.effects,
+                &mut self.effects,
             );
         } else {
             self.sim.foot_mark_remove(
                 self.id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.effects,
+                &mut self.effects,
             );
         }
     }
@@ -412,7 +418,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
             self.id,
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.effects,
+            &mut self.effects,
         );
     }
 
@@ -439,7 +445,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
 
     fn pick_up(&mut self, unit: u64) {
         self.sim
-            .carryall_pick_up(self.id, unit, self.rules, self.effects);
+            .carryall_pick_up(self.id, unit, self.rules, &mut self.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

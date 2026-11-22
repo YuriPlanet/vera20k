@@ -14,6 +14,12 @@ use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
+/// VERA's bound on `ParticleCap=` (only its upper end: a negative cap keeps
+/// its native meaning). A Spark system births a burst of up to the cap in one
+/// frame, one particle at a time, so a value near `i32::MAX` freezes the
+/// match or exhausts memory the first time it sparks; retail caps at 20.
+const PARTICLE_CAP_LIMIT: i32 = 1024;
+
 /// Railgun doubles written by `ParticleSystemTypeClass::Constructor @
 /// 0x006440A0` (`0x0064410E..0x0064414F`): `ParticlesPerCoord` 0.1,
 /// `SpiralDeltaPerCoord` 0.025 and `SpiralRadius` 25.0. The three
@@ -94,7 +100,8 @@ pub struct ParticleSystemType {
     /// Rate at which smoke particles decelerate (default 0.0).
     pub slowdown: NativeF32Bits,
     /// Spark burst size and light divisor (default 50). Signed as stored:
-    /// ReadINI keeps whatever `ReadInteger` returns.
+    /// ReadINI keeps whatever `ReadInteger` returns, up to
+    /// [`PARTICLE_CAP_LIMIT`].
     pub particle_cap: i32,
     /// Random radius for spawn position offset.
     pub spawn_radius: i32,
@@ -181,7 +188,7 @@ impl ParticleSystemType {
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
             slowdown: section.read_double_to_float("Slowdown", NativeF32Bits::POSITIVE_ZERO),
-            particle_cap: section.read_int("ParticleCap", 50),
+            particle_cap: section.read_int("ParticleCap", 50).min(PARTICLE_CAP_LIMIT),
             spawn_radius: section.read_int("SpawnRadius", 0),
             spawn_cutoff: section.read_double_to_float("SpawnCutoff", NativeF32Bits::POSITIVE_ZERO),
             spawn_translucency_cutoff: section
@@ -239,6 +246,13 @@ mod tests {
             [0.5, -1.25, 3.0]
         );
         assert_eq!(pst.particle_cap, -4);
+    }
+
+    #[test]
+    fn a_huge_particle_cap_stops_at_the_cap_bound() {
+        let ini = IniFile::from_str("[Foo]\nParticleCap=2147483647\n");
+        let pst = ParticleSystemType::from_ini_section("Foo", ini.section("Foo").unwrap());
+        assert_eq!(pst.particle_cap, PARTICLE_CAP_LIMIT);
     }
 
     #[test]

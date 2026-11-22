@@ -1,7 +1,7 @@
 //! Production replay must submit before Metal's native command-buffer pool
 //! fills, including when ordinary Unit/SHP draws fence every Bullet span.
 use super::super::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_object_instances,
 };
 use super::*;
 use crate::render::batch::InstanceBufferPool;
@@ -93,7 +93,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
                     instance.zshape_origin = [1., 2.];
                 }
                 let id = (round * 4 + piece) as u64;
-                parents.push(PlannedObjectInstance::object(
+                parents.push(OwnedPlannedObject::object(
                     ObjectDraw {
                         id,
                         layer: TacticalLayer(3),
@@ -108,7 +108,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
                 ));
             }
         }
-        let layers = lower_object_instances(parents);
+        let layers = lower_object_instances(parents.into());
         let layer = &layers[3];
         assert_eq!(layer.runs.len(), ROUNDS * 4);
         let mut pool = InstanceBufferPool::new();

@@ -183,6 +183,31 @@ mod tests {
         assert_eq!(localized(&unknown), None, "the lobby's own text stands");
     }
 
+    /// A room's line naming what only one game changes, as `service.js`
+    /// sends it, reads as the lobby's English, its files counted.
+    #[test]
+    fn a_rules_line_naming_changes_reads_as_the_lobby_wrote_it_in_english() {
+        let line: Vec<Phrase> = serde_json::from_str(
+            r#"[{"key":"RulesDifferFromHost","values":{"name":"Guest"}},
+               {"key":"OnlyHas","values":{"name":"Guest","changes":{"and":[
+                {"key":"ChangeAresOn"},
+                {"key":"ChangeFiles","values":{"count":9,"files":{"unit":[
+                 "expandmd10.mix","rulesmd.ini",{"key":"MoreFiles","values":{"count":7}}]}}}]}}},
+               {"key":"OnlyHostHas","values":{"changes":{"and":[
+                {"key":"ChangeFiles","values":{"count":1,"files":{"unit":["artmd.ini"]}}}]}}},
+               {"key":"SameRulesToStart"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            localized(&line).as_deref(),
+            Some(
+                "Guest has other rules than the host. Only Guest has Ares set to On in Options \
+                 and the changed files expandmd10.mix, rulesmd.ini, 7 more. Only the host has \
+                 the changed file artmd.ini. Everyone needs the same rules to start."
+            )
+        );
+    }
+
     /// A ranked result, as `service.js` sends it, names its badge with the
     /// player list's badge names and reads as the lobby's English.
     #[test]

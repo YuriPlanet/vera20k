@@ -47,7 +47,7 @@ pub(super) fn launch(
     owner: InternedId,
     sw_type: InternedId,
     (rx, ry): (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     // This case plays no positional cue: the target cell's centre, with no
     // Map lookup (a lookup off the map would stamp the shared Dummy).
@@ -108,14 +108,14 @@ pub(super) fn ares_launch(
     sw_type: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     cell: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if !super::is_charged(sim, owner, sw_type) {
         return;
     }
     let Some(spy_plane) = rules
         .super_weapon_metadata(&sw.id)
-        .map(|metadata| metadata.launch().spy_plane().clone())
+        .map(|metadata| metadata.launch().spy_plane())
     else {
         return;
     };

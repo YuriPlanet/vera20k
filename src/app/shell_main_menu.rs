@@ -116,6 +116,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // opened its files with. Options' accept writes it out.
         self.persistence.options_profile.ares = setting;
     }
+    fn store_graphics_api(&mut self, api: crate::ui::main_menu_dialogs::options::GraphicsApi) {
+        // Read at the next start (`startup_backend`): this launch keeps the
+        // API it draws through. Options' accept writes it out.
+        self.persistence.options_profile.graphics_api = api;
+    }
     fn store_color_vision(&mut self, mode: crate::ui::main_menu_dialogs::options::ColorVisionMode) {
         // The final-frame pass reads the profile every frame, so the very next
         // frame is corrected; no atlas or ramp has to be rebuilt. Options'
@@ -272,6 +277,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // next frame.
         self.persistence.options_profile.vsync = vsync;
         App::sync_present_mode(self);
+    }
+    fn store_high_refresh_rate_in_battle(&mut self, enabled: bool) {
+        self.persistence.options_profile.high_refresh_rate_in_battle = enabled;
     }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
@@ -712,6 +720,8 @@ impl App {
     ) {
         use crate::app::frontend::shell_pass::resolve_csf;
         use crate::ui::score_shell::{ScorePage, ScoreTexts, format_elapsed, format_game_number};
+        // The page draws the main menu's chrome, dropped for the match.
+        Self::ensure_main_menu_shell_chrome(state);
         let texts = ScoreTexts {
             game: format_game_number(&model, &resolve_csf(state, "TXT_GAME")),
             time: format_elapsed(&model, &resolve_csf(state, "TXT_TIME_FORMAT_HOURS")),
@@ -1108,6 +1118,49 @@ impl App {
     /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
     /// WOL its lobby 0x113, Skirmish a new0x102. The session keeps the
     /// admitted network return owner.
+    /// The main menu's chrome atlas: built at startup, dropped when a match
+    /// starts (`loading::transitions`) and built again here before a shell
+    /// screen reads it (the score page as it opens, the frame loop for the
+    /// menu). `false` when it cannot be built: the error card
+    /// (`main_menu_shell_error`) keeps the words a startup failure gets, and
+    /// no frame tries again.
+    pub(crate) fn ensure_main_menu_shell_chrome(state: &mut AppState) -> bool {
+        if state.frontend.main_menu_shell_chrome.is_some() {
+            return true;
+        }
+        if state.frontend.main_menu_shell_error.is_some() {
+            return false;
+        }
+        let Some(assets) = state.process_assets.manager() else {
+            log::warn!(
+                "Could not prepare the main menu shell chrome: process asset manager is unavailable"
+            );
+            return false;
+        };
+        let started = crate::util::time::Instant::now();
+        let built = crate::render::main_menu_shell_chrome::build_main_menu_shell_chrome_atlas(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            assets,
+        );
+        match built {
+            Ok(atlas) => {
+                log::info!(
+                    "Main-menu shell chrome built in {:.0} ms",
+                    started.elapsed().as_secs_f64() * 1e3
+                );
+                state.frontend.main_menu_shell_chrome = Some(atlas);
+                true
+            }
+            Err(error) => {
+                log::warn!("{error:#}");
+                state.frontend.main_menu_shell_error =
+                    Some(super::initialize::describe_startup_error(&error));
+                false
+            }
+        }
+    }
+
     pub(crate) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
             // A relay launch first reports its result to the match service;
@@ -1303,7 +1356,7 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.settings_dir().to_path_buf());
-        if crate::i18n::poll_language_files(settings_dir.as_deref()) {
+        if state.frontend.language_files.poll(settings_dir.as_deref()) {
             state.refresh_string_key_labels();
             state.platform.window.request_redraw();
         }
@@ -1670,6 +1723,15 @@ impl App {
                 rect,
             });
         }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        feed.extend(
+            super::shell_mod_import::preview_buttons(state, layout)
+                .filter(|button| button.enabled)
+                .map(|button| LaidOutControl {
+                    id: button.id,
+                    rect: button.rect,
+                }),
+        );
         Some((
             crate::ui::shell::descriptor::DialogId(kind.template_id()),
             feed,
@@ -1686,6 +1748,10 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         if crate::app::updater::notes::pointer_button(state, true) {
+            return;
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if super::shell_mod_import::pointer_button(state, true) {
             return;
         }
         if Self::shell_menu_pointer(state, Some(true)) {
@@ -1710,12 +1776,16 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::pointer_button(state, false);
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        super::shell_mod_import::pointer_button(state, false);
         Self::shell_menu_pointer(state, Some(false));
-        let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        if let Some(result) =
-            activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
-        {
-            Self::resolve_shell_message_box(state, result);
+        if let Some(id) = state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
+            if let Some(result) = crate::ui::shell::modal::ModalResult::from_message_box_control(id) {
+                Self::resolve_shell_message_box(state, result);
+            } else {
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                Self::activate_mod_import_button(state, id);
+            }
         }
     }
 
@@ -1758,6 +1828,10 @@ impl App {
                 Self::close_shell_message_box_from_controller(state);
                 Self::advance_campaign_victory(state, *victory);
             }
+            ShellMessageBoxPurpose::AuthoredCampaignResult(choice) => {
+                Self::close_shell_message_box_from_controller(state);
+                crate::app::match_runtime::stage_result::answer(state, choice, result);
+            }
             #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             ShellMessageBoxPurpose::UpdateOffer(_) => {
                 Self::close_shell_message_box_from_controller(state);
@@ -1784,6 +1858,11 @@ impl App {
                     folder,
                     result == crate::ui::shell::modal::ModalResult::MessageBox(0),
                 );
+            }
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            ShellMessageBoxPurpose::ModImport(dialog) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_mod_import(state, *dialog, result);
             }
             ShellMessageBoxPurpose::ModFiles(which) => {
                 Self::close_shell_message_box_from_controller(state);
@@ -2156,6 +2235,7 @@ impl App {
             Some(
                 crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
                     | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
+                    | crate::app::frontend::state::ShellMessageBoxPurpose::AuthoredCampaignResult(_)
             )
         ) {
             return;
@@ -2443,6 +2523,18 @@ impl App {
         }
         if !state.frontend.shell_controller.on_key(key) {
             return false;
+        }
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+        if key == ShellKey::Enter
+            && let Some(activate) = super::shell_mod_import::enter(state)
+        {
+            if activate {
+                Self::resolve_shell_message_box(
+                    state,
+                    crate::ui::shell::modal::ModalResult::MessageBox(0),
+                );
+            }
+            return true;
         }
         // Native MessageBoxProc5D36A0 maps IDOK1 (Enter with no default
         // pushbutton) and IDCANCEL2 (Escape) to result1, the negative answer.

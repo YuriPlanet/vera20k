@@ -439,6 +439,9 @@ impl App {
                 if let Some(request) = self.spawn_request.take()
                     && let Err(error) = Self::start_spawn_session(&mut state, request)
                 {
+                    let rules_mismatch = error
+                        .downcast_ref::<crate::app::frontend::cncnet_spawn::RulesMismatch>()
+                        .and_then(|mismatch| mismatch.parts.clone());
                     let error = format!("CnCNet startup failed: {error:#}");
                     log::error!("{error}");
                     // docs/spawn.md: the page keeps its engine and may start
@@ -446,6 +449,7 @@ impl App {
                     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                     {
                         crate::web::status(&error);
+                        state.frontend.external_rules_mismatch = rules_mismatch;
                         browser_spawn_failure = Some(error);
                     }
                     #[cfg(not(all(
@@ -455,6 +459,7 @@ impl App {
                     )))]
                     {
                         self.startup_failure = Some(error);
+                        self.spawn_rules_mismatch = rules_mismatch;
                         event_loop.exit();
                         return;
                     }
@@ -477,7 +482,7 @@ impl App {
                 for event in events {
                     self.window_event(event_loop, window_id, event);
                 }
-                if let Some(state) = self.state.as_ref() {
+                if let Some(state) = self.state.as_mut() {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -1122,6 +1127,8 @@ impl ApplicationHandler for App {
                     // the next tap into a two-finger pan.
                     crate::app::input::cursor::release_cursor_confinement(state);
                     Self::release_in_game_pointer_state(state);
+                    #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                    super::shell_mod_import::pointer_button(state, false);
                     if let Some(browser) = state
                         .frontend
                         .skirmish_shell_state
@@ -1704,6 +1711,8 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::ShellMessageBox) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::cursor_moved(state);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::cursor_moved(state);
                         Self::shell_menu_pointer(state, None);
                         return;
                     }
@@ -1963,6 +1972,8 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::ShellMessageBox) => {
                         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                         crate::app::updater::notes::wheel(state, lines);
+                        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                        super::shell_mod_import::wheel(state, lines);
                         return;
                     }
                     // ComboDropWin consumes no mouse-wheel selection/scroll;
@@ -2031,6 +2042,8 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+            WindowEvent::DroppedFile(path) => Self::mod_import_drop(state, path),
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
                 let state = {
@@ -2168,6 +2181,8 @@ impl ApplicationHandler for App {
                 Self::poll_movie_list_scroll(state),
                 Self::poll_mods_scroll(state),
                 Self::poll_mod_files(state),
+                #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
+                Self::poll_mod_import(state),
                 Self::poll_choose_map_scroll(state),
                 Self::poll_skirmish_opponent_scroll(state),
                 // Captures replay sealed input; they never read the library.

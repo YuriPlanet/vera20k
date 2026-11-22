@@ -41,6 +41,10 @@ const GREYED_RGB: [f32; 3] = [128.0 / 255.0; 3];
 /// VERA: the modern game list's gap between a room's name and its tag.
 const GAME_TAG_GAP: i32 = 8;
 
+/// VERA: a match's Watch tag, light blue to set it apart from the rooms'
+/// yellow.
+const WATCH_TAG_RGB: [f32; 3] = [0.45, 0.80, 1.0];
+
 /// Sprites on the skirmish atlas, sprites on the lobby art and texts.
 #[derive(Default)]
 pub(crate) struct WolLobbyPaint {
@@ -145,7 +149,10 @@ pub(crate) fn paint_wol_lobby_children(
             RectPx::new(row.x + x, row.y, w, row.h)
         })
     };
-    for (key, rect) in layout.labels {
+    // The online page's view hides the other view's children: they have no
+    // window ([`crate::ui::wol_lobby::LobbyView`]).
+    let shown = |rect: RectPx| rect.w > 0;
+    for (key, rect) in layout.labels.into_iter().filter(|(_, rect)| shown(*rect)) {
         paint.texts.push(text(
             &label(state, key),
             rect,
@@ -168,6 +175,7 @@ pub(crate) fn paint_wol_lobby_children(
         .iter()
         .copied()
         .chain([(REFRESH, layout.refresh), (EMOTE, layout.emote)])
+        .filter(|(_, rect)| shown(*rect))
     {
         let pressed = ui.buttons.is_pressed(id);
         match IMAGE_BUTTONS.iter().find(|(known, ..)| *known == id) {
@@ -192,7 +200,7 @@ pub(crate) fn paint_wol_lobby_children(
             }
             None => {
                 if let Some((_, key)) = SORT_BUTTONS.iter().find(|(known, _)| *known == id) {
-                    let caption = if modern && matches!(id, SORT_ALPHA | PLAYER_SORT_ALPHA) {
+                    let caption = if modern && id == SORT_ALPHA {
                         crate::i18n::tr("VERA:SortName")
                     } else {
                         label(state, key)
@@ -208,15 +216,17 @@ pub(crate) fn paint_wol_lobby_children(
         }
     }
 
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
-            checked: ui.observer,
-        },
-        scale,
-    );
+    if shown(layout.observer_toggle) {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect: layout.observer_toggle,
+                checked: ui.observer,
+            },
+            scale,
+        );
+    }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
         push_flag_entry_clipped_centered(
             &mut paint.controls,
@@ -226,22 +236,80 @@ pub(crate) fn paint_wol_lobby_children(
             SHELL_CONTROL_DEPTH,
         );
     }
-    push_new_edit(
-        &mut paint.controls,
-        &mut paint.texts,
-        atlas,
-        font,
-        &ui.chat.edit,
-        state
+    if shown(layout.chat) {
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.chat.edit,
+            state
+                .platform
+                .ime
+                .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit),
+            layout.chat,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
+    // VERA's filter row under the games: the room search, which names
+    // itself while empty, as the map search does, and the two checkboxes.
+    if shown(layout.search) {
+        let composition = state
             .platform
             .ime
-            .composition(crate::app::input::ime::ImeTarget::WolLobbyChat),
-        layout.chat,
-        ui.popup.is_none() && ui.caret_visible(now),
-        SHELL_LABEL_TEXT_RGB,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale,
-    );
+            .composition(crate::app::input::ime::ImeTarget::WolLobbyEdit);
+        if ui.search.units.is_empty() && composition.is_none() {
+            let hint = scale.derive_rect(layout.search, |rect| {
+                RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
+            });
+            paint.texts.push(text(
+                &crate::i18n::tr("VERA:LobbySearchHint"),
+                hint,
+                ShellAlign::V_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+            ));
+        }
+        push_new_edit(
+            &mut paint.controls,
+            &mut paint.texts,
+            atlas,
+            font,
+            &ui.search,
+            composition,
+            layout.search,
+            ui.popup.is_none() && ui.caret_visible(now),
+            SHELL_LABEL_TEXT_RGB,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale,
+        );
+    }
+    let filter = state.frontend.wol_lobby_globals.room_filter;
+    for (control, rect, key) in [
+        (HIDE_FULL, layout.hide_full, "VERA:HideFull"),
+        (HIDE_LOCKED, layout.hide_locked, "VERA:HideLocked"),
+    ]
+    .into_iter()
+    .filter(|(_, rect, _)| shown(*rect))
+    {
+        paint_control(
+            &mut paint.controls,
+            &atlas.control_chrome(),
+            ControlPaint::Checkbox {
+                rect,
+                checked: filter.checked(control),
+            },
+            scale,
+        );
+        paint.texts.push(text(
+            &crate::i18n::tr(key),
+            crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+        ));
+    }
 
     let lobbies = ui
         .lobby_list
@@ -256,7 +324,7 @@ pub(crate) fn paint_wol_lobby_children(
         .chat
         .list
         .geometry(layout.chat_log, ui.chat.lines.len(), scale);
-    if !modern {
+    if shown(layout.lobbies) {
         list_controls(
             &mut paint.controls,
             atlas,
@@ -266,30 +334,36 @@ pub(crate) fn paint_wol_lobby_children(
             scale,
         );
     }
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        games,
-        &ui.game_list,
-        true,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        players,
-        &ui.player_list,
-        false,
-        scale,
-    );
-    list_controls(
-        &mut paint.controls,
-        atlas,
-        chat,
-        &ui.chat.list,
-        false,
-        scale,
-    );
+    if shown(layout.games) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            games,
+            &ui.game_list,
+            true,
+            scale,
+        );
+    }
+    if shown(layout.players) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            players,
+            &ui.player_list,
+            false,
+            scale,
+        );
+    }
+    if shown(layout.chat_log) {
+        list_controls(
+            &mut paint.controls,
+            atlas,
+            chat,
+            &ui.chat.list,
+            false,
+            scale,
+        );
+    }
     // LBS_MULTIPLESEL: every selected user row is filled.
     for row in &ui.selected_players {
         if let Some(visible) = row.checked_sub(ui.player_list.top_index)
@@ -335,15 +409,37 @@ pub(crate) fn paint_wol_lobby_children(
         };
         // The modern list keeps one retail icon, a password game's lock, in
         // the first icon column; that row's name starts at the next one. A
-        // tag ends the name cell against the Ping column, and the name stops
-        // a gap before it.
+        // room's tag ends the name cell against the Ping column, and the name
+        // stops a gap before it.
+        let ping = if row.ping == -1 {
+            "???".to_owned()
+        } else {
+            row.ping.to_string()
+        };
         let name_x = if row.keyed {
             GAME_PASSWORD_X
         } else {
             GAME_TYPE_X
         };
-        let name_end = GAME_PING_X - 2;
+        // A match to watch has no ping: its tag takes the ping's place, in
+        // its own colour.
         let tag = row.tag.as_deref().filter(|_| modern);
+        let (column, tag) = if row.watch {
+            (tag.unwrap_or_default(), None)
+        } else {
+            (ping.as_str(), tag)
+        };
+        // Modern rows stop a gap before the column's text centred under its
+        // heading.
+        let row_base = scale.base_rect(rect);
+        let name_end = if let Some(header) = ping_header.filter(|_| modern) {
+            let header = scale.base_rect(header);
+            let column_width = font.text_width(column) as i32;
+            (header.x + (header.w - column_width) / 2 - row_base.x - GAME_TAG_GAP)
+                .min(row_base.w - 2)
+        } else {
+            GAME_PING_X - 2
+        };
         let tag_w = tag.map_or(0, |tag| {
             (font.text_width(tag) as i32).min(name_end - name_x)
         });
@@ -351,8 +447,24 @@ pub(crate) fn paint_wol_lobby_children(
             Some(_) => name_end - name_x - tag_w - GAME_TAG_GAP,
             None => name_end - name_x,
         };
+        // A header that exceeds one row even at the tightest font fit is
+        // cut at the font's own width and ends in three dots, as VERA's
+        // texts write an ellipsis (GAME.FNT has no "…"): squeezed, the
+        // dots run together.
+        let mut caption = std::borrow::Cow::Borrowed(row.text.as_str());
+        if modern {
+            use crate::render::bit_font::Fit;
+            let width = name_w.max(1) as u32;
+            if !font.fitted(Fit::TIGHTEST, |font| font.text_width(&row.text) <= width) {
+                caption = font.fitted(Fit::NONE, |font| {
+                    let end = font
+                        .truncate_to_width(&row.text, width.saturating_sub(font.text_width("...")));
+                    std::borrow::Cow::Owned(format!("{end}..."))
+                });
+            }
+        }
         paint.texts.push(text(
-            &row.text,
+            &caption,
             if modern {
                 cell(rect, name_x, name_w.max(1))
             } else {
@@ -370,14 +482,9 @@ pub(crate) fn paint_wol_lobby_children(
             ));
         }
         // A -1 ping is the text "???"; any other is an integer cell. The
-        // modern list centres it under its Ping header instead of starting
-        // it at the retail column, left of the header's caption. A match to
-        // watch has no ping.
-        let ping = if row.ping == -1 {
-            "???".to_owned()
-        } else {
-            row.ping.to_string()
-        };
+        // modern list centres it, or a match's tag, under its Ping header
+        // instead of starting it at the retail column, left of the header's
+        // caption.
         let (ping_rect, ping_align) = match ping_header.filter(|_| modern) {
             Some(header) => (
                 RectPx::new(header.x, rect.y, header.w, rect.h),
@@ -385,9 +492,14 @@ pub(crate) fn paint_wol_lobby_children(
             ),
             None => (cell(rect, GAME_PING_X, 0), ShellAlign::V_CENTER),
         };
-        if !row.watch {
-            paint.texts.push(text(&ping, ping_rect, ping_align, rgb));
-        }
+        let column_rgb = if row.watch && !row.greyed {
+            WATCH_TAG_RGB
+        } else {
+            rgb
+        };
+        paint
+            .texts
+            .push(text(column, ping_rect, ping_align, column_rgb));
         if modern {
             if row.keyed
                 && let Some(art) = art
@@ -533,7 +645,6 @@ pub(super) fn paint_room_players(
 /// status line text. The `modern` lobby draws them on Red Alert 2's box art,
 /// as VERA's updater boxes do; the native lobby keeps gamemd's mode-2 art.
 /// `scale` is the lobby page's, so the box grows with the page.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_wol_lobby_popup(
     state: &AppState,
     popup: &WolLobbyPopup,

@@ -163,7 +163,7 @@ impl MindScene {
                 &self.rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary stock Mastermind frame");
         assert!(output.tick.frame_committed);
@@ -260,7 +260,7 @@ impl MindScene {
                 let captive = self.sim.entities().get(id).unwrap();
                 assert!(captive.lifecycle.object_alive() && captive.health.current() > 0);
                 assert_eq!(captive.owner(), owner);
-                assert_eq!(captive.mind_control.controller(), Some(self.mind));
+                assert_eq!(captive.seldom.mind_control.controller(), Some(self.mind));
                 assert!(
                     fired_at.contains(&id),
                     "real selected FireAt must precede CaptureUnit"
@@ -359,13 +359,13 @@ impl MindScene {
         let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
-        loaded.main_rng = self.sim.main_rng.snapshot_for_test().into();
+        loaded.main_rng = self.sim.main_rng.clone();
         loaded.scenario_rng = self.sim.scenario_rng.clone();
         loaded.mapgen_rng = self.sim.mapgen_rng.clone();
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             self.sim.resolved_terrain.clone().unwrap(),
-            self.sim.terrain_speed_config().clone(),
+            *self.sim.terrain_speed_config(),
             &self.rules,
         );
         loaded.resolve_type_handles(&self.rules);
