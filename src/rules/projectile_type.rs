@@ -323,7 +323,7 @@ impl ProjectileArtState {
         // Image may be empty: native then attempts .SHP and .GHP, clearing +A4
         // when neither exists. Inviso can instead retain the base-prefix load.
         if !self.inviso {
-            image.load_unowned_shp(ObjectImageKind::Ordinary, theater);
+            image.load_unowned_shp(ObjectImageKind::Ordinary, theater, None);
         }
         // 46C40B..46C417: independent of Inviso, after the clearing Image
         // read. A false Voxel flag preserves the prior pair; missing/empty
@@ -513,7 +513,7 @@ impl ProjectileType {
         let mut image = ObjectImageState::new(id);
         image.read_input(section);
         image.read_art(image_section);
-        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized);
+        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized, None);
         let mut art = ProjectileArtState::new();
         art.read_bullet_fields(
             &mut image,

@@ -1385,16 +1385,6 @@ impl AnimTypeRuntimeConfig {
 /// regardless of the `NewTheater=` INI key.
 const NEW_THEATER_PREFIXES: &[&str] = &["GA", "GT", "NA", "NT", "CA", "CT"];
 
-/// `repo-derived`: theater name -> replacement letter for `NewTheater`.
-const THEATER_LETTERS: &[(&str, char)] = &[
-    ("TEMPERATE", 'T'),
-    ("SNOW", 'A'),
-    ("URBAN", 'U'),
-    ("DESERT", 'D'),
-    ("LUNAR", 'L'),
-    ("NEWURBAN", 'N'),
-];
-
 /// `repo-derived`: generic fallback letter used by original-style building art.
 const NEW_THEATER_GENERIC_LETTER: char = 'G';
 
@@ -2937,16 +2927,16 @@ fn read_building_body_range(section: &IniSection, key: &str) -> [i32; 3] {
     section.read_int_fields(key, 64, [0, 1, 0])
 }
 
-/// Replace the 2nd character of a filename with the theater-specific letter.
+/// Replace the 2nd character of a filename with the theater's letter
+/// ([`ImageTheater::letter`](crate::rules::object_image::ImageTheater::letter)).
 fn apply_theater_letter(name: &str, theater_name: &str) -> String {
     if name.len() < 2 {
         return name.to_string();
     }
 
-    let upper_theater: String = theater_name.to_ascii_uppercase();
-    let letter: char = match THEATER_LETTERS.iter().find(|(t, _)| *t == upper_theater) {
-        Some((_, ch)) => *ch,
-        None => return name.to_string(),
+    let Some(letter) = crate::rules::object_image::ImageTheater::from_name(theater_name).letter()
+    else {
+        return name.to_string();
     };
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = letter;

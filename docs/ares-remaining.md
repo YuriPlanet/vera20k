@@ -15,14 +15,13 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
   `DebugKeysEnabled`, `DirectX.Force`) and the
-  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems` and
-  `AlternateTheaterArt` (read by `pType->ID`, which the key scan misses). Ares
+  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
   3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
   (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1042; the chain docs give 359 more a disposition
+  removed). The engine source cites 1044; the chain docs give 357 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 47 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
@@ -138,9 +137,8 @@ atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
 ## Presentation and UI not ported
 
 - Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
-  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
-  `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
-  [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
+  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) is a
+  residual in [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
   ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
   (`0x6A9A43`, `0x712045`), so both stay in the list.
 - Technos: the damage spark and smoke
