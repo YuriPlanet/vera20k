@@ -259,6 +259,7 @@ test('each listed web origin is answered under its own name; others stay refused
   const second = 'https://second.example';
   const { relay, base, options } = await fixture(t, { origins: [origin, second], lanSignal: { iceServers: [] } });
   assert.throws(() => createGateway({ ...options, origins: [] }), /VERA_WEB_ORIGIN/);
+  assert.throws(() => createGateway({ ...options, origins: [origin, 'second.example'] }), /VERA_WEB_ORIGIN: "second.example"/);
   assert.deepEqual(gatewayOptionsFromEnv({ VERA_WEB_ORIGIN: `${origin}, ${second}` }).origins, [origin, second]);
   for (const site of [origin, second]) {
     const response = await fetch(`${base}/v1/events`, { headers: { origin: site } });

@@ -67,8 +67,10 @@ export function createGateway({
 }) {
   const upstream = originUrl(lobby, allowHttp);
   // Every site that serves the game: a request is answered under its own origin.
-  const allowed = new Set((Array.isArray(origins) ? origins : [])
-    .map(origin => originUrl(origin, true).origin));
+  const allowed = new Set((Array.isArray(origins) ? origins : []).map(origin => {
+    try { return originUrl(origin, true).origin; }
+    catch { throw new Error(`VERA_WEB_ORIGIN: "${origin}" is not an HTTPS origin`); }
+  }));
   if (allowed.size === 0) throw new Error('VERA_WEB_ORIGIN lists every web origin that serves the game');
   const endpoints = (Array.isArray(relays) ? relays : []).map(relay => [relay, relayEndpoint(relay)]);
   if (endpoints.length === 0 || endpoints.some(([, endpoint]) => !endpoint)) {
