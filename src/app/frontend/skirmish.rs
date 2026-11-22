@@ -13,7 +13,7 @@ use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::{self, BridgeAtlas};
 use crate::render::gpu::GpuContext;
-use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_for_render};
+use crate::render::overlay_assets::render_overlay_names;
 use crate::render::overlay_atlas::{self, OverlayAtlas};
 use crate::rules::color_scheme::{ColorSchemeEntry, scheme_entry_by_name};
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
@@ -90,50 +90,9 @@ pub(crate) fn build_overlay_presentation(
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
 ) -> OverlayPresentationAssets {
-    let force_tib_remap_enabled: bool = std::env::var("RA2_FORCE_TIB3_TO_TIB01")
-        .ok()
-        .map(|v| {
-            let n = v.trim().to_ascii_lowercase();
-            n == "1" || n == "true" || n == "yes" || n == "on"
-        })
-        .unwrap_or(false);
-    if force_tib_remap_enabled {
-        log::warn!("Debug overlay remap enabled: TIB3_20 -> TIB01");
-    }
-    let tib_id_offset: isize = std::env::var("RA2_TIB_ID_OFFSET")
-        .ok()
-        .and_then(|s| s.parse::<isize>().ok())
-        .unwrap_or(0);
-    if tib_id_offset != 0 {
-        log::warn!(
-            "Debug resource ID offset enabled: RA2_TIB_ID_OFFSET={}",
-            tib_id_offset
-        );
-    }
-
     let overlay_registry = rules.overlay_registry();
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
-
-    // Log first 20 overlay types for diagnostic verification.
-    let max_diag: usize = 20.min(overlay_registry.len());
-    for i in 0..max_diag {
-        if let Some(name) = overlay_registry.name(i as u8) {
-            let mapped = resolve_overlay_name_for_render(overlay_registry, i as u8)
-                .unwrap_or_else(|| name.to_string());
-            let flags = overlay_registry.flags(i as u8);
-            let tib: bool = flags.map(|f| f.tiberium).unwrap_or(false);
-            let wall: bool = flags.map(|f| f.wall).unwrap_or(false);
-            log::info!(
-                "  OverlayType[{:3}] = {:20} mapped={:20} tib={} wall={}",
-                i,
-                name,
-                mapped,
-                tib,
-                wall
-            );
-        }
-    }
 
     // Every registered type is named: a cell draws whichever identity it holds,
     // whether the map authored it or the simulation wrote it after load.
@@ -152,36 +111,21 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
-    // Log resource overlays for diagnostic visibility.
-    for (id, name) in &overlay_names {
-        let flags = overlay_registry.flags(*id);
-        let tib: bool = flags.map(|f| f.tiberium).unwrap_or(false);
-        if tib {
-            log::info!("  Resource overlay: id={} name={}", id, name);
-        }
-    }
-
     // Use theater-provided palettes if available, otherwise fall back to search.
-    let theater_palette: Option<Palette> = theater_iso_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["isotem.pal", "isosno.pal", "isourb.pal", "temperat.pal"];
-        pal_names
-            .iter()
-            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
-    });
-    let unit_palette: Option<Palette> = theater_unit_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["unittem.pal", "unitsno.pal", "uniturb.pal", "unit.pal"];
-        pal_names
-            .iter()
-            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
-    });
+    let first_palette = |names: &[&str]| {
+        (names.iter()).find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
+    };
+    let theater_palette = theater_iso_palette
+        .cloned()
+        .or_else(|| first_palette(&["isotem.pal", "isosno.pal", "isourb.pal", "temperat.pal"]));
+    let unit_palette = theater_unit_palette
+        .cloned()
+        .or_else(|| first_palette(&["unittem.pal", "unitsno.pal", "uniturb.pal", "unit.pal"]));
     // Tiberium palette: the original engine uses a dedicated palette (e.g., temperat.pal) for
     // ore/gem overlays, distinct from both the iso palette and the unit palette.
-    let tiberium_palette: Option<Palette> = theater_tiberium_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["temperat.pal", "snow.pal", "urban.pal"];
-        pal_names
-            .iter()
-            .find_map(|name| Palette::from_bytes(asset_manager.get_ref(name)?).ok())
-    });
+    let tiberium_palette = theater_tiberium_palette
+        .cloned()
+        .or_else(|| first_palette(&["temperat.pal", "snow.pal", "urban.pal"]));
 
     let overlay_radar_colors: HashMap<(u8, u8), [u8; 3]> =
         overlay_atlas::compute_overlay_radar_colors(

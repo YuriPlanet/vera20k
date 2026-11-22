@@ -79,6 +79,13 @@ impl ImeState {
             .then_some((self.composition.as_slice(), self.cursor))
     }
 
+    /// The open composition and its cursor, whichever edit owns it (the
+    /// focused edit of the screen that routed the input method).
+    pub(crate) fn open_composition(&self) -> Option<(&[u16], usize)> {
+        let target = self.target?;
+        self.composition(target)
+    }
+
     /// While a composition is open, keys go to the input method (Windows
     /// delivers them as VK_PROCESSKEY), not to the edit.
     pub(crate) fn composing(&self) -> bool {

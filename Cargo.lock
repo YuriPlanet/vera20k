@@ -3262,7 +3262,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vera20k"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -3299,6 +3299,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "vera20k-core",
+ "vera20k-gui",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",
@@ -3313,7 +3314,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-android"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "android-activity",
  "anyhow",
@@ -3326,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "vera20k-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3355,6 +3356,13 @@ dependencies = [
  "wasm_sync",
  "web-time",
  "zip",
+]
+
+[[package]]
+name = "vera20k-gui"
+version = "0.3.8"
+dependencies = [
+ "web-time",
 ]
 
 [[package]]

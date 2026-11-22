@@ -829,7 +829,7 @@ fn post_named_house_line(
         }
     };
     let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
-    let template = crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned();
+    let template = state.csf_text(key);
     let args: Vec<crate::assets::csf_file::CsfArg<'_>> = names
         .iter()
         .map(|name| crate::assets::csf_file::CsfArg::Str(name))

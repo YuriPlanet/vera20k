@@ -233,7 +233,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
     state
         .frontend
         .shell_controller
-        .reset_to(crate::ui::coop_score_shell::COOP_SCORE_DIALOG, false);
+        .reset_to(crate::ui::coop_score_shell::COOP_SCORE_DIALOG);
 }
 
 /// The tail `0x0046EE17`'s texts: rows sorted by score (`0x0046DC90`), the
@@ -241,9 +241,8 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
 /// mission and map names (`A8B322`, the scenario `+0xA0` selected), the
 /// game type and `NAME:COOPDESC<campaign+1><map+1>`.
 fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<CoopScoreModel> {
-    use crate::app::frontend::shell_pass::resolve_csf;
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let computer = resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
     let mut rows: Vec<_> = sim
         .cooperative_score_rows()
@@ -266,7 +265,7 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
     };
     let time = crate::ui::score_shell::format_elapsed(
         &time_model,
-        &resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
+        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
     );
     let side = crate::app::input::commands::preferred_local_owner_name(state)
         .as_deref()
@@ -300,18 +299,14 @@ fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<Coo
         .cooperative_setup_view()
         .description
         .map(|(campaign, stage)| {
-            resolve_csf(
-                state,
-                &format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1),
-            )
-            .into_owned()
+            state.csf_text(&format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1))
         })
         .unwrap_or_default();
     Some(CoopScoreModel {
         rows,
         time,
         next_mission: map_name.clone(),
-        mode_label: resolve_csf(state, &mode_key).into_owned(),
+        mode_label: state.csf_text(&mode_key),
         map_label: map_name,
         description,
         side,
@@ -333,10 +328,9 @@ fn build_campaign_end(
     state: &AppState,
     side: i32,
 ) -> Option<crate::ui::campaign_score_shell::CampaignEndModel> {
-    use crate::app::frontend::shell_pass::resolve_csf;
     use crate::assets::csf_file::{CsfArg, format_csf};
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let computer = resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
     let houses: Vec<_> = sim
         .cooperative_score_rows()
@@ -387,12 +381,11 @@ fn build_campaign_end(
             elapsed_seconds: (time / 60) as u32,
             ..Default::default()
         },
-        &resolve_csf(state, "TXT_TIME_FORMAT_HOURS"),
+        &state.csf_text("TXT_TIME_FORMAT_HOURS"),
     );
     let difficulty = match runtime.cooperative_difficulty() {
         level @ 0..=2 => {
-            let level = resolve_csf(
-                state,
+            let level = state.csf_text(
                 [
                     "TXT_DIFFICULTY_EASY",
                     "TXT_DIFFICULTY_MEDIUM",
@@ -400,22 +393,22 @@ fn build_campaign_end(
                 ][level as usize],
             );
             format_csf(
-                &resolve_csf(state, "GUI:DifficultyString"),
+                &state.csf_text("GUI:DifficultyString"),
                 &[CsfArg::Str(&level)],
             )
         }
-        _ => resolve_csf(state, "GUI:Blank").into_owned(),
+        _ => state.csf_text("GUI:Blank"),
     };
     let campaign_name = usize::try_from(campaign)
         .ok()
         .and_then(|campaign| runtime.cooperative_campaign_name(campaign))
-        .map(|key| App::csf_label(state, key, key))
+        .map(|key| state.csf_label(key, key))
         .unwrap_or_default();
     Some(crate::ui::campaign_score_shell::CampaignEndModel {
         side,
         campaign_name,
         campaign_number: format_csf(
-            &resolve_csf(state, "GUI:CampaignLabel"),
+            &state.csf_text("GUI:CampaignLabel"),
             &[CsfArg::Int(i64::from(campaign) + 1)],
         ),
         difficulty,
@@ -469,8 +462,7 @@ pub(crate) fn view(state: &AppState) -> Option<CoopScoreView> {
             (
                 crate::ui::multiplayer_setup::SetupChoice {
                     value: -2,
-                    text: crate::app::frontend::shell_pass::resolve_csf(state, "GUI:Random")
-                        .into_owned(),
+                    text: state.csf_text("GUI:Random"),
                     swatch: None,
                     greyed: false,
                 },
@@ -593,7 +585,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::PeerLeft { source } => {
             // 0x005E2700(-1, GUI:PlayerLeftCoop, name).
             let name = participant_name(state, source);
-            let format = crate::app::frontend::shell_pass::resolve_csf(state, "GUI:PlayerLeftCoop");
+            let format = state.csf_text("GUI:PlayerLeftCoop");
             let text = crate::assets::csf_file::format_csf(
                 &format,
                 &[crate::assets::csf_file::CsfArg::Str(&name)],
@@ -613,8 +605,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::TimedOut => {
             finish(state);
             let text =
-                crate::app::frontend::shell_pass::resolve_csf(state, "TXT_SYSTEM_NOT_RESPONDING")
-                    .into_owned();
+                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {
@@ -819,19 +810,18 @@ fn append_line(state: &mut AppState, text: String, color: u32) {
     let Some(page) = state.frontend.coop_score_page.as_mut() else {
         return;
     };
-    let chat = &mut page.ui.chat;
-    let visible = chat
-        .list
-        .geometry(rect, chat.lines.len(), scale)
-        .visible_rows;
-    chat.append_message(
+    let controller = &mut state.frontend.shell_controller;
+    let dialog = crate::ui::coop_score_shell::COOP_SCORE_DIALOG;
+    let list = controller.control(dialog, crate::ui::coop_score_shell::CHAT_LOG);
+    // The log's list keeps the view, following new lines at the bottom.
+    page.ui.chat.append_message(
         LanChatLine {
             text: text.encode_utf16().collect(),
             color,
         },
         scale.base_rect(rect).w,
-        visible,
         |units| font.text_width(&String::from_utf16_lossy(units)) as i32,
+        crate::ui::lan_shell::log_to(controller.gui_mut(), list),
     );
 }
 

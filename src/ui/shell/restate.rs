@@ -13,26 +13,23 @@
 //! rect and clipped at its height, with no scrolling (`OwnerDraw_Static`
 //! 0x006153E0 → `BitText__DrawText` 0x00434CD0).
 
-use super::button::ShellButtonInteraction;
+use vera20k_gui::{NodeKind, NodeSpec};
+
+use super::descriptor::DialogResourceId;
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
+pub const DIALOG: DialogResourceId = DialogResourceId(0x10C);
 pub const TITLE_LABEL: (&str, &str) = ("GUI:Briefing", "Briefing");
 pub const RETURN_LABEL: (&str, &str) = ("GUI:Return", "Return");
 /// The briefing text 0x6E7's template rect, in dialog units.
 const CONTENT_DLU: RectPx = RectPx::new(61, 45, 301, 265);
 
-/// The dialog's only owner-draw push button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RestateButton {
-    /// 0x423: the proc writes 0x423 to the result slot (0x0065F710), which
-    /// ends the modal.
-    Return,
-}
-
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestateControl {
+    /// 0x423: the proc writes 0x423 to the result slot (0x0065F710), which
+    /// ends the modal.
     Return,
     Content,
 }
@@ -53,12 +50,16 @@ impl RestateControl {
     }
 }
 
-/// Pointer state while 0x10C is open: Return's capture and the child whose
-/// help the status line shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RestateInteraction {
-    pub button: ShellButtonInteraction<RestateButton>,
-    pub hovered: Option<RestateControl>,
+/// Return, then the briefing text, each with its status help.
+pub fn spec() -> NodeSpec {
+    let node = |kind, control: RestateControl| {
+        NodeSpec::new(kind)
+            .id(control.id().into())
+            .tooltip(control.help_key().unwrap_or_default())
+    };
+    NodeSpec::new(NodeKind::Dialog)
+        .child(node(NodeKind::Button, RestateControl::Return))
+        .child(node(NodeKind::Text, RestateControl::Content))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,17 +89,13 @@ pub fn restate_layout(
 }
 
 impl RestateLayout {
-    pub fn control_rect(&self, control: RestateControl) -> RectPx {
-        match control {
-            RestateControl::Return => self.return_button,
-            RestateControl::Content => self.content,
+    /// Control `id`'s rect.
+    pub fn rect(&self, id: u16) -> Option<RectPx> {
+        match id {
+            0x423 => Some(self.return_button),
+            0x6E7 => Some(self.content),
+            _ => None,
         }
-    }
-
-    pub fn control_at(&self, x: i32, y: i32) -> Option<RestateControl> {
-        [RestateControl::Return, RestateControl::Content]
-            .into_iter()
-            .find(|control| self.control_rect(*control).contains(x, y))
     }
 }
 

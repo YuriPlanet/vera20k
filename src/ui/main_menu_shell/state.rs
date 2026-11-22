@@ -1,15 +1,15 @@
-//! Initial main-menu shell control identity and CSF/result lookups.
+//! Initial main-menu shell control identity and result lookups.
 //!
-//! Hit-testing and the press-must-match-release gesture moved to the shared
-//! `ui::shell::controller::DialogController` (substrate Slice 2); this module
-//! keeps the control identity, the CSF/tooltip keys, and the action/result-code
-//! tables that the controller's activated-control id maps through.
+//! The buttons are `vera20k-gui` nodes built from `MAIN_MENU_PAGE` (captions,
+//! status help); this module keeps the control identity and the
+//! action/result-code tables the activated control id maps through.
 
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::menu_page;
 
 /// The main-menu dialog resource.
-pub const MAIN_MENU_DIALOG: DialogId = DialogId(0x00E2);
+pub const MAIN_MENU_DIALOG: DialogResourceId = DialogResourceId(0x00E2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainMenuControlId {
@@ -62,8 +62,6 @@ pub enum MainMenuShellAction {
 
 #[derive(Debug, Clone, Default)]
 pub struct MainMenuShellState {
-    /// Retained, paint-driven kind-1 state for title static 0x694.
-    pub(crate) title_reveal: crate::ui::shell::static_reveal::Kind1StaticReveal,
     /// Process-wide like `0x00A8F7B8`: a new 0xE2 keeps the typed letters.
     pub(crate) typed_codes: super::MainMenuTypedCodes,
 }
@@ -72,8 +70,7 @@ pub struct MainMenuShellState {
 /// `None` while no 0xE2 is live: after its destruction, and after a re-entry
 /// until the first pointer message creates the new instance.
 pub fn pressed_control(controller: &DialogController) -> Option<MainMenuControlId> {
-    controller
-        .pressed_in(MAIN_MENU_DIALOG)
+    menu_page::pressed_id(controller, MAIN_MENU_DIALOG)
         .and_then(MainMenuControlId::from_resource_id)
 }
 
@@ -82,8 +79,7 @@ pub fn pressed_control(controller: &DialogController) -> Option<MainMenuControlI
 /// is only toggled by a timer armed for a network-dialog control that does not
 /// exist on this dialog.
 pub fn hovered_control(controller: &DialogController) -> Option<MainMenuControlId> {
-    controller
-        .hovered_in(MAIN_MENU_DIALOG)
+    menu_page::hovered_id(controller, MAIN_MENU_DIALOG)
         .and_then(MainMenuControlId::from_resource_id)
 }
 
@@ -110,48 +106,37 @@ pub fn return_code_for_action(action: MainMenuShellAction) -> Option<i32> {
     }
 }
 
-pub fn csf_key_for_control(id: MainMenuControlId) -> &'static str {
-    match id {
-        MainMenuControlId::SinglePlayer0x683 => "GUI:SinglePlayer",
-        MainMenuControlId::WwOnline0x684 => "GUI:WWOnline",
-        MainMenuControlId::Network0x578 => "GUI:Network",
-        MainMenuControlId::MoviesAndCredits0x686 => "GUI:MoviesAndCredits",
-        MainMenuControlId::Options0x55c => "GUI:Options",
-        MainMenuControlId::ExitGame0x3ee => "GUI:ExitGame",
-    }
-}
-
-/// CSF key for the bottom-left hover-tooltip status line, looked up per
-/// control when the cursor is over a main-menu owner-draw button.
-pub fn tooltip_csf_key_for_control(id: MainMenuControlId) -> &'static str {
-    match id {
-        MainMenuControlId::SinglePlayer0x683 => "STT:MainButtonSinglePlayer",
-        MainMenuControlId::WwOnline0x684 => "STT:MainButtonWWOnline",
-        MainMenuControlId::Network0x578 => "STT:MainButtonNetwork",
-        MainMenuControlId::MoviesAndCredits0x686 => "STT:MainButtonMovies",
-        MainMenuControlId::Options0x55c => "STT:MainButtonOptions",
-        MainMenuControlId::ExitGame0x3ee => "STT:MainButtonExitGamemd",
-    }
-}
-
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
-    use crate::ui::main_menu_shell::compute_layout;
-    use crate::ui::shell::layout::LaidOutControl;
+    use crate::ui::main_menu_shell::{MAIN_MENU_PAGE, compute_layout};
+    use vera20k_gui::{InputEvent, MouseButton};
 
-    /// Adapt the laid-out main-menu buttons into the controller's button-only feed.
-    fn button_feed(
-        layout: &crate::ui::main_menu_shell::MainMenuShellLayout,
-    ) -> Vec<LaidOutControl> {
-        layout
-            .buttons
-            .iter()
-            .map(|b| LaidOutControl {
-                id: b.id.resource_id(),
-                rect: b.rect,
-            })
-            .collect()
+    /// 0xE2's live instance with its button nodes on the 800x600 layout.
+    fn main_menu() -> DialogController {
+        let page = compute_layout(800, 600).page();
+        let mut c = DialogController::default();
+        c.ensure_active(MAIN_MENU_DIALOG);
+        menu_page::sync_nodes(
+            &mut c,
+            MAIN_MENU_DIALOG,
+            || MAIN_MENU_PAGE.nodes(),
+            |id| page.button_rect(id),
+            &[],
+        );
+        c
+    }
+
+    fn down(c: &mut DialogController, x: i32, y: i32) {
+        c.on_input(InputEvent::PointerDown {
+            x,
+            y,
+            button: MouseButton::Left,
+        });
+    }
+
+    fn pressed(c: &DialogController) -> Option<u16> {
+        menu_page::pressed_id(c, MAIN_MENU_DIALOG)
     }
 
     #[test]
@@ -187,51 +172,46 @@ mod tests {
         // Real layout geometry routed through the shared controller. SinglePlayer
         // cell (644,199,156,42); Exit cell (644,535,156,42). The flush-right cell's
         // exclusive right edge (x=800), the 632..644 gutter, and above-top all miss;
-        // statics are never fed, so the title and monitor never register as hits.
-        let layout = compute_layout(800, 600);
-        let feed = button_feed(&layout);
-        let mut c = DialogController::default();
-        c.ensure_active(DialogId(0x00E2), false);
-        c.on_pointer_down(700, 210, &feed);
+        // statics are no nodes, so the title and monitor never register as hits.
+        let mut c = main_menu();
+        down(&mut c, 700, 210);
         assert_eq!(
-            c.pressed(),
+            pressed(&c),
             Some(MainMenuControlId::SinglePlayer0x683.resource_id())
         );
-        c.on_pointer_down(700, 535, &feed);
+        down(&mut c, 700, 535);
         assert_eq!(
-            c.pressed(),
+            pressed(&c),
             Some(MainMenuControlId::ExitGame0x3ee.resource_id())
         );
-        c.on_pointer_down(800, 203, &feed);
-        assert_eq!(c.pressed(), None);
-        c.on_pointer_down(640, 210, &feed);
-        assert_eq!(c.pressed(), None);
-        c.on_pointer_down(700, 198, &feed);
-        assert_eq!(c.pressed(), None);
-        c.on_pointer_down(700, 577, &feed);
-        assert_eq!(c.pressed(), None);
+        down(&mut c, 800, 203);
+        assert_eq!(pressed(&c), None);
+        down(&mut c, 640, 210);
+        assert_eq!(pressed(&c), None);
+        down(&mut c, 700, 198);
+        assert_eq!(pressed(&c), None);
+        down(&mut c, 700, 577);
+        assert_eq!(pressed(&c), None);
     }
 
     #[test]
     fn paint_state_follows_the_live_0xe2_instance_only() {
-        let feed = button_feed(&compute_layout(800, 600));
         let single_player = Some(MainMenuControlId::SinglePlayer0x683);
-        let mut c = DialogController::default();
-        c.ensure_active(MAIN_MENU_DIALOG, false);
-        c.on_pointer_move(700, 210, &feed);
-        c.on_pointer_down(700, 210, &feed);
+        let mut c = main_menu();
+        c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
+        down(&mut c, 700, 210);
         // A message box over 0xE2 leaves 0xE2's own press and hover painted.
-        c.push(DialogId(0x0120), true);
+        c.push(DialogResourceId(0x0120));
         assert_eq!(pressed_control(&c), single_player);
         assert_eq!(hovered_control(&c), single_player);
         // Destroying 0xE2 under the box clears them for the next instance.
         c.restart_instance(MAIN_MENU_DIALOG);
         assert_eq!(pressed_control(&c), None);
         assert_eq!(hovered_control(&c), None);
-        assert_eq!(c.top_id(), Some(DialogId(0x0120)));
+        assert_eq!(c.top_id(), Some(DialogResourceId(0x0120)));
         // Back from Single Player: 0x100's hover is never read as 0xE2's.
-        c.reset_to(DialogId(0x0100), false);
-        c.on_pointer_move(700, 210, &feed);
+        c.reset_to(DialogResourceId(0x0100));
+        c.on_input(InputEvent::PointerMove { x: 700, y: 210 });
         assert_eq!(hovered_control(&c), None);
     }
 }

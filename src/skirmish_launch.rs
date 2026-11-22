@@ -582,16 +582,14 @@ fn is_zero(value: &u8) -> bool {
 /// team at 30 seats, as the lobby takes them.
 pub const ROOM_TEAMS: std::ops::RangeInclusive<u8> = 2..=15;
 
-/// The teams gamemd's Team list holds, A to D (`team_choices`). A VERA room
-/// with Teams Off keeps it; it is also the threshold that names a room's
-/// teams past D (`room_team_label`), so it must stay 4.
+/// The teams gamemd's Team list holds, A to D (`team_choices`). A skirmish
+/// on a map of eight or fewer starts and a VERA room with Teams Off keep it;
+/// it is also where `room_team_label` starts naming teams past D.
 pub const NATIVE_TEAMS: u8 = 4;
 
-/// How many teams a skirmish game (as opposed to a network room) offers in
-/// its Team dropdown. VERA extension: gamemd's skirmish list stops at D
-/// ([`NATIVE_TEAMS`]), but the launch team number is a `u8`, the alliance map
-/// is unbounded and the UI already labels A..O, so a skirmish can use the
-/// same 15 teams a VERA room does. Everywhere else still uses `NATIVE_TEAMS`.
+/// The teams a skirmish Team list holds on a map past gamemd's eight starts,
+/// A to O: as many as a VERA room ([`ROOM_TEAMS`]). A map of eight or fewer
+/// keeps gamemd's [`NATIVE_TEAMS`].
 pub const SKIRMISH_TEAMS: u8 = 15;
 
 impl Default for SkirmishLaunchOptions {

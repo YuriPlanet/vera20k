@@ -41,7 +41,6 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
-use crate::ui::shell::controller::ShellKey;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;

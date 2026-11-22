@@ -565,7 +565,7 @@ fn build_campaign_score_screen_model_from_sources(
 }
 
 fn resolve_campaign_score_label(state: &AppState, native_key: &str) -> String {
-    crate::app::frontend::shell_pass::resolve_csf(state, native_key).into_owned()
+    state.csf_text(native_key)
 }
 
 fn format_campaign_score_time(total_seconds: i32) -> String {
@@ -695,7 +695,7 @@ fn build_score_screen_model(
         snapshot.clone()
     };
     let raw_snapshot = &snapshot;
-    let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let computer = state.csf_text("TXT_COMPUTER");
     let rows = resolve_score_rows(
         sim,
         raw_snapshot,

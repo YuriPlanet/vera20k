@@ -16,16 +16,13 @@
 
 use crate::util::time::{Duration, Instant};
 
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, center_offset, dlu_rect,
-};
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use crate::ui::shell::trackbar::{
-    TrackbarHold, TrackbarPress, authored_track, trackbar_position_from_x, trackbar_press,
-};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-pub const CAMPAIGN_DIALOG: DialogId = DialogId(0x0094);
+pub const CAMPAIGN_DIALOG: DialogResourceId = DialogResourceId(0x0094);
 /// Allied emblem static (FSALG.SHP, kind 4).
 pub const ALLIED_EMBLEM: u16 = 0x06EA;
 /// Soviet emblem static (FSSLG.SHP, kind 4).
@@ -50,14 +47,28 @@ pub const CAMPAIGN_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: CAMPAIGN_DIALOG,
     title_key: "GUI:CampaignMenu",
     stacked: &[],
-    back: MenuPageButtonSpec {
-        id: BACK_BUTTON,
-        dlu_top: 253,
-        csf_key: "GUI:Back",
-        tooltip_key: "STT:CampaignButtonBack",
-        result: Some(-1),
-    },
+    back: MenuPageButtonSpec::new(BACK_BUTTON, 253, "GUI:Back", "STT:CampaignButtonBack")
+        .returning(-1),
 };
+
+/// `0x94`'s nodes: Back, the emblems and the difficulty slider, each with
+/// its status help. An emblem takes a press like a button: the proc
+/// captures it (`0x0052EEFA`) and a release on it selects its campaign
+/// (`0x0052F26B`). The slider is a shell trackbar without the value plaque:
+/// the value static `0x670` names the position instead.
+pub fn nodes() -> NodeSpec {
+    let emblems = CampaignSide::ALL.map(|side| {
+        NodeSpec::new(NodeKind::Button)
+            .id(side.emblem().into())
+            .tooltip(side.caption_key())
+    });
+    let slider = NodeSpec::new(NodeKind::Trackbar)
+        .id(DIFFICULTY_SLIDER.into())
+        .tooltip("STT:CampaignSliderDifficulty")
+        .with(Prop::Max, Value::Int(DIFFICULTY_MAX))
+        .with(Prop::ShowValue, Value::Bool(false));
+    CAMPAIGN_PAGE.nodes().children(emblems).child(slider)
+}
 
 /// The two campaigns `0x94` offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,8 +140,8 @@ pub struct CampaignLayout {
     pub slider: RectPx,
     pub difficulty_label: RectPx,
     pub difficulty_value: RectPx,
-    /// The mapping [`compute_responsive_layout`] stretched the authored dialog
-    /// with; [`compute_layout`] always reports [`ShellScale::RETAIL`]. Paint and
+    /// The mapping `fit_window` stretched the authored dialog
+    /// with; [`compute_layout`] always reports `RETAIL_SCALE`. Paint and
     /// hit-testing both read their rects through this.
     pub scale: ShellScale,
 }
@@ -150,11 +161,13 @@ impl CampaignLayout {
         }
     }
 
-    /// The emblem whose window contains `(x, y)`.
-    pub fn emblem_at(&self, x: i32, y: i32) -> Option<CampaignSide> {
-        CampaignSide::ALL
-            .into_iter()
-            .find(|side| self.emblem(*side).contains(x, y))
+    /// The window of node `id` (see [`nodes`]).
+    pub fn control_rect(&self, id: u16) -> Option<RectPx> {
+        match CampaignSide::from_emblem(id) {
+            Some(side) => Some(self.emblem(side)),
+            None if id == DIFFICULTY_SLIDER => Some(self.slider),
+            None => self.page.button_rect(id),
+        }
     }
 }
 
@@ -164,56 +177,37 @@ const OVERRIDE_MIN_WIDTH: u32 = 800;
 
 pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
     let page = menu_page::compute_layout(&CAMPAIGN_PAGE, screen_w, screen_h);
-    if screen_w < OVERRIDE_MIN_WIDTH {
-        return CampaignLayout {
-            page,
-            allied: dlu_rect(125, 34, 174, 87),
-            soviet: dlu_rect(125, 216, 173, 86),
-            allied_caption: dlu_rect(4, 123, 415, 13),
-            soviet_caption: dlu_rect(3, 304, 420, 13),
-            slider: dlu_rect(137, 140, 140, 14),
-            difficulty_label: dlu_rect(137, 167, 75, 12),
-            difficulty_value: dlu_rect(203, 167, 75, 12),
-            scale: ShellScale::RETAIL,
-        };
-    }
-    let dx = center_offset(screen_w as i32, 800);
-    let dy = center_offset(screen_h as i32, 600);
-    let at = |x: i32, y: i32, w: i32, h: i32| RectPx::new(x + dx, y + dy, w, h);
-    // 0x00608564..0x006086CF.
+    // `[0x94.Wide]`: 0x00608564..0x006086CF.
+    let section = if screen_w < OVERRIDE_MIN_WIDTH {
+        "0x94"
+    } else {
+        "0x94.Wide"
+    };
+    let rects = layout_data::place(
+        section,
+        crate::ui::shell::geom::RETAIL_SCALE,
+        screen_w as i32,
+        screen_h as i32,
+    );
+    let rect = |id| rects.get(id).unwrap_or_default();
     CampaignLayout {
         page,
-        allied: at(141, 58, 348, 136),
-        soviet: at(141, 364, 348, 136),
-        allied_caption: at(10, 198, 610, 20),
-        soviet_caption: at(10, 505, 610, 20),
-        slider: at(177, 265, 272, 22),
-        difficulty_label: at(177, 291, 141, 20),
-        difficulty_value: at(309, 291, 141, 20),
-        scale: ShellScale::RETAIL,
+        allied: rect(ALLIED_EMBLEM),
+        soviet: rect(SOVIET_EMBLEM),
+        allied_caption: rect(0x7A7),
+        soviet_caption: rect(0x7A8),
+        slider: rect(DIFFICULTY_SLIDER),
+        difficulty_label: rect(0xFF00),
+        difficulty_value: rect(0xFF01),
+        scale: crate::ui::shell::geom::RETAIL_SCALE,
     }
 }
 
-/// The responsive variant of [`compute_layout`]: the verified 800x600 `0x94`
-/// scaled to fit the window, keeping its shape. At 800x600 the fixed control
-/// rectangles carry no centring offset, so the authored geometry is the retail
-/// one.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignLayout {
-    let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let stretch = |rect: RectPx| scale.scale_rect(rect);
-    CampaignLayout {
-        page: menu_page::compute_responsive_layout(&CAMPAIGN_PAGE, screen_w, screen_h),
-        allied: stretch(base.allied),
-        soviet: stretch(base.soviet),
-        allied_caption: stretch(base.allied_caption),
-        soviet_caption: stretch(base.soviet_caption),
-        slider: stretch(base.slider),
-        difficulty_label: stretch(base.difficulty_label),
-        difficulty_value: stretch(base.difficulty_value),
-        scale,
-    }
-}
+vera20k_gui::scaled_rects!(CampaignLayout {
+    [scale]
+    page, allied, soviet, allied_caption, soviet_caption, slider, difficulty_label,
+    difficulty_value
+});
 
 /// One emblem static's kind-4 animation (`+0x98` frame, `+0xA8` running).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -273,28 +267,17 @@ impl EmblemAnimation {
     }
 }
 
-/// What a release on the dialog did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CampaignRelease {
-    None,
-    /// The proc wrote the campaign's result (`0x0052F26B`).
-    Selected(CampaignSide),
-}
-
 /// One `0x94` instance: the emblem under the cursor (`[0x00A8F7A8]`), the
-/// captured press (`[0x00A8F7B0]`), the pending hover voice (`[0x00825C20]`
-/// with its due time `[0x00A8F7A0]`), the emblem animations and the slider.
+/// pending hover voice (`[0x00825C20]` with its due time `[0x00A8F7A0]`), the
+/// emblem animations and the slider position its `WM_HSCROLL` names. The
+/// press capture (`[0x00A8F7B0]`) and the slider's hold are the gui nodes'.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CampaignShellState {
     hovered: Option<CampaignSide>,
-    pressed: Option<CampaignSide>,
     pending_voice: Option<(CampaignSide, Instant)>,
     emblems: [EmblemAnimation; 2],
     /// Slider position `0..=DIFFICULTY_MAX`.
     difficulty: i32,
-    /// The slider holding the mouse since a press on it
-    /// (`ShellTrackbar__WndProc` `0x0061D950`).
-    slider_hold: Option<TrackbarHold>,
 }
 
 impl CampaignShellState {
@@ -305,11 +288,9 @@ impl CampaignShellState {
     pub fn open(options_difficulty: i32) -> Self {
         Self {
             hovered: None,
-            pressed: None,
             pending_voice: None,
             emblems: [EmblemAnimation::default(); 2],
             difficulty: options_difficulty.clamp(0, DIFFICULTY_MAX),
-            slider_hold: None,
         }
     }
 
@@ -323,57 +304,8 @@ impl CampaignShellState {
         DIFFICULTY_LABEL_KEYS[self.difficulty as usize]
     }
 
-    /// Whether the slider holds the mouse: every press on it does, until
-    /// the release.
-    pub fn slider_held(&self) -> bool {
-        self.slider_hold.is_some()
-    }
-
-    /// A left press at device `(x, y)` on the difficulty trackbar `window`.
-    /// Returns whether the position changed (`WM_HSCROLL` and GenericClick).
-    pub fn slider_press(&mut self, x: i32, y: i32, window: RectPx, scale: ShellScale) -> bool {
-        let track = authored_track(window, (x, y), scale);
-        let press = trackbar_press(
-            self.difficulty,
-            track.local_x,
-            track.local_y,
-            track.width,
-            track.height,
-            0,
-            DIFFICULTY_MAX,
-        );
-        self.slider_hold = press.hold(());
-        match press {
-            TrackbarPress::Jump(position) => self.set_difficulty(position),
-            _ => false,
-        }
-    }
-
-    /// Mouse movement with the button held: a captured thumb follows device `x`.
-    pub fn slider_drag(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
-        if !self.slider_hold.is_some_and(|hold| hold.dragging) {
-            return false;
-        }
-        let track = authored_track(window, (x, 0), scale);
-        self.set_difficulty(trackbar_position_from_x(
-            track.local_x,
-            track.width,
-            0,
-            DIFFICULTY_MAX,
-        ))
-    }
-
-    /// Release, or movement without the button: the capture ends.
-    pub fn slider_release(&mut self) {
-        self.slider_hold = None;
-    }
-
     pub fn hovered(&self) -> Option<CampaignSide> {
         self.hovered
-    }
-
-    pub fn pressed(&self) -> Option<CampaignSide> {
-        self.pressed
     }
 
     pub fn emblem(&self, side: CampaignSide) -> &EmblemAnimation {
@@ -384,14 +316,14 @@ impl CampaignShellState {
         &mut self.emblems[side.index()]
     }
 
-    /// `WM_NCHITTEST` (`0x0052ED60`). `ChildWindowFromPointEx` returns the
-    /// dialog itself over its background, so what matters is the emblem under
-    /// the cursor, if any. With no press captured, a change of target stops
-    /// the old emblem (`0x4D5` frame 0, `0x4D4`) and forgets the queued voice;
-    /// a newly hovered emblem animates (`0x4D3`) and queues its voice 500 ms
-    /// out.
+    /// `WM_NCHITTEST` (`0x0052ED60`), which the host sends only while no
+    /// press holds the mouse. `ChildWindowFromPointEx` returns the dialog
+    /// itself over its background, so what matters is the emblem under the
+    /// cursor, if any. A change of target stops the old emblem (`0x4D5`
+    /// frame 0, `0x4D4`) and forgets the queued voice; a newly hovered emblem
+    /// animates (`0x4D3`) and queues its voice 500 ms out.
     pub fn pointer_moved(&mut self, emblem_under: Option<CampaignSide>, now: Instant) {
-        if self.pressed.is_some() || emblem_under == self.hovered {
+        if emblem_under == self.hovered {
             return;
         }
         if let Some(old) = self.hovered.take() {
@@ -405,37 +337,23 @@ impl CampaignShellState {
         }
     }
 
-    /// `WM_LBUTTONDOWN` (`0x0052EEFA`): a press on an emblem captures the mouse
-    /// and plays `GUIMainButtonSound` (`Rules +0x188`). Returns whether it did.
-    pub fn pointer_down(&mut self, emblem_under: Option<CampaignSide>) -> bool {
-        let Some(side) = emblem_under else {
-            return false;
-        };
-        self.pressed = Some(side);
-        true
+    /// Released on the pressed emblem (`0x0052F26B`): the proc selects its
+    /// campaign and stops the hovered emblem, which stays hovered
+    /// (`0x0052F276..0x0052F2A3`).
+    pub fn select(&mut self) {
+        if let Some(hovered) = self.hovered {
+            self.emblem_mut(hovered).reset();
+        }
     }
 
-    /// `WM_LBUTTONUP` reaching the dialog (`0x0052F1CF`): with its own
-    /// capture, or over the background or an emblem. Releasing on the pressed
-    /// emblem selects its campaign and stops the hovered emblem, which stays
-    /// hovered (`0x0052F276..0x0052F2A3`). Releasing on any emblem otherwise
-    /// stops the hovered one and restarts the one under the cursor from frame
-    /// 0 (`0x0052F34C..0x0052F38D`); anywhere else stops and clears the hover
-    /// (`0x0052F31F`, `0x0052F395`). The queued voice is kept, and the capture
-    /// ends either way (`0x0052F3C6`).
-    pub fn pointer_up(
-        &mut self,
-        emblem_under: Option<CampaignSide>,
-        now: Instant,
-    ) -> CampaignRelease {
-        let pressed = self.pressed.take();
+    /// Any other `WM_LBUTTONUP` reaching the dialog (`0x0052F1CF`): with an
+    /// emblem's capture, or over the background or an emblem. Releasing on
+    /// an emblem stops the hovered one and restarts the one under the cursor
+    /// from frame 0 (`0x0052F34C..0x0052F38D`); anywhere else stops and
+    /// clears the hover (`0x0052F31F`, `0x0052F395`). The queued voice is
+    /// kept.
+    pub fn pointer_up(&mut self, emblem_under: Option<CampaignSide>, now: Instant) {
         match emblem_under {
-            Some(side) if pressed == Some(side) => {
-                if let Some(hovered) = self.hovered {
-                    self.emblem_mut(hovered).reset();
-                }
-                CampaignRelease::Selected(side)
-            }
             Some(side) => {
                 if let Some(old) = self.hovered.take() {
                     self.emblem_mut(old).reset();
@@ -443,13 +361,11 @@ impl CampaignShellState {
                 self.emblem_mut(side).reset();
                 self.emblem_mut(side).start(now);
                 self.hovered = Some(side);
-                CampaignRelease::None
             }
             None => {
                 if let Some(old) = self.hovered.take() {
                     self.emblem_mut(old).reset();
                 }
-                CampaignRelease::None
             }
         }
     }
@@ -495,7 +411,7 @@ impl CampaignShellState {
     /// A position change sends `WM_HSCROLL` (`0x0061E672..0x0061E6AF`), whose
     /// handler (`0x0052EC59`) names the new position. Returns whether it
     /// changed.
-    fn set_difficulty(&mut self, position: i32) -> bool {
+    pub fn set_difficulty(&mut self, position: i32) -> bool {
         let position = position.clamp(0, DIFFICULTY_MAX);
         let changed = position != self.difficulty;
         self.difficulty = position;
@@ -520,11 +436,14 @@ mod tests {
         let wide = compute_layout(1024, 768);
         assert_eq!(wide.soviet, RectPx::new(141 + 112, 364 + 84, 348, 136));
         let small = compute_layout(640, 480);
-        assert_eq!(small.slider, dlu_rect(137, 140, 140, 14));
+        assert_eq!(
+            small.slider,
+            crate::ui::shell::geom::dlu_rect(137, 140, 140, 14)
+        );
     }
 
     #[test]
-    fn layout_puts_back_on_the_last_row_and_hit_tests_the_emblems() {
+    fn layout_puts_back_on_the_last_row() {
         let layout = compute_layout(800, 600);
         assert_eq!(
             layout.page.button_rect(BACK_BUTTON),
@@ -533,18 +452,6 @@ mod tests {
         assert!(
             layout.page.buttons.len() == 1,
             "only Back is on the right panel"
-        );
-        assert_eq!(
-            layout.emblem_at(layout.allied.x + 1, layout.allied.y + 1),
-            Some(CampaignSide::Allied)
-        );
-        assert_eq!(
-            layout.emblem_at(layout.soviet.x + 1, layout.soviet.y + 1),
-            Some(CampaignSide::Soviet)
-        );
-        assert_eq!(
-            layout.emblem_at(layout.slider.x + 1, layout.slider.y + 1),
-            None
         );
     }
 
@@ -559,57 +466,81 @@ mod tests {
         );
     }
 
-    #[test]
-    fn slider_presses_hold_the_mouse_and_only_the_thumb_drags() {
-        // 272x22 at 800x600: thumbs at x 1, 130 and 260 (executed 178/307/437
-        // on screen), positions 0 below x 94, 1 below 180, else 2.
-        let window = RectPx::new(0, 0, 272, 22);
-        let mut state = CampaignShellState::open(1);
-        assert!(
-            !state.slider_press(40, 3, window, ShellScale::RETAIL),
-            "above the admitted strip"
-        );
-        assert!(state.slider_held());
-        state.slider_release();
-        assert!(state.slider_press(40, 10, window, ShellScale::RETAIL));
-        assert_eq!(state.difficulty(), 0);
-        assert!(state.slider_held());
-        assert!(
-            !state.slider_drag(200, window, ShellScale::RETAIL),
-            "a rail press does not drag"
-        );
-        state.slider_release();
-        assert!(!state.slider_held());
-        assert!(
-            !state.slider_press(5, 10, window, ShellScale::RETAIL),
-            "on the thumb at position 0"
-        );
-        assert!(state.slider_drag(200, window, ShellScale::RETAIL));
-        assert_eq!(state.difficulty_label_key(), "TXT_HARD");
-        state.slider_release();
-        assert!(!state.slider_drag(20, window, ShellScale::RETAIL));
+    /// The page's nodes on a stretched 1600x1200 window, the slider at 1.
+    fn page() -> (vera20k_gui::Gui, CampaignLayout) {
+        use crate::ui::shell::page as shell_page;
+        let scale = crate::ui::shell::geom::shell_scale(1600, 1200);
+        let layout = crate::ui::shell::geom::fit_window(1600, 1200, compute_layout);
+        let mut gui = vera20k_gui::Gui::new(16);
+        let root = gui.create(NodeKind::Dialog, None).unwrap();
+        let dialog = gui
+            .push_dialog(root, vera20k_gui::DialogKind::Page)
+            .unwrap();
+        gui.set_dialog_scale(dialog, scale);
+        shell_page::ensure_built(&mut gui, root, nodes);
+        shell_page::sync_rects(&mut gui, root, |id| layout.control_rect(id));
+        shell_page::set(&mut gui, root, DIFFICULTY_SLIDER, Prop::Pos, Value::Int(1));
+        (gui, layout)
+    }
+
+    fn click(gui: &mut vera20k_gui::Gui, (x, y): (i32, i32), up: Option<(i32, i32)>) {
+        use vera20k_gui::{InputEvent, MouseButton::Left};
+        gui.input(InputEvent::PointerMove { x, y }, 0);
+        gui.input(InputEvent::PointerDown { x, y, button: Left }, 0);
+        let (x, y) = up.unwrap_or((x, y));
+        gui.input(InputEvent::PointerMove { x, y }, 0);
+        gui.input(InputEvent::PointerUp { x, y, button: Left }, 0);
+    }
+
+    fn events(gui: &mut vera20k_gui::Gui) -> Vec<crate::ui::shell::page::PageEvent> {
+        let events = gui.drain_events();
+        crate::ui::shell::page::page_events(gui, events)
     }
 
     #[test]
-    fn a_stretched_slider_presses_on_its_authored_track() {
-        // The 272x22 control doubled: the device cursor and window map back to
-        // the authored x 40 of the strip, so a stretched slider jumps to the
-        // same position the retail one does instead of partitioning the wider
-        // device track.
-        let scale = ShellScale::from_screen(1600, 1200);
-        let window = scale.scale_rect(RectPx::new(177, 265, 272, 22));
-        let mut state = CampaignShellState::open(1);
-        assert!(state.slider_press(434, 550, window, scale));
-        assert_eq!(state.difficulty(), 0);
-        state.slider_release();
-        state.slider_hold = Some(TrackbarHold {
-            id: (),
-            dragging: true,
-        });
-        // Device 2*(177+200) is authored x 200, which the retail case above
-        // reads as the hardest position.
-        assert!(state.slider_drag(754, window, scale));
-        assert_eq!(state.difficulty_label_key(), "TXT_HARD");
+    fn an_emblem_selects_on_a_release_over_its_own_press() {
+        use crate::ui::shell::page::{PageCue, PageEvent};
+        let (mut gui, layout) = page();
+        let centre = |r: RectPx| (r.x + r.w / 2, r.y + r.h / 2);
+        click(&mut gui, centre(layout.soviet), None);
+        assert_eq!(
+            events(&mut gui),
+            [
+                PageEvent::Cue(PageCue::Button),
+                PageEvent::Activated(SOVIET_EMBLEM)
+            ]
+        );
+        click(&mut gui, centre(layout.allied), Some(centre(layout.soviet)));
+        assert_eq!(events(&mut gui), [PageEvent::Cue(PageCue::Button)]);
+    }
+
+    #[test]
+    fn a_stretched_slider_presses_and_drags_on_its_authored_track() {
+        use crate::ui::shell::page::PageEvent;
+        // The 272x22 slider at 177,265 doubled. Authored, its thumbs sit at
+        // x 1, 130 and 260 (executed 178/307/437 on screen) and a press
+        // jumps to 0 below x 94; only the strip above y 4 takes a press.
+        let (mut gui, _) = page();
+        let at = |x: i32, y: i32| (2 * (177 + x), 2 * (265 + y));
+        click(&mut gui, at(40, 3), None);
+        let slid = |value, final_| PageEvent::Slid {
+            id: DIFFICULTY_SLIDER,
+            value,
+            final_,
+        };
+        assert_eq!(
+            events(&mut gui),
+            [slid(1, true)],
+            "above the admitted strip"
+        );
+        click(&mut gui, at(40, 10), Some(at(200, 10)));
+        assert_eq!(
+            events(&mut gui),
+            [slid(0, false), slid(0, true)],
+            "a rail press does not drag"
+        );
+        click(&mut gui, at(5, 10), Some(at(200, 10)));
+        assert_eq!(events(&mut gui), [slid(2, false), slid(2, true)]);
     }
 
     #[test]
@@ -673,41 +604,12 @@ mod tests {
     }
 
     #[test]
-    fn releasing_on_the_pressed_emblem_selects_its_campaign() {
-        let start = t0();
-        let mut state = CampaignShellState::open(2);
-        state.pointer_moved(Some(CampaignSide::Soviet), start);
-        assert!(state.pointer_down(Some(CampaignSide::Soviet)));
-        assert_eq!(
-            state.pointer_up(
-                Some(CampaignSide::Soviet),
-                start + Duration::from_millis(50)
-            ),
-            CampaignRelease::Selected(CampaignSide::Soviet)
-        );
-        assert_eq!(state.take_selection_voice(), Some(CampaignSide::Soviet));
-        assert_eq!(CampaignSide::Soviet.campaign_name(), "sov1");
-    }
-
-    #[test]
-    fn a_press_dragged_elsewhere_selects_nothing() {
+    fn a_release_on_another_emblem_moves_the_highlight_there() {
         let start = t0();
         let mut state = CampaignShellState::open(1);
-        assert!(state.pointer_down(Some(CampaignSide::Allied)));
-        // While captured, hover changes are ignored.
-        state.pointer_moved(Some(CampaignSide::Soviet), start);
-        assert_eq!(state.hovered(), None);
-        assert_eq!(
-            state.pointer_up(Some(CampaignSide::Soviet), start),
-            CampaignRelease::None
-        );
-        assert_eq!(
-            state.hovered(),
-            Some(CampaignSide::Soviet),
-            "highlight moves there"
-        );
-        assert!(state.pressed().is_none());
-        assert!(!state.pointer_down(None), "only emblems capture");
+        state.pointer_up(Some(CampaignSide::Soviet), start);
+        assert_eq!(state.hovered(), Some(CampaignSide::Soviet));
+        assert!(state.emblem(CampaignSide::Soviet).running());
     }
 
     #[test]
@@ -716,12 +618,8 @@ mod tests {
         let mut state = CampaignShellState::open(1);
         state.pointer_moved(Some(CampaignSide::Allied), start);
         state.advance_emblems(start + Duration::from_millis(100), [5, 5]);
-        state.pointer_down(Some(CampaignSide::Allied));
         let at = start + Duration::from_millis(150);
-        assert_eq!(
-            state.pointer_up(Some(CampaignSide::Allied), at),
-            CampaignRelease::Selected(CampaignSide::Allied)
-        );
+        state.select();
         assert_eq!(state.take_selection_voice(), Some(CampaignSide::Allied));
         assert_eq!(state.hovered(), Some(CampaignSide::Allied));
         assert_eq!(state.emblem(CampaignSide::Allied).shown_frame(), 0);
@@ -741,10 +639,7 @@ mod tests {
         }
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 1);
         let at = start + Duration::from_millis(250);
-        assert_eq!(
-            state.pointer_up(Some(CampaignSide::Soviet), at),
-            CampaignRelease::None
-        );
+        state.pointer_up(Some(CampaignSide::Soviet), at);
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);
         state.advance_emblems(at + Duration::from_millis(100), [5, 5]);
         assert_eq!(state.emblem(CampaignSide::Soviet).shown_frame(), 0);

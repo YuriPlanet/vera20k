@@ -3,235 +3,193 @@
 //! A Win32 timer invalidates the child surface, but the reveal count advances
 //! only after that child actually paints. VERA20k continuously recomposes the
 //! parent, so this render-agnostic state separates the internal count, the last
-//! successfully presented count, and one dirty-paint generation. The app layer
-//! acknowledges that generation only after swapchain presentation.
+//! successfully presented count and one dirty paint. The app layer commits the
+//! dirty paint only after swapchain presentation.
 
-use crate::util::time::{Duration, Instant};
+use vera20k_gui::time::{Duration, Instant};
 
 /// Native kind-1 timer interval of the right-panel heading `0x694`
 /// (`0x1e` milliseconds).
-pub(crate) const KIND1_TIMER_INTERVAL: Duration = Duration::from_millis(30);
-/// Native kind-1 highlight trail of the right-panel heading `0x694`.
-pub(crate) const KIND1_HIGHLIGHT_RANGE: u32 = 8;
+pub const KIND1_TIMER_INTERVAL: Duration = Duration::from_millis(30);
 
 /// One kind-1 static's reveal parameters: timer interval (`0x00600CA0`),
 /// count step per paint (`0x006015E0`) and highlight range (`0x00601D20`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Kind1Params {
+pub struct Kind1Params {
     pub interval: Duration,
     pub step: u32,
     pub range: u32,
 }
 
 /// Heading `0x694` of the right-panel shell dialogs.
-pub(crate) const HEADING_KIND1: Kind1Params = Kind1Params {
+pub const HEADING_KIND1: Kind1Params = Kind1Params {
     interval: KIND1_TIMER_INTERVAL,
     step: 1,
-    range: KIND1_HIGHLIGHT_RANGE,
+    range: 8,
 };
 
 /// Status line `0x695` of the right-panel shell dialogs outside a network
 /// session.
-pub(crate) const STATUS_LINE_KIND1: Kind1Params = Kind1Params {
+pub const STATUS_LINE_KIND1: Kind1Params = Kind1Params {
     interval: Duration::from_millis(15),
     step: 3,
     range: 16,
 };
 
-#[derive(Debug, Clone)]
-pub(crate) struct Kind1StaticReveal {
-    params: Kind1Params,
-    phase: RevealPhase,
-    next_generation: u64,
+/// The count/range the Path-A renderer must use for one child paint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Kind1RevealWindow {
+    pub count: u32,
+    pub range: u32,
 }
 
-#[derive(Debug, Clone)]
-enum RevealPhase {
-    Waiting,
-    Running(RunningReveal),
-}
-
+/// A started reveal (`0x4EE` set the native `+0xA8` flag; it stays set after
+/// the last paint).
 #[derive(Debug, Clone)]
 struct RunningReveal {
     internal_count: u32,
     displayed_count: Option<u32>,
     target_count: u32,
     next_timer_at: Option<Instant>,
-    dirty: Option<DirtyPaint>,
+    /// The count an invalidation asks the next paint to draw.
+    dirty: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct DirtyPaint {
-    count: u32,
-    generation: u64,
+/// A kind-1 static whose dirty paint is committed by the frame loop once the
+/// recomposition that drew it has been presented. It owns the static's text
+/// (native `+0x28`). Built with its native parameters ([`HEADING_KIND1`],
+/// [`STATUS_LINE_KIND1`]).
+#[derive(Debug, Clone)]
+pub struct PresentedKind1Static {
+    params: Kind1Params,
+    running: Option<RunningReveal>,
+    /// The latest recomposition drew the dirty paint.
+    pending: bool,
+    text: String,
 }
 
-/// The count/range the Path-A renderer must use for one child paint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Kind1RevealWindow {
-    pub count: u32,
-    pub range: u32,
-}
-
-/// Opaque one-use acknowledgement for one encoded dirty generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Kind1RevealReceipt {
-    generation: u64,
-}
-
-/// What a whole-window recomposition should display for this retained child.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kind1PaintWindow {
-    /// The child is waiting for the shell SHOW completion message.
-    Hidden,
-    /// Repaint the last successfully presented child pixels without advancing.
-    Retained(Kind1RevealWindow),
-    /// Encode the dirty count and return its post-present acknowledgement.
-    Due {
-        window: Kind1RevealWindow,
-        receipt: Kind1RevealReceipt,
-    },
-}
-
-/// The heading's parameters ([`HEADING_KIND1`]).
-impl Default for Kind1StaticReveal {
-    fn default() -> Self {
-        Self::with_params(HEADING_KIND1)
-    }
-}
-
-impl Kind1StaticReveal {
-    pub(crate) fn with_params(params: Kind1Params) -> Self {
+impl PresentedKind1Static {
+    pub fn new(params: Kind1Params) -> Self {
         Self {
             params,
-            phase: RevealPhase::Waiting,
-            next_generation: 1,
+            running: None,
+            pending: false,
+            text: String::new(),
         }
     }
 
-    pub(crate) fn params(&self) -> Kind1Params {
+    /// A new dialog instance's static: hidden, no text, same parameters.
+    pub fn reset(&mut self) {
+        *self = Self::new(self.params);
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    #[cfg(test)]
+    pub fn params(&self) -> Kind1Params {
         self.params
     }
 
-    /// Recreate the native child-equivalent waiting state.
-    pub(crate) fn reset_waiting(&mut self) {
-        self.phase = RevealPhase::Waiting;
+    /// `0x4B2`: replace the text. A started reveal whose text changed kills
+    /// its timer and starts again from count 1 (`0x00611C8A..0x00611CAF`);
+    /// before the SHOW completion the text is only stored.
+    pub fn set_text(&mut self, text: &str, now: Instant) {
+        if self.text == text {
+            return;
+        }
+        self.text.clear();
+        self.text.push_str(text);
+        if self.running.take().is_some() {
+            self.start(now);
+        }
     }
 
-    /// `0x4EE` has started the reveal (the native `+0xA8` flag); it stays set
-    /// after the last paint.
-    pub(crate) fn is_started(&self) -> bool {
-        matches!(self.phase, RevealPhase::Running(_))
+    /// A paint outside the timer. A hover message (`0x4B2`) restores the
+    /// saved background and invalidates the static besides replacing the
+    /// text (`0x00615EF7..0x00615F75`), so it repaints — and a running reveal
+    /// advances — on every hover message; a static shown again repaints at
+    /// its count, which after the last timer paint is the target.
+    pub fn repaint(&mut self) {
+        if let Some(running) = self.running.as_mut() {
+            running.dirty.get_or_insert(running.internal_count);
+        }
     }
 
-    /// Text replaced while started (`0x4B2`): kill the timer and start again
-    /// from count 1 (`0x00611C8A..0x00611CAF`).
-    pub(crate) fn restart(&mut self, text: &str, now: Instant) -> bool {
-        self.phase = RevealPhase::Waiting;
-        self.start(text, now)
-    }
-
-    /// Start once from Waiting. The count-1 paint is immediately dirty.
-    pub(crate) fn start(&mut self, text: &str, now: Instant) -> bool {
-        if !matches!(self.phase, RevealPhase::Waiting) {
+    /// The shell SHOW completion starts the reveal once with the current text
+    /// (`0x4EC -> 0x0060AA60 -> 0x4EE`); the count-1 paint is immediately
+    /// dirty. The target is the text's UTF-16 units + 1 + the range.
+    pub fn start(&mut self, now: Instant) -> bool {
+        if self.running.is_some() {
             return false;
         }
-        let Ok(utf16_units) = u32::try_from(text.encode_utf16().count()) else {
-            return false;
-        };
-        let Some(target_count) = utf16_units
-            .checked_add(1)
-            .and_then(|value| value.checked_add(self.params.range))
+        let Some(target_count) = u32::try_from(self.text.encode_utf16().count())
+            .ok()
+            .and_then(|units| units.checked_add(1 + self.params.range))
         else {
             return false;
         };
-        let generation = self.allocate_generation();
-        self.phase = RevealPhase::Running(RunningReveal {
+        self.pending = false;
+        self.running = Some(RunningReveal {
             internal_count: 1,
             displayed_count: None,
             target_count,
             next_timer_at: now.checked_add(self.params.interval),
-            dirty: Some(DirtyPaint {
-                count: 1,
-                generation,
-            }),
+            dirty: Some(1),
         });
         true
     }
 
-    /// Deliver/coalesce timer invalidation without changing the reveal count.
-    pub(crate) fn poll_timer(&mut self, now: Instant) -> bool {
-        let interval = self.params.interval;
-        let needs_generation = {
-            let RevealPhase::Running(running) = &mut self.phase else {
-                return false;
-            };
-            let Some(deadline) = running.next_timer_at else {
-                return false;
-            };
-            if now < deadline {
-                return false;
-            }
-            running.next_timer_at = Some(next_deadline_after(deadline, now, interval));
-            running.dirty.is_none()
-        };
-
-        if needs_generation {
-            let generation = self.allocate_generation();
-            let RevealPhase::Running(running) = &mut self.phase else {
-                unreachable!("phase cannot change while allocating a generation");
-            };
-            running.dirty = Some(DirtyPaint {
-                count: running.internal_count,
-                generation,
-            });
+    /// The SHOW completion of a dialog that may show again: `0x4EE` starts
+    /// only a static that has not started (`0x00615FDB`); a started one
+    /// repaints at its count as its dialog shows.
+    pub fn show(&mut self, now: Instant) {
+        if !self.start(now) {
+            self.repaint();
         }
-        true
     }
 
-    /// Return the hidden, retained, or dirty child content for this frame.
-    pub(crate) fn paint_window(&self) -> Kind1PaintWindow {
-        let RevealPhase::Running(running) = &self.phase else {
-            return Kind1PaintWindow::Hidden;
-        };
-        if let Some(dirty) = running.dirty {
-            return Kind1PaintWindow::Due {
-                window: Kind1RevealWindow {
-                    count: dirty.count,
-                    range: self.params.range,
-                },
-                receipt: Kind1RevealReceipt {
-                    generation: dirty.generation,
-                },
-            };
+    /// Reveal window for this recomposition, `None` while the child is hidden.
+    /// A due timer invalidates the static without changing its count.
+    pub fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
+        if let Some(running) = self.running.as_mut()
+            && let Some(deadline) = running.next_timer_at
+            && now >= deadline
+        {
+            running.next_timer_at = Some(next_deadline_after(deadline, now, self.params.interval));
+            running.dirty.get_or_insert(running.internal_count);
         }
-        running
-            .displayed_count
-            .map_or(Kind1PaintWindow::Hidden, |count| {
-                Kind1PaintWindow::Retained(Kind1RevealWindow {
-                    count,
-                    range: self.params.range,
-                })
-            })
+        self.paint_undelivered()
     }
 
-    /// Commit one dirty child paint after its encoded frame successfully presents.
-    pub(crate) fn record_presented(&mut self, receipt: Kind1RevealReceipt) -> bool {
-        let RevealPhase::Running(running) = &mut self.phase else {
-            return false;
-        };
-        let Some(dirty) = running.dirty else {
-            return false;
-        };
-        if dirty.generation != receipt.generation {
+    /// [`Self::paint`] with no timer delivered: the dirty count, else the last
+    /// presented one.
+    fn paint_undelivered(&mut self) -> Option<Kind1RevealWindow> {
+        let running = self.running.as_ref()?;
+        self.pending = running.dirty.is_some();
+        let count = running.dirty.or(running.displayed_count)?;
+        Some(Kind1RevealWindow {
+            count,
+            range: self.params.range,
+        })
+    }
+
+    /// The latest recomposition was presented. Returns whether it showed a
+    /// new step of the reveal. WM_PAINT draws, then advances the count while
+    /// it is below `units + 1 + range` and kills the timer once it gets there
+    /// (`0x00615B0D..0x00615B49`); a later paint only redraws.
+    pub fn commit_presented(&mut self) -> bool {
+        if !std::mem::take(&mut self.pending) {
             return false;
         }
-
-        // WM_PAINT draws, then advances the count while it is below
-        // `units + 1 + range` and kills the timer once it gets there
-        // (`0x00615B0D..0x00615B49`); a later paint only redraws.
-        running.dirty = None;
-        running.displayed_count = Some(dirty.count);
+        let Some(running) = self.running.as_mut() else {
+            return false;
+        };
+        let Some(count) = running.dirty.take() else {
+            return false;
+        };
+        running.displayed_count = Some(count);
         if running.internal_count < running.target_count {
             running.internal_count = running.internal_count.saturating_add(self.params.step);
             if running.internal_count >= running.target_count {
@@ -241,167 +199,21 @@ impl Kind1StaticReveal {
         true
     }
 
-    /// An invalidation outside the timer (a hover message reaching the status
-    /// line, `0x00615EF7`): the next paint draws the current count, which
-    /// then advances as any paint does.
-    pub(crate) fn invalidate(&mut self) {
-        let needs_generation = matches!(
-            &self.phase,
-            RevealPhase::Running(running) if running.dirty.is_none()
-        );
-        if needs_generation {
-            let generation = self.allocate_generation();
-            let RevealPhase::Running(running) = &mut self.phase else {
-                unreachable!("phase cannot change while allocating a generation");
-            };
-            running.dirty = Some(DirtyPaint {
-                count: running.internal_count,
-                generation,
-            });
-        }
-    }
-
-    /// Internal completion with the final invalidated paint still retained.
-    pub(crate) fn is_terminal_persistent(&self) -> bool {
-        let RevealPhase::Running(running) = &self.phase else {
-            return false;
-        };
-        running.internal_count >= running.target_count
-            && running.displayed_count.is_some()
-            && running.dirty.is_none()
-            && running.next_timer_at.is_none()
-    }
-
-    #[cfg(test)]
-    fn target_count(&self) -> Option<u32> {
-        match &self.phase {
-            RevealPhase::Waiting => None,
-            RevealPhase::Running(running) => Some(running.target_count),
-        }
-    }
-
-    fn allocate_generation(&mut self) -> u64 {
-        let generation = self.next_generation;
-        self.next_generation = self.next_generation.checked_add(1).unwrap_or(1);
-        generation
-    }
-}
-
-/// A kind-1 static whose dirty paint is committed by the frame loop once the
-/// recomposition that drew it has been presented. It owns the static's text
-/// (native `+0x28`). Built with its native parameters ([`HEADING_KIND1`],
-/// [`STATUS_LINE_KIND1`]).
-#[derive(Debug, Clone)]
-pub(crate) struct PresentedKind1Static {
-    reveal: Kind1StaticReveal,
-    pending: Option<Kind1RevealReceipt>,
-    text: String,
-}
-
-impl PresentedKind1Static {
-    pub(crate) fn new(params: Kind1Params) -> Self {
-        Self {
-            reveal: Kind1StaticReveal::with_params(params),
-            pending: None,
-            text: String::new(),
-        }
-    }
-
-    /// A new dialog instance's static: hidden, no text, same parameters.
-    pub(crate) fn reset(&mut self) {
-        *self = Self::new(self.reveal.params());
-    }
-
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
-    #[cfg(test)]
-    pub(crate) fn params(&self) -> Kind1Params {
-        self.reveal.params()
-    }
-
-    /// `0x4B2`: replace the text. A started reveal whose text changed starts
-    /// again from count 1; before the SHOW completion the text is only stored.
-    pub(crate) fn set_text(&mut self, text: &str, now: Instant) {
-        if self.text == text {
-            return;
-        }
-        self.text.clear();
-        self.text.push_str(text);
-        if self.reveal.is_started() {
-            self.pending = None;
-            self.reveal.restart(text, now);
-        }
-    }
-
-    /// A paint outside the timer. A hover message (`0x4B2`) restores the
-    /// saved background and invalidates the static besides replacing the
-    /// text (`0x00615EF7..0x00615F75`), so it repaints — and a running reveal
-    /// advances — on every hover message; a static shown again repaints at
-    /// its count, which after the last timer paint is the target.
-    pub(crate) fn repaint(&mut self) {
-        self.reveal.invalidate();
-    }
-
-    /// The shell SHOW completion starts the reveal once with the current text
-    /// (`0x4EC -> 0x0060AA60 -> 0x4EE`).
-    pub(crate) fn start(&mut self, now: Instant) -> bool {
-        self.reveal.start(&self.text, now)
-    }
-
-    /// The SHOW completion of a dialog that may show again: `0x4EE` starts
-    /// only a static that has not started (`0x00615FDB`); a started one
-    /// repaints at its count as its dialog shows.
-    pub(crate) fn show(&mut self, now: Instant) {
-        if !self.start(now) {
-            self.repaint();
-        }
-    }
-
-    /// Reveal window for this recomposition, `None` while the child is hidden.
-    pub(crate) fn paint(&mut self, now: Instant) -> Option<Kind1RevealWindow> {
-        self.reveal.poll_timer(now);
-        self.paint_undelivered()
-    }
-
-    /// [`Self::paint`] with no timer delivered.
-    fn paint_undelivered(&mut self) -> Option<Kind1RevealWindow> {
-        match self.reveal.paint_window() {
-            Kind1PaintWindow::Hidden => {
-                self.pending = None;
-                None
-            }
-            Kind1PaintWindow::Retained(window) => {
-                self.pending = None;
-                Some(window)
-            }
-            Kind1PaintWindow::Due { window, receipt } => {
-                self.pending = Some(receipt);
-                Some(window)
-            }
-        }
-    }
-
-    /// The latest recomposition was presented. Returns whether it showed a
-    /// new step of the reveal.
-    pub(crate) fn commit_presented(&mut self) -> bool {
-        let Some(receipt) = self.pending.take() else {
-            return false;
-        };
-        self.reveal.record_presented(receipt);
-        true
-    }
-
     /// The reveal ran to completion and its final paint is on screen.
-    pub(crate) fn is_terminal(&self) -> bool {
-        self.pending.is_none() && self.reveal.is_terminal_persistent()
+    pub fn is_terminal(&self) -> bool {
+        !self.pending
+            && self.running.as_ref().is_some_and(|running| {
+                running.internal_count >= running.target_count
+                    && running.displayed_count.is_some()
+                    && running.dirty.is_none()
+                    && running.next_timer_at.is_none()
+            })
     }
 
     /// [`Self::paint`] with the static's text. While a slide runs no timer
     /// reaches the static (`0x006071E0` sleeps without dispatching):
     /// `timers` is false and only an invalidation paints a new count.
-    pub(crate) fn paint_text(&mut self, now: Instant, timers: bool) -> Option<StaticPaint<'_>> {
+    pub fn paint_text(&mut self, now: Instant, timers: bool) -> Option<StaticPaint<'_>> {
         let window = if timers {
             self.paint(now)?
         } else {
@@ -416,14 +228,14 @@ impl PresentedKind1Static {
 
 /// One shown static in a recomposition: its text and reveal window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StaticPaint<'a> {
+pub struct StaticPaint<'a> {
     pub text: &'a str,
     pub window: Kind1RevealWindow,
 }
 
 /// A [`DialogStatics`] recomposition; `None` where nothing paints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DialogStaticsPaint<'a> {
+pub struct DialogStaticsPaint<'a> {
     pub heading: Option<StaticPaint<'a>>,
     pub status_line: Option<StaticPaint<'a>>,
 }
@@ -436,7 +248,7 @@ pub(crate) struct DialogStaticsPaint<'a> {
 /// its SHOW completion repaints what already started
 /// ([`PresentedKind1Static::show`]).
 #[derive(Debug, Clone)]
-pub(crate) struct DialogStatics {
+pub struct DialogStatics {
     heading: PresentedKind1Static,
     /// Holds the last hover help.
     status_line: PresentedKind1Static,
@@ -453,7 +265,7 @@ impl Default for DialogStatics {
 
 impl DialogStatics {
     /// The SHOW completion with the heading the dialog holds.
-    pub(crate) fn show(&mut self, heading: &str, now: Instant) {
+    pub fn show(&mut self, heading: &str, now: Instant) {
         self.heading.set_text(heading, now);
         self.heading.show(now);
         self.status_line.show(now);
@@ -462,7 +274,7 @@ impl DialogStatics {
     /// A hover message to the status line (`0x4B2`): a changed help restarts
     /// a started reveal, and every message repaints the line
     /// (`0x00615EF7`). Returns whether the help changed.
-    pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
+    pub fn hover(&mut self, help: &str, now: Instant) -> bool {
         let changed = self.status_line.text() != help;
         self.status_line.set_text(help, now);
         self.status_line.repaint();
@@ -471,7 +283,7 @@ impl DialogStatics {
 
     /// Another dialog stops covering this one without a slide (the seed
     /// browser over `0x105` closes): both statics repaint at their counts.
-    pub(crate) fn uncovered(&mut self) {
+    pub fn uncovered(&mut self) {
         self.heading.repaint();
         self.status_line.repaint();
     }
@@ -481,7 +293,7 @@ impl DialogStatics {
     /// the heading, and the status line, outside the blits and validate-only
     /// (`0x00606800` through `0x00601360`), gets no timer and keeps its last
     /// paint ([`PresentedKind1Static::paint_text`]).
-    pub(crate) fn paint(&mut self, now: Instant, sliding: bool) -> DialogStaticsPaint<'_> {
+    pub fn paint(&mut self, now: Instant, sliding: bool) -> DialogStaticsPaint<'_> {
         let heading = if sliding {
             None
         } else {
@@ -494,13 +306,13 @@ impl DialogStatics {
     }
 
     /// Returns whether the presented frame showed a new status-line step.
-    pub(crate) fn commit_presented(&mut self) -> bool {
+    pub fn commit_presented(&mut self) -> bool {
         self.heading.commit_presented();
         self.status_line.commit_presented()
     }
 
     /// Both reveals ran to completion and their last paints are on screen.
-    pub(crate) fn is_terminal(&self) -> bool {
+    pub fn is_terminal(&self) -> bool {
         self.heading.is_terminal() && self.status_line.is_terminal()
     }
 }
@@ -517,28 +329,11 @@ fn next_deadline_after(deadline: Instant, now: Instant, interval: Duration) -> I
 }
 
 #[cfg(all(test, tests_ui))]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
 
-    fn due(reveal: &Kind1StaticReveal) -> (Kind1RevealWindow, Kind1RevealReceipt) {
-        let Kind1PaintWindow::Due { window, receipt } = reveal.paint_window() else {
-            panic!("expected dirty paint");
-        };
-        (window, receipt)
-    }
-
-    /// Native getters executed under Unicorn by
-    /// `tools/storage_oracle/shell_static_timers.py`.
-    pub(crate) fn native_static_timer_cases() -> Vec<serde_json::Value> {
-        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/shell_static_timers.json",
-        ))
-        .unwrap();
-        fixture["cases"].as_array().unwrap().clone()
-    }
-
     fn native_params(dialog: u64, control: u64) -> Kind1Params {
-        let cases = native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         let case = cases
             .iter()
             .find(|case| case["dialog_id"] == dialog && case["control_id"] == control)
@@ -671,90 +466,66 @@ pub(crate) mod tests {
 
     #[test]
     fn start_uses_exact_utf16_target_and_is_single_shot() {
-        let mut reveal = Kind1StaticReveal::default();
         let now = Instant::now();
-        assert!(reveal.start("A😀B", now));
-        // A + surrogate pair + B = four UTF-16 units.
-        assert_eq!(reveal.target_count(), Some(4 + 1 + 8));
-        assert!(!reveal.start("replacement", now));
-        assert_eq!(due(&reveal).0.count, 1);
+        let mut reveal = PresentedKind1Static::new(HEADING_KIND1);
+        // A + surrogate pair + B = four UTF-16 units: target 4 + 1 + 8 = 13,
+        // so the last timer paint draws 12.
+        reveal.set_text("A😀B", now);
+        assert!(reveal.start(now));
+        assert!(!reveal.start(now));
+        let mut last = 0;
+        for tick in 0..20 {
+            last = present(&mut reveal, now + KIND1_TIMER_INTERVAL * tick)
+                .unwrap()
+                .count;
+        }
+        assert_eq!(last, 12);
+        assert!(reveal.is_terminal());
     }
 
     #[test]
-    fn timer_without_present_never_advances_or_replaces_dirty_generation() {
-        let mut reveal = Kind1StaticReveal::default();
+    fn an_unpresented_paint_is_drawn_again_without_advancing() {
         let now = Instant::now();
-        assert!(reveal.start("abc", now));
-        let first = due(&reveal);
-        assert!(reveal.poll_timer(now + Duration::from_millis(95)));
-        let after_timers = due(&reveal);
-        assert_eq!(after_timers, first);
-        assert_eq!(after_timers.0.count, 1);
-    }
-
-    #[test]
-    fn presented_count_is_retained_until_the_next_timer_invalidation() {
-        let mut reveal = Kind1StaticReveal::default();
-        let now = Instant::now();
-        assert!(reveal.start("abc", now));
-        let (_, first) = due(&reveal);
-        assert!(reveal.record_presented(first));
+        let mut reveal = PresentedKind1Static::new(HEADING_KIND1);
+        reveal.set_text("abc", now);
+        assert!(reveal.start(now));
+        assert_eq!(reveal.paint(now).map(|w| w.count), Some(1));
         assert_eq!(
-            reveal.paint_window(),
-            Kind1PaintWindow::Retained(Kind1RevealWindow { count: 1, range: 8 })
+            reveal
+                .paint(now + Duration::from_millis(95))
+                .map(|w| w.count),
+            Some(1)
         );
-        assert!(!reveal.poll_timer(now + Duration::from_millis(29)));
-        assert!(reveal.poll_timer(now + Duration::from_millis(30)));
-        assert_eq!(due(&reveal).0.count, 2);
-    }
-
-    #[test]
-    fn stale_duplicate_and_reset_receipts_never_advance() {
-        let mut reveal = Kind1StaticReveal::default();
-        let now = Instant::now();
-        assert!(reveal.start("abc", now));
-        let (_, old_receipt) = due(&reveal);
-        assert!(reveal.record_presented(old_receipt));
-        assert!(!reveal.record_presented(old_receipt));
-
-        assert!(reveal.poll_timer(now + Duration::from_millis(30)));
-        let (_, current_receipt) = due(&reveal);
-        assert!(!reveal.record_presented(old_receipt));
-        assert_eq!(due(&reveal).1, current_receipt);
-
-        reveal.reset_waiting();
-        assert_eq!(reveal.paint_window(), Kind1PaintWindow::Hidden);
-        assert!(!reveal.record_presented(current_receipt));
-        assert!(reveal.start("abc", now + Duration::from_secs(1)));
-        assert_ne!(due(&reveal).1, current_receipt);
-        assert!(!reveal.record_presented(current_receipt));
+        assert!(reveal.commit_presented());
+        // The presented count is retained until the next timer.
+        assert_eq!(
+            present(&mut reveal, now + Duration::from_millis(100)).map(|w| w.count),
+            Some(1)
+        );
+        assert_eq!(
+            present(&mut reveal, now + Duration::from_millis(120)).map(|w| w.count),
+            Some(2)
+        );
     }
 
     #[test]
     fn main_menu_retains_count_17_after_internal_count_reaches_18() {
-        let mut reveal = Kind1StaticReveal::default();
         let start = Instant::now();
-        assert!(reveal.start("Main Menu", start));
-        assert_eq!(reveal.target_count(), Some(18));
-
+        let mut reveal = PresentedKind1Static::new(HEADING_KIND1);
+        reveal.set_text("Main Menu", start);
+        assert!(reveal.start(start));
         for count in 1..=17 {
-            let (window, receipt) = due(&reveal);
-            assert_eq!(window.count, count);
-            assert!(reveal.record_presented(receipt));
-            if count < 17 {
-                assert!(reveal.poll_timer(start + KIND1_TIMER_INTERVAL * count));
-            }
+            let now = start + KIND1_TIMER_INTERVAL * (count - 1);
+            assert_eq!(present(&mut reveal, now).map(|w| w.count), Some(count));
         }
-
-        assert!(reveal.is_terminal_persistent());
+        assert!(reveal.is_terminal());
         assert_eq!(
-            reveal.paint_window(),
-            Kind1PaintWindow::Retained(Kind1RevealWindow {
+            reveal.paint(start + Duration::from_secs(10)),
+            Some(Kind1RevealWindow {
                 count: 17,
                 range: 8,
             })
         );
-        assert!(!reveal.poll_timer(start + Duration::from_secs(10)));
     }
 
     /// Paint and present both statics once: (heading, status line) counts.

@@ -3,11 +3,12 @@
 //! (48CA34/48CAB2) and the campaign restart request (native48CB2E→8B41C0)
 //! authority.
 
+use super::dialog_page::InGameDialog;
 use crate::app::match_runtime::session::SessionMode;
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
-use crate::ui::shell::abort::{AbortButton, AbortLayout, AbortSecondary, abort_layout};
-use winit::event::MouseButton;
+use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
+use crate::ui::shell::page::PageEvent;
 
 /// B6 init `0x004F1938..0x004F1A0E` keys control712 on GameMode: 0 shows
 /// Restart, 5 hides it, LAN/WOL show Observe with two or more live humans
@@ -60,26 +61,45 @@ pub(crate) fn on_open(state: &mut AppState) {
     state.match_state.match_presentation.abort_secondary = select_abort_secondary(state);
 }
 
+/// B6: no title, Resume 0x686 as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: abort::DIALOG,
+    title: None,
+    lower: (0x686, ("GUI:ResumeMission", "Resume Mission")),
+    label: "Active Abort Shell B6",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    own_checkbox_sound: false,
+};
+
 /// The open B6's geometry.
 pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
-    Some(abort_layout(
-        shell.width,
-        shell.height,
-        shell.layout,
-        shell.button_size,
-        state.match_state.match_presentation.abort_secondary,
-    ))
+    let secondary = state.match_state.match_presentation.abort_secondary;
+    super::dialog_page::layout(state, |w, h, shell, size| {
+        abort_layout(w, h, shell, size, secondary)
+    })
 }
 
-fn hit(state: &AppState) -> Option<AbortButton> {
-    let layout = current_abort_layout(state)?;
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
-    layout.hit(x, y)
-}
-
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    state.match_state.match_presentation.abort_buttons.hovered = hit(state);
+/// One pointer message on B6 (`down`: `None` moves).
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = current_abort_layout(state) else {
+        return;
+    };
+    let nodes = || abort::spec(layout.secondary_kind);
+    let events = DIALOG.route(
+        state,
+        down,
+        nodes,
+        |id| layout.rect(id),
+        super::dialog_page::no_sync,
+    );
+    for event in events {
+        if let PageEvent::Activated(id) = event
+            && let Some(button) = AbortButton::from_id(id)
+        {
+            activate(state, button);
+        }
+    }
 }
 
 /// Callback4F18B0 writes the result B6 init stored for the pressed button:
@@ -97,31 +117,6 @@ pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
         (AbortButton::Resume, _) => AbortConfirmAction::Cancel,
     };
     App::apply_in_game_modal_outcome(state, resolve_abort_action(action));
-}
-
-pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
-    if button != MouseButton::Left {
-        return;
-    }
-    let over = hit(state);
-    if pressed {
-        state
-            .match_state
-            .match_presentation
-            .abort_buttons
-            .press(over);
-        if over.is_some() {
-            // Owner-draw button-down: GUIMainButtonSound (0x0061376B).
-            App::play_main_menu_button_sound(state);
-        }
-    } else if let Some(button) = state
-        .match_state
-        .match_presentation
-        .abort_buttons
-        .release(over)
-    {
-        activate(state, button);
-    }
 }
 
 #[cfg(all(test, tests_app_input_a_c))]

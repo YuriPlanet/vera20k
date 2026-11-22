@@ -351,19 +351,21 @@ fn a_remembered_sign_in_lasts_until_its_name_or_another_account_replaces_it() {
         _ => None,
     };
     remember_sign_in(settings, &service, "Tanya", token('A'));
+    // Guest entry, even with this account's name, leaves its saved sign-in alone.
+    assert!(matches!(
+        sign_in_credential(settings, &service, "tanya", String::new(), false),
+        Some(http::Credential::Guest)
+    ));
     assert!(matches!(
         sign_in_credential(settings, &service, "tanya", String::new(), true),
-        http::Credential::Remembered(sent) if sent == token('A')
+        Some(http::Credential::Remembered(sent)) if sent == token('A')
     ));
-    assert!(matches!(
-        sign_in_credential(settings, &service, "Boris", String::new(), false),
-        http::Credential::Guest
-    ));
+    assert!(sign_in_credential(settings, &service, "Boris", String::new(), true).is_none());
     remember_sign_in(settings, &service, "Boris", token('B'));
     assert_eq!(forgotten(&input), Some(token('A')));
     assert!(matches!(
         sign_in_credential(settings, &service, "Boris", "s3cret-pw".into(), true),
-        http::Credential::Password { remember: true, .. }
+        Some(http::Credential::Password { remember: true, .. })
     ));
     assert_eq!(forgotten(&input), Some(token('B')));
     assert_eq!(account::load(directory.path(), &service.lobby), None);
@@ -1691,6 +1693,7 @@ fn online_exit_owner_retries_logout_after_the_visit_is_dropped_and_ignores_old_c
         output
             .send(http::Response::Authenticated {
                 attempt: 0,
+                generated_guest: false,
                 player_id: "old-player".into(),
                 nickname: "OldVisit".into(),
                 motd: None,

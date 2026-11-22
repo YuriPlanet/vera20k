@@ -1,8 +1,10 @@
-//! Shared native list and scrollbar geometry from 0x00618D40 / 0x0061C690.
-//! Native list rows use GAME.FNT height 17 + 2; inner rectangles exclude borders.
+//! Shared list and scrollbar geometry, ported from gamemd's native list
+//! (0x00618D40 / 0x0061C690). The default row is that list's GAME.FNT height
+//! 17 + 2; a host with other text sets its own metrics. Inner rectangles
+//! exclude borders.
 
 use super::geom::{RectPx, ShellScale};
-use crate::util::time::{Duration, Instant};
+use crate::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListScrollPart {
@@ -12,15 +14,16 @@ pub enum ListScrollPart {
     Track,
 }
 
+/// Default list metrics, measured from gamemd's native list: the row height,
+/// and the scrollbar child's width, arrow height and minimum thumb height
+/// (`0x0061C690`, the same native scrollbar the combo dropdowns use).
 pub const ROW_HEIGHT: i32 = 19;
-/// The list scrollbar child's width and arrow height, and the thumb's minimum
-/// height (`0x0061C690`, the same native scrollbar the combo dropdowns use).
 const SCROLLBAR_WIDTH: i32 = 20;
 const ARROW_HEIGHT: i32 = 22;
 const MIN_THUMB_HEIGHT: i32 = 14;
 
 /// A list box's row and scrollbar metrics in the pixels its page is drawn in:
-/// the native constants on the retail layout, grown with the window on a
+/// the default metrics on an unscaled layout, grown with the window on a
 /// stretched one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListMetrics {
@@ -31,6 +34,7 @@ pub struct ListMetrics {
 }
 
 impl ListMetrics {
+    /// The default metrics, unscaled.
     pub const RETAIL: Self = Self {
         row_h: ROW_HEIGHT,
         scrollbar_w: SCROLLBAR_WIDTH,
@@ -39,7 +43,7 @@ impl ListMetrics {
     };
 
     pub fn scaled(scale: ShellScale) -> Self {
-        if scale.is_retail() {
+        if scale.is_unscaled() {
             return Self::RETAIL;
         }
         let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
@@ -135,6 +139,10 @@ impl ListScrollInteraction {
     }
     pub fn repeat_at(&self) -> Option<Instant> {
         self.repeat_at
+    }
+    /// The part a press holds until the release.
+    pub(crate) fn captured_part(&self) -> Option<ListScrollPart> {
+        self.captured
     }
     /// Whether a press holds the scrollbar's capture, until the release.
     pub fn captured(&self) -> bool {
@@ -260,115 +268,35 @@ impl ShellListGeometry {
     }
 }
 
-/// One owner-draw list box of a family page (the movie list `0x129`, VERA's
-/// Mods list): its rows, the subclass selection and the scrollbar's state.
-#[derive(Debug, Clone)]
-pub struct ListBoxState<Row> {
-    pub rows: Vec<Row>,
-    /// Subclass current selection (`-1` = none). Its LB_SETCURSEL handler
-    /// (`0x0061A534..0x0061A5F5`) always returns 0, so the proc's fallback
-    /// `LB_SETCURSEL(0)` never runs: a fresh process opens with nothing
-    /// selected.
-    pub selected: Option<usize>,
-    pub top: usize,
-    /// Previous press for the ListBox class's `CS_DBLCLKS` detection.
-    pub last_press: Option<(Instant, i32, i32)>,
-    /// Scrollbar capture and arrow repeat (`0x0061C690`).
-    pub scroll: ListScrollInteraction,
+/// A transcript's top after its rows changed (the line adder `0x005E29A0`):
+/// of its `old` rows `dropped` left the front, and it now holds `rows`, of
+/// which `visible` show. A view that showed the last row (`top` none: never
+/// scrolled) follows to the new last row; any other keeps showing the same
+/// rows, its top up by `dropped`, within the scroll range.
+pub fn log_top(old: usize, top: Option<usize>, visible: usize, rows: usize, dropped: usize) -> usize {
+    let max_top = rows.saturating_sub(visible);
+    match top {
+        Some(top) if old.saturating_sub(top) > visible => top.saturating_sub(dropped).min(max_top),
+        _ => max_top,
+    }
 }
 
-impl<Row> ListBoxState<Row> {
-    pub fn new(rows: Vec<Row>, selected: Option<usize>) -> Self {
-        Self {
-            rows,
-            selected,
-            top: 0,
-            last_press: None,
-            scroll: ListScrollInteraction::default(),
-        }
-    }
+/// The paint surface of the `0x744` list box window `list`: one pixel wider
+/// and taller, which reproduces the retail frames (a scrollbar only above 15
+/// rows, at `x + w - 20` and 20 wide, a 202 px thumb for 17 rows).
+pub fn list_box_rect(list: RectPx) -> RectPx {
+    RectPx::new(list.x, list.y, list.w + 1, list.h + 1)
+}
 
-    /// List and scrollbar geometry. The shared geometry takes the paint
-    /// surface, one pixel wider and taller than the `0x744` window, which
-    /// reproduces the retail frames: a scrollbar only above 15 rows, at
-    /// `x + w - 20` and 20 wide, a 202 px thumb for 17 rows.
-    pub fn geometry(&self, list: RectPx, metrics: ListMetrics) -> ShellListGeometry {
-        ShellListGeometry::new(
-            RectPx::new(list.x, list.y, list.w + 1, list.h + 1),
-            self.rows.len(),
-            self.top,
-            metrics,
-        )
-    }
-
-    /// A press on the scrollbar child: capture it, step an arrow or jump the
-    /// track. Returns `false` when the press is not on the scrollbar.
-    pub fn scroll_press(
-        &mut self,
-        list: RectPx,
-        metrics: ListMetrics,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        let geometry = self.geometry(list, metrics);
-        let Some(part) = geometry.scroll_part_at(x, y) else {
-            return false;
-        };
-        self.scroll.press(part, geometry, &mut self.top, y, now);
-        true
-    }
-
-    /// Pointer motion while the scrollbar may hold capture (thumb drag).
-    pub fn scroll_pointer_moved(&mut self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) {
-        let geometry = self.geometry(list, metrics);
-        self.scroll.pointer_moved(geometry, &mut self.top, x, y);
-    }
-
-    /// Arrow auto-repeat; returns whether the list changed.
-    pub fn scroll_poll(
-        &mut self,
-        list: RectPx,
-        metrics: ListMetrics,
-        x: i32,
-        y: i32,
-        now: Instant,
-    ) -> bool {
-        if self.scroll.repeat_at().is_none() {
-            return false;
-        }
-        let geometry = self.geometry(list, metrics);
-        self.scroll.poll(geometry, &mut self.top, x, y, now)
-    }
-
-    /// Whether a press is the second click of a double-click
-    /// ([`is_double_click`]).
-    pub fn is_double_click(
-        &mut self,
-        now: Instant,
-        x: i32,
-        y: i32,
-        limits: (Duration, i32, i32),
-    ) -> bool {
-        is_double_click(&mut self.last_press, now, x, y, limits)
-    }
-
-    /// Row under a pointer press (`0x0061A948`): `client_y / 19 + top`,
-    /// without a border correction, ignoring presses below the last row. The
-    /// scrollbar is its own child window, so presses on it never reach the
-    /// list.
-    pub fn row_at(&self, list: RectPx, metrics: ListMetrics, x: i32, y: i32) -> Option<usize> {
-        if !list.contains(x, y)
-            || self
-                .geometry(list, metrics)
-                .scrollbar
-                .is_some_and(|bar| bar.contains(x, y))
-        {
-            return None;
-        }
-        let row = ((y - list.y) / metrics.row_h) as usize + self.top;
-        (row < self.rows.len()).then_some(row)
-    }
+/// An owner-draw list box's list and scrollbar geometry with `count` rows
+/// from `top` in window `list` ([`list_box_rect`]).
+pub fn list_box_geometry(
+    list: RectPx,
+    count: usize,
+    top: usize,
+    metrics: ListMetrics,
+) -> ShellListGeometry {
+    ShellListGeometry::new(list_box_rect(list), count, top, metrics)
 }
 
 /// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
@@ -531,17 +459,27 @@ pub fn is_double_click(
 /// comparison coverage.
 pub fn thumb_height(height: i32, range: usize, metrics: ListMetrics) -> i32 {
     let track = f64::from(height - 2 - metrics.arrow_h * 2);
-    crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
-        track - ((range + 1) as f64).ln() * track * 0.2,
-    )
-    .max(metrics.min_thumb_h)
+    ftol_f64(track - ((range + 1) as f64).ln() * track * 0.2).max(metrics.min_thumb_h)
 }
 
-#[cfg(all(test, tests_ui))]
+/// `Math::ftol 7C5F00` of a binary64 operand when the caller reads only EAX:
+/// `FLD m64` is exact, `FISTP qword` truncates toward zero, and the masked
+/// invalid conversion (NaN, infinity, beyond i64) stores `i64::MIN`, whose low
+/// dword is zero. The engine's x87 model (`X87Chop53::ftol_f64_low_masked`)
+/// is the general port; the host's tests hold the two equal.
+pub fn ftol_f64(value: f64) -> i32 {
+    if value.is_finite() && value.trunc() >= -(2f64.powi(63)) && value.trunc() < 2f64.powi(63) {
+        value.trunc() as i64 as i32
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    // Timer expectations are from the61C690 instructions cited above; geometry
-    // separately replays the saved native scrollbar fixture below.
+    // Timer expectations are from the61C690 instructions cited above. The host
+    // replays the saved native scrollbar fixture against `thumb_height`.
     #[test]
     fn held_arrow_waits_500ms_then_steps_each_25ms_without_catch_up() {
         let geometry =
@@ -663,25 +601,6 @@ mod tests {
         assert_eq!(top, (track_top + 1).min(geometry.max_top));
     }
     #[test]
-    fn thumb_height_matches_native_sampled_geometry() {
-        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-            "tools/storage_oracle/saved_scrollbar.json",
-        ))
-        .unwrap();
-        let cases = vectors["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 450);
-        for case in cases {
-            assert_eq!(
-                thumb_height(
-                    case["height"].as_i64().unwrap() as i32,
-                    case["range"].as_u64().unwrap() as usize,
-                    ListMetrics::RETAIL,
-                ),
-                case["thumb"].as_i64().unwrap() as i32
-            );
-        }
-    }
-    #[test]
     fn border_and_scroll_range_share_one_geometry_for_hit_and_paint() {
         let list =
             ShellListGeometry::new(RectPx::new(10, 20, 400, 255), 23, 10, ListMetrics::RETAIL);
@@ -697,8 +616,11 @@ mod tests {
     /// the same number of rows and the same scroll range as it did at 800x600.
     #[test]
     fn a_stretched_list_keeps_its_row_count_and_scroll_range() {
-        let double = ShellScale::from_screen(1600, 1200);
-        assert_eq!(ListMetrics::scaled(ShellScale::RETAIL), ListMetrics::RETAIL);
+        let double = ShellScale::fit(800, 600, 1600, 1200);
+        assert_eq!(
+            ListMetrics::scaled(ShellScale::unscaled(800, 600)),
+            ListMetrics::RETAIL
+        );
         let metrics = ListMetrics::scaled(double);
         assert_eq!(metrics.row_h, 38);
         assert_eq!(metrics.scrollbar_w, 40);
