@@ -791,9 +791,11 @@ impl App {
         }
         let mut dialog = Self::launcher_options_from_state(state);
         dialog.select_category(
-            state.frontend.options_reopen_at.take().unwrap_or(
-                crate::ui::main_menu_dialogs::options::Category::LauncherMain,
-            ),
+            state
+                .frontend
+                .options_reopen_at
+                .take()
+                .unwrap_or(crate::ui::main_menu_dialogs::options::Category::LauncherMain),
         );
         state.frontend.options_dialog = Some(dialog);
     }
@@ -1024,7 +1026,9 @@ impl App {
             Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
                 if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                     dialog.select_category(next);
-                    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+                    crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
+                        state,
+                    );
                 }
             });
             return;

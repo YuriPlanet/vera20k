@@ -163,7 +163,10 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
     SlideDialogSpec::new(0x010E, 6),
     SlideDialogSpec::new(0x010F, 3),
     SlideDialogSpec::new(0x0113, 8).top_panel(),
-    SlideDialogSpec::new(crate::ui::mods_shell::DIALOG.0, crate::ui::mods_shell::PAGE.stacked.len() as u32),
+    SlideDialogSpec::new(
+        crate::ui::mods_shell::DIALOG.0,
+        crate::ui::mods_shell::PAGE.stacked.len() as u32,
+    ),
     SlideDialogSpec::new(0x02BC, 2),
     SlideDialogSpec::new(0x0112, 1),
     SlideDialogSpec::new(0x0117, 0),

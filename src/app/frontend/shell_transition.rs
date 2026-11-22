@@ -835,7 +835,11 @@ mod tests {
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
         assert_eq!(
             top_and_bottom(ShellSlideKind::Mods),
-            (crate::ui::mods_shell::PAGE.stacked.len() as u32, true, false)
+            (
+                crate::ui::mods_shell::PAGE.stacked.len() as u32,
+                true,
+                false
+            )
         );
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),

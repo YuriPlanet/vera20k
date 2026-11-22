@@ -948,8 +948,8 @@ impl MoviesCapture {
                     && state.frontend.shell_exit.is_none()
                     && Self::slide_settled(state, ShellSlideKind::Options)
                 {
-                    // The page buttons stay in the column: pressing another
-                    // swaps the controls in place, with no slide.
+                    // A launcher page button slides the column out and back
+                    // in on its page (`App::handle_launcher_options_mouse`).
                     let layout =
                         crate::app::frontend::shell_layout::launcher_options_layout(state, showing);
                     let rect = layout

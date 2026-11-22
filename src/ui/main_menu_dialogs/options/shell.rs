@@ -224,11 +224,9 @@ pub(crate) const OPTIONS_PAGE: MenuPageSpec = MenuPageSpec {
     .returning(0x05CB),
 };
 
-/// Whether the retail panel at this window size has a tile for every column
-/// button above Main Menu's. 640x480's six tiles hold five, too few for the
-/// column, so `0xD5` takes the fitted 800x600 page there instead: not native,
-/// and the only size whose Options art is scaled while the other pages keep
-/// the 640-wide set.
+/// The launcher page's slide column: its top buttons, and whether a button
+/// stands on the tile above Back. None for a page the launcher reaches only
+/// through the older column.
 pub(crate) fn launcher_slide_column(category: Category) -> Option<(u32, bool)> {
     match category {
         Category::LauncherMain => Some((3, HAS_MODS)),
@@ -237,6 +235,11 @@ pub(crate) fn launcher_slide_column(category: Category) -> Option<(u32, bool)> {
     }
 }
 
+/// Whether the retail panel at this window size has a tile for every column
+/// button above Main Menu's. 640x480's six tiles hold five, too few for the
+/// column, so `0xD5` takes the fitted 800x600 page there instead: not native,
+/// and the only size whose Options art is scaled while the other pages keep
+/// the 640-wide set.
 pub(crate) fn retail_column_fits(width: i32, height: i32) -> bool {
     right_panel_rects(width, height).tile_count > OPTIONS_PAGE.stacked.len() as i32
 }
@@ -1070,13 +1073,18 @@ impl OptionsDialogState {
                         .with(Prop::Max, Value::Int(base + i32::from(id.maximum())))
                         .with(Prop::Step, Value::Int(1))
                         .with(Prop::Pos, Value::Int(position))
-                        .with(Prop::ShowValue, Value::Bool(
-                            if layout.category == Category::Enhancements && layout.surface == OptionsSurface::Launcher {
-                                launcher_pages::shows_value(id)
-                            } else {
-                                id.plaque_reserve() > 0
-                            },
-                        ))
+                        .with(
+                            Prop::ShowValue,
+                            Value::Bool(
+                                if layout.category == Category::Enhancements
+                                    && layout.surface == OptionsSurface::Launcher
+                                {
+                                    launcher_pages::shows_value(id)
+                                } else {
+                                    id.plaque_reserve() > 0
+                                },
+                            ),
+                        )
                         .with(Prop::Enabled, Value::Bool(self.trackbar_enabled(id)))
                 }
                 // The boxes toggle on the press (`0x006163A0`).
@@ -1507,10 +1515,8 @@ mod tests {
         }
     }
 
-    /// The right-hand column: retail's Keyboard, a button per category on the
-    /// tiles under it, VERA's Mods on the next, and Main Menu on the last of
-    /// the 800x600 panel's nine tiles, each a 156x42 SDBTNANM cell flush with
-    /// the panel's right edge.
+    /// The launcher page's Mods stands on the tile right above Main Menu,
+    /// and a press there opens Mods.
     #[test]
     fn launcher_mods_slot_and_gui_hit_rect_are_next_to_main_menu() {
         for (w, h) in [(640, 480), (800, 600), (1536, 1152)] {
@@ -1523,7 +1529,10 @@ mod tests {
                 let mut dialog = state();
                 dialog.shell_mouse_down(rect.x + 4, rect.y + 4, &layout);
                 dialog.shell_mouse_up(rect.x + 4, rect.y + 4, &layout);
-                assert_eq!(dialog.drain_output().result, Some(LauncherParentResult::Mods));
+                assert_eq!(
+                    dialog.drain_output().result,
+                    Some(LauncherParentResult::Mods)
+                );
             }
         }
     }
@@ -1532,21 +1541,33 @@ mod tests {
     fn enhancements_give_both_slider_tracks_the_same_value_reserve() {
         use LauncherTrackbarId::{HouseColorStrength, SidebarColumns};
         let layout = page(Category::Enhancements);
-        let rect = |id| layout.controls.iter()
-            .find(|(control, _)| *control == Control::Setting(Setting::Slider(id)))
-            .unwrap().1;
-        assert_eq!((rect(SidebarColumns).x, rect(SidebarColumns).w),
-                   (rect(HouseColorStrength).x, rect(HouseColorStrength).w));
+        let rect = |id| {
+            layout
+                .controls
+                .iter()
+                .find(|(control, _)| *control == Control::Setting(Setting::Slider(id)))
+                .unwrap()
+                .1
+        };
+        assert_eq!(
+            (rect(SidebarColumns).x, rect(SidebarColumns).w),
+            (rect(HouseColorStrength).x, rect(HouseColorStrength).w)
+        );
         let dialog = state();
         for id in [SidebarColumns, HouseColorStrength] {
             let controls = dialog.shell_wanted(&layout);
-            let (_, node) = controls.iter()
+            let (_, node) = controls
+                .iter()
                 .find(|(control, _)| *control == Control::Setting(Setting::Slider(id)))
                 .unwrap();
             assert!(node.props.contains(&(Prop::ShowValue, Value::Bool(true))));
         }
     }
 
+    /// The right-hand column: retail's Keyboard, a button per category on the
+    /// tiles under it, VERA's Mods on the next, and Main Menu on the last of
+    /// the 800x600 panel's nine tiles, each a 156x42 SDBTNANM cell flush with
+    /// the panel's right edge.
     #[test]
     fn the_column_holds_keyboard_every_category_mods_and_main_menu() {
         let layout = page(Category::Display);

@@ -1523,7 +1523,10 @@ impl OptionsDialogState {
     /// captions and queues preview/cue work only after the integer position
     /// actually changes; the accepted projection remains owned by `0x0055FAA0`.
     fn set_trackbar_position(&mut self, id: LauncherTrackbarId, position: u8) {
-        if position > id.maximum() || !self.trackbar_enabled(id) || self.trackbar_position(id) == position {
+        if position > id.maximum()
+            || !self.trackbar_enabled(id)
+            || self.trackbar_position(id) == position
+        {
             return;
         }
         if id != LauncherTrackbarId::SidebarColumns {
@@ -2369,11 +2372,13 @@ mod tests {
             - 2 * usize::from(!HAS_VSYNC)
             - usize::from(!HAS_HD_MAP_PREVIEWS);
         assert_eq!(count(|s| matches!(s, Setting::Checkbox(_))), boxes);
-        // Every slider but Game Speed; all eight lists, and Graphics API
-        // where the build has it.
+        // Every slider but Game Speed and Sidebar Columns, whose slider only
+        // the launcher's Enhancements page shows (`shell::launcher_pages`);
+        // these pages keep its list. All eight lists, and Graphics API where
+        // the build has it.
         assert_eq!(
             count(|s| matches!(s, Setting::Slider(_))),
-            LauncherTrackbarId::COUNT - 1
+            LauncherTrackbarId::COUNT - 2
         );
         assert_eq!(
             count(|s| matches!(s, Setting::List(_))),
