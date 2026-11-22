@@ -238,23 +238,50 @@ pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
 /// The text naming each of this game's [`original_game_changes`]; `None`
 /// when it plays the original.
 pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
+    changes_text(original_game_changes(
+        state.frontend.mods.title(),
+        &state.process_assets,
+    ))
+}
+
+/// VERA: [`own_changes_text`] for a start the players' games refused. A match
+/// whose map names a tile the original game lacks also read this game's
+/// terrain files (`ProcessAssets::match_terrain_files`), which no room
+/// compares, so they are named with the changed files.
+pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
+    let assets = &state.process_assets;
+    let mut changes = original_game_changes(state.frontend.mods.title(), assets);
+    let terrain = assets.match_terrain_files();
+    let mut files = assets.changed_game_files().to_vec();
+    for file in terrain {
+        if !files.contains(file) {
+            files.push(file.clone());
+        }
+    }
+    if !terrain.is_empty() {
+        changes.retain(|change| !matches!(change, OriginalGameChange::ChangedFiles(_)));
+        changes.push(OriginalGameChange::ChangedFiles(&files));
+    }
+    changes_text(changes)
+}
+
+fn changes_text(changes: Vec<OriginalGameChange<'_>>) -> Option<String> {
     use crate::i18n::{tr, tr_fill};
-    let named: Vec<String> =
-        original_game_changes(state.frontend.mods.title(), &state.process_assets)
-            .into_iter()
-            .map(|change| match change {
-                OriginalGameChange::Mod(name) => tr_fill("VERA:RulesChangeMod", &[("name", &name)]),
-                OriginalGameChange::IniRoots => tr("VERA:RulesChangeIniRoots"),
-                OriginalGameChange::Ares(setting) => tr_fill(
-                    "VERA:RulesChangeAres",
-                    &[(
-                        "setting",
-                        &crate::ui::main_menu_dialogs::options::ares_label(setting),
-                    )],
-                ),
-                OriginalGameChange::ChangedFiles(files) => changed_files_text(files),
-            })
-            .collect();
+    let named: Vec<String> = changes
+        .into_iter()
+        .map(|change| match change {
+            OriginalGameChange::Mod(name) => tr_fill("VERA:RulesChangeMod", &[("name", &name)]),
+            OriginalGameChange::IniRoots => tr("VERA:RulesChangeIniRoots"),
+            OriginalGameChange::Ares(setting) => tr_fill(
+                "VERA:RulesChangeAres",
+                &[(
+                    "setting",
+                    &crate::ui::main_menu_dialogs::options::ares_label(setting),
+                )],
+            ),
+            OriginalGameChange::ChangedFiles(files) => changed_files_text(files),
+        })
+        .collect();
     (!named.is_empty())
         .then(|| tr_fill("VERA:RulesDifferChanges", &[("changes", &named.join(", "))]))
 }

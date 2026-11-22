@@ -97,17 +97,19 @@ fn reason(state: &AppState) -> Option<String> {
 }
 
 /// VERA: a refused start also names what this game changes from the
-/// original game, or says it plays the original
-/// (`agreement::own_changes_text`), and a launcher's match points at the
-/// launcher, which compares every player's rules parts (docs/spawn.md).
+/// original game, the terrain files this match read among them, or says it
+/// plays the original (`agreement::start_changes_text`), and a launcher's
+/// match points at the launcher, which compares every player's rules parts
+/// (docs/spawn.md). Those parts leave the terrain files out, so a match that
+/// read them does not point there.
 fn start_mismatch_text(state: &AppState) -> String {
-    use crate::app::shell_network_setup::agreement::own_changes_text;
+    use crate::app::shell_network_setup::agreement::start_changes_text;
     let mut text = crate::i18n::tr("VERA:MatchStartMismatch");
     text.push_str("\n\n");
     text.push_str(
-        &own_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
+        &start_changes_text(state).unwrap_or_else(|| crate::i18n::tr("VERA:RulesDifferOriginal")),
     );
-    if state.frontend.external_launch {
+    if state.frontend.external_launch && !state.process_assets.match_reads_folder_terrain() {
         text.push('\n');
         text.push_str(&crate::i18n::tr("VERA:LauncherShowsMismatch"));
     }

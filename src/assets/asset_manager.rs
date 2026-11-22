@@ -10,7 +10,7 @@
 //! Audio selection and lifetime: [process audio owner](../../tools/audio_catalog_owner.md).
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -148,6 +148,52 @@ enum NamedArchiveLocation {
         parent_index: usize,
         entry_id: i32,
     },
+}
+
+/// VERA: names read from fixed archives alone ([`AssetManager::pin_names`]).
+#[derive(Clone)]
+pub struct PinnedNames {
+    /// Every pinned name, by its lookup id.
+    names: HashSet<i32>,
+    /// The archives that hold one, in search order.
+    archives: Vec<NamedArchive>,
+    /// The first of `archives` whose index lists each name.
+    found: HashMap<i32, usize>,
+}
+
+impl PinnedNames {
+    /// Pins `names` to `archives`, each with the name its files report as
+    /// their source, searched in order as registered archives are. Only an
+    /// archive that holds a name is kept.
+    pub fn new<'a>(
+        names: impl IntoIterator<Item = &'a str>,
+        archives: impl IntoIterator<Item = (String, Cow<'a, MixArchive>)>,
+    ) -> Self {
+        let names: HashSet<i32> = names.into_iter().map(mix_hash).collect();
+        let mut kept = Vec::new();
+        let mut found = HashMap::new();
+        for (name, archive) in archives {
+            let position = kept.len();
+            let mut first = false;
+            for &id in &names {
+                if !found.contains_key(&id) && archive.contains_id(id) {
+                    found.insert(id, position);
+                    first = true;
+                }
+            }
+            if first {
+                kept.push(NamedArchive {
+                    name,
+                    archive: archive.into_owned(),
+                });
+            }
+        }
+        Self {
+            names,
+            archives: kept,
+            found,
+        }
+    }
 }
 
 /// One archive [`AssetManager::theater_archives_unmounted`] finds.
@@ -369,6 +415,9 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: names every lookup reads from fixed archives alone
+    /// ([`Self::pin_names`]); `None` reads all names as found.
+    pinned_names: Option<PinnedNames>,
 }
 
 /// Test fixtures open the retail install once per test process and hand each
@@ -400,6 +449,7 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            pinned_names: self.pinned_names.clone(),
         }
     }
 }
@@ -694,6 +744,7 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         })
     }
 
@@ -1490,7 +1541,7 @@ impl AssetManager {
     /// payloads. Catalog presence does not guarantee a subsequent disk read.
     /// Retail provenance: MIX-then-raw availability — `CCFileClass__IsAvailable_MixThenRaw` @ `0x00473C50`.
     pub fn contains(&self, name: &str) -> bool {
-        self.lookup_location_for_name(name).is_some() || self.loose_asset(name).is_some()
+        self.lookup_asset_entry(name).is_some() || self.loose_asset(name).is_some()
     }
 
     /// Look up a loaded archive by its display/debug name.
@@ -1659,7 +1710,33 @@ impl AssetManager {
             .chain(std::iter::once(self.ra2_dir.as_path()))
     }
 
+    /// VERA: read `pinned`'s names from its archives alone, until the next
+    /// call: a loose file or another registered archive of such a name is
+    /// passed over, and a name none of its archives hold is absent. `None`
+    /// ends it. Every lookup by name follows it, which keeps one answer for
+    /// a file across the loaders that read it; `load_file_from_mix` still
+    /// returns what it cached, so pin only names it never loads. Returns the
+    /// names pinned until now, for a caller that puts them back.
+    pub fn pin_names(&mut self, pinned: Option<PinnedNames>) -> Option<PinnedNames> {
+        std::mem::replace(&mut self.pinned_names, pinned)
+    }
+
+    /// Whether [`Self::pin_names`] is in effect.
+    pub fn names_pinned(&self) -> bool {
+        self.pinned_names.is_some()
+    }
+
+    /// The pinned names when `name` is one of them.
+    fn pinned(&self, name: &str) -> Option<(&PinnedNames, i32)> {
+        let pinned = self.pinned_names.as_ref()?;
+        let id = mix_hash(name);
+        pinned.names.contains(&id).then_some((pinned, id))
+    }
+
     fn lookup_asset_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
+        if let Some((pinned, id)) = self.pinned(name) {
+            return Some((&pinned.archives[*pinned.found.get(&id)?], id));
+        }
         let location = self.lookup_location_for_name(name)?;
         let archive = self.archives.get(location.archive_index)?;
         Some((archive, location.entry_id))
@@ -2161,6 +2238,9 @@ impl AssetManager {
     }
 
     fn loose_asset(&self, name: &str) -> Option<&LooseAsset> {
+        if self.pinned(name).is_some() {
+            return None;
+        }
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
     }
@@ -3046,6 +3126,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3133,6 +3214,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
         manager
@@ -3210,6 +3292,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3255,6 +3338,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
         manager.catalog_named_nested_archives();
@@ -3298,6 +3382,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3342,6 +3427,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3382,6 +3468,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
@@ -3442,6 +3529,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            pinned_names: None,
         };
         manager.rebuild_indexes();
 
