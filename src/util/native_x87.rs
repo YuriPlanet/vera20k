@@ -313,6 +313,27 @@ impl X87Chop53 {
         }
     }
 
+    /// A positive integer as `FSTP m32real` stores it under the chop control
+    /// word: 24 significant bits, truncated toward zero.
+    ///
+    /// The rounding is the store's, not this method's: the integer's exact
+    /// extended value goes through [`Self::store_f32`], so one owner decides
+    /// what a store chops.
+    pub fn store_positive_u32_as_f32_bits(magnitude: u32) -> u32 {
+        if magnitude == 0 {
+            return NativeF32Bits::POSITIVE_ZERO.bits();
+        }
+        let top = 31 - magnitude.leading_zeros();
+        let value = X87Value {
+            sign: false,
+            exponent: top as i32,
+            significand: u64::from(magnitude) << (52 - top),
+        };
+        // A magnitude below 2^32 has an exponent below 32, so the store
+        // neither overflows nor goes subnormal.
+        Self::store_f32_masked_chop(value).bits()
+    }
+
     pub fn store_f32(value: X87Value) -> Result<NativeF32Bits, NativeX87Error> {
         let sign = u32::from(value.sign) << 31;
         if value.is_zero() {
@@ -531,26 +552,11 @@ fn sqrt_approx_table() -> &'static [u32] {
 /// and the table index reads none of the dropped bits: the same root comes out
 /// of the integer alone. The sign is ignored, as the native helper ignores it.
 pub(crate) fn sqrt_approx_square_bits(squares: i32) -> u32 {
-    let bits = chopped_f32_bits(squares.unsigned_abs());
+    let bits = X87Chop53::store_positive_u32_as_f32_bits(squares.unsigned_abs());
     if bits == 0 {
         return NativeF32Bits::POSITIVE_ZERO.bits();
     }
     sqrt_approx_bits(bits)
-}
-
-/// A positive integer as the binary32 `FSTP m32real` stores it under the chop
-/// control word: 24 significant bits, truncated toward zero.
-fn chopped_f32_bits(magnitude: u32) -> u32 {
-    if magnitude == 0 {
-        return 0;
-    }
-    let top = 31 - magnitude.leading_zeros();
-    let fraction = if top <= 23 {
-        (magnitude << (23 - top)) & 0x007f_ffff
-    } else {
-        (magnitude >> (top - 23)) & 0x007f_ffff
-    };
-    ((top + 127) << 23) | fraction
 }
 
 /// Evaluate the native height-to-screen conversion with an injected multiplier.
@@ -1054,6 +1060,33 @@ mod tests {
             -3,
             -16_777_217,
         ] {
+            let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                .expect("finite")
+                .bits();
+            assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+        }
+    }
+
+    /// The integer root and the x87-stored root agree bit for bit over the
+    /// whole range a search can ask of, not only at the listed boundaries.
+    ///
+    /// A search asks of a squared distance up to `i32::MAX`, and the store
+    /// chops at 24 significant bits, so every power of two and its
+    /// neighbours are the places where the two paths could part.
+    #[test]
+    fn the_integer_root_matches_the_x87_stored_root_over_its_range() {
+        for exponent in 0..31 {
+            let power = 1_i32 << exponent;
+            for squares in [power - 1, power, power + 1, power + (power >> 1)] {
+                let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                    .expect("finite")
+                    .bits();
+                assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+            }
+        }
+        // A strided sweep over the whole range a search can ask of, including
+        // the values a 16-bit coordinate difference produces.
+        for squares in (0..=i32::MAX).step_by(65_537) {
             let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
                 .expect("finite")
                 .bits();
