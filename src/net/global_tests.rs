@@ -476,6 +476,34 @@ fn broadcast_downgrades_requested_reliability_like_original() {
 }
 
 #[test]
+fn a_reliable_batch_is_delivered_once_every_recipient_acks_its_own_sequence() {
+    let first = SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, 1), 1234);
+    let second = SocketAddrV4::new(Ipv4Addr::new(10, 0, 0, 2), 1234);
+    let mut sender = channel(8, 8);
+    assert!(sender.send(
+        b"chat",
+        GlobalDestination::direct(first),
+        Delivery::Reliable,
+        0
+    ));
+    let batch = sender
+        .send_reliable_batch(b"release", &[first, second])
+        .unwrap();
+    sender.service(1000, &mut |_, _| {});
+    // Sequence 0 is the earlier chat; the batch holds 1 and 2.
+    for (source, sequence, delivered) in [(first, 0, false), (first, 1, false), (second, 2, true)] {
+        let ack = sender.frame(2, sequence, &[]);
+        sender.receive(source, 0, &ack, &mut |_, _| {}).unwrap();
+        sender.service(1001, &mut |_, _| {});
+        assert_eq!(
+            sender.batch_delivered(batch),
+            delivered,
+            "after ACK {sequence}"
+        );
+    }
+}
+
+#[test]
 fn explicit_consume_cancellation_and_reset_preserve_owner_boundaries() {
     let data = corpus();
     let b = endpoint(&data["endpoints"]["b"]);

@@ -1798,12 +1798,13 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
             return Ok(());
         }
         if let Some(chat) = message.in_game_chat_fields() {
-            super::input::chat::receive_packet(
-                state,
-                &message.name(),
+            let (name, color) = super::match_runtime::network_match::chat_sender(
+                &state.match_state.session,
+                incoming.source,
+                message.name(),
                 chat.color as i32,
-                &chat.text(),
             );
+            super::input::chat::receive_packet(state, &name, color, &chat.text());
             return Ok(());
         }
         if let Some(taunt) = message.in_game_taunt_fields() {
@@ -2510,7 +2511,7 @@ pub(crate) fn campaign_host_source(state: &AppState) -> Option<usize> {
 
 pub(crate) enum CampaignControlSend {
     Immediate,
-    Queued(u64),
+    Queued(crate::net::global::GlobalBatch),
 }
 
 pub(crate) fn send_campaign_control(
@@ -2551,8 +2552,8 @@ pub(crate) fn send_campaign_control(
         }
         return Some(CampaignControlSend::Immediate);
     }
-    let discarded_at_enqueue = if let Some(live) = state.match_state.live_network.as_mut() {
-        live.enqueue_reliable_globals(&bytes, &endpoints)
+    let batch = if let Some(live) = state.match_state.live_network.as_mut() {
+        live.global_mut().send_reliable_batch(&bytes, &endpoints)
     } else {
         state
             .match_state
@@ -2560,9 +2561,10 @@ pub(crate) fn send_campaign_control(
             .as_mut()?
             .transport
             .as_mut()?
-            .enqueue_reliable_globals(&bytes, &endpoints)
+            .global_mut()
+            .send_reliable_batch(&bytes, &endpoints)
     }?;
-    Some(CampaignControlSend::Queued(discarded_at_enqueue))
+    Some(CampaignControlSend::Queued(batch))
 }
 
 fn receive_campaign_control(state: &mut AppState, incoming: GlobalMessage) -> anyhow::Result<()> {
@@ -2637,14 +2639,13 @@ fn drain_match_requests(state: &mut AppState) {
             }
             NetworkSendRequest::Chat { recipients, text } => {
                 // BC6's chat writes [0x7EEF2C] (0x0046E126).
-                let color = if state.match_state.session.cooperative_round().is_some() {
+                let session = &state.match_state.session;
+                let color = if session.cooperative_round().is_some() {
                     crate::ui::wol_chat::PUBLIC_COLOR as i32
                 } else {
-                    state
-                        .match_state
-                        .session
-                        .network_setup()
-                        .map_or(-2, |launch| launch.local_player().slot.color_shell_value())
+                    super::match_runtime::network_match::local_source(session).map_or(-2, |local| {
+                        super::match_runtime::network_match::participant_color(session, local)
+                    })
                 };
                 let game_name = active_game_name(state).unwrap_or_default();
                 if let Ok(message) =
@@ -2654,11 +2655,11 @@ fn drain_match_requests(state: &mut AppState) {
                 }
             }
             NetworkSendRequest::Taunt { recipients, byte } => {
-                let color = state
-                    .match_state
-                    .session
-                    .network_setup()
-                    .map_or(-2, |launch| launch.local_player().slot.color_shell_value());
+                let session = &state.match_state.session;
+                let color = super::match_runtime::network_match::local_source(session)
+                    .map_or(-2, |local| {
+                        super::match_runtime::network_match::participant_color(session, local)
+                    });
                 let game_name = active_game_name(state).unwrap_or_default();
                 if let Ok(message) =
                     LanMessage::in_game_taunt(&local_name(state), color as u32, &game_name, byte)
