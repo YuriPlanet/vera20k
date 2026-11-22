@@ -106,7 +106,9 @@ Supported extensions:
 - [Moving Alpha Lights](../src/sim/world/alpha_shape.rs): `AlphaImage=` glows follow
   their Technos, Terrain, Bullets and Anims, go while the object is cloaked, deactivated,
   unpowered or under ground, and draw a Techno's facing frame
-  (`Ext/Techno/Hooks.Alpha.cpp`)
+  (`Ext/Techno/Hooks.Alpha.cpp`). As in Ares, a Techno the player sees as hidden draws
+  no glow, so an `InvisibleInGame=yes` lamp (`TSTLAMP`, `XLAMP`) the player does not
+  own stays dark
 - [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)

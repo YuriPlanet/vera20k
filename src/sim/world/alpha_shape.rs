@@ -215,7 +215,7 @@ impl Simulation {
             ObjectKind::VoxelAnim => {
                 let piece = self.substrate.voxel_anims.get(object)?;
                 (
-                    named(&rules.voxel_anim_type(piece.type_id()).alpha_image)?,
+                    named(&rules.find_voxel_anim_type(piece.type_id())?.alpha_image)?,
                     piece.world_coord().to_array(),
                 )
             }
@@ -421,6 +421,12 @@ impl Simulation {
     /// Header and Body hooks (`0x0042146E`/`0x0042152C`, and
     /// `0x004210AC`/`0x004211AC`) draw a Techno's PrimaryFacing frame
     /// ([`AlphaImage::facing_frame`]).
+    ///
+    /// So under Ares an `InvisibleInGame=yes` building the player does not
+    /// own (a `TSTLAMP` lamp) draws no glow: BuildingType ReadINI
+    /// (`0x00460E09`) sets its Invisible byte (`+0xC9A`), and
+    /// `TechnoClass::VisualCharacter @ 0x00703860` answers Hidden for an
+    /// Invisible type unless `+0x41A` (owned by the player) is set.
     ///
     /// [`AlphaImage::facing_frame`]: crate::rules::alpha_image_assets::AlphaImage::facing_frame
     pub fn alpha_shape_draws<'a>(
