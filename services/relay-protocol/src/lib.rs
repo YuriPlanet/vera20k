@@ -40,7 +40,8 @@ pub use sequenced::watch::{
 pub use sequenced::{
     ABSENT_MS, CHECKSUM_INTERVAL, CONTINUOUS_FLOOR, CertificatePacing, FRAME_RATES,
     MAX_FRAME_BATCHES, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
-    OrderStatus, OrderingCertificate, admits_rate, paced_rates, turn_frames, turn_ms,
+    OrderStatus, OrderingCertificate, PaceLag, SUSTAIN_PERCENT, admits_rate, paced_rates,
+    turn_frames, turn_ms,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -145,6 +146,14 @@ impl Ticket {
             return Err(RelayError::Malformed);
         }
         Ok(ticket)
+    }
+
+    /// The same player in the same match seat; a hop renewal keeps it.
+    fn same_identity(&self, other: &Self) -> bool {
+        self.room == other.room
+            && self.source == other.source
+            && self.player == other.player
+            && self.generation == other.generation
     }
 
     /// Cloudflare and native test clients use this same fixed byte layout.
@@ -388,16 +397,12 @@ impl ClientSession {
         _payload_key: [u8; 32],
     ) -> Result<Self, RelayError> {
         let mut next = Self::new(ticket, packet_key, [0; 32])?;
-        if next.ticket.room != self.ticket.room
-            || next.ticket.source != self.ticket.source
-            || next.ticket.player != self.ticket.player
-            || next.ticket.generation != self.ticket.generation
+        if !next.ticket.same_identity(&self.ticket)
             || next.ticket.nonce == self.ticket.nonce
             || next.ticket.expires <= self.ticket.expires
         {
             return Err(RelayError::Authentication);
         }
-        next.ordering = self.ordering.clone();
         next.federation = self.federation.clone();
         next.stream_transport = self.stream_transport;
         Ok(next)
@@ -767,8 +772,9 @@ struct Peer {
     link: link::ReaderLink,
 }
 
-/// A hop whose ticket expired: it accepts only LEAVE until `until`, unix
-/// seconds (spec §6.2 "释放").
+/// A hop that accepts only LEAVE until `until`, unix seconds (spec §6.2
+/// "释放"), set by `park_session`: a player's whose ticket expired or a
+/// renewal replaced, or a watcher's that left, was renewed or lost its place.
 struct LeavingHop {
     ticket: Ticket,
     key: SecretKey,
@@ -814,6 +820,14 @@ struct Room {
     federation: Option<sequenced::federation::Federation>,
     // Read-only hops apart from the players (README "Watchers").
     watchers: Vec<sequenced::watch::Watcher>,
+}
+
+impl Room {
+    /// Nothing is left to keep the room for. One that still holds watchers
+    /// waits for `prune`, whose `drop_watchers` parks their sessions for Leave.
+    fn vacant(&self) -> bool {
+        self.peers.is_empty() && self.ordering.is_none() && self.watchers.is_empty()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1021,19 +1035,23 @@ impl RelayServer {
             self.session_incoming(header, bytes, now)?
         };
         // Watchers never reach a player's path (README "Watchers").
-        if message.ticket.source == sequenced::watch::WATCH_SOURCE {
-            return if matches!(message.kind, HELLO | CONFIRM) {
-                self.watch_handshake(source, &message, now, now_millis)
-            } else {
-                self.watch_datagram(source, &message, now, now_millis)
-            };
+        let watching = message.ticket.source == sequenced::watch::WATCH_SOURCE;
+        if watching && matches!(message.kind, HELLO | CONFIRM) {
+            return self.watch_handshake(source, &message, now, now_millis);
         }
         if message.kind == CONTROL && message.payload == [sequenced::LEAVE_REQUEST] {
-            return self.ordering_leave(source, &message, now, now_millis);
+            return if watching {
+                self.watch_leave(source, &message, now)
+            } else {
+                self.ordering_leave(source, &message, now, now_millis)
+            };
         }
         // A leaving hop accepts only LEAVE (spec §6.2 "释放").
         if leaving {
             return Err(RelayError::Unregistered);
+        }
+        if watching {
+            return self.watch_datagram(source, &message, now, now_millis);
         }
         // Only the authenticated room needs a fresh boundary before a
         // submission. The socket loop advances every room independently.
@@ -1179,11 +1197,11 @@ impl RelayServer {
         if self.last_pruned == now {
             return;
         }
-        // An expired hop leaves the room but keeps its session for Leave
-        // (spec §6.2 "释放").
-        let mut expired = Vec::new();
+        // An expired hop, or a watcher that lost its place, leaves the room
+        // but keeps its session for Leave (spec §6.2 "释放").
+        let mut parked = Vec::new();
         self.rooms.retain(|_, room| {
-            sequenced::watch::prune_watchers(room, now, now_ms);
+            parked.extend(sequenced::watch::drop_watchers(room, now, now_ms));
             room.peers.retain_mut(|peer| {
                 if peer.ticket.expires > now {
                     return true;
@@ -1192,22 +1210,13 @@ impl RelayServer {
                     .left_until
                     .unwrap_or(u64::MAX)
                     .min(peer.ticket.expires.saturating_add(LEAVE_GRACE));
-                expired.push((
-                    peer.session,
-                    LeavingHop {
-                        ticket: peer.ticket,
-                        key: peer.key.clone(),
-                        until,
-                    },
-                ));
+                parked.push((peer.session, peer.ticket, peer.key.clone(), until));
                 false
             });
-            !room.peers.is_empty() || room.ordering.is_some()
+            !room.vacant()
         });
-        for (session, hop) in expired {
-            if let Some(slot) = self.sessions.get_mut(&session) {
-                slot.hop = SessionHop::Leaving(Box::new(hop));
-            }
+        for (session, ticket, key, until) in parked {
+            self.park_session(session, ticket, key, until);
         }
         let released: Vec<u32> = self
             .sessions
@@ -1401,7 +1410,7 @@ impl RelayServer {
                     }
                     keep
                 });
-                if room.peers.is_empty() && room.ordering.is_none() {
+                if room.vacant() {
                     self.rooms.remove(&old.room);
                 }
                 for old in released {
@@ -1479,14 +1488,9 @@ impl RelayServer {
         // released a ticket lifetime after the old ticket expires, 300 to 600
         // seconds from now (`prune` already dropped an expired peer): time
         // for the client's minute of Leave retries.
-        if let Some(old) = replaced
-            && let Some(slot) = self.sessions.get_mut(&old.session)
-        {
-            slot.hop = SessionHop::Leaving(Box::new(LeavingHop {
-                ticket: old.ticket,
-                key: old.key.clone(),
-                until: old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME),
-            }));
+        if let Some(old) = replaced {
+            let until = old.ticket.expires.saturating_add(MAX_TICKET_LIFETIME);
+            self.park_session(old.session, old.ticket, old.key, until);
         }
         let mut admission = prior.unwrap_or(Admission {
             generation: message.ticket.generation,
@@ -1755,6 +1759,15 @@ impl RelayServer {
         }
     }
 
+    /// Parks `session`: until `until`, unix seconds, it takes only LEAVE,
+    /// each answered again, under `ticket` and `key`; then `prune` releases
+    /// it (spec §6.2 "释放").
+    fn park_session(&mut self, session: u32, ticket: Ticket, key: SecretKey, until: u64) {
+        if let Some(slot) = self.sessions.get_mut(&session) {
+            slot.hop = SessionHop::Leaving(Box::new(LeavingHop { ticket, key, until }));
+        }
+    }
+
     /// Drops `session`; it is not assigned again for 10 minutes (§6.2).
     fn release_session(&mut self, session: u32, now: u64) {
         if self.sessions.remove(&session).is_some() {
@@ -1829,9 +1842,9 @@ pub struct SessionEntry {
     pub room: [u8; 16],
     pub source: u8,
     /// The hop's current endpoint: the address of its last authenticated
-    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired
-    /// or a renewal replaced it (the hop then only answers LEAVE, to the
-    /// LEAVE's address).
+    /// fresh datagram (§6.2, NAT rebinding). `None` once its ticket expired,
+    /// a renewal replaced it or, for a watcher, it left or lost its place
+    /// (the hop then only answers LEAVE, to the LEAVE's address).
     pub endpoint: Option<SocketAddrV4>,
     /// The hop's ticket expiry, unix seconds like `process`'s `now`.
     pub expires: u64,
@@ -1849,7 +1862,9 @@ impl RelayServer {
     /// session. A hop is in it from its accepted CONFIRM until
     /// `LEAVE_GRACE` seconds after its LEAVE or its ticket's expiry, or, once
     /// a renewal's CONFIRM replaced it, until `MAX_TICKET_LIFETIME` seconds
-    /// after its ticket's expiry (§6.2).
+    /// after its ticket's expiry (§6.2). A watcher's goes `WATCH_LEAVE_S`
+    /// seconds after its LEAVE or renewal, or `WATCH_DROPPED_LEAVE_S` after
+    /// `drop_watchers` took it out of its room.
     pub fn session_table(&self) -> Vec<SessionEntry> {
         let mut table: Vec<_> = self
             .sessions

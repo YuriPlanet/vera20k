@@ -376,12 +376,13 @@ use crate::app::shell_network_setup::agreement::{
 };
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
-/// original game. A mod fails the pre-match check; other INI roots or
-/// changed game files fail the join's rules hash (`0x0079BA60`, silently in
-/// Quick Match), against any opponent without the same, and an Ares setting
-/// other than Auto fails the start's rules digest. The box says what to
-/// turn off for the first change ([`original_game_changes`]), and the
-/// runner ends before it queues.
+/// original game. A mod fails the pre-match check. Rules, Art, AI or mode
+/// INIs that differ, by root or changed file, fail the join's rules hash
+/// (`0x0079BA60`, silently in Quick Match) against any opponent without the
+/// same; every other change (another INI root, the theater suffix, other
+/// changed game files, an Ares setting other than Auto) fails the start's
+/// rules digest. The box says what to turn off for the first change
+/// ([`original_game_changes`]), and the runner ends before it queues.
 fn original_game_refusal(
     mod_title: Option<&str>,
     assets: &crate::app::process_assets::ProcessAssets,
