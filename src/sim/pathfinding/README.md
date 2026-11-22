@@ -133,6 +133,39 @@ remaining lever is the shape of the search itself, and every algorithm that
 changes the shape changes the route with it, so it belongs behind an opt-in of
 its own rather than in the stock path.
 
+## The mass order, and what a shared field would change
+
+A click gives every selected unit the same destination cell: the client commits
+one `Command::AttackMove` per selected object, each with the clicked cell
+([`click_command`](../../app/input/context_order/click_command.rs)). Six hundred
+tanks ordered onto one cell ask for six hundred paths to that cell.
+
+The batch answers them as six hundred searches. Over the benchmark's 300 ticks
+the registrations are three quarters of all the search work: 236,000 of the
+323,000 expansions a tick are the registrations, the rest are the jam re-paths,
+and the batch answers about 106 of them a tick under its cap of 256. One shared
+reverse search per goal cell would replace a hundred of those searches with one,
+and each unit's path with a walk down its gradient.
+
+The benchmark's march gives every unit its own formation-offset destination, so
+its registrations share nothing; the reuse comes from the order a player gives,
+not from the benchmark's.
+
+That is the flow field of the survey's first row, and it is not a small change:
+a field is a different graph, so it gives different routes, and the game has to
+ask for it. What it would need:
+
+- A switch of its own, read from the rules or the map, off with retail data.
+- One field per (goal cell, movement profile), because the edge cost is the
+  mover's own, and the fields keyed by the map's topology revision, so a bridge
+  lost or a wall built empties them.
+- The unit's own admission kept: the field is a guide over the terrain, and a
+  unit the field sends into a wall it cannot enter asks for its own path again,
+  which is what the jam machinery already does.
+- Its own measurement: the frame hashes are not expected to hold, because the
+  routes change. The arrival order, the queue delays and the expansions per
+  answered request are what to measure.
+
 To compare release builds from the same machine and retail install:
 
 ```sh
