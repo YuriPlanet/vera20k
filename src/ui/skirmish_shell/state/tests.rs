@@ -1287,12 +1287,9 @@ fn team_game_must_ally_omits_team_none_combo_item() {
 
     assert_eq!(
         combo_items(&shell, &maps, SkirmishComboId::Team(0)),
-        vec![
-            SkirmishComboItem::Team(0),
-            SkirmishComboItem::Team(1),
-            SkirmishComboItem::Team(2),
-            SkirmishComboItem::Team(3),
-        ]
+        (0..i32::from(crate::skirmish_launch::SKIRMISH_TEAMS))
+            .map(SkirmishComboItem::Team)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -1305,15 +1302,13 @@ fn ffa_combo_keeps_explicit_teams_despite_allies_disabled() {
     repair_teams_for_selected_mode(&mut shell, &stock_skirmish_modes());
     let maps = [test_map_entry("map.mmx")];
 
+    let expected = std::iter::once(-2)
+        .chain(0..i32::from(crate::skirmish_launch::SKIRMISH_TEAMS))
+        .map(SkirmishComboItem::Team)
+        .collect::<Vec<_>>();
     assert_eq!(
         combo_items(&shell, &maps, SkirmishComboId::Team(0)),
-        vec![
-            SkirmishComboItem::Team(-2),
-            SkirmishComboItem::Team(0),
-            SkirmishComboItem::Team(1),
-            SkirmishComboItem::Team(2),
-            SkirmishComboItem::Team(3),
-        ]
+        expected
     );
 }
 
@@ -2732,4 +2727,39 @@ fn seat_actions_and_ai_teams_go_through_the_rows() {
         AiDifficulty::Hard
     });
     assert!(shell.opponents.iter().all(|opponent| !opponent.is_active()));
+}
+
+/// VERA's 15-team skirmish Team list scrolls. A scrolling combo's dropdown is
+/// narrowed by its scrollbar, so the face must grow by that scrollbar or the
+/// 38 px team list has no caption width and prints blank (the reported bug:
+/// every option empty, while the picked face still showed its letter).
+#[test]
+fn scrolling_team_dropdown_keeps_caption_width() {
+    let layout = compute_layout(800, 600);
+    let shell = SkirmishShellState::default();
+    let maps = [test_map_entry("map.mmx")];
+    let id = SkirmishComboId::Team(0);
+
+    assert!(
+        combo_enabled(&shell, &maps, id),
+        "default mode allows teams"
+    );
+    let items = combo_items(&shell, &maps, id);
+    assert_eq!(items.len(), 16, "no team plus 15 teams");
+    assert!(
+        combo_dropdown_needs_scrollbar(&shell, &maps, id),
+        "16 items over a 9-row cap must scroll"
+    );
+
+    let face = combo_face_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
+    let dropdown = combo_dropdown_rect(&shell, &layout, &maps, id).unwrap();
+    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+    // The popup is the grown face; after the scrollbar is taken back out, the
+    // content is exactly the original face width, so captions are not clipped.
+    assert_eq!(dropdown.w, face.w + COMBO_DROPDOWN_SCROLLBAR_W);
+    assert_eq!(content.w, face.w);
+    assert!(
+        content.w > 0,
+        "the team list must retain caption width when it scrolls"
+    );
 }

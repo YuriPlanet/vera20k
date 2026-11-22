@@ -70,11 +70,13 @@ fn combo_popup(
     let mut face = combo_face_rect(rect, layout.scale);
     // ComboDropWin__WndProc (0x0060D540) narrows a scrolling list by its
     // scrollbar and cuts each caption at the client width less 0x14
-    // (0x0060DF38). gamemd's Start list never passes its nine rows, so it never
-    // scrolls; VERA's thirty starts would leave the 38 px Start list no width
-    // for a caption. A scrolling Start list grows by the scrollbar instead, so
-    // its rows keep the face's width.
-    if matches!(id, SkirmishComboId::Start(_)) && item_count > cap {
+    // (0x0060DF38). gamemd's Start and Team lists never pass their rows, so
+    // they never scroll; VERA's thirty starts and fifteen teams would leave
+    // these 38 px lists no width for a caption (the scrollbar alone is 20 px,
+    // plus the truncation reserve), so the whole dropdown prints blank. A
+    // scrolling Start or Team list grows by the scrollbar instead, keeping the
+    // face's caption width for its rows.
+    if matches!(id, SkirmishComboId::Start(_) | SkirmishComboId::Team(_)) && item_count > cap {
         face.w += DropdownMetrics::scaled(layout.scale).scrollbar_w;
     }
     let menu = matches!(id, SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu);
@@ -109,10 +111,10 @@ pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
     match id {
         SkirmishComboId::Side(_) => 7,
         SkirmishComboId::Color(_) | SkirmishComboId::Start(_) => 9,
-        SkirmishComboId::AiType(_)
-        | SkirmishComboId::Team(_)
-        | SkirmishComboId::TeamMenu
-        | SkirmishComboId::SeatMenu => 0,
+        SkirmishComboId::AiType(_) | SkirmishComboId::TeamMenu | SkirmishComboId::SeatMenu => 0,
+        // A skirmish Team list now runs A..O plus "no team"; cap the visible
+        // rows so the popup scrolls instead of overflowing the status bar.
+        SkirmishComboId::Team(_) => 9,
     }
 }
 
@@ -343,7 +345,10 @@ pub fn combo_items(
                 capacity,
             )
         }
-        SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
+        SkirmishComboId::Team(_) => team_choices(
+            state.selected_mode_must_ally,
+            crate::skirmish_launch::SKIRMISH_TEAMS,
+        ),
         SkirmishComboId::TeamMenu => super::team_menus::team_menu_items(state, maps),
         SkirmishComboId::SeatMenu => super::team_menus::seat_menu_items(state, maps),
     }
@@ -424,11 +429,14 @@ pub fn available_start_choices(
         )
         .collect()
 }
-/// Shared4E5B60 team catalog; mode default team decides whether None is listed.
-pub fn team_choices(must_ally: bool) -> Vec<SkirmishComboItem> {
+/// Team catalog: -2 (no team, unless `must_ally`) then team 0..count.
+/// Skirmish passes [`SKIRMISH_TEAMS`] (A..O); a network room with Teams Off
+/// passes [`NATIVE_TEAMS`] (gamemd's A..D). `count` is bounded to 0..=255 by
+/// its `u8` type, and the label layer names past-D teams E..O.
+pub fn team_choices(must_ally: bool, count: u8) -> Vec<SkirmishComboItem> {
     let none = (!must_ally).then_some(-2);
     none.into_iter()
-        .chain(0..i32::from(crate::skirmish_launch::NATIVE_TEAMS))
+        .chain(0..i32::from(count))
         .map(SkirmishComboItem::Team)
         .collect()
 }
@@ -885,4 +893,47 @@ pub(super) fn handle_combo_mouse_down(
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn team_values(items: &[SkirmishComboItem]) -> Vec<i32> {
+        items
+            .iter()
+            .map(|item| match item {
+                SkirmishComboItem::Team(team) => *team,
+                other => panic!("expected a Team item, got {other:?}"),
+            })
+            .collect()
+    }
+
+    /// A skirmish offers all 15 launch teams (A..O) plus "no team", so the
+    /// expanded Team dropdown no longer stops at gamemd's A..D.
+    #[test]
+    fn skirmish_team_choices_cover_all_launch_teams() {
+        let values = team_values(&team_choices(false, crate::skirmish_launch::SKIRMISH_TEAMS));
+        assert_eq!(values[0], -2, "no-team first");
+        assert_eq!(values.len(), 16, "'no team' plus 15 teams (A..O)");
+        assert_eq!(values[1], 0, "team A");
+        assert_eq!(*values.last().unwrap(), 14, "team O (index 14)");
+    }
+
+    /// A network room with Teams Off keeps gamemd's A..D list; expanding
+    /// skirmish must not change it.
+    #[test]
+    fn native_team_choices_keep_gamemd_range() {
+        let values = team_values(&team_choices(false, crate::skirmish_launch::NATIVE_TEAMS));
+        assert_eq!(values, vec![-2, 0, 1, 2, 3]);
+    }
+
+    /// A must-ally mode hides "no team" but keeps every named team.
+    #[test]
+    fn must_ally_team_choices_hide_no_team() {
+        let values = team_values(&team_choices(true, crate::skirmish_launch::SKIRMISH_TEAMS));
+        assert_eq!(values.len(), 15, "no -2 entry");
+        assert_eq!(values[0], 0);
+        assert_eq!(*values.last().unwrap(), 14);
+    }
 }
