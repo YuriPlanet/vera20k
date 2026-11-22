@@ -837,9 +837,9 @@ impl Simulation {
     }
 
     /// The module phase's delivery for module `index`: its queued records go
-    /// to `on_events` in batches the delivery area holds, while the frame
-    /// budget lasts and up to [`MAX_RECORDS_PER_FRAME`]; the rest wait, in
-    /// order, for the next frame. Records of a disabled or removed trigger,
+    /// to `on_events` in batches of what the delivery area holds, 16 at most, each with a whole budget. Batches start while
+    /// the frame's use is below the budget, up to [`MAX_RECORDS_PER_FRAME`]
+    /// records; the rest wait, in order, for the next frame. Records of a disabled or removed trigger,
     /// and every record once the game has ended, are dropped. The module
     /// stops when producers hit the queue cap or delivery leaves too much backlog.
     pub(super) fn deliver_ext_module_events(
@@ -866,10 +866,11 @@ impl Simulation {
         let frame = self.session.binary_frame();
         let mut delivered = 0;
         while delivered < ready {
-            let budget = self.ext_modules.slots[index].remaining_frame_ops(frame);
-            if budget == 0 {
+            let slot = &mut self.ext_modules.slots[index];
+            if !slot.may_start_call(frame) {
                 break;
             }
+            let budget = slot.frame_budget;
             let batch = self
                 .trigger_runtime
                 .module_triggers_mut()
@@ -885,7 +886,7 @@ impl Simulation {
                 index,
                 |module: &mut SimModule, host| module.deliver(&batch, budget, host),
             )?;
-            self.ext_modules.slots[index].charge_frame_ops(used);
+            self.ext_modules.slots[index].charge_frame_ops(frame, used);
         }
         let triggers = self.trigger_runtime.module_triggers();
         if triggers.queue_overflowed(source) {

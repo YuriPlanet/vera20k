@@ -187,7 +187,10 @@ when it starts. A map's module binds its triggers in code (`Trigger::on(..).bind
 | --- | --- |
 | Module size | 8 MiB |
 | Memory | 32 MiB for a mod's module, 16 MiB for a map's |
-| Work per frame | 200,000 operations by default and at most; the mod sets its own and the map's |
+| Work per call | 200,000 operations by default and at most; the mod sets its own and the map's. A frame stays below three times that, plus decisions |
+| Over the frame's work | another event batch waits for the next frame; `on_frame` still runs with a whole budget; only a single call over the limit stops the module |
+| Decisions | 20,000 operations each, from half the frame budget on top of it (`Defeat` a quarter, `ProductionAllowed` the frame budget itself) |
+| `find` | 2 operations per candidate plus 6 per clause, 10 per result; at most 16,384 candidates a call and no more than half the budget's worth, so continue while `next` is not 0 (`first` does) |
 | Start-up calls (`init`, `on_rules`, `on_scenario_start`) | 5,000,000 operations each |
 | Functions, function size | 20,000 functions, 1 MiB per function body |
 | Search | 16 clauses per query |

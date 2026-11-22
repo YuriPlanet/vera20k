@@ -211,12 +211,12 @@ impl Host<'_, '_> {
         };
         let (x0, y0, x1, y1) = (x0.max(0), y0.max(0), x1.min(width), y1.min(height));
         let mut page = FindPage::default();
-        'rows: for y in y0..y1 {
+        // A later page starts at its key instead of walking up to it.
+        let (after_y, after_x) = (query.after >> 16, query.after & 0xFFFF);
+        'rows: for y in y0.max(after_y)..y1 {
+            let x0 = if y == after_y { x0.max(after_x) } else { x0 };
             for x in x0..x1 {
                 let key = (y << 16) | x;
-                if key < query.after {
-                    continue;
-                }
                 if page.found.len() == cap {
                     break 'rows;
                 }
@@ -224,9 +224,14 @@ impl Host<'_, '_> {
                     continue;
                 };
                 if terrain.cell(rx, ry).is_none() {
+                    if !page.skip(key) {
+                        break 'rows;
+                    }
                     continue;
                 }
-                page.scanned += 1;
+                if !page.examine(key, query) {
+                    break 'rows;
+                }
                 if let (Some((cx, cy)), Area::Circle { radius, .. }) = (centre, query.area) {
                     let (dx, dy) = ((x - cx) * 256, (y - cy) * 256);
                     if dx * dx + dy * dy > i64::from(radius) * i64::from(radius) {

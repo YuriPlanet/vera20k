@@ -467,8 +467,8 @@ struct QueryBuffer {
     clauses: [sys::Clause; MAX_CLAUSES],
 }
 
-/// A `find` query (appendix 8.2): one host call per [`Find::first`] or
-/// [`Find::page`].
+/// A `find` query (appendix 8.2): one host call per [`Find::page`];
+/// [`Find::first`] calls until it has a match or the last page.
 pub struct Find(QueryBuffer);
 
 impl Find {
@@ -536,7 +536,10 @@ impl Find {
     }
 
     /// Fills `out` from position `after` (0 first), returning how many it
-    /// wrote and where the next page starts (0 on the last page).
+    /// wrote and where the next page starts (0 on the last page). One call
+    /// examines at most 16,384 candidates, fewer where they would cost over
+    /// half the callback's budget, so a page that is not full, even an empty
+    /// one, is the last only when that position is 0.
     pub fn page(&mut self, out: &mut [i64], after: i64) -> Result<(usize, i64)> {
         self.0.query.after = after;
         let len =
@@ -555,12 +558,17 @@ impl Find {
         Ok((result.count as usize, result.next))
     }
 
-    /// The first match, or `NO_HANDLE`.
+    /// The first match, or `NO_HANDLE`. Follows pages until there is one,
+    /// paying for every candidate examined on the way.
     pub fn first(mut self) -> i64 {
         let mut out = [NO_HANDLE];
-        match self.page(&mut out, 0) {
-            Ok((1, _)) => out[0],
-            _ => NO_HANDLE,
+        let mut after = 0;
+        loop {
+            match self.page(&mut out, after) {
+                Ok((1, _)) => return out[0],
+                Ok((_, next)) if next != 0 => after = next,
+                _ => return NO_HANDLE,
+            }
         }
     }
 }

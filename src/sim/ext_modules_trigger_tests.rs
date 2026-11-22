@@ -210,7 +210,7 @@ fn a_hit_fires_the_bound_trigger_and_on_events_gets_its_record() {
 }
 
 #[test]
-fn events_and_on_frame_share_the_module_budget() {
+fn on_frame_has_a_whole_budget_after_events_spend_from_it() {
     let line = "Frame work ".repeat(64);
     let on_frame = format!(
         r#"(import "vera:sim@1.0" "log" (func $log (param i32 i32)))
@@ -228,8 +228,8 @@ fn events_and_on_frame_share_the_module_budget() {
     };
     assert_eq!(completed(&scene), 1);
 
-    // The configured cap can pay for on_frame by itself. Once the damage
-    // callback spends from it, the metered log cannot finish.
+    // The configured cap can pay for on_frame by itself, and what the
+    // damage callback spent does not shorten it.
     let on_frame_cost = scene.sim().ext_modules().last_frame_ops()[0];
     scene.runtime.simulation.ext_modules.slots[0].frame_budget = on_frame_cost + 1;
     hit(&mut scene, victim, 10);
@@ -238,8 +238,8 @@ fn events_and_on_frame_share_the_module_budget() {
     assert_eq!(received(&scene), 1);
     assert_eq!(
         completed(&scene),
-        1,
-        "on_frame completed under the shared budget: {:?}",
+        2,
+        "on_frame was cut short: {:?}",
         scene.sim().ext_modules().status(),
     );
 }
