@@ -2493,12 +2493,10 @@ impl<'r> ShpUnitLayout<'r> {
     }
 
     /// The body image (`0x0073C5FC..0x0073C725`) for PrimaryFacing's
-    /// current 16-bit facing.
-    fn body_frame(
-        &self,
-        entity: &crate::app::presentation::frame::ObjectRecord,
-        facing: u16,
-    ) -> Option<u16> {
+    /// current 16-bit facing, as the draw reads it
+    /// ([`ObjectRecord::shp_body_facing`](crate::app::presentation::frame::ObjectRecord::shp_body_facing)).
+    fn body_frame(&self, entity: &crate::app::presentation::frame::ObjectRecord) -> Option<u16> {
+        let facing = entity.shp_body_facing;
         let facings = self.actual_art.map_or_else(
             || {
                 self.actual
@@ -2547,11 +2545,7 @@ fn resolve_object_shp_frame_with_facing(
     facing: u16,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Option<u16> {
-    let raw_facing = facing;
     let facing = (facing >> 8) as u8;
-    // Pass raw facing (not canonical) to resolve_shp_frame so the
-    // facing-to-index division works correctly for any facing count
-    // (6, 8, 10, etc.). The absolute frame index encodes the direction.
     let interner = runtime.map(|runtime| runtime.simulation.interner());
     let type_id = if entity.category() == EntityCategory::Unit {
         interner.map_or(type_id, |interner| interner.resolve(entity.type_ref()))
@@ -2580,8 +2574,7 @@ fn resolve_object_shp_frame_with_facing(
         // A retained signed/wide native layout can be outside the atlas frame
         // representation. Do not replace that failure with an infantry-facing
         // fallback, which would draw an unrelated valid frame.
-        return ShpUnitLayout::of(actual, rules, interner, entity, cells)
-            .body_frame(entity, raw_facing);
+        return ShpUnitLayout::of(actual, rules, interner, entity, cells).body_frame(entity);
     }
     if let (Some((doing, stage)), Some(set)) = (entity.infantry_sprite_pose(), sequence_set) {
         // Original518D93..518DC8: Doing-1 draws Tread16 only when the

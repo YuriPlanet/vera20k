@@ -173,6 +173,17 @@ fn ares_draws_the_facing_frame_and_drops_a_cloaked_technos_glow() {
     assert_eq!(draws.len(), 1);
     // Eight frames: Current >> (16 - 3).
     assert_eq!(draws[0].frame, 2);
+    // The picker reads Ares' own Current (`0x10009CC0`): on the first frame
+    // of a ROT 5 turn from 0x4000 to 0 it answers 0x4000, frame 2, where
+    // gamemd's answers 0x3FFC, frame 1 (`facing_class_ares.json`).
+    let entity = sim.substrate.entities.get_mut(unit).unwrap();
+    entity.body_facing.set_rot(5);
+    entity.body_facing.snap(0x4000, frame);
+    entity.body_facing.set(0, frame);
+    assert_eq!(sim.alpha_shape_draws(&rules).next().unwrap().frame, 2);
+    let entity = sim.substrate.entities.get_mut(unit).unwrap();
+    entity.body_facing.snap(0x4000, frame);
+    entity.body_facing.set_rot(0);
 
     let entity = sim.substrate.entities.get_mut(unit).unwrap();
     let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);

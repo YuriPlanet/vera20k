@@ -521,10 +521,10 @@ pub(crate) fn foot_body_frame_due(
 /// with `n = floor(log2(Facings))`, `(((facing + 0x2000) >> (15 - n)) + 1) >> 1`
 /// masked to `2^n - 1`, which is the stock value for 8. A count below 8, or
 /// not positive, draws bucket 0. From `n = 16` the hook neither shifts nor
-/// masks. RESIDUAL: the hook computes the current facing itself
-/// (`0x10048064..0x10048102`), multiplying by the remaining time before
-/// dividing by the steps where gamemd's FacingClass::Current (`0x004C93D0`)
-/// divides first; mid-turn a body can change bucket a tick earlier or later.
+/// masks. `facing` is PrimaryFacing's current value: stock reads it through
+/// FacingClass::Current (`0x004C93D0`, called at `0x0073C636`); the Ares hook
+/// through its own inline copy (`0x10048064..0x10048102`,
+/// [`FacingClass::current_ares`](crate::sim::movement::FacingClass::current_ares)).
 pub fn shp_vehicle_facing_slot(facings: i32, facing: u16, disguised: bool, ares: bool) -> i32 {
     if disguised {
         return 0;

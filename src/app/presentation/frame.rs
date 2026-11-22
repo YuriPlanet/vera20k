@@ -126,6 +126,12 @@ pub(crate) struct ObjectRecord {
     answers: Answers,
     /// [`RenderPose::read`] at the committed binary frame.
     pub(crate) pose: RenderPose,
+    /// PrimaryFacing (`+0x388`) at the committed binary frame as an SHP
+    /// Unit's body draw reads it: through `FacingClass::Current @ 0x004C93D0`
+    /// (called at `0x0073C636`), or under Ares through its own copy
+    /// (`UnitClass_DrawSHP_FacingsA`, Ares.dll `0x10048064..0x10048102`).
+    /// The pose's `body` is SecondaryFacing for a Fly locomotor.
+    pub(crate) shp_body_facing: u16,
     /// Its tether redraws (`instances::tether_redraw`).
     pub(crate) tether_draw: TetherDraw,
     /// What placing it reads of the world.
@@ -695,6 +701,11 @@ impl ObjectRecord {
             hud,
             scene,
             pose,
+            shp_body_facing: if at.rules().ares() {
+                entity.body_facing_current_ares(at.binary_frame)
+            } else {
+                entity.body_facing_current(at.binary_frame)
+            },
             tether_draw,
         }
     }

@@ -2170,6 +2170,12 @@ impl GameEntity {
         self.body_facing.current(frame)
     }
 
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
+    }
+
     /// The body heading's high byte at `frame`, the 8-bit direction a reader
     /// that drops the DirStruct's low byte sees.
     pub fn body_facing_byte(&self, frame: u32) -> u8 {
