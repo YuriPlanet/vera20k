@@ -508,7 +508,7 @@ pub fn holds_master_archives(dir: &Path) -> bool {
 
 /// Use the selected folder's authored loader settings when it has them.
 /// Otherwise recognize a classic RA2 folder by its files, or a launcher
-/// folder by its client catalog and numbered archive family.
+/// folder by its client catalog. Other file names are declared, never guessed.
 pub fn mod_resources(
     dir: &crate::util::mod_package::ModFolder,
     definition: &ModDefinition,
@@ -537,12 +537,6 @@ pub fn mod_resources(
         }
         return Ok(resources);
     };
-    if let Some((ini, archives)) = super::numbered_mod_resources::discover(dir)? {
-        if base.profile != IniProfile::Custom {
-            resources.ini = ini;
-        }
-        resources.archives = archives;
-    }
     let has_file = |name| {
         crate::util::case_insensitive_path::find(dir, name)
             .is_some_and(crate::util::file_system::is_file)
@@ -2771,6 +2765,44 @@ mod tests {
         assert_eq!(original.get_ref("rulesmd.ini"), Some(&b"game rules"[..]));
         assert_eq!(original.get_ref("unit.shp"), Some(&b"game unit"[..]));
         assert_eq!(original.get_ref("new.vxl"), None);
+    }
+
+    /// A client folder loads with stock names even beside a complete renamed
+    /// family: other names are declared in `mod.ini`, never guessed.
+    #[test]
+    fn a_client_folder_keeps_stock_names_beside_a_renamed_family() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        use crate::util::mod_package::ModFolder;
+        let files = TestDirectory::new("client-stock-names");
+        std::fs::create_dir_all(files.path().join("Resources")).unwrap();
+        std::fs::write(
+            files.path().join("Resources/ClientDefinitions.ini"),
+            "[Settings]\nMPMapsPath=maps.ini\n",
+        )
+        .unwrap();
+        std::fs::write(files.path().join("maps.ini"), "[GameModes]\n").unwrap();
+        std::fs::write(
+            files.path().join("expandalt99.mix"),
+            make_new_format_mix_bytes(&[
+                ("rulesalt.ini", b"[General]\n"),
+                ("artalt.ini", b"[Unit]\n"),
+                ("aialt.ini", b"[AI]\n"),
+            ]),
+        )
+        .unwrap();
+        let select = |definition: &str| {
+            mod_resources(
+                &ModFolder::loose(files.path().to_owned()),
+                &ModDefinition::parse(definition).unwrap(),
+                &IniRootConfig::default(),
+            )
+            .unwrap()
+        };
+        let stock = select("");
+        assert!(stock.client_install.is_some());
+        assert_eq!(stock.archives, ArchiveNames::default());
+        let declared = select("[Archives]\nExpansionPrefix=expandalt\n");
+        assert_eq!(declared.archives.expansion_prefix, "expandalt");
     }
 
     #[test]

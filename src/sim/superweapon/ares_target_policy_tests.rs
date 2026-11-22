@@ -1,4 +1,4 @@
-//! Small production-rule/command scenes for the shared Ares policy. No MO
+//! Small production-rule/command scenes for the shared Ares policy. No mod
 //! names or assets, native-execution corpus, or duplicate selector in tests.
 use super::*;
 use crate::rules::ini_parser::IniFile;

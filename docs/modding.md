@@ -135,6 +135,9 @@ A mod is an external data package. VERA20k reads its files and never runs its
 executables, DLLs or launcher. A manifest selects resources and supported extensions;
 it does not install new engine code.
 
+A mod's own terms still apply. Some authors don't allow their mod in other engines:
+check a mod's terms before you use it here. VERA20k doesn't support such mods.
+
 | What you can put in a mod's folder | What it does |
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
@@ -250,8 +253,8 @@ The folder name is only the choice saved by the menu. Its loading rules come fro
 
 An extracted CnCNet client folder can go straight into `Mods`. Put the folder
 containing `Resources/ClientDefinitions.ini` and the game archives there, then
-choose it as above. VERA uses its `MPMapsPath` catalog and can recognize one
-complete renamed Rules, Art and AI family in its numbered MIX files. A folder
+choose it as above. VERA uses its `MPMapsPath` catalog. A client whose files
+use other names declares them in `mod.ini`; VERA doesn't guess them. A folder
 that ships the Ares DLL and its injection list uses VERA's own Ares reader.
 VERA also uses the client theme's `splashScreen.png` and skirmish lobby
 background when present. It reads the configured `BackgroundTexture` from
@@ -262,7 +265,7 @@ This import opens offline Skirmish with the supported maps and modes. It applies
 their plain mode INIs and uses VERA's game options. Client-only forced settings,
 random maps, campaigns specific to the client, and multiplayer through the
 imported catalog are outside this path. An explicit loading section in
-`mod.ini` takes precedence over discovery.
+`mod.ini` takes precedence over the client folder's files.
 
 The menu keeps your choice in `config.toml`, as a `mod` line under `[paths]`, and makes
 the file beside the program if there is none yet. You can write the line yourself:
