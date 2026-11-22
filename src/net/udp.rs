@@ -1726,8 +1726,12 @@ impl UdpIo {
                     .is_some_and(|heard| now_ticks.wrapping_sub(heard) as i32 > RELAY_ABSENT_TICKS);
                 // Keep the NAT mapping alive even without player input. During
                 // initial admission retry once a second; established routes ping
-                // every two seconds. These wall buckets never enter simulation.
-                let interval = if route.session.is_ready() && route.renewing.is_none() {
+                // every two seconds, except at an interval that finds the hop
+                // trading traffic both ways (`ClientSession::busy_both_ways`):
+                // a match's UPLINKs and the relay's pushes are its keepalive.
+                // These wall buckets never enter simulation.
+                let established = route.session.is_ready() && route.renewing.is_none();
+                let interval = if established {
                     RELAY_PING_TICKS
                 } else {
                     RELAY_HANDSHAKE_TICKS
@@ -1741,6 +1745,9 @@ impl UdpIo {
                     for session in
                         std::iter::once(&mut route.session).chain(route.renewing.iter_mut())
                     {
+                        if established && session.busy_both_ways(now_ms) {
+                            continue;
+                        }
                         match session.probe_at(now_ms, &mut route.encoded) {
                             Ok(()) => {
                                 if let Err(error) =

@@ -523,8 +523,13 @@ fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
 
 /// `ordered_relay` once a second source's Ready has started its match and the
 /// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
-/// relay a heartbeat 250 ms later (spec §6.6). The relay socket reads nothing.
-fn started_relay() -> (UdpSocket, LanUdpTransport) {
+/// relay a heartbeat 250 ms later (spec §6.6). The relay has read nothing
+/// since the start.
+fn started_relay() -> (
+    UdpSocket,
+    vera20k_relay_protocol::RelayServer,
+    LanUdpTransport,
+) {
     use vera20k_relay_protocol::{
         ClientSession, MAX_DATAGRAM, SecretKey, ServerEvent, Ticket, derive_packet_key,
     };
@@ -583,25 +588,86 @@ fn started_relay() -> (UdpSocket, LanUdpTransport) {
         std::thread::yield_now();
     }
     relay_datagrams(&socket);
-    (socket, wire)
+    (socket, server, wire)
 }
 
 /// What reached the relay, waiting 100 ms for the last of it.
-fn relay_datagrams(socket: &UdpSocket) -> usize {
+fn relay_received(socket: &UdpSocket) -> Vec<Vec<u8>> {
     let mut datagram = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
     socket
         .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
-    let count = std::iter::from_fn(|| socket.recv_from(&mut datagram).ok()).count();
+    let mut received = Vec::new();
+    while let Ok((length, _)) = socket.recv_from(&mut datagram) {
+        received.push(datagram[..length].to_vec());
+    }
     socket
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();
-    count
+    received
+}
+
+fn relay_datagrams(socket: &UdpSocket) -> usize {
+    relay_received(socket).len()
+}
+
+/// A route busy both ways sends no keepalive PING: its UPLINKs and the
+/// relay's pushes keep each end hearing the other. At the keepalive interval
+/// that finds the relay two seconds silent the PING is back, whatever the
+/// game still sends.
+#[test]
+fn a_relay_route_busy_both_ways_skips_its_keepalive_until_the_relay_falls_silent() {
+    use vera20k_relay_protocol::envelope::{Direction, PING, peek};
+
+    let (socket, mut server, mut wire) = started_relay();
+    let game = wire.primary_addr().unwrap();
+    let pings = |sent: &[Vec<u8>]| {
+        sent.iter()
+            .filter(|bytes| peek(Direction::Up, bytes).unwrap().kind == PING)
+            .count()
+    };
+    // Every 256 ms the game services, which sends the UPLINK heartbeat it
+    // owes, and the relay answers with the pushes due by then. The route's
+    // last probe was its HELLO at bucket 0, so bucket 132 is the first
+    // service past the two-second interval.
+    for tick in (36..=132).step_by(16) {
+        wire.service(tick);
+        let sent = relay_received(&socket);
+        assert!(!sent.is_empty(), "the game sends at bucket {tick}");
+        assert_eq!(pings(&sent), 0, "no keepalive at bucket {tick}");
+        let now_ms = u64::from(tick) * 16;
+        let mut answers = Vec::new();
+        for bytes in &sent {
+            answers.extend(server.process_at(game, bytes, 1000, now_ms).unwrap());
+        }
+        answers.extend(server.drain_ordering_push(now_ms, 1000));
+        answers.retain(|answer| answer.endpoint == game);
+        assert!(!answers.is_empty(), "the relay answers at bucket {tick}");
+        let heard = wire.relay_link_stats().unwrap().datagrams_received + answers.len() as u64;
+        for answer in &answers {
+            socket.send_to(&answer.bytes, answer.endpoint).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while wire.relay_link_stats().unwrap().datagrams_received < heard {
+            wire.service(tick);
+            assert!(Instant::now() < deadline, "the relay's answers arrived");
+            std::thread::yield_now();
+        }
+    }
+    // The relay falls silent after bucket 132, where the last interval began.
+    wire.service(132 + RELAY_PING_TICKS - 1);
+    assert_eq!(pings(&relay_received(&socket)), 0);
+    wire.service(132 + RELAY_PING_TICKS);
+    assert_eq!(
+        pings(&relay_received(&socket)),
+        1,
+        "nothing heard for two seconds"
+    );
 }
 
 #[test]
 fn io_worker_answers_for_a_long_frame_but_not_a_stalled_or_crashed_game() {
-    let (socket, mut wire) = started_relay();
+    let (socket, _, mut wire) = started_relay();
     // The game thread last serviced at bucket 20. A one-second frame later
     // the worker heartbeats (the 2-second keepalive is not due).
     wire.lock().background_pass(80, false);

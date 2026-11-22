@@ -320,16 +320,21 @@ impl AdaptiveClient {
         {
             self.session.forget_readiness();
         }
-        let interval = if self.session.is_ready() && self.candidate.is_none() {
+        let established = self.session.is_ready() && self.candidate.is_none();
+        let interval = if established {
             HOP_PING_INTERVAL_MS
         } else {
             HOP_HANDSHAKE_INTERVAL_MS
         };
         if due(self.last_probe, now, interval) {
             self.last_probe = Some(now);
-            let mut out = Vec::new();
-            let result = self.session.probe_at(now, &mut out);
-            self.sent(result, out);
+            // As `UdpIo::service`: an established hop trading traffic both
+            // ways sends no PING.
+            if !(established && self.session.busy_both_ways(now)) {
+                let mut out = Vec::new();
+                let result = self.session.probe_at(now, &mut out);
+                self.sent(result, out);
+            }
             if let Some(candidate) = self.candidate.as_mut() {
                 let mut out = Vec::new();
                 if candidate.probe_at(now, &mut out).is_ok() {
