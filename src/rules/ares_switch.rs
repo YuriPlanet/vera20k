@@ -346,41 +346,59 @@ pub(crate) struct AresInputs {
 impl AresInputs {
     pub(crate) fn from_passes(reads: &KeyReads, ships_ares: bool, keys_off: bool) -> Self {
         Self {
-            keys: if keys_off {
-                BTreeSet::new()
-            } else {
-                reads
-                    .ares_only()
-                    .map(|(section, key)| (section.to_owned(), key.to_owned()))
-                    .collect()
-            },
+            // Kept under the setting Off too, which only stops them from
+            // turning Ares on ([`Self::kept_off`]).
+            keys: reads
+                .ares_only()
+                .map(|(section, key)| (section.to_owned(), key.to_owned()))
+                .collect(),
             ships_ares,
             keys_off: keys_off && !ships_ares,
         }
     }
 
+    /// The Ares key that turns Ares on once the projection's own reads are
+    /// in: the first that only Ares readers found and that remains after the
+    /// projection's stock and Phobos reads.
+    fn deciding_key<'a>(&'a self, projection: &'a KeyReads) -> Option<(&'a str, &'a str)> {
+        self.keys
+            .iter()
+            .map(|(section, key)| (section.as_str(), key.as_str()))
+            .filter(|(section, key)| !projection.read_outside_ares(section, key))
+            .chain(projection.ares_only())
+            .min()
+    }
+
     /// Whether Ares plays once the projection's own reads are in: `ares.mix`
-    /// ships, or a key only Ares readers found remains after the
-    /// projection's stock and Phobos reads. The deciding input goes to the
-    /// log, so a modder can see why.
+    /// ships, or a key only Ares readers found remains
+    /// ([`Self::deciding_key`]) and the player's Ares setting is not Off. The
+    /// deciding input goes to the log, so a modder can see why.
     pub(crate) fn decide(&self, projection: &KeyReads) -> bool {
         if self.ships_ares {
             log::info!("Ares plays in this game: ares.mix is installed or the Ares setting is On");
             return true;
         }
-        if self.keys_off {
-            return false;
+        match self.deciding_key(projection) {
+            Some((section, key)) if self.keys_off => {
+                log::info!(
+                    "Ares stays off in this game, as the Ares setting Off says: [{section}] {key} \
+                     is an Ares key"
+                );
+                false
+            }
+            Some((section, key)) => {
+                log::info!("Ares plays in this game: [{section}] {key} is an Ares key");
+                true
+            }
+            None => false,
         }
-        let key = self
-            .keys
-            .iter()
-            .map(|(section, key)| (section.as_str(), key.as_str()))
-            .filter(|(section, key)| !projection.read_outside_ares(section, key))
-            .chain(projection.ares_only())
-            .min();
-        if let Some((section, key)) = key {
-            log::info!("Ares plays in this game: [{section}] {key} is an Ares key");
-        }
-        key.is_some()
+    }
+
+    /// VERA: whether the player's Ares setting Off is what keeps Ares from
+    /// playing: the game holds a key that turns Ares on under Auto. Such a
+    /// game is another than the one a player set to Auto plays from the same
+    /// files; with no such key the two are the same game.
+    pub(crate) fn kept_off(&self, projection: &KeyReads) -> bool {
+        self.keys_off && self.deciding_key(projection).is_some()
     }
 }

@@ -141,27 +141,32 @@ pub(crate) fn rules_differ_text(state: &AppState) -> String {
 pub(crate) enum OriginalGameChange<'a> {
     /// The mod in use, by its title.
     Mod(&'a str),
-    /// `config.toml`'s INI roots or theater suffix are not YR's.
+    /// `config.toml`'s INI roots that games compare (`IniRoots::agreed_files`)
+    /// or its theater suffix are not YR's.
     IniRoots,
-    /// The Ares setting, never Auto.
+    /// The Ares setting where it decides which game this is
+    /// (`ProcessAssets::agreed_ares_setting`), never Auto.
     Ares(crate::util::ares_launch::AresSetting),
     /// The game-folder files that change the original game.
     ChangedFiles(&'a [String]),
 }
 
 /// What this game changes from the original game: its mod, `config.toml`'s
-/// INI roots, the Ares setting when not Auto and changed game files, in that
-/// order. The rules-differ text names them all, Quick Match refuses on the
-/// first. Ares comes before the files: On can mount the installation's
-/// `ares.mix`, which counts as a changed file, and a box naming the files
-/// would send the player to delete it. Empty when it plays the original.
+/// INI roots, the Ares setting where it decides which game this is and
+/// changed game files, in that order. The rules-differ text names them all,
+/// Quick Match refuses on the first. Ares comes before the files: On can
+/// mount the installation's `ares.mix`, which counts as a changed file, and a
+/// box naming the files would send the player to delete it. Empty when it
+/// plays the original.
 /// The Options switches never count: the room decides which its players play
-/// (`MatchSession::network_personal_rules`).
+/// (`MatchSession::network_personal_rules`). Nor does the Ares setting Off
+/// without a mod whose `ares.mix` it leaves out, or On with one: each opens
+/// the game Auto opens.
 pub(crate) fn original_game_changes<'a>(
     mod_title: Option<&'a str>,
     assets: &'a crate::app::process_assets::ProcessAssets,
 ) -> Vec<OriginalGameChange<'a>> {
-    let ares = assets.ares_setting();
+    let ares = assets.agreed_ares_setting();
     let files = assets.changed_game_files();
     [
         mod_title.map(OriginalGameChange::Mod),
@@ -244,13 +249,66 @@ pub(crate) fn own_changes_text(state: &AppState) -> Option<String> {
     ))
 }
 
+/// VERA: the rules a match's start certifies (`StartupAgreement::new`): the
+/// room's digest, then what only the loaded match says. `terrain` names the
+/// game folder's terrain files a match read whose map needs them
+/// (`ProcessAssets::match_terrain_digest`). `rules` are the loaded match's,
+/// for whether Ares plays in it (`RuleSet::ares`): with the same files that
+/// differs only between a player whose Ares setting is Off and one it is
+/// not, and only when the match's mode or map holds an Ares key, which the
+/// room's digest cannot know (`ProcessAssets::agreed_ares_setting`). Both add
+/// nothing to a match of the original game on its own terrain.
+pub(crate) fn start_rules(
+    mut rules_digest: String,
+    terrain: Option<&str>,
+    rules: &crate::rules::ruleset::RuleSet,
+) -> String {
+    if let Some(terrain) = terrain {
+        rules_digest.push_str(" terrain ");
+        rules_digest.push_str(terrain);
+    }
+    if rules.ares() {
+        rules_digest.push_str(" ares");
+    }
+    rules_digest
+}
+
+/// VERA: whether the Ares setting Off is what keeps Ares from playing in the
+/// loaded match (`RuleSet::ares_kept_off`): its rules or map hold an Ares key.
+/// No room compares that and the rules parts leave it out; the match's start
+/// does ([`start_rules`]).
+pub(crate) fn match_keeps_ares_off(state: &AppState) -> bool {
+    state
+        .match_state
+        .sim_runtime
+        .runtime()
+        .is_some_and(|runtime| runtime.resources.rules.ares_kept_off())
+}
+
 /// VERA: [`own_changes_text`] for a start the players' games refused. A match
 /// whose map names a tile the original game lacks also read this game's
 /// terrain files (`ProcessAssets::match_terrain_files`), which no room
-/// compares, so they are named with the changed files.
+/// compares, so they are named with the changed files. And where the Ares
+/// setting Off is what keeps Ares from playing in the match
+/// (`RuleSet::ares_kept_off`), which no room compares either, it is named
+/// as the setting.
 pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
     let assets = &state.process_assets;
     let mut changes = original_game_changes(state.frontend.mods.title(), assets);
+    if match_keeps_ares_off(state)
+        && !changes
+            .iter()
+            .any(|change| matches!(change, OriginalGameChange::Ares(_)))
+    {
+        let before_files = changes
+            .iter()
+            .position(|change| matches!(change, OriginalGameChange::ChangedFiles(_)))
+            .unwrap_or(changes.len());
+        changes.insert(
+            before_files,
+            OriginalGameChange::Ares(crate::util::ares_launch::AresSetting::Off),
+        );
+    }
     let terrain = assets.match_terrain_files();
     let mut files = assets.changed_game_files().to_vec();
     for file in terrain {
@@ -291,6 +349,41 @@ mod tests {
     use super::*;
     use crate::util::ares_launch::AresSetting;
     use serde_json::{Value, json};
+
+    /// A start certifies the room's digest alone for a match of the original
+    /// game on its own terrain. On a map with an Ares key, the player whose
+    /// Ares setting is Off and the one set to Auto loaded other rules from
+    /// the same files, and their starts differ; on a map without one they
+    /// loaded the same and their starts agree. The terrain files a match read
+    /// are named too.
+    #[test]
+    fn a_start_names_what_only_the_loaded_match_says() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let loaded = |ares_off: bool, map: &str| {
+            crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+                .with_ares_mix(false)
+                .with_ares_keys_off(ares_off)
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(None),
+                    &IniFile::from_str(map),
+                )
+                .unwrap()
+                .into_parts()
+                .0
+        };
+        let start = |ares_off, map| start_rules("digest".to_owned(), None, &loaded(ares_off, map));
+        assert_eq!(start(true, ""), "digest");
+        assert_eq!(start(false, ""), "digest");
+        let ares_key = "[HTNK]\nImmuneToAbduction=yes\n";
+        assert_eq!(start(true, ares_key), "digest");
+        assert_ne!(start(false, ares_key), "digest");
+        let terrain = start_rules("digest".to_owned(), Some("files"), &loaded(true, ""));
+        assert_ne!(terrain, "digest");
+    }
 
     /// The `Vera-Changes` header names each change in the JSON and bounds the
     /// lobby takes: Auto is no change, texts keep to 64 bytes of whole

@@ -698,6 +698,14 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// Whether the Ares setting Auto mounts `ares.mix` for this game: a mod
+    /// is selected and has one in reach, its own or the installation's. With
+    /// it On opens the game Auto opens, and Off another
+    /// (`AresSetting::where_it_decides`).
+    pub fn auto_mounts_ares(&self) -> bool {
+        self.mod_selected() && self.loose_path("ares.mix").is_some()
+    }
+
     /// Make this the game the launch plays: its [`Self::ships_ares`] answer
     /// becomes the launch's (`util::ares_launch`), which a thread outside
     /// every reading scope loads its INIs by, as Ares.dll patches a whole
@@ -875,9 +883,7 @@ impl AssetManager {
         // VERA: the player's Ares setting On mounts the installation's copy
         // with no mod selected too, and Off mounts none.
         let ares = match ares_setting {
-            crate::util::ares_launch::AresSetting::Auto => {
-                manager.mod_selected() && manager.loose_path("ares.mix").is_some()
-            }
+            crate::util::ares_launch::AresSetting::Auto => manager.auto_mounts_ares(),
             crate::util::ares_launch::AresSetting::On => true,
             crate::util::ares_launch::AresSetting::Off => false,
         };
@@ -2964,6 +2970,16 @@ mod tests {
         let off = open(Some(mod_dir.path()), AresSetting::Off);
         assert!(!off.ships_ares() && !off.ares_mix_mounted());
         assert_eq!(off.get_ref("ares.txt"), None);
+        // Auto mounts `ares.mix` only for a selected mod with one in reach,
+        // whatever the setting is: there On opens the game Auto opens, and
+        // without one Off does.
+        assert!(!auto.auto_mounts_ares() && !on.auto_mounts_ares());
+        assert!(off.auto_mounts_ares());
+        let auto_with_mod = open(Some(mod_dir.path()), AresSetting::Auto);
+        let on_with_mod = open(Some(mod_dir.path()), AresSetting::On);
+        assert!(auto_with_mod.ships_ares() && on_with_mod.ships_ares());
+        assert_eq!(auto_with_mod.get_ref("ares.txt"), Some(&b"mod Ares"[..]));
+        assert_eq!(on_with_mod.get_ref("ares.txt"), Some(&b"mod Ares"[..]));
     }
 
     #[test]
