@@ -150,10 +150,19 @@
   .link { padding: 0; background: none; border: 0; color: var(--lavender); cursor: pointer; font-size: inherit; text-decoration: underline; text-underline-offset: 3px; }
   .link:hover { color: var(--lilac); }
 
-  #hud { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
+  #hud, #worker-notice { position: fixed; left: 50%; transform: translateX(-50%); z-index: 3; max-width: calc(100vw - 32px);
     padding: 6px 14px; background: var(--overlay); border: 1px solid var(--line-hi); color: var(--lilac); font: 13px var(--mono);
-    transition: opacity .5s; pointer-events: none; }
+    pointer-events: none; }
+  #hud { bottom: 16px; transition: opacity .5s; }
   #hud.fade { opacity: 0; }
+  #worker-notice { top: 16px; }
+
+  #stopped { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; padding: 24px;
+    background: var(--overlay); backdrop-filter: blur(3px); }
+  .stopped-body { max-width: 440px; padding: 24px 26px; text-align: center;
+    background: linear-gradient(180deg, var(--panel-top), var(--panel-bottom)); border: 1px solid var(--line-hi); box-shadow: 0 24px 64px var(--shade); }
+  .stopped-body h2 { margin: 0 0 10px; color: var(--lilac); font-size: 18px; }
+  .stopped-body p { margin: 0 0 18px; color: var(--muted); }
 
   /* Narrow screens: the wordmark becomes a banner and the panel scrolls beneath it. */
   @media (max-width: 860px) {
@@ -262,5 +271,14 @@
 </main>
 
 <div id="hud" role="status" hidden></div>
+<div id="worker-notice" role="status" hidden></div>
+
+<div id="stopped" role="alert" hidden>
+  <div class="stopped-body">
+    <h2 data-i18n="stoppedTitle">VERA20k has stopped</h2>
+    <p id="stopped-text">The game stopped. Reload the page to play again.</p>
+    <button class="btn primary" id="stopped-reload" type="button" data-i18n="reload">Reload the page</button>
+  </div>
+</div>
 <script type="module" src="./host.js"></script>
 </html>

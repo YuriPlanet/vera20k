@@ -66,7 +66,8 @@ pub(crate) fn status(message: &str) {
 }
 
 /// Install before starting. Receives structured match-ended, engine-exited,
-/// and engine-error objects. Callback exceptions never veto engine shutdown.
+/// engine-error, and worker-stopped objects. Callback exceptions never veto
+/// engine shutdown.
 #[wasm_bindgen]
 pub fn set_lifecycle_callback(callback: js_sys::Function) {
     ON_LIFECYCLE.with(|slot| *slot.borrow_mut() = Some(callback));
@@ -98,6 +99,15 @@ pub(crate) fn match_running() -> bool {
 
 pub(crate) fn match_ended(report: serde_json::Value) {
     emit_lifecycle(LIFECYCLE.with(|slot| slot.borrow_mut().match_ended(report)));
+}
+
+#[cfg(feature = "wasm-threads")]
+fn worker_stopped(message: &str) {
+    if ON_LIFECYCLE.with(|slot| slot.borrow().is_some()) {
+        emit_lifecycle(LIFECYCLE.with(|slot| slot.borrow().worker_stopped(message, false)));
+    } else {
+        status(message);
+    }
 }
 
 pub(crate) fn request_exit(error: Option<&str>) {
@@ -173,23 +183,36 @@ pub fn initialize() {
     console_error_panic_hook::set_once();
     let console = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let error = format!("Runtime error: {info}");
-        // A worker reaches neither the host nor the page: its message waits
-        // for the main thread, which panics with it (`SimHost`).
+        // A panic on a worker reaches neither the host nor the page: the
+        // hook keeps the message, and the main thread raises it (`SimHost`).
         #[cfg(feature = "wasm-threads")]
         if web_sys::window().is_none() {
             sim_worker::note_worker_panic(&info.to_string());
             console(info);
             return;
         }
-        // A panic need not reach ApplicationHandler::exiting. Best effort
-        // notification must not recursively borrow a lifecycle operation.
-        let event = LIFECYCLE.with(|slot| {
-            slot.try_borrow_mut()
-                .ok()
-                .and_then(|mut state| state.fatal(&error))
+        #[cfg(feature = "wasm-threads")]
+        let worker_failure = info
+            .payload()
+            .downcast_ref::<sim_worker::WorkerFailure>()
+            .map(|failure| failure.0);
+        #[cfg(not(feature = "wasm-threads"))]
+        let worker_failure: Option<&str> = None;
+        let error = match worker_failure {
+            Some(message) => message.to_owned(),
+            None => format!("Runtime error: {info}"),
+        };
+        // Set terminal state before either callback can call back into the engine.
+        // A panic need not reach ApplicationHandler::exiting.
+        let (worker, event) = LIFECYCLE.with(|slot| {
+            let Ok(mut state) = slot.try_borrow_mut() else {
+                return (None, None);
+            };
+            let worker = worker_failure.and_then(|message| state.worker_stopped(message, true));
+            (worker, state.fatal(&error))
         });
         crate::audio::web_output::shutdown();
+        emit_lifecycle(worker);
         emit_lifecycle(event);
         status(&error);
         console(info);
@@ -714,7 +737,7 @@ async fn on_pool(
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
         }
         // A panic traps the worker before its sender drops.
-        if let Some(error) = sim_worker::worker_panic() {
+        if let Some(error) = sim_worker::pool_panic() {
             return Err(format!("the map generation stopped: {error}"));
         }
         let pause = js_sys::Promise::new(&mut |resolve, _| {

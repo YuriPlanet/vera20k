@@ -178,20 +178,43 @@ impl SimHost {
     /// changes nothing; there this also starts the simulation worker for the
     /// first scenario that can use it.
     pub(crate) fn pass_may_run(&mut self, wait: bool) -> bool {
+        let ended = self.job_ended();
         #[cfg(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
         ))]
+        if ended {
+            self.worker_step();
+        }
+        ended || (wait && !BROWSER_THREADS)
+    }
+
+    /// The browser's simulation worker: start it for the first scenario that
+    /// can use it, and notice when it stopped. A worker that stopped lends
+    /// nothing more, so the game ticks on the main thread.
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    fn worker_step(&mut self) {
+        use crate::web::sim_worker;
+
         if let Some(worker) = &mut self.worker {
-            worker.running |= worker.ready.load(std::sync::atomic::Ordering::Acquire);
-        } else if self.is_installed()
-            && sim_thread_available()
-            && crate::web::sim_worker::available()
-        {
+            if sim_worker::stopped() {
+                // The worker is gone: it lends nothing more, so the game
+                // ticks on the main thread.
+                worker.running = false;
+                if self.is_installed() {
+                    sim_worker::report_worker_failure();
+                }
+            } else {
+                worker.running = worker.ready.load(std::sync::atomic::Ordering::Acquire);
+            }
+        } else if self.is_installed() && sim_thread_available() && sim_worker::available() {
             self.worker = Some(SimWorker::spawn());
         }
-        self.job_ended() || (wait && !BROWSER_THREADS)
     }
 
     /// Have the simulation thread call `wake` whenever a lent job ends.
@@ -214,16 +237,7 @@ impl SimHost {
             return true;
         }
         let worker = self.worker.as_ref().expect("a lent runtime has a worker");
-        self.ended = worker.returned.take();
-        // A worker's panic aborts it, so its tick never comes back.
-        #[cfg(all(
-            feature = "wasm-threads",
-            target_arch = "wasm32",
-            target_os = "unknown"
-        ))]
-        if self.ended.is_none() {
-            crate::web::sim_worker::raise_worker_panic();
-        }
+        self.ended = worker.try_return();
         self.ended.is_some()
     }
 
@@ -645,6 +659,30 @@ impl SimWorker {
         }
     }
 
+    fn try_return(&self) -> Option<Returned> {
+        // A worker that stopped after returning the tick still delivered it:
+        // its result wins. A tick that never comes back, with a failure
+        // recorded, is a lost world, and the launch ends there.
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        let failure = crate::web::sim_worker::worker_failure();
+        let returned = self.returned.take();
+        #[cfg(all(
+            feature = "wasm-threads",
+            target_arch = "wasm32",
+            target_os = "unknown"
+        ))]
+        if returned.is_none()
+            && let Some(detail) = failure
+        {
+            crate::web::sim_worker::raise_worker_panic(detail);
+        }
+        returned
+    }
+
     /// Wait for the lent runtime to come back.
     fn wait(&self) -> Returned {
         // A wait on another thread traps on the browser's main thread, so
@@ -655,10 +693,9 @@ impl SimWorker {
             target_os = "unknown"
         ))]
         loop {
-            if let Some(returned) = self.returned.take() {
+            if let Some(returned) = self.try_return() {
                 return returned;
             }
-            crate::web::sim_worker::raise_worker_panic();
             std::hint::spin_loop();
         }
         #[cfg(not(all(

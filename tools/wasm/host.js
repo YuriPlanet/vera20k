@@ -64,6 +64,11 @@ const TEXT = {
         exiting: 'Game exited. Finishing pending saves…',
         exited: 'Game exited and user data saved. You can close this tab.',
         exitSaveFailed: 'Game exited, but user data could not be saved. Keep this tab open; closing it may lose changes.',
+        stoppedTitle: 'VERA20k has stopped',
+        stoppedText: 'The game stopped. Reload the page to play again.',
+        stoppedWorker: 'The simulation worker stopped during a tick. Reload the page to play again.',
+        reload: 'Reload the page',
+        workerStopped: 'The simulation worker stopped. The game runs on the main thread now, which is slower. Reload the page to try the worker again.',
         language: '中文',
         resume: folder => `Continue with “${folder}”`,
         resumeDenied: 'The browser was not allowed to read that folder. Choose it again.',
@@ -108,6 +113,11 @@ const TEXT = {
         exiting: '游戏已退出，正在完成存档写入…',
         exited: '游戏已退出，用户数据已保存。可以关闭此标签页。',
         exitSaveFailed: '游戏已退出，但用户数据未能保存。请保留此标签页，关闭可能丢失更改。',
+        stoppedTitle: 'VERA20k 已停止运行',
+        stoppedText: '游戏已停止。请刷新页面重新开始。',
+        stoppedWorker: '模拟 Worker 在执行 tick 时停止了。请刷新页面重新开始。',
+        reload: '刷新页面',
+        workerStopped: '模拟 Worker 已停止，游戏现在在主线程上运行，速度会变慢。刷新页面可重新使用 Worker。',
         language: 'English',
         modeSingle: '单人游戏。资源只在本机读取，不会上传。',
         modeOnline: '联机时可能共享所选地图，其它资源只在本机读取。',
@@ -241,6 +251,27 @@ const show = message => {
     hudTimer = setTimeout(() => hud.classList.add('fade'), 5000);
 };
 
+const stoppedPanel = $('#stopped');
+const workerNotice = $('#worker-notice');
+function showStopped(key) {
+    canvas.hidden = true;
+    workerNotice.hidden = true;
+    stoppedPanel.hidden = false;
+    say($('#stopped-text'), key);
+}
+function onLifecycle(event) {
+    if (event.type === 'worker-stopped') {
+        if (event.fatal) showStopped('stoppedWorker');
+        else {
+            say(workerNotice, 'workerStopped');
+            workerNotice.hidden = false;
+        }
+    } else if (event.type === 'engine-error' && stoppedPanel.hidden) {
+        showStopped('stoppedText');
+    }
+}
+$('#stopped-reload').addEventListener('click', () => location.reload());
+
 let database;
 let storageFailed = false;
 let pending = 0;
@@ -251,6 +282,7 @@ async function finishExit() {
     exiting = true;
     clearTimeout(hudTimer);
     canvas.hidden = true;
+    workerNotice.hidden = true;
     hud.hidden = false;
     hud.classList.remove('fade');
     say(hud, 'exiting');
@@ -508,6 +540,7 @@ async function launch() {
 
 try {
     await init();
+    engine.set_lifecycle_callback(onLifecycle);
     if (engine.initThreadPool) {
         // The main thread draws, or spins while the pool works, so it counts as one of the CPU
         // threads. The simulation worker waits while the pool runs its tick's work.

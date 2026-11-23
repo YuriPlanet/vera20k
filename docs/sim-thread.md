@@ -384,6 +384,17 @@ worker, so its tick never comes back: the panic hook keeps the message, and
 the main thread panics with it at its next pass, which reports
 `engine-error` to the host. A trap the hook never sees, such as an
 allocation failure, reaches the same place through the worker's script.
+Every way the worker can stop reaches the main thread the same way: a
+worker that cannot fetch its script, cannot start, or cannot import the
+engine reports itself, and the first failure is kept. A tick that was on
+the worker never comes back, so the game ends there and the host gets
+`engine-error`; a worker that stopped with no tick out leaves the game on
+the main thread, lends it nothing more, and the host gets
+`worker-stopped`. The message the player sees says what happened and what
+to do and names no internal detail; the worker's own report stays in the
+log. The worker's script writes the failure into the memory both threads
+share, because a main thread that is spinning for a lent tick cannot run
+the JavaScript that would report it.
 
 Residuals:
 
@@ -395,6 +406,10 @@ Residuals:
   brings that pass at once.
 - A pool worker's panic during an inline tick still leaves the main thread
   spinning in rayon, so the tab freezes instead of reporting it.
+- A worker that is killed without running its script (the browser ends it)
+  writes nothing into the shared memory, so a main thread spinning for that
+  worker's tick keeps spinning. The script's own failure path covers the
+  traps and the panics.
 
 ## Status (render snapshot, phases 2–3)
 

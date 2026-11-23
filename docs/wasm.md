@@ -142,7 +142,13 @@ spin while the pool works, running no engine code meanwhile. Results do not
 depend on the pool size or on where a tick ran. A panic or trap on the simulation
 worker, or a panic on a pool worker during its tick, is reported as
 `engine-error` at the next frame; one on a pool worker during a main-thread tick
-leaves the main thread spinning, so the tab freezes instead.
+leaves the main thread spinning, so the tab freezes instead. A simulation
+worker that cannot start at all (its script cannot be fetched, the worker
+cannot start, or the engine cannot be imported) is reported to the player as
+well: with no tick on the worker the game goes on on the main thread, and with
+a tick on it the world is lost and the game ends there. The player's message
+says what happened and what to do; the worker's own report, with its internal
+detail, stays in the log.
 
 ## Compatibility boundary
 
@@ -227,6 +233,10 @@ set_lifecycle_callback(event => {
         showExitPage(event.reason, event.error);
     } else if (event.type === 'engine-error') {
         showFatalError(event.error);
+    } else if (event.type === 'worker-stopped') {
+        // The simulation worker stopped; the game goes on without it.
+        if (event.fatal) showFatalError(event.message);
+        else keepNoticeUp(event.message);
     }
 });
 ```
@@ -261,6 +271,13 @@ set_lifecycle_callback(event => {
 - `engine-error`: a best-effort panic notification with error text. It does
   not promise orderly teardown. Browser termination or a Wasm trap that never
   reaches the panic hook cannot guarantee a callback.
+- `worker-stopped`: the browser's simulation worker stopped. `message` holds
+  the engine's words; a page says it in the player's language. With
+  `fatal: false` the game goes on without the worker, on the main thread,
+  which is slower, and the page keeps the message up; the worker stays gone,
+  and no tick goes to it again. With `fatal: true` the world was lost with
+  the worker and the game ends there: the event comes before the
+  `engine-error` that follows it, so the page can name the cause.
 
 A `start_spawn` launch skips the result-screen Continue button and campaign
 continuation. It freezes its result, completes the existing network finish/leave
@@ -318,3 +335,8 @@ visible if storage failed. A hosting website may instead return to its own
 lobby once storage completes. Reloading discards imported retail bytes. Browser audio
 pumping pauses on engine exit; stopping winit alone would leave WebAudio alive.
 Desktop startup, scores, process exit codes and result-file writes are unchanged.
+
+An `engine-error` leaves the engine dead: the supplied host hides the frozen
+canvas, says what happened and offers the reload that starts a new instance.
+A `worker-stopped` leaves the game running: the supplied host keeps a notice
+up while the game ticks on the main thread.
