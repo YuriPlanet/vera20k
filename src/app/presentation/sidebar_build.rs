@@ -16,7 +16,7 @@ use crate::render::bit_font::{BitFont, Fit};
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 use crate::ui::sidebar::{
-    PartKind, Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarView,
+    ArtKey, PartKind, Rect, SidebarChromeLayoutSpec, SidebarLayout, SidebarPart, SidebarView,
 };
 
 #[path = "sidebar_command_bar.rs"]
@@ -88,7 +88,7 @@ pub(crate) fn draw_sidebar_chrome(
             // DrawCreditsSHPBackground 6D0E60, RadarClass::Draw 653100 and
             // SIDE1: the first frame at the part's corner.
             PartKind::Image => {
-                if let Some(entry) = atlas.art(part.name(), "Art", 0) {
+                if let Some(entry) = atlas.art(part, ArtKey::Art, 0) {
                     let [x, y] = layout.origin(&spec, part);
                     push_chrome(inst, entry, x, y, d, camera_offset);
                 }
@@ -107,15 +107,15 @@ pub(crate) fn draw_sidebar_chrome(
                 let frame = usize::from(frame);
                 let top = matches!(part, SidebarPart::Diplomacy | SidebarPart::Options);
                 let entry = atlas
-                    .art(part.name(), "Art", frame)
-                    .or_else(|| atlas.art(part.name(), "Art", 0).filter(|_| !top));
+                    .art(part, ArtKey::Art, frame)
+                    .or_else(|| atlas.art(part, ArtKey::Art, 0).filter(|_| !top));
                 let depth = if part.kind() == PartKind::Tab { td } else { btn_depth };
                 if let Some(entry) = entry {
                     push_chrome(inst, entry, rect.x, rect.y, depth, camera_offset);
                 }
             }
             PartKind::Radar => {
-                let radar = atlas.art(part.name(), "Art", 0);
+                let radar = atlas.art(part, ArtKey::Art, 0);
                 if let Some(radar) = radar.filter(|_| static_radar_fallback) {
                     let [x, y] = layout.origin(&spec, part);
                     push_chrome(inst, radar, x, y, d, camera_offset);
@@ -155,7 +155,7 @@ fn draw_cameo_rows(
     d: f32,
 ) {
     let cx = layout.origin(&spec, part)[0];
-    let row_art = atlas.art(part.name(), "RowArt", 0);
+    let row_art = atlas.art(part, ArtKey::RowArt, 0);
     if let Some(side2) = row_art.filter(|_| spec.columns() <= 2) {
         for row in 0..layout.side2_tile_count {
             let y = layout.cameo_grid_top + row as f32 * side2.pixel_size[1];
@@ -193,8 +193,8 @@ fn draw_cameo_rows(
         }
     }
     let mut y = layout.side3_y;
-    for key in ["EndArt", "FootArt"] {
-        if let Some(entry) = atlas.art(part.name(), key, 0) {
+    for key in [ArtKey::EndArt, ArtKey::FootArt] {
+        if let Some(entry) = atlas.art(part, key, 0) {
             push_chrome(inst, entry, cx, y, d, camera_offset);
             y += entry.pixel_size[1];
         }
@@ -230,7 +230,7 @@ fn render_power_bar(
     let fill_depth: f32 = base_depth - 0.00002;
 
     anim.visit_draw_segments(|frame, row| {
-        if let Some(entry) = atlas.art("Power", "Art", usize::from(frame)) {
+        if let Some(entry) = atlas.art(SidebarPart::Power, ArtKey::Art, usize::from(frame)) {
             push_chrome_sized(
                 inst,
                 entry,

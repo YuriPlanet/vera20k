@@ -588,24 +588,20 @@ fn find_section<'a>(ini: &'a IniFile, name: &str) -> Option<&'a IniSection> {
         .and_then(|section| ini.section(section))
 }
 
-/// The picture keys of a part, each one file the part draws: `Art` and a
-/// cameo grid's pieces. The grid's clock and darken masks load apart.
-const ART_KEYS: [&str; 5] = ["Art", "RowArt", "EmptyRowArt", "EndArt", "FootArt"];
-
 /// One picture the original interface's sidebar draws: the part and its
 /// picture key, the file, the palette it is drawn with when not the
 /// sidebar's own, and how many frames the part uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SidebarArt {
-    pub node: String,
-    pub key: &'static str,
+    pub part: SidebarPart,
+    pub key: crate::ui::sidebar::ArtKey,
     pub file: String,
     pub palette: Option<String>,
     pub frames: usize,
 }
 
 /// The pictures of the built-in sidebar for the side whose pictures are
-/// `theme`, in the file's order. The command bar's load apart.
+/// `theme`, part by part. The command bar's load apart.
 pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
     use crate::ui::sidebar::SidebarTheme;
     let theme = match theme {
@@ -615,19 +611,16 @@ pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
     };
     let tree = Tree::read(&[&BUILT_IN], TABLES[0], TABLES[0], &mut Vec::new());
     let mut art = Vec::new();
-    for node in &tree.nodes {
-        if node
-            .text("Type")
-            .is_some_and(|kind| kind.eq_ignore_ascii_case("CommandBar"))
-        {
+    for part in SidebarPart::STOCK_ORDER {
+        let Some(node) = tree.node(part.name()) else {
             continue;
-        }
-        for key in ART_KEYS {
-            let Some(file) = node.text_for(key, theme) else {
+        };
+        for key in crate::ui::sidebar::ArtKey::ALL {
+            let Some(file) = node.text_for(key.name(), theme) else {
                 continue;
             };
             art.push(SidebarArt {
-                node: node.name.clone(),
+                part,
                 key,
                 file: file.to_owned(),
                 palette: node.text_for("Palette", theme).map(str::to_owned),
@@ -2209,7 +2202,15 @@ mod tests {
         let art = |theme| {
             sidebar_art(theme)
                 .into_iter()
-                .map(|art| (art.node, art.key, art.file, art.palette, art.frames))
+                .map(|art| {
+                    (
+                        art.part.name().to_owned(),
+                        art.key.name(),
+                        art.file,
+                        art.palette,
+                        art.frames,
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         let piece = |node: &str, key: &'static str, file: &str, palette: Option<&str>, frames| {
@@ -2244,7 +2245,5 @@ mod tests {
             Some("radaryuri.pal"),
             1
         )));
-        // The command bar's pictures load apart.
-        assert!(!allied.iter().any(|(node, ..)| node == "Bar"));
     }
 }

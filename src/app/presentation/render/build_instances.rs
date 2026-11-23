@@ -1639,7 +1639,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                 layout_spec,
                 // The plate is as wide as its picture.
                 crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-                    .and_then(|atlas| atlas.art("Credits", "Art", 0))
+                    .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
                     .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
                 &state.csf_text("TXT_TIME_FORMAT_HOURS"),
                 crate::app::presentation::sidebar_text::credits_tint(theme),

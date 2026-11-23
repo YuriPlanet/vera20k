@@ -18,6 +18,12 @@ use crate::render::shell_ui_style_assets::{
     ShellUiAssetRef, base_art_candidates, decode_ui_shp, mod_art_candidates, ui_art_candidates,
 };
 use crate::render::sidebar_smoothing::{self, SidebarPieces, SmoothCopy};
+use crate::ui::sidebar::{ArtKey, SidebarPart};
+
+/// Each part's pictures, by [`SidebarPart`] and [`ArtKey`]: every frame of
+/// the file, `None` where the file lacks it.
+type Pieces =
+    [[Vec<Option<SidebarChromeEntry>>; ArtKey::ALL.len()]; SidebarPart::STOCK_ORDER.len()];
 
 #[path = "sidebar_chrome_command_bar.rs"]
 mod command_bar;
@@ -357,7 +363,7 @@ pub struct SidebarChromeAtlas {
     pub radar_content_insets: [u32; 4],
     /// The pictures `ui::match_layout::sidebar_art` lists, by part and
     /// picture key, each with its frames; see [`SidebarChromeAtlas::art`].
-    pieces: Vec<(String, &'static str, Vec<Option<SidebarChromeEntry>>)>,
+    pieces: Pieces,
     pub extra_entries: Vec<SidebarChromeExtraEntry>,
     /// GCLOCK2.SHP progress clock overlay — all frames packed into a grid texture.
     /// Each entry maps a frame index to UV coordinates in gclock_texture.
@@ -378,11 +384,11 @@ impl SidebarChromeAtlas {
     /// `FootArt`, ...) of the `veraui.ini` part `node`, as
     /// `ui::match_layout::sidebar_art` lists them. `None` when the part has
     /// no such picture or the file no such frame.
-    pub fn art(&self, node: &str, key: &str, frame: usize) -> Option<SidebarChromeEntry> {
-        let (_, _, frames) = self.pieces.iter().find(|(part, picture, _)| {
-            part.eq_ignore_ascii_case(node) && picture.eq_ignore_ascii_case(key)
-        })?;
-        frames.get(frame).copied().flatten()
+    pub fn art(&self, part: SidebarPart, key: ArtKey, frame: usize) -> Option<SidebarChromeEntry> {
+        self.pieces[part as usize][key as usize]
+            .get(frame)
+            .copied()
+            .flatten()
     }
 
     pub fn source_identity(&self) -> &SidebarChromeAtlasIdentity {
@@ -978,10 +984,8 @@ fn build_theme_atlas(
     let mut excluded_extra_ids = std::collections::HashSet::new();
     let mut rendered_pieces = Vec::new();
     for art in crate::ui::match_layout::sidebar_art(theme) {
-        let is = |node: &str, key: &str| {
-            art.node.eq_ignore_ascii_case(node) && art.key.eq_ignore_ascii_case(key)
-        };
-        let radar_part = art.node.eq_ignore_ascii_case("Radar");
+        let is = |part, key| art.part == part && art.key == key;
+        let radar_part = art.part == SidebarPart::Radar;
         let file = if radar_part {
             radar_name
         } else {
@@ -1007,8 +1011,10 @@ fn build_theme_atlas(
         // (0x006ABD47..0x006ABD7E; a missing side2 or side3 alone has no
         // fallback). No retail archive holds them, so only a mod that ships
         // them but not side1.shp would see them; VERA skips the theme.
-        let required =
-            radar_part || is("Middle", "Art") || is("Cameos", "RowArt") || is("Cameos", "EndArt");
+        let required = radar_part
+            || is(SidebarPart::Middle, ArtKey::Art)
+            || is(SidebarPart::Cameos, ArtKey::RowArt)
+            || is(SidebarPart::Cameos, ArtKey::EndArt);
         if required && frames.first().is_none_or(Option::is_none) {
             return None;
         }
@@ -1017,7 +1023,7 @@ fn build_theme_atlas(
                 log::warn!("{file} frame {frame} missing in the sidebar's archives");
             }
         }
-        rendered_pieces.push((art.node, art.key, frames));
+        rendered_pieces.push((art.part, art.key, frames));
     }
     let (radar_shape, radar_source) = radar?;
     let radar_identity = SidebarChromeAssetIdentity {
@@ -1101,11 +1107,10 @@ fn build_theme_atlas(
     let observer_art = observer_art_rendered.map(&mut pack);
     let [background_large, background_medium, background_small] =
         backgrounds.map(|entry| entry.as_ref().map(&mut pack));
-    let mut pieces: Vec<(String, &'static str, Vec<Option<SidebarChromeEntry>>)> =
-        Vec::with_capacity(rendered_pieces.len());
-    for (node, key, frames) in &rendered_pieces {
+    let mut pieces: Pieces = Default::default();
+    for (part, key, frames) in &rendered_pieces {
         let frames = frames.iter().map(|entry| entry.as_ref().map(&mut pack));
-        pieces.push((node.clone(), *key, frames.collect()));
+        pieces[*part as usize][*key as usize] = frames.collect();
     }
     let mut extra_entries = Vec::with_capacity(extra_rendered.len());
     for extra in &extra_rendered {
@@ -1136,7 +1141,8 @@ fn build_theme_atlas(
         .chain(
             pieces
                 .iter()
-                .flat_map(|(_, _, frames)| frames.iter().flatten()),
+                .flatten()
+                .flat_map(|frames| frames.iter().flatten()),
         )
         .map(|entry| {
             [

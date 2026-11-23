@@ -49,6 +49,38 @@ pub enum SidebarPart {
     Power,
 }
 
+/// A picture key of a part: the file of each one draws a piece of it. Every
+/// part's own picture is `Art`; a cameo grid has its rows' and its end's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtKey {
+    Art,
+    RowArt,
+    EmptyRowArt,
+    EndArt,
+    FootArt,
+}
+
+impl ArtKey {
+    pub const ALL: [Self; 5] = [
+        Self::Art,
+        Self::RowArt,
+        Self::EmptyRowArt,
+        Self::EndArt,
+        Self::FootArt,
+    ];
+
+    /// The key's name in `veraui.ini`.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Art => "Art",
+            Self::RowArt => "RowArt",
+            Self::EmptyRowArt => "EmptyRowArt",
+            Self::EndArt => "EndArt",
+            Self::FootArt => "FootArt",
+        }
+    }
+}
+
 /// What kind of part a [`SidebarPart`] is: its `veraui.ini` `Type=`, which
 /// decides how it is drawn and what it does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -18,6 +18,7 @@ use crate::ui::shell::in_game_shell::{
 };
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::command_bar::spacer_pieces;
+use crate::ui::sidebar::{ArtKey, SidebarPart};
 
 pub(super) fn shell_layout(
     atlas: &SidebarChromeAtlas,
@@ -33,13 +34,13 @@ pub(super) fn shell_layout(
             background_small: size(atlas.background_small?),
             background_medium: size(atlas.background_medium?),
             background_large: size(atlas.background_large?),
-            credits: size(atlas.art("Credits", "Art", 0)?),
-            top: size(atlas.art("Top", "Art", 0)?),
-            radar: size(atlas.art("Radar", "Art", 0)?),
-            side1: size(atlas.art("Middle", "Art", 0)?),
-            side2: size(atlas.art("Cameos", "RowArt", 0)?),
-            side3: size(atlas.art("Cameos", "EndArt", 0)?),
-            addon: size(atlas.art("Cameos", "FootArt", 0)?),
+            credits: size(atlas.art(SidebarPart::Credits, ArtKey::Art, 0)?),
+            top: size(atlas.art(SidebarPart::Top, ArtKey::Art, 0)?),
+            radar: size(atlas.art(SidebarPart::Radar, ArtKey::Art, 0)?),
+            side1: size(atlas.art(SidebarPart::Middle, ArtKey::Art, 0)?),
+            side2: size(atlas.art(SidebarPart::Cameos, ArtKey::RowArt, 0)?),
+            side3: size(atlas.art(SidebarPart::Cameos, ArtKey::EndArt, 0)?),
+            addon: size(atlas.art(SidebarPart::Cameos, ArtKey::FootArt, 0)?),
             bottom_spacer: size(atlas.command_bar.spacer?),
             left_cap: size(atlas.command_bar.left_cap[2]?),
             button_background: size(atlas.command_bar.background?),
@@ -372,13 +373,13 @@ pub(super) fn background_instances(
     if let Some(entry) = background {
         push_art_scaled(&mut out, entry, layout.background, screen);
     }
-    for (node, rect) in [
-        ("Credits", layout.credits),
-        ("Top", layout.top),
-        ("Radar", layout.radar),
-        ("Middle", layout.side1),
+    for (part, rect) in [
+        (SidebarPart::Credits, layout.credits),
+        (SidebarPart::Top, layout.top),
+        (SidebarPart::Radar, layout.radar),
+        (SidebarPart::Middle, layout.side1),
     ] {
-        if let Some(entry) = atlas.art(node, "Art", 0) {
+        if let Some(entry) = atlas.art(part, ArtKey::Art, 0) {
             push_art(&mut out, entry, rect, screen);
         }
     }
@@ -392,8 +393,8 @@ pub(super) fn background_instances(
             );
         }
     }
-    for (key, rect) in [("EndArt", layout.side3), ("FootArt", layout.addon)] {
-        if let Some(entry) = atlas.art("Cameos", key, 0) {
+    for (key, rect) in [(ArtKey::EndArt, layout.side3), (ArtKey::FootArt, layout.addon)] {
+        if let Some(entry) = atlas.art(SidebarPart::Cameos, key, 0) {
             push_art(&mut out, entry, rect, screen);
         }
     }

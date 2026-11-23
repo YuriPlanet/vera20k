@@ -15,7 +15,7 @@ use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::sidebar_projection::SidebarViewInputs;
 use crate::sim::production;
-use crate::ui::sidebar::{self, SidebarView};
+use crate::ui::sidebar::{self, ArtKey, SidebarPart, SidebarView};
 
 // Re-export instance builders so callers don't need to know about the split.
 pub(crate) use crate::app::presentation::sidebar_build::{
@@ -167,9 +167,9 @@ pub(crate) fn sidebar_layout_spec(state: &AppState) -> crate::ui::sidebar::Sideb
         gdi_positions(state),
     );
     if let Some(atlas) = current_sidebar_chrome(state) {
-        let height = |key: &str| atlas.art("Cameos", key, 0).map(|art| art.pixel_size[1]);
-        spec.side2_height = height("RowArt").unwrap_or(spec.side2_height);
-        spec.side3_height = height("EndArt").unwrap_or(spec.side3_height);
+        let height = |key| atlas.art(SidebarPart::Cameos, key, 0).map(|art| art.pixel_size[1]);
+        spec.side2_height = height(ArtKey::RowArt).unwrap_or(spec.side2_height);
+        spec.side3_height = height(ArtKey::EndArt).unwrap_or(spec.side3_height);
     }
     // A mod's `veraui.ini` layout for this side changes the original's numbers.
     if let Some(layout) = side_layout(state).filter(|_| !map_picture) {
@@ -463,18 +463,18 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         top_btn_sizes,
     ) = {
         let atlas = current_sidebar_chrome(state);
-        let size = |node: &str| {
+        let size = |part| {
             atlas
-                .and_then(|atlas| atlas.art(node, "Art", 0))
+                .and_then(|atlas| atlas.art(part, ArtKey::Art, 0))
                 .map(|entry| entry.pixel_size)
         };
         (
-            size("Buildings"),
-            size("Repair"),
-            size("Sell"),
-            size("ScrollDown"),
-            size("ScrollUp"),
-            ["Diplomacy", "Options"].map(size),
+            size(SidebarPart::Buildings),
+            size(SidebarPart::Repair),
+            size(SidebarPart::Sell),
+            size(SidebarPart::ScrollDown),
+            size(SidebarPart::ScrollUp),
+            [SidebarPart::Diplomacy, SidebarPart::Options].map(size),
         )
     };
     // Placement lifetime is driven by the input owner's ordered native

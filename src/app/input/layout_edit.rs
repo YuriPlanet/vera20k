@@ -23,7 +23,7 @@ use crate::app::presentation::{field_parts, layout_parts, sidebar_render};
 use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
 use crate::ui::field_layout::{Along, FieldPart, Hold};
-use crate::ui::sidebar::{Rect, SidebarPart};
+use crate::ui::sidebar::{ArtKey, Rect, SidebarPart};
 
 /// The mode's state while it is on.
 #[derive(Debug, Default)]
@@ -204,9 +204,9 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     let (screen_w, screen_h) = frame.layout_screen();
     let layout = crate::ui::sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0);
     let atlas = sidebar_render::current_sidebar_chrome(state);
-    let size = |node: &str, key: &str, fallback: [f32; 2]| {
+    let size = |part, key, fallback: [f32; 2]| {
         atlas
-            .and_then(|atlas| atlas.art(node, key, 0))
+            .and_then(|atlas| atlas.art(part, key, 0))
             .map_or(fallback, |entry| entry.pixel_size)
     };
     let power = crate::ui::sidebar::power_bar_rect(&layout, spec);
@@ -221,7 +221,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
         let [x, y] = layout.origin(&spec, part);
         let [x, y, w, h] = match part {
             SidebarPart::Cameos => {
-                let w = size("Cameos", "RowArt", [168.0, 50.0])[0];
+                let w = size(SidebarPart::Cameos, ArtKey::RowArt, [168.0, 50.0])[0];
                 let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
                 [x, layout.cameo_grid_top, w, h]
             }
@@ -234,7 +234,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
                     SidebarPart::Radar => 110.0,
                     _ => 69.0,
                 };
-                let [w, h] = size(part.name(), "Art", [168.0, height]);
+                let [w, h] = size(part, ArtKey::Art, [168.0, height]);
                 [x, y, w, h]
             }
         };

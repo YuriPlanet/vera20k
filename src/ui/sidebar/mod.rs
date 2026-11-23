@@ -19,7 +19,7 @@ mod sidebar_view;
 use crate::sim::production::ProductionCategory;
 
 pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
-pub use layout_spec::{PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
+pub use layout_spec::{ArtKey, PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
