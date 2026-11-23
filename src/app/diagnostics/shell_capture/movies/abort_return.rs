@@ -59,68 +59,41 @@ pub(in super::super) struct AbortReturnInput {
     /// its OK, `Some(false)` stops once it has presented.
     surrender: Option<bool>,
 }
+/// Where an [`AbortReturnInput`] route ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in super::super) enum AbortGoal {
+    /// Stop on the presented menu; on FF, first open the Game Options page
+    /// and jump its speed trackbar to the fastest end.
+    Menu,
+    /// Press Abort, then this B6 button, or stop once B6 has presented.
+    Choose(Option<AbortButton>),
+    /// A WOL tournament game's Abort: the Surrender box, then OK
+    /// (`press_ok`) or a stop once it has presented.
+    Surrender { press_ok: bool },
+}
 impl AbortReturnInput {
-    /// Through B6 Leave to the queued EXIT.
-    pub(super) fn begin(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<Self> {
-        Self::begin_choosing(state, route, frame, Some(AbortButton::Leave))
-    }
-
-    /// A WOL tournament game's Abort: the Surrender box, then OK or a stop.
-    pub(super) fn begin_surrender(
+    /// Ordinary Escape toward `goal`. `exact_step` advances the offline
+    /// exact-step owner until B5 opens; without it (a capture whose match the
+    /// ordinary frame loop runs, or a live peer that may advance only through
+    /// its normal frame boundary) the route waits for the menu the loop's
+    /// next tick opens.
+    pub(in super::super) fn begin(
         state: &mut AppState,
         route: &mut Vec<Value>,
         frame: u32,
-        press_ok: bool,
+        goal: AbortGoal,
+        exact_step: bool,
     ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.surrender = Some(press_ok);
+        let choice = match goal {
+            AbortGoal::Choose(choice) => choice,
+            AbortGoal::Menu | AbortGoal::Surrender { .. } => None,
+        };
+        let mut input = Self::begin_mode(state, route, frame, choice, exact_step)?;
+        input.stop_at_menu = goal == AbortGoal::Menu;
+        if let AbortGoal::Surrender { press_ok } = goal {
+            input.surrender = Some(press_ok);
+        }
         Ok(input)
-    }
-
-    /// Open the in-game menu and stop there.
-    pub(in super::super) fn begin_menu(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        let mut input = Self::begin_choosing(state, route, frame, None)?;
-        input.stop_at_menu = true;
-        Ok(input)
-    }
-
-    pub(in super::super) fn begin_choosing(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-        choice: Option<AbortButton>,
-    ) -> Result<Self> {
-        Self::begin_mode(state, route, frame, choice, true)
-    }
-
-    /// A capture whose match the ordinary frame loop runs (a skirmish started
-    /// from the shell) has no exact-step owner: Escape queues Options and the
-    /// route waits for the menu the loop's next tick opens. `stop_at_menu`
-    /// stops on the presented menu, else `choice` as [`Self::begin_choosing`].
-    pub(in super::super) fn begin_live(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-        choice: Option<AbortButton>,
-        stop_at_menu: bool,
-    ) -> Result<Self> {
-        let mut input = Self::begin_mode(state, route, frame, choice, false)?;
-        input.stop_at_menu = stop_at_menu;
-        Ok(input)
-    }
-
-    /// Live peers must advance only through their normal frame boundary. Queue
-    /// Options through the keyboard and wait for the actual menu to appear.
-    pub(super) fn begin_network_observe(
-        state: &mut AppState,
-        route: &mut Vec<Value>,
-        frame: u32,
-    ) -> Result<Self> {
-        Self::begin_mode(state, route, frame, Some(AbortButton::Secondary), false)
     }
 
     fn begin_mode(

@@ -575,6 +575,10 @@ impl MoviesCapture {
                     state,
                     &mut self.route,
                     frame,
+                    abort_return::AbortGoal::Choose(Some(
+                        crate::ui::shell::abort::AbortButton::Leave,
+                    )),
+                    true,
                 )?);
                 self.phase = Phase::CampaignAbortMenu;
             }

@@ -424,8 +424,12 @@ impl RestartCapture {
             | RestartTarget::SavedAbortRestarted => {
                 let choice =
                     (target != RestartTarget::AbortShown).then_some(AbortButton::Secondary);
-                capture.abort = Some(abort_return::AbortReturnInput::begin_choosing(
-                    state, route, frame, choice,
+                capture.abort = Some(abort_return::AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
             }
             RestartTarget::DefeatPrompt
@@ -639,8 +643,12 @@ impl RestartCapture {
                         paused_tick: 0,
                     });
                     self.observe_objective(state, "objective visible");
-                    self.abort = Some(abort_return::AbortReturnInput::begin_menu(
-                        state, route, frame,
+                    self.abort = Some(abort_return::AbortReturnInput::begin(
+                        state,
+                        route,
+                        frame,
+                        abort_return::AbortGoal::Menu,
+                        true,
                     )?);
                     self.objective_pause.as_mut().unwrap().paused_tick =
                         Self::simulation_tick(state)?;

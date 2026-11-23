@@ -2551,11 +2551,12 @@ impl LanCapture {
                     LanTarget::HostObserveOffered => None,
                     _ => Some(crate::ui::shell::abort::AbortButton::Leave),
                 };
-                self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                self.abort_input = Some(abort_return::AbortReturnInput::begin(
                     state,
                     &mut self.route,
                     frame,
-                    choice,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
                 self.phase = LanPhase::AbortInput;
             }
@@ -2626,11 +2627,12 @@ impl LanCapture {
                         "tick":tick,"latch":state.match_state.match_presentation.modal_latch,
                         "message_rows":rows}),
                     );
-                    self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                    self.abort_input = Some(abort_return::AbortReturnInput::begin(
                         state,
                         &mut self.route,
                         frame,
-                        None,
+                        abort_return::AbortGoal::Choose(None),
+                        true,
                     )?);
                     self.phase = LanPhase::ObservedAbort;
                 }

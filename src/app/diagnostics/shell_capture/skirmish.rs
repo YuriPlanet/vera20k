@@ -1571,13 +1571,17 @@ impl SkirmishCapture {
                     // next tick opens B5 (the shell-started match has no
                     // exact-step owner); for B6 the same owner then presses
                     // and releases Abort and stops once B6 presents.
-                    use super::movies::abort_return::AbortReturnInput;
-                    self.menu_input = Some(AbortReturnInput::begin_live(
+                    use super::movies::abort_return::{AbortGoal, AbortReturnInput};
+                    self.menu_input = Some(AbortReturnInput::begin(
                         state,
                         &mut self.route,
                         frame,
-                        None,
-                        target != InGameMenuTarget::AbortConfirm,
+                        if target == InGameMenuTarget::AbortConfirm {
+                            AbortGoal::Choose(None)
+                        } else {
+                            AbortGoal::Menu
+                        },
+                        false,
                     )?);
                     self.phase = Phase::InGameMenu;
                 }
