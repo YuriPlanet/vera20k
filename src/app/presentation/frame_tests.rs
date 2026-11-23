@@ -17,7 +17,10 @@ fn the_draw_record_stays_under_its_ceiling() {
     target_pointer_width = "64",
     not(any(feature = "phobos", feature = "debug-tools"))
 ))]
-const CEILING: usize = 816;
+// 824 since an SHP Unit's draw reads three more of its fields: the body's
+// current facing (`shp_body_facing`), the Foot occupation enable and
+// IsOnCarryall. Four bytes of state, one alignment step of the record.
+const CEILING: usize = 824;
 
 /// A record is found by its stable id and a missing id is not, and the
 /// frame's Display order is built once: a second ask returns the first.
