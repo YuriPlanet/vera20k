@@ -69,7 +69,6 @@ data.
 
 | Residual | Hooks | Where |
 |---|---|---|
-| An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
