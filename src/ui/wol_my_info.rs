@@ -10,8 +10,8 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
 
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
 use crate::ui::shell::layout::RectTable;
 use crate::ui::shell::layout_data;

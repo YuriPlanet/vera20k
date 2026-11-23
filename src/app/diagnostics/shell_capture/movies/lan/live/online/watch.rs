@@ -13,7 +13,7 @@ use winit::event::MouseButton;
 /// Frames the watcher must play once it has caught up.
 const FRAMES_AFTER_CATCH_UP: u32 = REQUIRED_FRAMES;
 /// The host signs in, makes its room and loads before its match is listed,
-/// and the lobby asks for the list every 30 s.
+/// and the game asks for the list every 5 s (`shell_wol::lobby::GAMES_PERIOD`).
 const LIST_WAIT: Duration = Duration::from_secs(600);
 /// How long, beyond the grant's delay, the watched world may run no frame.
 const STALL: Duration = Duration::from_secs(60);

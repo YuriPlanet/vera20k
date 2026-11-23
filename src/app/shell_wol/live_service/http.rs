@@ -949,7 +949,8 @@ impl Client {
             let mut request = self.agent.post(&url).header("User-Agent", USER_AGENT);
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster. A browser
-                // game does not say so: its gateway reaches one fixed relay.
+                // game does not say so, and its gateway would not forward it
+                // (FORWARDED_HEADERS), so its matches stay on one relay.
                 request = request.header("Vera-Relay-Federation", "1");
                 for (name, value) in sign_in_headers(&self.changes) {
                     request = request.header(name, value);

@@ -281,7 +281,7 @@ fn apply(state: &mut AppState, next: Shown) {
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
-    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+    use crate::ui::main_menu_dialogs::options::{FrameShape, ZoomGeometry};
 
     /// A 200% 4:3 frame in a 1600x900 window has side bars. The frame's last
     /// column, which the zoom clamps a pixel short of the pointer, keeps the

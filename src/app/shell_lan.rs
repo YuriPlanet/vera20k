@@ -8,6 +8,7 @@ use crate::app::match_runtime::session::{
     LanRoomRejoin, MatchSession, NetworkReturnContext, NetworkRoomReturn,
 };
 use crate::app::shell_route::ShellRoute;
+use crate::net::lan_messages::setup;
 use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::room_limits::RoomLimits;
@@ -40,15 +41,27 @@ const RESERVED_LABELS: [&str; 7] = [
     "GUI:Waiting",
     "GUI:OpenObserver",
 ];
+// 5EE100's table at 0x831704, in its order: the roster sentinels. 5DF410
+// calls it at 0x5DF6B4, after the seven labels above, and refuses a join name
+// equal to one of them (strcmp, exact case).
 const RESERVED_LITERALS: [&str; 7] = [
-    "<Open>",
-    "<Closed>",
-    "<Waiting>",
-    "<EasyAI>",
-    "<MediumAI>",
-    "<HardAI>",
-    "<OpenObserver>",
+    setup::OPEN,
+    setup::CLOSED,
+    setup::WAITING,
+    setup::EASY_AI,
+    setup::MEDIUM_AI,
+    setup::HARD_AI,
+    setup::OPEN_OBSERVER,
 ];
+
+/// Why a returning guest's wait for its host's room ended without a join.
+#[derive(Debug, PartialEq, Eq)]
+enum RejoinEnd {
+    /// The room was not listed open within the wait.
+    HostDidNotReturn(String),
+    /// The room is back, but Join's name checks refuse the name: their key.
+    NameRefused(&'static str),
+}
 
 /// Semantic UI requests consumed by the LAN transport adapter. Controlled
 /// captures use the same boundary; no request manufactures a successful reply.
@@ -137,13 +150,15 @@ impl LanShellRuntime {
     }
 
     /// Join the returning guest's host room the way Join would, once it is
-    /// listed open. Returns the host's name when the window ended first.
+    /// listed open, unless Join's name checks refuse the name (`name_error`).
+    /// Returns why the wait ended without a join.
     fn rejoin_host(
         &mut self,
         session: &mut MatchSession,
         observe: bool,
+        name_error: Option<&'static str>,
         now: Instant,
-    ) -> Option<String> {
+    ) -> Option<RejoinEnd> {
         let available = self.pending_join.is_none() && !self.creating && self.modal.is_none();
         let game_id = match session.poll_lan_room_rejoin(now, |id| {
             available
@@ -154,8 +169,11 @@ impl LanShellRuntime {
                     .any(|game| game.open && game.id == id)
         })? {
             LanRoomRejoin::Join(game_id) => game_id,
-            LanRoomRejoin::Expired(host) => return Some(host),
+            LanRoomRejoin::Expired(host) => return Some(RejoinEnd::HostDidNotReturn(host)),
         };
+        if let Some(key) = name_error {
+            return Some(RejoinEnd::NameRefused(key));
+        }
         self.pending_join = Some(PendingJoin {
             game_id,
             observe,
@@ -317,6 +335,11 @@ fn reserved_names(state: &AppState) -> Vec<String> {
         .collect()
 }
 
+// Create never reaches 5EE100 (its one caller is 5DF410's join), so a host may
+// take a sentinel name, as in gamemd. Guests then read the host's roster row
+// as that kind (5EDFC0; options.rs parsed_roster, which leaves @Waiting@ to
+// its name lookup and so keeps that host). Rare, since the host must type the
+// sentinel; whether such a room's start still agrees is not traced.
 fn create_error(lobby: &LanLobbyState, name: &str) -> Option<&'static str> {
     if name.is_empty() {
         Some("TXT_NAME_BLANK")
@@ -337,12 +360,22 @@ fn join_error(lobby: &LanLobbyState, name: &str, reserved: &[String]) -> Option<
         Some("TXT_MUST_SELECT_GAME")
     } else if lobby.game_count() < 2 || selected >= lobby.game_count() {
         Some("TXT_NOTHING_TO_JOIN")
-    } else if name.is_empty() {
+    } else if let Some(key) = join_name_error(name, reserved) {
+        Some(key)
+    } else if lobby.selected_game().is_some_and(|game| !game.open) {
+        Some("TXT_GAME_IS_CLOSED")
+    } else {
+        None
+    }
+}
+
+/// 5DF410's checks of the name alone, between the selection and closed-game
+/// checks: blank, one of the labels or one of 5EE100's sentinels.
+fn join_name_error(name: &str, reserved: &[String]) -> Option<&'static str> {
+    if name.is_empty() {
         Some("TXT_NAME_ERROR")
     } else if RESERVED_LITERALS.contains(&name) || reserved.iter().any(|value| value == name) {
         Some("ERROR:NameIsReservedWord")
-    } else if lobby.selected_game().is_some_and(|game| !game.open) {
-        Some("TXT_GAME_IS_CLOSED")
     } else {
         None
     }
@@ -590,8 +623,8 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
             let limits = state.frontend.room_limits;
             state.frontend.lan.as_mut().expect("active BB").creating = true;
             let choices = crate::ui::room_limits::widgets(limits, ROOM_PLAYERS, ROOM_SPECTATORS);
-            let align = crate::render::shell_text::ShellAlign::H_RIGHT
-                | crate::render::shell_text::ShellAlign::V_CENTER;
+            let align = crate::ui::shell::geom::ShellAlign::H_RIGHT
+                | crate::ui::shell::geom::ShellAlign::V_CENTER;
             let caption = crate::ui::wol_page::static_text(
                 ROOM_PLAYERS_CAPTION,
                 Some("VERA:MaxPlayers"),
@@ -786,12 +819,29 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
 }
 
 /// VERA: a returning guest joins its host's room as soon as it is listed.
+/// The name box stays live while it waits, so the name passes Join's checks
+/// first.
 fn rejoin_host(state: &mut AppState) {
     let observe = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let Some(host) = state.frontend.lan.as_mut().and_then(|runtime| {
-        runtime.rejoin_host(&mut state.match_state.session, observe, Instant::now())
+    let name = state
+        .frontend
+        .multiplayer_shell_runtime
+        .local_participant()
+        .name;
+    let name_error = join_name_error(&name, &reserved_names(state));
+    let Some(end) = state.frontend.lan.as_mut().and_then(|runtime| {
+        runtime.rejoin_host(
+            &mut state.match_state.session,
+            observe,
+            name_error,
+            Instant::now(),
+        )
     }) else {
         return;
+    };
+    let host = match end {
+        RejoinEnd::HostDidNotReturn(host) => host,
+        RejoinEnd::NameRefused(key) => return report_error(state, key),
     };
     let text = crate::i18n::tr_fill("VERA:LanHostDidNotReturn", &[("host", &host)]);
     append_chat(
@@ -1268,9 +1318,9 @@ mod tests {
 
     #[test]
     fn native_create_and_join_have_different_name_rules_and_error_surfaces() {
-        let mut lobby = LanLobbyState::new("<Open>");
+        let mut lobby = LanLobbyState::new("@Open@");
         assert_eq!(create_error(&lobby, ""), Some("TXT_NAME_BLANK"));
-        assert_eq!(create_error(&lobby, "<Open>"), None);
+        assert_eq!(create_error(&lobby, "@Open@"), None);
         assert_eq!(join_error(&lobby, "", &[]), Some("TXT_MUST_SELECT_GAME"));
         lobby.replace_games(vec![LanGameRow {
             id: 7,
@@ -1284,15 +1334,16 @@ mod tests {
         );
         assert_eq!(join_error(&lobby, "", &[]), Some("TXT_NAME_ERROR"));
         assert_eq!(
-            join_error(&lobby, "<Open>", &[]),
+            join_error(&lobby, "@Open@", &[]),
             Some("ERROR:NameIsReservedWord")
         );
         assert_eq!(
-            join_error(&lobby, "<open>", &[]),
+            join_error(&lobby, "@open@", &[]),
             Some("TXT_GAME_IS_CLOSED")
         );
         lobby.games[0].open = true;
-        assert_eq!(join_error(&lobby, "<open>", &[]), None);
+        assert_eq!(join_error(&lobby, "@open@", &[]), None);
+        assert_eq!(join_error(&lobby, "<Open>", &[]), None);
     }
     #[test]
     fn a_returning_guest_joins_its_host_room_once_it_is_open() {
@@ -1310,12 +1361,12 @@ mod tests {
         runtime
             .lobby
             .replace_games(vec![game(8, "Host", true), game(7, "host", false)]);
-        assert_eq!(runtime.rejoin_host(&mut session, false, now), None);
+        assert_eq!(runtime.rejoin_host(&mut session, false, None, now), None);
         assert_eq!(runtime.pending_game(), None);
         runtime
             .lobby
             .replace_games(vec![game(8, "Host", true), game(7, "host", true)]);
-        runtime.rejoin_host(&mut session, true, now);
+        runtime.rejoin_host(&mut session, true, None, now);
         assert_eq!(runtime.pending_game(), Some(7));
         assert!(matches!(
             runtime.take_service_requests().as_slice(),
@@ -1331,10 +1382,24 @@ mod tests {
         let now = now + Duration::from_secs(120);
         late.lobby.replace_games(vec![game(7, "Host", true)]);
         assert_eq!(
-            late.rejoin_host(&mut session, false, now).as_deref(),
-            Some("Host")
+            late.rejoin_host(&mut session, false, None, now),
+            Some(RejoinEnd::HostDidNotReturn("Host".into()))
         );
         assert_eq!(late.pending_game(), None);
+        assert_eq!(session.take_network_room_return(), NetworkRoomReturn::Lobby);
+
+        // Renamed to a sentinel while it waited: told, as Join would be.
+        let mut renamed = LanShellRuntime::new("@Open@");
+        renamed.take_service_requests();
+        session.wait_for_lan_room("Host".into(), 7, now);
+        renamed.lobby.replace_games(vec![game(7, "Host", true)]);
+        let refused = join_name_error("@Open@", &[]);
+        assert_eq!(
+            renamed.rejoin_host(&mut session, false, refused, now),
+            Some(RejoinEnd::NameRefused("ERROR:NameIsReservedWord"))
+        );
+        assert_eq!(renamed.pending_game(), None);
+        assert!(renamed.take_service_requests().is_empty());
         assert_eq!(session.take_network_room_return(), NetworkRoomReturn::Lobby);
     }
 

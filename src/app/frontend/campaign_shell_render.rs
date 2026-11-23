@@ -18,8 +18,8 @@ use crate::render::shell_paint::{
     PARENT_BACKGROUND_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED, STATIC_IMAGE_DEPTH,
     push_entry_crop_scaled, push_entry_scaled,
 };
-use crate::render::shell_text::ShellAlign;
 use crate::ui::campaign_shell::{CAMPAIGN_PAGE, CampaignLayout, CampaignSide, DIFFICULTY_MAX};
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{RectPx, centred_in_window};
 use vera20k_gui::shell::trackbar::thumb_left;
 

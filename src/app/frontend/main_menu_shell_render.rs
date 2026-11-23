@@ -23,13 +23,13 @@ use crate::render::main_menu_shell_chrome::MainMenuShellChromeAtlas;
 use crate::render::shell_paint::{
     self, CURSOR_DEPTH, MOVIE_DEPTH, PaintLabel, SHELL_TEXT_RGB_ENABLED,
 };
-use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::shell_ui_style_assets::{
     ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver, mod_art_candidates,
 };
 use crate::ui::main_menu_shell::{MAIN_MENU_PAGE, MainMenuMovieBase, MainMenuShellLayout};
 use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::static_reveal::Kind1RevealWindow;
 
 /// Archive holding the Red Alert 2 menu loop used by the unchecked default.

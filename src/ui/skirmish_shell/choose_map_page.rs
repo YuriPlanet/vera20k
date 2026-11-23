@@ -8,7 +8,7 @@
 
 use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 
-use crate::render::shell_text::ShellAlign;
+use crate::ui::shell::geom::ShellAlign;
 
 use super::layout::{ChooseMapModalButton, ChooseMapModalLayout, RectPx};
 use super::page::Pointer;

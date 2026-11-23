@@ -105,10 +105,10 @@ pub struct HouseAiProduction {
     /// of any Factory's lifetime; this House production owner retains them.
     #[serde(default)]
     parallel_reservations: [i32; 5],
-    /// Phobos HouseExt `Factory_BuildingType`/`Factory_InfantryType`/
+    /// Ares' or Phobos' HouseExt `Factory_BuildingType`/`Factory_InfantryType`/
     /// `Factory_VehicleType`/`Factory_NavyType`/`Factory_AircraftType`:
     /// the factory building the house currently uses for each category, in
-    /// `AiFactorySlot` order. None is Phobos' null pointer.
+    /// `AiFactorySlot` order. None is the null pointer.
     #[serde(default)]
     parallel_factories: [Option<u64>; 5],
 }
@@ -145,8 +145,10 @@ impl Hash for HouseAiProduction {
     }
 }
 
-/// Phobos' per-house factory building pointers, one slot per producing
-/// building category (`HouseExt::Factory_*Type`).
+/// The per-house factory building pointers, one slot per producing building
+/// category (`HouseExt::Factory_*Type`). Ares' serial queues and Phobos'
+/// forbids each keep such a set; `AllowParallelAIQueues=` lets only one of
+/// them act in a game, so both use this one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AiFactorySlot {
     Building,
@@ -236,8 +238,9 @@ impl HouseAiProduction {
         let counter = self.parallel_slot_mut(category, naval);
         *counter = counter.wrapping_sub(1).max(0);
     }
-    /// Phobos `BuildingClass_Update_Factory_Phobos @ 0x4502F4` remembers the
-    /// first factory building of a category; a second one consults it.
+    /// `BuildingClass_Update_Factory` at `0x4502F4` (Ares `10024E00`, and
+    /// Phobos' hook there) remembers the first factory building of a
+    /// category; a second one consults it.
     pub(crate) fn parallel_factory(&self, slot: AiFactorySlot) -> Option<u64> {
         self.parallel_factories[slot.index()]
     }
@@ -246,10 +249,11 @@ impl HouseAiProduction {
         self.parallel_factories[slot.index()] = building;
     }
 
-    /// `BuildingClass_KickOutUnit_*` (`0x444119`, `0x444131`, `0x443CCA`,
-    /// `0x44531F`) clear the pointer only while it still names the same
-    /// factory building. `FactoryClass_AbandonProduction` (`0x4CA07A`) has no
-    /// such test and uses [`Self::set_parallel_factory`] instead.
+    /// Phobos' `BuildingClass_KickOutUnit_*` (`0x444119`, `0x444131`,
+    /// `0x443CCA`) clear the pointer only while it still names the same
+    /// factory building. Ares' hooks there and both
+    /// `FactoryClass_AbandonProduction` hooks (`0x4CA07A`) have no such test
+    /// and use [`Self::set_parallel_factory`] instead.
     pub(crate) fn clear_parallel_factory(&mut self, slot: AiFactorySlot, building: u64) {
         let entry = &mut self.parallel_factories[slot.index()];
         if *entry == Some(building) {
@@ -257,9 +261,10 @@ impl HouseAiProduction {
         }
     }
 
-    /// Phobos `HouseExt::OnDetach`, which its `AnnounceInvalidPointer` hook
-    /// (`0x7258D0`) runs on every house for a removed building: each slot
-    /// that names the building is cleared. Answers whether one did.
+    /// Phobos `HouseExt::OnDetach` and Ares `HouseExt::InvalidatePointer`,
+    /// which each extension's `AnnounceInvalidPointer` hook (`0x7258D0`) runs
+    /// on every house for a removed building: each slot that names the
+    /// building is cleared. Answers whether one did.
     pub(crate) fn forget_parallel_factory(&mut self, building: u64) -> bool {
         let mut named = false;
         for entry in &mut self.parallel_factories {

@@ -977,6 +977,9 @@ pub struct RuleSet {
     /// Whether Ares plays in this game, decided once from its Rules layers
     /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
     ares: bool,
+    /// VERA: the player's Ares setting Off is what keeps Ares from playing in
+    /// this game. Read through [`Self::ares_kept_off`].
+    ares_kept_off: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,

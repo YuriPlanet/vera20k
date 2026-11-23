@@ -192,8 +192,7 @@ impl IniRoots {
     }
 
     /// Every root and catalog file: Rules, Art, AI, sound, EVA, theme,
-    /// campaign, mission, map selection, mode and map catalog, in the order
-    /// the multiplayer rules agreement compares them.
+    /// campaign, mission, map selection, mode and map catalog.
     pub fn files(&self) -> [&str; 11] {
         [
             self.rules(),
@@ -210,17 +209,33 @@ impl IniRoots {
         ]
     }
 
-    /// Every file in [`Self::files`] is YR's, ignoring ASCII case.
-    pub fn files_are_stock(&self) -> bool {
-        self.files()
+    /// VERA: the roots whose names players' games compare: Rules, Art, AI,
+    /// the mode roster and the map catalog, which hold what a match plays and
+    /// which modes and maps a game offers. The others in [`Self::files`]
+    /// (sound, EVA, theme, campaign, mission, map selection) name what a game
+    /// plays aloud or shows, so two games may read them from other files.
+    pub fn agreed_files(&self) -> [&str; 5] {
+        [
+            self.rules(),
+            self.art(),
+            self.ai(),
+            self.modes(),
+            self.map_catalog(),
+        ]
+    }
+
+    /// Every file in [`Self::agreed_files`] is YR's, ignoring ASCII case.
+    pub fn agreed_files_are_stock(&self) -> bool {
+        self.agreed_files()
             .into_iter()
-            .zip(Self::default().files())
+            .zip(Self::default().agreed_files())
             .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
     }
 
-    /// The files and the theater suffix are YR's, ignoring ASCII case.
+    /// The [`Self::agreed_files`] and the theater suffix are YR's, ignoring
+    /// ASCII case.
     pub fn is_stock(&self) -> bool {
-        self.files_are_stock()
+        self.agreed_files_are_stock()
             && self
                 .theater_suffix()
                 .eq_ignore_ascii_case(Self::default().theater_suffix())

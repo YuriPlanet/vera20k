@@ -9,9 +9,9 @@ use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
-use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
+use crate::render::shell_text::{self, ShellTextDraw, TextRect};
 use crate::skirmish_launch::{LaunchCountry, LaunchStartPosition};
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::shell::static_reveal::StaticPaint;
 use crate::ui::skirmish_shell::{
     COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalLayout, RandomMapSetupLayout, RectPx,

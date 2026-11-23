@@ -14,10 +14,10 @@ use super::wol_lobby::{POPUP_DEPTHS, WolLobbyPaint};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellAlign};
+use crate::render::shell_text;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{ShellAlign, ShellScale};
 use crate::ui::shell::modal::{WolAccountFormLayout, WolEntryChoiceLayout};
 use crate::ui::wol_account::{
     FIRST_CAPTION, FORM_CANCEL, FORM_OK, FORM_STATUS, POPUP, WolAccountForm,

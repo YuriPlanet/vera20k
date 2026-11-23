@@ -48,10 +48,19 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // rules too, so a launcher's relay match, which no lobby compared,
     // refuses games that would desync.
     let mut multiplayer = super::shell_network_setup::agreement::local(state)?;
-    if let Some(terrain) = terrain {
-        multiplayer.rules_digest.push_str(" terrain ");
-        multiplayer.rules_digest.push_str(&terrain);
-    }
+    // VERA: and whether Ares plays in the match as it loaded, which the
+    // room's digest leaves to the start (`agreement::start_rules`).
+    multiplayer.rules_digest = super::shell_network_setup::agreement::start_rules(
+        multiplayer.rules_digest,
+        terrain.as_deref(),
+        &state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .ok_or_else(|| anyhow::anyhow!("LAN startup has no constructed world"))?
+            .resources
+            .rules,
+    );
     super::shell_network_setup::agreement::log_rules_parts(state);
     let sim = &state
         .match_state

@@ -20,8 +20,8 @@ use vera20k_gui::{
 };
 
 use crate::i18n::tr;
-use crate::render::shell_text::ShellAlign;
 use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::geom::{
     RectPx, ShellScale, center_offset, child_window, dlu_rect, right_panel_rects,
 };

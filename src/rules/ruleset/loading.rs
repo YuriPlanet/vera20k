@@ -51,6 +51,7 @@ impl RuleSet {
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
         rules.ares = processed.ares_inputs().decide(&reads);
+        rules.ares_kept_off = processed.ares_inputs().kept_off(&reads);
         rules.phobos = crate::rules::phobos_switch::decide(&reads);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
         Ok(rules)
@@ -2037,6 +2038,7 @@ impl RuleSet {
             emp_sparkles: None,
             // Decided by `from_processed_rules` once its readers ran.
             ares: false,
+            ares_kept_off: false,
             phobos: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),
