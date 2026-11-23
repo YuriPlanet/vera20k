@@ -79,13 +79,6 @@ fn visible_rows_of(n: &Node) -> Option<usize> {
     }
 }
 
-fn row_count(n: &Node) -> usize {
-    match n.props.get(&Prop::Items) {
-        Some(Value::Items(items)) => items.len(),
-        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
-    }
-}
-
 pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
     let n = tree.node(node).ok()?;
     let pressed = match &n.state {
@@ -93,9 +86,9 @@ pub(crate) fn view(tree: &Tree, node: NodeId) -> Option<ListView> {
         _ => None,
     };
     Some(ListView {
-        rows: row_count(n),
+        rows: n.row_count(),
         top: n.int_prop(Prop::Top, 0).max(0) as usize,
-        selected: usize::try_from(n.int_prop(Prop::Selected, -1)).ok(),
+        selected: n.selected(),
         pressed,
     })
 }
@@ -110,9 +103,9 @@ fn with_list<R>(
     let rect = ctx.tree.screen_rect(node).ok()?;
     let n = ctx.tree.node_mut(node).ok()?;
     let metrics = metrics_of(n, ctx.scale);
-    let count = row_count(n);
+    let count = n.row_count();
     let top = n.int_prop(Prop::Top, 0).max(0) as usize;
-    let selected = usize::try_from(n.int_prop(Prop::Selected, -1)).ok();
+    let selected = n.selected();
     let mut state = match std::mem::take(&mut n.state) {
         WidgetState::List(state) => state,
         _ => ListState::default(),
@@ -144,7 +137,7 @@ pub(crate) fn geometry(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<S
     let rect = tree.screen_rect(node).ok()?;
     let n = tree.node(node).ok()?;
     let state = ListState {
-        rows: row_count(n),
+        rows: n.row_count(),
         top: n.int_prop(Prop::Top, 0).max(0) as usize,
         visible_rows: visible_rows_of(n),
         ..ListState::default()
@@ -169,7 +162,7 @@ pub(crate) fn log_rows(tree: &mut Tree, node: NodeId, scale: ShellScale, rows: u
         Some(Value::Int(top)) => Some(usize::try_from(*top).unwrap_or(0)),
         _ => None,
     };
-    let top = log_top(row_count(n), top, visible, rows, dropped);
+    let top = log_top(n.row_count(), top, visible, rows, dropped);
     n.props.insert(Prop::RowCount, Value::Int(i32::try_from(rows).unwrap_or(i32::MAX)));
     n.props.insert(Prop::Top, Value::Int(top as i32));
 }

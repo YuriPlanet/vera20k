@@ -77,22 +77,11 @@ pub(crate) fn drop_down(tree: &Tree, node: NodeId, scale: ShellScale) -> Option<
     })
 }
 
-fn row_count(n: &Node) -> usize {
-    match n.props.get(&Prop::Items) {
-        Some(Value::Items(items)) => items.len(),
-        _ => n.int_prop(Prop::RowCount, 0).max(0) as usize,
-    }
-}
-
-fn selected(n: &Node) -> Option<usize> {
-    usize::try_from(n.int_prop(Prop::Selected, -1)).ok()
-}
-
 /// The list hung under the face (`face.y + face.h + 1`), raised to end by
 /// `PopupBottom` when set; none without rows.
 fn popup_at(tree: &Tree, node: NodeId, scale: ShellScale, top: usize) -> Option<ComboPopup> {
     let n = tree.node(node).ok()?;
-    let total = row_count(n);
+    let total = n.row_count();
     if total == 0 {
         return None;
     }
@@ -173,7 +162,7 @@ pub(crate) fn dismiss(tree: &mut Tree, node: NodeId) {
 /// Opens the list for the host at first row `top`, the selection lit: no
 /// cue, no event.
 pub(crate) fn open_for_host(tree: &mut Tree, node: NodeId, top: usize) {
-    let selected = tree.node(node).ok().and_then(selected);
+    let selected = tree.node(node).ok().and_then(Node::selected);
     if let Some(st) = state_mut(tree, node) {
         st.open(selected);
         st.top_index = top;
@@ -186,7 +175,7 @@ pub(crate) fn press(ctx: &mut Ctx<'_>, node: NodeId, x: i32, y: i32) -> Capture 
     let (Ok(rect), Ok(n)) = (ctx.tree.screen_rect(node), ctx.tree.node(node)) else {
         return Capture::No;
     };
-    let selected = selected(n);
+    let selected = n.selected();
     let anywhere = n.bool_prop(Prop::OpenAnywhere, false);
     let can_open = popup_at(ctx.tree, node, ctx.scale, 0).is_some();
     let scale = ctx.scale;
@@ -270,7 +259,7 @@ pub(crate) fn key(ctx: &mut Ctx<'_>, node: NodeId, key: Key) {
         *ctx.popup = None;
         return;
     };
-    let selected = ctx.tree.node(node).ok().and_then(selected);
+    let selected = ctx.tree.node(node).ok().and_then(Node::selected);
     let Some(st) = state_mut(ctx.tree, node) else {
         return;
     };
@@ -334,8 +323,8 @@ pub(crate) fn wheel_pick(ctx: &mut Ctx<'_>, node: NodeId, lines: i32) {
     dismiss(ctx.tree, node);
     *ctx.popup = None;
     let Ok(n) = ctx.tree.node(node) else { return };
-    let last = row_count(n).saturating_sub(1);
-    let Some(selected) = selected(n) else { return };
+    let last = n.row_count().saturating_sub(1);
+    let Some(selected) = n.selected() else { return };
     let row = selected.saturating_add_signed(-(lines.signum() as isize)).min(last);
     if row == selected {
         return;

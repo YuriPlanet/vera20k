@@ -435,6 +435,19 @@ impl Node {
         }
     }
 
+    /// A list's or combo's rows: its `Items`, else its `RowCount`.
+    pub fn row_count(&self) -> usize {
+        match self.props.get(&Prop::Items) {
+            Some(Value::Items(items)) => items.len(),
+            _ => self.int_prop(Prop::RowCount, 0).max(0) as usize,
+        }
+    }
+
+    /// A list's or combo's selected row; `-1` or absent is none.
+    pub fn selected(&self) -> Option<usize> {
+        usize::try_from(self.int_prop(Prop::Selected, -1)).ok()
+    }
+
     pub fn text_prop(&self, prop: Prop) -> Option<&str> {
         match self.props.get(&prop) {
             Some(Value::Text(s)) => Some(s),
