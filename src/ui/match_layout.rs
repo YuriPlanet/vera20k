@@ -2591,4 +2591,17 @@ mod tests {
         let (yuri, _) = sidebar(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false));
         assert_eq!(yuri.side_text, [1, 2, 3]);
     }
+
+    /// A mod writes a built-in part's picture and the money's place on its
+    /// plate: both keys are its to change.
+    #[test]
+    fn a_mods_picture_and_money_keys_are_read_without_a_problem() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nDefault=Probe\n\
+              [Colors]\nSideText@Soviet=255,0,0\n\
+              [Probe.Repair]\nArt=sell.shp\n\
+              [Probe.Money]\nAlign=Left\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+    }
 }
