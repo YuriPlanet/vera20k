@@ -3,14 +3,16 @@
 //! Its heading, controls, statics, Back, open category list and in-game
 //! status line paint from its `vera20k-gui` nodes ([`super::gui_paint`]),
 //! made current first every frame ([`crate::app::input::keyboard::sync`]);
-//! the frame and the front end's status line (the family static every page
-//! shares) stay here.
+//! the front end's status line is the family static every page shares, from
+//! the panel's own widgets
+//! ([`crate::app::frontend::menu_page_render::paint_panel_statics`]); the
+//! frame stays here.
 #[cfg(test)]
 use super::controls::{frame_segments, group_box_geometry, push_group_or_plain_frame};
 use super::gui_paint::{ButtonArt, ComboArt, FrameArt, GuiPaint, GuiStyle, HostRows, SideButtons};
 use super::in_game_shell::{self, InGameShellFrame, ShellFrameArt, ShellFrameOverlay};
 use crate::app::AppState;
-use crate::render::shell_paint;
+use crate::app::frontend::menu_page_render::{PanelStatic, paint_panel_statics};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::shell::geom::{RETAIL_SCALE, RectPx, ShellScale};
 use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
@@ -100,7 +102,6 @@ pub(crate) fn render_keyboard_shell(
             layout.scale,
         )
     };
-    let font = &state.renderer.bit_font;
     let mut paint = GuiPaint {
         side: art,
         ..Default::default()
@@ -238,12 +239,9 @@ pub(crate) fn render_keyboard_shell(
         ..
     } = paint;
     // The status line is a family static like the heading: it scales with the
-    // page, as `paint_labels_scaled` does for every other family page.
-    texts.extend(shell_paint::paint_labels_scaled(
-        font,
-        &status_label.into_iter().collect::<Vec<_>>(),
-        layout.scale.factor(),
-    ));
+    // page, as on every other family page.
+    let status = status_label.map(PanelStatic::status);
+    texts.extend(paint_panel_statics(shared, [None, status], layout.scale));
     let overlay = ShellFrameOverlay {
         controls: popup,
         texts: popup_texts,
