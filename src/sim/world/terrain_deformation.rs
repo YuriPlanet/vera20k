@@ -68,6 +68,11 @@ struct LiveCornerCells<'a> {
     occupancy: &'a OccupancyGrid,
     entities: &'a EntityStore,
     terrain_objects: &'a TerrainObjectStore,
+    /// VERA's wider crater (`DeformRadius=`, `DeformDepth=`) widens
+    /// Firestorm's editable test twice: what the blast killed no longer
+    /// holds the ground up ([`Self::holds_ground`]), and flat land digs
+    /// whatever its tile (`ResolvedTerrainGrid::deformation_tile_diggable`).
+    crater: bool,
 }
 
 impl LiveCornerCells<'_> {
@@ -92,13 +97,16 @@ impl LiveCornerCells<'_> {
     /// ground, and a terrain object such as a tree. Firestorm skips an
     /// object no longer active (`+0x35`); one the blast killed stays on the
     /// list until its death is delivered, and holds the cell until then.
+    /// VERA's crater lets it go: an object on the ground list with no Health
+    /// left (`+0x6C`) holds nothing, so the crater digs under the buildings
+    /// the blast killed.
     fn holds_ground(&self, (x, y): (u16, u16)) -> bool {
         self.occupancy.get(x, y).is_some_and(|cell| {
             cell.iter_layer(MovementLayer::Bridge).next().is_some()
                 || cell.iter_layer(MovementLayer::Ground).any(|occupant| {
-                    self.entities
-                        .get(occupant.entity_id)
-                        .is_none_or(|entity| !is_foot(entity))
+                    self.entities.get(occupant.entity_id).is_none_or(|entity| {
+                        !is_foot(entity) && (entity.is_alive() || !self.crater)
+                    })
                 })
         }) || self.terrain_objects.members_at((x, y)).any(|id| {
             self.terrain_objects
@@ -138,10 +146,11 @@ impl CornerCells for LiveCornerCells<'_> {
 
     /// Firestorm 2.0 0x5F83D0: in bounds, no object holding it
     /// ([`Self::holds_ground`]), no bridge over it or over the cell north or
-    /// west of it along its span, no overlay, and a `Morphable=` tile. Its
-    /// bridge test reads `+0xA4 & 0x5000` (gamemd's `0x500`); VERA keeps a
-    /// cell with any bridge flag, because a stamp resets the cell's bridge
-    /// facts, which Firestorm's dent never wrote.
+    /// west of it along its span, no overlay, and a `Morphable=` tile (or,
+    /// for VERA's crater, flat land). Its bridge test reads `+0xA4 & 0x5000`
+    /// (gamemd's `0x500`); VERA keeps a cell with any bridge flag, because a
+    /// stamp resets the cell's bridge facts, which Firestorm's dent never
+    /// wrote.
     fn editable(&self, x: i32, y: i32) -> bool {
         let Some(cell) = self.cell(x, y) else {
             return false;
@@ -163,7 +172,7 @@ impl CornerCells for LiveCornerCells<'_> {
                 .overlays
                 .is_none_or(|grid| grid.cell(coord.0, coord.1).overlay_id.is_none())
             && !self.holds_ground(coord)
-            && self.terrain.deformation_tile_diggable(cell)
+            && self.terrain.deformation_tile_diggable(cell, self.crater)
     }
 }
 
@@ -183,7 +192,8 @@ fn window_cells(origin: (i32, i32), stride: i32) -> impl Iterator<Item = (i32, i
 }
 
 /// The heights a lowered corner may take: down to `DeformLowestLevel=`
-/// (Firestorm's 0 by default) and Firestorm's Level 12 at the top.
+/// (default -4; Firestorm's floor is Level 0) and Firestorm's Level 12 at
+/// the top.
 fn corner_heights(rules: &RuleSet) -> (i32, i32) {
     (
         rules.combat_damage.deform_lowest_level * corner_heights::LEVEL,
@@ -302,7 +312,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> bool {
         let (cx, cy) = (i32::from(cell.0), i32::from(cell.1));
-        let admitted = self.live_corner_cells().is_some_and(|(cells, _)| {
+        let admitted = self.live_corner_cells(false).is_some_and(|(cells, _)| {
             DIRECTION_DELTAS
                 .iter()
                 .all(|&(dx, dy)| cells.in_bounds(cx + dx, cy + dy))
@@ -355,9 +365,10 @@ impl Simulation {
         }
     }
 
-    /// The live map for the corner engine and the tiles its finalize picks
-    /// between, while deformation is on.
-    fn live_corner_cells(&self) -> Option<(LiveCornerCells<'_>, FinalTiles)> {
+    /// The live map for the corner engine, with VERA's wider editable test
+    /// for a `crater`, and the tiles its finalize picks between, while
+    /// deformation is on.
+    fn live_corner_cells(&self, crater: bool) -> Option<(LiveCornerCells<'_>, FinalTiles)> {
         let terrain = self.resolved_terrain.as_ref()?;
         let tiles = terrain.deformation_tiles()?;
         let cells = LiveCornerCells {
@@ -367,6 +378,7 @@ impl Simulation {
             occupancy: &self.substrate.occupancy,
             entities: &self.substrate.entities,
             terrain_objects: &self.terrain_objects,
+            crater,
         };
         Some((cells, tiles))
     }
@@ -385,7 +397,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> bool {
         let finals = {
-            let Some((cells, tiles)) = self.live_corner_cells() else {
+            let Some((cells, tiles)) = self.live_corner_cells(false) else {
                 return false;
             };
             let (origin, stride) = window(cell, DENT_WINDOW);
@@ -405,7 +417,8 @@ impl Simulation {
     /// once, then level by level each cell within `(radius + 1/2) * (depth -
     /// k + 1) / depth` cells of the hit lowers its corners not yet `k` levels
     /// below where they started. Each lowering is all or nothing, so the
-    /// crater bends around ground it cannot move; the touched cells are
+    /// crater bends around ground it cannot move, under the crater's wider
+    /// editable test ([`LiveCornerCells::crater`]); the touched cells are
     /// rewritten once at the end. Returns whether any was.
     fn dig_crater(
         &mut self,
@@ -417,7 +430,7 @@ impl Simulation {
         effects: &mut FrameEffects<'_>,
     ) -> bool {
         let finals = {
-            let Some((cells, tiles)) = self.live_corner_cells() else {
+            let Some((cells, tiles)) = self.live_corner_cells(true) else {
                 return false;
             };
             let (cx, cy) = (i32::from(cell.0), i32::from(cell.1));
@@ -467,10 +480,13 @@ impl Simulation {
     /// What Firestorm's finalize (Firestorm 2.0 0x5F8D30) does to each cell
     /// it rewrites, through VERA's owners: the cell's smudge goes over its
     /// whole footprint (as `Map588AC0`), the cell takes its Level, slope and
-    /// clear or ramp tile, and each vehicle and soldier on it is set back on
-    /// the ground (`Set_Height_AGL(0)` after its Mark). VERA then smooths
-    /// the LAT and ramps around the stamped cells, as cliff collapse does, and
-    /// publishes their lighting, navigation, radar and saved terrain.
+    /// clear or ramp tile, and each object on its list is set back on the
+    /// ground (`Set_Height_AGL(0)` after its Mark), the blast's dead too.
+    /// Only vehicles and soldiers can be on a cell Firestorm rewrites; a
+    /// building or aircraft VERA's crater digs under, dead, keeps its height
+    /// while its death plays out. VERA then smooths the LAT and ramps around
+    /// the stamped cells, as cliff collapse does, and publishes their
+    /// lighting, navigation, radar and saved terrain.
     fn stamp_terrain_dent(
         &mut self,
         finals: &[FinalCell],
@@ -485,12 +501,7 @@ impl Simulation {
             .filter_map(|f| self.substrate.occupancy.get(f.x as u16, f.y as u16))
             .flat_map(|cell| cell.iter_layer(MovementLayer::Ground))
             .map(|occupant| occupant.entity_id)
-            .filter(|&id| {
-                self.substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| entity.is_alive() && is_foot(entity))
-            })
+            .filter(|&id| self.substrate.entities.get(id).is_some_and(is_foot))
             .collect();
         if let (Some(grid), Some(terrain)) =
             (self.smudge_grid.as_mut(), self.resolved_terrain.as_ref())
@@ -550,6 +561,7 @@ mod tests {
     use crate::map::bridge_facts::BridgeCellFacts;
     use crate::map::resolved_terrain::{test_clear_cell, test_grid, test_smudge_cell};
     use crate::rules::ini_parser::IniFile;
+    use crate::rules::terrain_rules::LandType;
     use crate::sim::occupancy::CellListInsertion;
     use crate::sim::snapshot::GameSnapshot;
 
@@ -773,6 +785,81 @@ mod tests {
         assert!(!sim.dent_terrain((2, 5), &rules, None, effects));
         assert!(!sim.dent_terrain((8, 5), &rules, None, effects));
         assert_eq!(level_slope(&sim, 2, 5), (GROUND as i8, 0));
+        assert_eq!(level_slope(&sim, 8, 5), (GROUND as i8, 0));
+    }
+
+    #[test]
+    fn a_dent_sinks_below_level_zero_around_an_overlay_cell_it_cannot_move() {
+        // Level 0 ground and the rules' own floor, as a map that sets only
+        // TerrainDeformation=yes.
+        let rules = rules(true, "");
+        let mut sim = sim_of(12, test_smudge_cell, (0, 0));
+        let corner = sim.scenario_rng.clone().next_range_u32_inclusive(0, 3) as usize;
+        // An overlay on the diagonal cell beyond the far corner locks it.
+        let (dx, dy) = [(-1, -1), (1, -1), (1, 1), (-1, 1)][(corner + 2) % 4];
+        let overlay = ((5 + dx) as u16, (5 + dy) as u16);
+        let overlays = sim.overlay_grid.as_mut().expect("overlays");
+        overlays.place_overlay(overlay.0, overlay.1, 0, 0);
+        let effects = &mut FrameEffects::default();
+        sim.session.set_binary_frame_for_test(0);
+        assert!(sim.dent_terrain((5, 5), &rules, None, effects));
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 9 + corner as u8));
+        // The second step would pull the locked corner down too, so it
+        // leaves the ground as it is.
+        sim.session.set_binary_frame_for_test(SECOND_STEP_FRAMES);
+        sim.finish_terrain_dent(&rules, effects);
+        assert_eq!(sim.terrain_dent, None);
+        assert_eq!(level_slope(&sim, 5, 5), (-1, 9 + corner as u8));
+        assert_eq!(level_slope(&sim, overlay.0, overlay.1), (0, 0));
+    }
+
+    #[test]
+    fn a_crater_digs_under_what_the_blast_killed_but_not_the_living() {
+        let mut sim = flat_sim((0, 0));
+        // The blast killed the building on the hit cell and the tank three
+        // cells east; their deaths are still to be delivered.
+        let building = place(&mut sim, (5, 5), EntityCategory::Structure);
+        let tank = place(&mut sim, (8, 5), EntityCategory::Unit);
+        for id in [building, tank] {
+            let entity = sim.substrate.entities.get_mut(id).unwrap();
+            entity.health.set_for_test(0);
+            entity.position.set_exact_z_leptons_for_test(Some(GROUND_Z));
+        }
+        place(&mut sim, (2, 5), EntityCategory::Structure);
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(crater(&mut sim, &rules, (5, 5)));
+        assert_eq!(level_slope(&sim, 5, 5), (GROUND as i8 - 1, 0));
+        assert_eq!(level_slope(&sim, 8, 5), (GROUND as i8 - 1, 0));
+        // The dead tank is set back on the sunken ground; the living
+        // building keeps its cell.
+        let position = sim.substrate.entities.get(tank).unwrap().position;
+        assert_eq!(position.exact_z_leptons(), Some(GROUND_Z - 104));
+        assert_eq!(level_slope(&sim, 2, 5), (GROUND as i8, 0));
+    }
+
+    #[test]
+    fn a_crater_digs_flat_road_except_beside_water() {
+        // Road tiles are not Morphable; one water cell east of the crater.
+        let mut sim = sim_of(
+            12,
+            |rx, ry| ResolvedTerrainCell {
+                level: GROUND,
+                bridge_deck_level: GROUND,
+                land_type: if (rx, ry) == (9, 5) {
+                    LandType::Water
+                } else {
+                    LandType::Road
+                }
+                .as_index(),
+                ..test_clear_cell(rx, ry)
+            },
+            (0, 0),
+        );
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(crater(&mut sim, &rules, (5, 5)));
+        assert_eq!(level_slope(&sim, 5, 5), (GROUND as i8 - 1, 0));
+        assert_eq!(level_slope(&sim, 2, 5), (GROUND as i8 - 1, 0));
+        // The road beside the water keeps its ground, as a shore cell would.
         assert_eq!(level_slope(&sim, 8, 5), (GROUND as i8, 0));
     }
 

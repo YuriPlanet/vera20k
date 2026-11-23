@@ -70,9 +70,7 @@ impl PersonalRules {
     /// switches without rebuilding its one registry
     /// (`NativeRulesProcessOwner::use_personal_rules`). Terrain Deformation
     /// turns on
-    /// `[CombatDamage] TerrainDeformation=`, lets dents sink to Level -4 as
-    /// most YR ground lies at Level 0 (`DeformLowestLevel=-4`, unless the root
-    /// sets it), and gives the nuke's warhead each
+    /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
     /// of `Deform=100%`, `DeformDepth=3` and `DeformRadius=10` the root does
     /// not set, so a nuke digs a crater three levels deep and 23 cells across,
     /// as wide as its retail `CellSpread=10` blast: gamemd names that warhead
@@ -121,17 +119,10 @@ impl PersonalRules {
     }
 }
 
-/// Terrain Deformation's rules: the switch, VERA's `DeformLowestLevel=-4`
-/// unless `root` sets it, and the crater keys `root`'s `NUKE` warhead leaves
-/// unset.
+/// Terrain Deformation's rules: the switch, and the crater keys `root`'s
+/// `NUKE` warhead leaves unset.
 fn terrain_deformation(root: &IniFile) -> String {
     let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
-    if !root
-        .section("CombatDamage")
-        .is_some_and(|section| section.is_present("DeformLowestLevel"))
-    {
-        options.push_str("DeformLowestLevel=-4\n");
-    }
     if let Some(nuke) = root.section("NUKE") {
         let crater: String = [
             ("Deform", "100%"),
@@ -256,25 +247,18 @@ mod tests {
                 .into_parts();
             let nuke = rules.warhead("NUKE").unwrap();
             (
-                (
-                    rules.combat_damage.terrain_deformation,
-                    rules.combat_damage.deform_lowest_level,
-                ),
+                rules.combat_damage.terrain_deformation,
                 (nuke.deform_f64, nuke.deform_depth, nuke.deform_radius),
                 digests != owner.multiplayer_source_digests(),
                 owner.personal_rules_compatibility_crc().is_some(),
             )
         };
         let root = b"[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
-        assert_eq!(
-            scenario(root, false),
-            ((false, 0), (0.0, 1, 0), false, false)
-        );
-        assert_eq!(scenario(root, true), ((true, -4), (1.0, 3, 10), true, true));
+        assert_eq!(scenario(root, false), (false, (0.0, 1, 0), false, false));
+        assert_eq!(scenario(root, true), (true, (1.0, 3, 10), true, true));
         // Keys the root already sets, from a mod, stay.
-        let modded = b"[CombatDamage]\nDeformLowestLevel=-1\n[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
-        let modded = scenario(modded, true);
-        assert_eq!((modded.0, modded.1), ((true, -1), (0.25, 3, 2)));
+        let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\nDeformRadius=2\n";
+        assert_eq!(scenario(modded, true).1, (0.25, 3, 2));
     }
 
     /// The Options box reaches the simulation through the scenario's rules,

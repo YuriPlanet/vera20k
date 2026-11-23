@@ -7,13 +7,13 @@ A LAN or online room plays its host's setting, which the host can change in the 
 Options, and a save keeps the rules it was started with. Quick Match plays the original game,
 without it.
 
-The box switches on these rules keys for each new game. A mod or a map can set them as well,
-and a map can switch deformation off for its own game:
+The box switches on `TerrainDeformation=` for each new game. A mod or a map can set these keys as
+well, and a map can switch deformation off for its own game:
 
 ```ini
 [CombatDamage]
 TerrainDeformation=yes   ; default no
-DeformLowestLevel=-4     ; the lowest Level a dent digs to, default 0; the box sets -4
+DeformLowestLevel=-4     ; the lowest Level a dent digs to, default -4
 
 [General]
 CraterLevel=1            ; how many dents a landing meteor makes, default 4; retail sets 1
@@ -72,7 +72,7 @@ at all. Yuri's Revenge ground can reach Level 14, and VERA keeps Firestorm's top
 Level 14 stays where it is.
 Then every cell with a corner that moved, or tried to, is rewritten: its Level, its slope and the
 theater's clear tile or its ramp, its smudge gone, and each vehicle and soldier on it set back on the
-ground.
+ground, those the blast just killed too.
 
 **Which cells may change** (0x5F83D0). A cell on the map with a `Morphable=` tile (clear ground and
 its ramps), no overlay (walls, ore, bridges), no building, tree or other object but vehicles and
@@ -80,13 +80,19 @@ soldiers, nothing on a bridge over it, and no bridge over it or over the cell no
 
 The rest of the dent is VERA's:
 
-- Firestorm's floor is Level 0, so a dent on Level 0 ground changes nothing. Most YR ground lies
-  at Level 0, so the box sets `DeformLowestLevel=-4`; the rules default stays Firestorm's.
+- Firestorm's floor is Level 0, where most YR ground lies, so VERA's is `DeformLowestLevel=`,
+  default -4; a map that sets 0 gets Firestorm's. On ground at the floor a dent still takes, as in
+  Firestorm: the picked corner stays, but the cells around it are rewritten as above, the waiting
+  step fills, and five frames later the cells around the other three corners are rewritten too.
 - VERA keeps every cell a bridge has marked, not only the ones under a bridge, because rewriting a
   cell would clear the bridge's marks on it.
 - After the dent, the sand, pavement and other LAT ground around the rewritten cells, and the ramps
   beside them, are smoothed as cliff collapse does it (`MapClass::CollapseDestroyableCliff` @
   `0x00581140`), so their art joins up. Firestorm leaves the tiles as the dent wrote them.
+- Firestorm builds its corner grid over the whole map (0x5F8500) and fills the corners within 14
+  cells of the dented cell; VERA's grid ends there, 14 corners west and north and 15 east and south,
+  and a lowering whose pull reaches that edge fails whole. Only ground that climbs a level per cell
+  for 14 cells from the dent pulls that far.
 
 A wider or deeper crater is VERA's. A warhead with `DeformRadius=` or `DeformDepth=` starts with the
 dent above, both steps at once, and keeps sinking with the same corner rules: every cell within
@@ -97,6 +103,14 @@ steps. Each cell's sinking happens whole or not at all, so the crater bends arou
 dig, and the crater looks at 16 cells around the hit. Art exists only for whole-level ramps, so a
 ring of ramps climbs back to the ground around the crater: the nuke's crater is 23 cells across on
 open ground, as wide as its blast. Repeated hits dig deeper and wider, down to `DeformLowestLevel=`.
+
+A crater widens the dent's rule for which cells may change twice. What the blast kills no longer
+holds the ground up: the crater digs under the buildings, units and trees that die in it, while
+living buildings and trees keep their cells and living vehicles and soldiers ride the ground down. A
+building that dies there keeps its height while its death plays out. And flat land digs even when
+its tile is not `Morphable=`: Clear, Road and Rough ground (roads, pavement, crops, sand, rough
+grass) with no water, beach, cliff, ice, tunnel or rail beside it, since shore and cliff pieces mix
+such cells with flat ones and a ramp stamped there would cut the piece's art.
 
 Dents and the waiting second step are part of the saved game and the simulation hash. With the
 switch on, the atlas preloads the clear, ramp, smoothed-ramp and LAT tiles a dent can draw.
