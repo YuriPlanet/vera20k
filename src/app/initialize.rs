@@ -1192,6 +1192,7 @@ impl App {
                     super_timer_hud: Default::default(),
                     message_hud: Default::default(),
                     tooltip_hud: Default::default(),
+                    outcome_banner_huds: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),

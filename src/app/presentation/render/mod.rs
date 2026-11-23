@@ -1100,9 +1100,18 @@ fn upload_to_gpu(
         crate::app::input::messages::build_message_instances(state, &mut message_hud);
     state.match_state.match_presentation.message_hud = message_hud;
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
-    let (outcome_shape, outcome_text) = verdict
-        .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))
-        .unwrap_or_default();
+    let mut banner_huds =
+        std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
+    let (outcome_shape, outcome_text) = match verdict {
+        Some(kind) => {
+            crate::app::presentation::outcome_banner::instances(state, kind, &mut banner_huds)
+        }
+        None => {
+            banner_huds.clear();
+            Default::default()
+        }
+    };
+    state.match_state.match_presentation.outcome_banner_huds = banner_huds;
     let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
