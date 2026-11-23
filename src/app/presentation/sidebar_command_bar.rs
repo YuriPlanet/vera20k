@@ -149,7 +149,7 @@ impl CommandBarHud {
                 );
             }
         }
-        let mut blit = |hud: &mut Self, entry: Option<SidebarChromeEntry>, x: f32, y: f32| {
+        let blit = |hud: &mut Self, entry: Option<SidebarChromeEntry>, x: f32, y: f32| {
             if let Some(entry) = entry {
                 hud.piece(entry, [x, y], entry.pixel_size, layout.bounds, camera);
             }

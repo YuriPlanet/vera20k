@@ -361,8 +361,7 @@ impl StatusInfo {
 const UNIT_PIPS_VEHICLE: u32 = 17; // vehicles + aircraft
 const UNIT_PIPS_INFANTRY: u32 = 8;
 
-/// Horizontal pixel spacing between unit health pips (each pip drawn 2px apart).
-const UNIT_PIP_STEP_X: f32 = 2.0;
+use crate::app::presentation::health_templates::{self, HealthAnchor, HealthBand, HealthClass};
 
 /// The object under the cursor whose health bar the original draws on hover,
 /// for either Techno health branch, from the frame's cursor `hover`
@@ -2320,30 +2319,31 @@ pub(crate) fn techno_extras_for_parent(
         }
         let filled = filled_count(object.strength, num_pips);
         //6F660A/661F use the existing health-category predicates; zero HP
-        // does not satisfy IsRed. Raw frame selection is green1/yellow2/red4.
-        let frame = match crate::sim::combat::health_category(
+        // does not satisfy IsRed. Raw frame selection is green1/yellow2/red4,
+        // the built-in building templates' (`health_templates`).
+        let band = match crate::sim::combat::health_category(
             entity.health.current(),
             object.strength,
             rules.general.condition_red,
             rules.general.condition_yellow,
         ) {
-            0 => 4,
-            1 => 2,
-            _ => 1,
+            0 => HealthBand::Red,
+            1 => HealthBand::Yellow,
+            _ => HealthBand::Green,
         };
         let start = geometry.first_pip(sx, sy);
         strip.fills.reserve(num_pips as usize);
         //6F6658..6774: filled first, then empty frame0, walking [-4,+2].
         // Building PIPS600 bypasses A and Z; the replay owner preserves both
         // original first-Extras and late-Extras positions around the body.
-        for index in 0..num_pips {
-            strip.fills.extend(instance(
-                shape,
-                if index < filled { frame } else { 0 },
-                (start.0 - (index * 4) as f32, start.1 + (index * 2) as f32),
-                0.0006,
-            ));
-        }
+        health_templates::draw(
+            HealthClass::Building,
+            false,
+            Some((band, filled, num_pips)),
+            HealthAnchor::Building { start },
+            &mut Vec::new(),
+            |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0006)),
+        );
         if pip_zoom < 1.0 {
             keep_health_strip_screen_size(&mut strip, start, pip_zoom);
         }
@@ -2368,18 +2368,19 @@ pub(crate) fn techno_extras_for_parent(
     }
     let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);
     let infantry = entity.category() == EntityCategory::Infantry;
-    let (num_pips, background_frame, background_offset, pip_offset) = if infantry {
-        (UNIT_PIPS_INFANTRY, 1, [11.0, -25.0], [-5.0, -24.0])
+    let (num_pips, class) = if infantry {
+        (UNIT_PIPS_INFANTRY, HealthClass::Infantry)
     } else {
-        (UNIT_PIPS_VEHICLE, 0, [1.0, -26.0], [-15.0, -25.0])
+        (UNIT_PIPS_VEHICLE, HealthClass::Vehicle)
     };
+    // The built-in unit templates (`health_templates`) give the background's
+    // frame and offset and the pip row's start.
+    let mut cmds = Vec::new();
+    let anchor = HealthAnchor::Unit { sx, sy, delta };
     if draw_background && let Some(shape) = overlay.pipbrd() {
-        strip.background = instance(
-            shape,
-            background_frame,
-            (sx + background_offset[0], sy + delta + background_offset[1]),
-            0.0006,
-        );
+        health_templates::draw(class, true, None, anchor, &mut cmds, |border| {
+            strip.background = instance(shape, border.frame, border.point, 0.0006);
+        });
     }
     let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
         keep_health_strip_screen_size(&mut strip, (sx, sy), viewport.zoom);
@@ -2415,33 +2416,30 @@ pub(crate) fn techno_extras_for_parent(
     //6F69B1..69F3 compares independently: <=red overrides <=yellow. These
     // are direct ratio comparisons, unlike Building's positive-HP red gate.
     use crate::util::native_x87::MaskedX87Ordering::Greater;
-    let frame = if entity
+    let band = if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_red)
         != Greater
     {
-        18
+        HealthBand::Red
     } else if entity
         .health
         .compare_ratio(object.strength, rules.general.condition_yellow)
         != Greater
     {
-        17
+        HealthBand::Yellow
     } else {
-        16
+        HealthBand::Green
     };
     strip.fills.reserve(filled as usize);
-    for index in 0..filled {
-        strip.fills.extend(instance(
-            shape,
-            frame,
-            (
-                sx + pip_offset[0] + index as f32 * UNIT_PIP_STEP_X,
-                sy + delta + pip_offset[1],
-            ),
-            0.0005,
-        ));
-    }
+    health_templates::draw(
+        class,
+        false,
+        Some((band, filled as i32, num_pips as i32)),
+        anchor,
+        &mut cmds,
+        |pip| strip.fills.extend(instance(shape, pip.frame, pip.point, 0.0005)),
+    );
     //709B0F/6F6A8E: nonbuilding scale starts at health anchor(-15,+10),
     //with the Infantry-only+11 X. The shared draw owner retains each arm's
     //origin independently, cargo and native relationship admission.

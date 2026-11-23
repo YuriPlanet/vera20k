@@ -1,0 +1,364 @@
+//! The built-in health bars as `vera20k-gui` status templates.
+//!
+//! A template decides what one object's bar shows: whether its PIPBRD
+//! background stands, which PIPS frame its health band lights, how many pips
+//! the row has and how many of them are full. The engine still decides
+//! whether a bar is drawn at all (`ui_overlays::techno_extras_for_parent`)
+//! and works out the band and the counts with the original arithmetic; it
+//! hands them to the templates as plain values and places each picture the
+//! templates return at the original point.
+//!
+//! Original: unit bars `6F683C..6F6A8E` (PIPBRD frame 0/1, PIPS 16/17/18
+//! every 2 pixels), building bars `6F64A0..6F6774` (PIPS 4/2/1 then the empty
+//! frame 0, walking (-4,+2)).
+
+use std::sync::LazyLock;
+
+use vera20k_gui::Rect;
+use vera20k_gui::hud::Origin;
+use vera20k_gui::hud::world::{
+    Amount, ArtId, Condition, Element, ObjectView, SourceId, StatusTemplate, World, WorldCmd,
+    WorldOp,
+};
+
+/// Which bar an object has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HealthClass {
+    Vehicle,
+    Infantry,
+    Building,
+}
+
+/// Which colour the health pips take.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HealthBand {
+    Green,
+    Yellow,
+    Red,
+}
+
+/// One picture of a bar, in the order the templates give them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HealthPiece {
+    /// PIPBRD `frame`, `offset` from the bar's anchor.
+    Background { frame: usize, offset: (i32, i32) },
+    /// PIPS `frame`, the row's `index`th pip.
+    Pip { frame: usize, index: i32 },
+}
+
+/// A unit bar's layout: its background and the start of its pip row.
+struct UnitBar {
+    class: HealthClass,
+    background_frame: u32,
+    background_offset: (i32, i32),
+    pip_offset: (i32, i32),
+}
+
+const UNIT_BARS: [UnitBar; 2] = [
+    UnitBar {
+        class: HealthClass::Vehicle,
+        background_frame: 0,
+        background_offset: (1, -26),
+        pip_offset: (-15, -25),
+    },
+    UnitBar {
+        class: HealthClass::Infantry,
+        background_frame: 1,
+        background_offset: (11, -25),
+        pip_offset: (-5, -24),
+    },
+];
+
+/// A unit's pips are this many pixels apart (`UNIT_PIP_STEP_X`).
+pub(crate) const UNIT_PIP_STEP: i32 = 2;
+/// A building's row walks up the roof's edge.
+const BUILDING_PIP_STEP: (i32, i32) = (-4, 2);
+/// A building's empty pip.
+const BUILDING_EMPTY_FRAME: u32 = 0;
+
+const fn unit_frame(band: HealthBand) -> u32 {
+    match band {
+        HealthBand::Green => 16,
+        HealthBand::Yellow => 17,
+        HealthBand::Red => 18,
+    }
+}
+
+const fn building_frame(band: HealthBand) -> u32 {
+    match band {
+        HealthBand::Green => 1,
+        HealthBand::Yellow => 2,
+        HealthBand::Red => 4,
+    }
+}
+
+const BANDS: [HealthBand; 3] = [HealthBand::Green, HealthBand::Yellow, HealthBand::Red];
+
+/// `values[HEALTH]`: the row's pips (`max`) and how many are full (`value`).
+const HEALTH: SourceId = SourceId(0);
+/// Present only for the object's band.
+const fn band_source(band: HealthBand) -> SourceId {
+    match band {
+        HealthBand::Green => SourceId(1),
+        HealthBand::Yellow => SourceId(2),
+        HealthBand::Red => SourceId(3),
+    }
+}
+
+const fn class_bit(class: HealthClass) -> u32 {
+    match class {
+        HealthClass::Vehicle => 1,
+        HealthClass::Infantry => 2,
+        HealthClass::Building => 4,
+    }
+}
+
+/// State bit: the background is asked for.
+const BACKGROUND: u32 = 1;
+
+/// PIPBRD frames are told apart from PIPS frames by this bit of the art id.
+const BORDER_ART: u32 = 1 << 16;
+
+fn pips(frame: u32) -> ArtId {
+    ArtId(frame)
+}
+
+fn border(frame: u32) -> ArtId {
+    ArtId(BORDER_ART | frame)
+}
+
+/// A one-pixel rect at `(x, y)`: the host sizes each picture itself.
+fn at(x: i32, y: i32) -> Rect {
+    Rect::new(x, y, 1, 1)
+}
+
+fn templates() -> Vec<StatusTemplate> {
+    let mut all = Vec::new();
+    for bar in &UNIT_BARS {
+        let name = match bar.class {
+            HealthClass::Vehicle => "vehicle",
+            _ => "infantry",
+        };
+        all.push(StatusTemplate {
+            name: format!("health.{name}.background"),
+            category: class_bit(bar.class),
+            state: BACKGROUND,
+            elements: vec![Element::Icon {
+                rect: at(bar.background_offset.0, bar.background_offset.1),
+                art: border(bar.background_frame),
+            }],
+            ..Default::default()
+        });
+        for band in BANDS {
+            all.push(StatusTemplate {
+                name: format!("health.{name}.{band:?}").to_lowercase(),
+                category: class_bit(bar.class),
+                when: vec![Condition::Present(band_source(band))],
+                elements: vec![Element::Pips {
+                    at: at(bar.pip_offset.0, bar.pip_offset.1),
+                    step: (UNIT_PIP_STEP, 0),
+                    source: HEALTH,
+                    full: pips(unit_frame(band)),
+                    empty: None,
+                }],
+                ..Default::default()
+            });
+        }
+    }
+    for band in BANDS {
+        all.push(StatusTemplate {
+            name: format!("health.building.{band:?}").to_lowercase(),
+            category: class_bit(HealthClass::Building),
+            when: vec![Condition::Present(band_source(band))],
+            elements: vec![Element::Pips {
+                at: at(0, 0),
+                step: BUILDING_PIP_STEP,
+                source: HEALTH,
+                full: pips(building_frame(band)),
+                empty: Some(pips(BUILDING_EMPTY_FRAME)),
+            }],
+            ..Default::default()
+        });
+    }
+    all
+}
+
+/// The built-in bars, the same for every match.
+static BUILT_IN: LazyLock<World> = LazyLock::new(|| {
+    let mut world = World::default();
+    for template in templates() {
+        world
+            .add_template(Origin::Host, template)
+            .expect("the built-in health templates are within the limits");
+    }
+    world
+});
+
+/// Where a unit class's pip row starts from the bar's anchor, as the
+/// original adds it to the anchor: in floating point.
+pub(crate) fn pip_offset(class: HealthClass) -> [f32; 2] {
+    let ((x, y), _) = row(class);
+    [x as f32, y as f32]
+}
+
+/// Where a class's pip row starts and walks, from the bar's anchor.
+fn row(class: HealthClass) -> ((i32, i32), (i32, i32)) {
+    match UNIT_BARS.iter().find(|bar| bar.class == class) {
+        Some(bar) => (bar.pip_offset, (UNIT_PIP_STEP, 0)),
+        None => ((0, 0), BUILDING_PIP_STEP),
+    }
+}
+
+/// The bar the templates give an object of `class`: the background when
+/// `background` asks for it, then the pip row when `health` gives its band,
+/// its full pips and its length. Each picture goes to `piece` in order.
+pub(crate) fn paint(
+    class: HealthClass,
+    background: bool,
+    health: Option<(HealthBand, i32, i32)>,
+    cmds: &mut Vec<WorldCmd<'static>>,
+    mut piece: impl FnMut(HealthPiece),
+) {
+    let mut values = [None; 4];
+    if let Some((band, full, count)) = health {
+        values[usize::from(HEALTH.0)] = Some(Amount {
+            value: full,
+            max: count,
+        });
+        values[usize::from(band_source(band).0)] = Some(Amount { value: 1, max: 1 });
+    }
+    let object = ObjectView {
+        id: 0,
+        x: 0,
+        y: 0,
+        type_id: 0,
+        category: class_bit(class),
+        relation: 0,
+        state: if background { BACKGROUND } else { 0 },
+        values: &values,
+    };
+    cmds.clear();
+    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    let (start, step) = row(class);
+    for cmd in cmds.iter() {
+        let WorldOp::Image { rect, art } = cmd.op else {
+            continue;
+        };
+        let frame = (art.0 & !BORDER_ART) as usize;
+        if art.0 & BORDER_ART != 0 {
+            piece(HealthPiece::Background {
+                frame,
+                offset: (rect.x, rect.y),
+            });
+        } else {
+            let index = if step.0 != 0 {
+                (rect.x - start.0) / step.0
+            } else {
+                (rect.y - start.1) / step.1
+            };
+            piece(HealthPiece::Pip { frame, index });
+        }
+    }
+}
+
+/// Where a bar is drawn from.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum HealthAnchor {
+    /// A unit's draw point and its type's bracket delta.
+    Unit { sx: f32, sy: f32, delta: f32 },
+    /// A building's first pip (`BuildingBarGeometry::first_pip`).
+    Building { start: (f32, f32) },
+}
+
+/// One picture to draw: PIPBRD when `border`, else PIPS.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HealthDraw {
+    pub(crate) border: bool,
+    pub(crate) frame: usize,
+    pub(crate) point: (f32, f32),
+}
+
+/// [`paint`] at `anchor`: each picture at the point the original computes,
+/// with its own floating-point steps.
+pub(crate) fn draw(
+    class: HealthClass,
+    background: bool,
+    health: Option<(HealthBand, i32, i32)>,
+    anchor: HealthAnchor,
+    cmds: &mut Vec<WorldCmd<'static>>,
+    mut out: impl FnMut(HealthDraw),
+) {
+    paint(class, background, health, cmds, |piece| {
+        let (border, frame, point) = match (piece, anchor) {
+            (HealthPiece::Background { frame, offset }, HealthAnchor::Unit { sx, sy, delta }) => {
+                (true, frame, (sx + offset.0 as f32, sy + delta + offset.1 as f32))
+            }
+            (HealthPiece::Pip { frame, index }, HealthAnchor::Unit { sx, sy, delta }) => {
+                let [x, y] = pip_offset(class);
+                (
+                    false,
+                    frame,
+                    (sx + x + index as f32 * UNIT_PIP_STEP as f32, sy + delta + y),
+                )
+            }
+            (HealthPiece::Pip { frame, index }, HealthAnchor::Building { start }) => (
+                false,
+                frame,
+                (start.0 - (index * 4) as f32, start.1 + (index * 2) as f32),
+            ),
+            (HealthPiece::Background { .. }, HealthAnchor::Building { .. }) => return,
+        };
+        out(HealthDraw {
+            border,
+            frame,
+            point,
+        });
+    });
+}
+
+#[cfg(all(test, tests_app_presentation))]
+mod tests {
+    use super::*;
+
+    fn pieces(
+        class: HealthClass,
+        background: bool,
+        health: Option<(HealthBand, i32, i32)>,
+    ) -> Vec<HealthPiece> {
+        let mut out = Vec::new();
+        paint(class, background, health, &mut Vec::new(), |piece| out.push(piece));
+        out
+    }
+
+    #[test]
+    fn a_vehicle_bar_is_its_background_then_its_full_pips() {
+        assert_eq!(
+            pieces(HealthClass::Vehicle, true, Some((HealthBand::Yellow, 3, 17))),
+            [
+                HealthPiece::Background { frame: 0, offset: (1, -26) },
+                HealthPiece::Pip { frame: 17, index: 0 },
+                HealthPiece::Pip { frame: 17, index: 1 },
+                HealthPiece::Pip { frame: 17, index: 2 },
+            ]
+        );
+        assert_eq!(
+            pieces(HealthClass::Infantry, true, None),
+            [HealthPiece::Background { frame: 1, offset: (11, -25) }]
+        );
+        assert!(pieces(HealthClass::Infantry, false, None).is_empty());
+    }
+
+    #[test]
+    fn a_building_bar_lights_its_full_pips_and_shows_the_rest_empty() {
+        let bar = pieces(HealthClass::Building, true, Some((HealthBand::Red, 2, 4)));
+        assert_eq!(
+            bar,
+            [
+                HealthPiece::Pip { frame: 4, index: 0 },
+                HealthPiece::Pip { frame: 4, index: 1 },
+                HealthPiece::Pip { frame: 0, index: 2 },
+                HealthPiece::Pip { frame: 0, index: 3 },
+            ]
+        );
+    }
+}

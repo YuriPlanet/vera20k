@@ -14,6 +14,7 @@ pub(crate) mod digital_display;
 pub(crate) mod display_members;
 pub(crate) mod electric_bolts;
 pub(crate) mod field_parts;
+pub(crate) mod health_templates;
 pub(crate) mod layout_parts;
 pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
