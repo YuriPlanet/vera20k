@@ -9,12 +9,12 @@
 
 use super::chrome::*;
 use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalDepths, PaintLabel};
-use crate::render::shell_text::{self, ShellTextDraw};
+use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::ui::wol_lobby::*;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
@@ -157,6 +157,12 @@ pub(crate) fn paint_wol_lobby_children(
     };
     // The edit that takes the keys: the chat's, or VERA's room search.
     let caret_of = |node| ui.caret_visible() && ui.node(ui.view_edit()) == Some(node);
+    // VERA's room search names itself while empty, as the map search does.
+    let hint_of = |id: i32| {
+        let empty = ui.edit(SEARCH).units.is_empty();
+        (id == i32::from(SEARCH) && empty && state.platform.ime.open_composition().is_none())
+            .then(|| (crate::i18n::tr("VERA:LobbySearchHint"), 5))
+    };
     let style = GuiStyle {
         text_of: Some(&text_of),
         buttons: ButtonArt::Caption,
@@ -164,6 +170,7 @@ pub(crate) fn paint_wol_lobby_children(
         cells_of: Some(&cells_of),
         art,
         caret_of: Some(&caret_of),
+        hint_of: Some(&hint_of),
         control_lists: true,
         ..GuiStyle::default()
     };
@@ -194,25 +201,6 @@ pub(crate) fn paint_wol_lobby_children(
         paint.controls.extend(widget.controls);
         paint.icons.extend(widget.icons);
         paint.texts.extend(widget.texts);
-    }
-    // VERA's room search names itself while empty, as the map search does.
-    if let Some(search) = layout.control_rect(SEARCH)
-        && ui.edit(SEARCH).units.is_empty()
-        && state.platform.ime.open_composition().is_none()
-    {
-        let hint = scale.derive_rect(search, |rect| {
-            RectPx::new(rect.x + 5, rect.y, rect.w - 5, rect.h)
-        });
-        paint.texts.push(shell_text::draw_in_rect_scaled(
-            font,
-            &crate::i18n::tr("VERA:LobbySearchHint"),
-            shell_text::TextRect::of(hint),
-            SHELL_LABEL_TEXT_RGB,
-            ShellAlign::V_CENTER,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        ));
     }
     if !modern && let Some(entry) = atlas.lan_observer_toggle(ui.observer()) {
         push_flag_entry_clipped_centered(
