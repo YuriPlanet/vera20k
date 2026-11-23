@@ -135,7 +135,12 @@ impl Tree {
 
     /// Layout `layout` of `files`, the bottom layer first; `table` is the
     /// position table it starts from when it names no base.
-    pub fn read(files: &[&IniFile], layout: &str, table: &str, problems: &mut Vec<TreeProblem>) -> Self {
+    pub fn read(
+        files: &[&IniFile],
+        layout: &str,
+        table: &str,
+        problems: &mut Vec<TreeProblem>,
+    ) -> Self {
         let mut tree = Self::default();
         for name in chain(files, layout, table, problems).iter().rev() {
             for (layer, file) in files.iter().enumerate() {
@@ -152,7 +157,11 @@ impl Tree {
                     let Some(section) = file.section(section_name) else {
                         continue;
                     };
-                    let index = match tree.nodes.iter().position(|known| known.name.eq_ignore_ascii_case(node)) {
+                    let index = match tree
+                        .nodes
+                        .iter()
+                        .position(|known| known.name.eq_ignore_ascii_case(node))
+                    {
                         Some(index) => index,
                         None => {
                             tree.nodes.push(Node {
@@ -166,7 +175,10 @@ impl Tree {
                         let text = section.read_name(key, VALUE_CAPACITY).unwrap_or_default();
                         let (key, theme) = match key.split_once('@') {
                             None => (key, None),
-                            Some((key, side)) => match THEMES.iter().position(|theme| theme.eq_ignore_ascii_case(side.trim())) {
+                            Some((key, side)) => match THEMES
+                                .iter()
+                                .position(|theme| theme.eq_ignore_ascii_case(side.trim()))
+                            {
                                 Some(theme) => (key, Some(theme)),
                                 None => {
                                     problems.push(TreeProblem::UnknownSide {
@@ -206,7 +218,11 @@ impl Tree {
                     .last()
                     .map(|value| value.section.clone())
                     .unwrap_or_default();
-                let Some(next) = self.nodes.iter().position(|node| node.name.eq_ignore_ascii_case(base)) else {
+                let Some(next) = self
+                    .nodes
+                    .iter()
+                    .position(|node| node.name.eq_ignore_ascii_case(base))
+                else {
                     problems.push(TreeProblem::MissingBase { section });
                     break;
                 };
@@ -218,7 +234,10 @@ impl Tree {
                 let inherited: Vec<(String, Vec<Written>)> = self.nodes[next]
                     .keys
                     .iter()
-                    .filter(|(key, _)| !key.eq_ignore_ascii_case("Base") && self.nodes[index].values(key).is_empty())
+                    .filter(|(key, _)| {
+                        !key.eq_ignore_ascii_case("Base")
+                            && self.nodes[index].values(key).is_empty()
+                    })
                     .cloned()
                     .collect();
                 self.nodes[index].keys.extend(inherited);
@@ -230,12 +249,19 @@ impl Tree {
 
 /// The layouts `layout` starts from, itself first: each `Base=` in turn,
 /// and the position table `table` after a layout that names none.
-fn chain(files: &[&IniFile], layout: &str, table: &str, problems: &mut Vec<TreeProblem>) -> Vec<String> {
+fn chain(
+    files: &[&IniFile],
+    layout: &str,
+    table: &str,
+    problems: &mut Vec<TreeProblem>,
+) -> Vec<String> {
     let mut chain: Vec<String> = Vec::new();
     let mut next = Some(layout.to_owned());
     while let Some(name) = next.take() {
         if chain.iter().any(|seen| seen.eq_ignore_ascii_case(&name)) || chain.len() > MOST_BASES {
-            problems.push(TreeProblem::Loop { section: chain.last().cloned().unwrap_or_default() });
+            problems.push(TreeProblem::Loop {
+                section: chain.last().cloned().unwrap_or_default(),
+            });
             // The layouts of the loop still start from the table.
             next = (!chain.iter().any(|seen| is_table(seen))).then(|| table.to_owned());
             continue;
@@ -258,7 +284,9 @@ fn chain(files: &[&IniFile], layout: &str, table: &str, problems: &mut Vec<TreeP
             Some(base) if exists(files, &base) => Some(base),
             // A base there is none of: the layout starts as if it named none.
             Some(_) => {
-                problems.push(TreeProblem::MissingBase { section: name.clone() });
+                problems.push(TreeProblem::MissingBase {
+                    section: name.clone(),
+                });
                 (!a_table).then(|| table.to_owned())
             }
             None if a_table => None,
@@ -270,7 +298,9 @@ fn chain(files: &[&IniFile], layout: &str, table: &str, problems: &mut Vec<TreeP
 }
 
 fn is_table(layout: &str) -> bool {
-    TABLES.iter().any(|known| known.eq_ignore_ascii_case(layout))
+    TABLES
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(layout))
 }
 
 /// Whether any of `files` has a section of layout `layout`.

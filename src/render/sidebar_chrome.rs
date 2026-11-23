@@ -982,7 +982,11 @@ fn build_theme_atlas(
             art.node.eq_ignore_ascii_case(node) && art.key.eq_ignore_ascii_case(key)
         };
         let radar_part = art.node.eq_ignore_ascii_case("Radar");
-        let file = if radar_part { radar_name } else { art.file.as_str() };
+        let file = if radar_part {
+            radar_name
+        } else {
+            art.file.as_str()
+        };
         excluded_extra_ids.insert(mix_hash(file));
         let frames: Vec<Option<RenderedChromeEntry>> = if radar_part || art.palette.is_some() {
             let shape = theme_route.shape(file, RADAR_DEFAULT_FRAME);
@@ -1129,7 +1133,11 @@ fn build_theme_atlas(
         .entries()
         .chain(layout_art.entries())
         .chain(observer_art.entries())
-        .chain(pieces.iter().flat_map(|(_, _, frames)| frames.iter().flatten()))
+        .chain(
+            pieces
+                .iter()
+                .flat_map(|(_, _, frames)| frames.iter().flatten()),
+        )
         .map(|entry| {
             [
                 (entry.uv_origin[0] * atlas_width as f32).round() as u32,

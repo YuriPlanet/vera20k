@@ -280,10 +280,9 @@ impl std::fmt::Display for LayoutProblem {
             LayoutProblemKind::Loop => {
                 write!(f, "{place}: the Base= lines go round in a loop")
             }
-            LayoutProblemKind::UnknownPart => write!(
-                f,
-                "{place}: not a part of the interface; it is ignored"
-            ),
+            LayoutProblemKind::UnknownPart => {
+                write!(f, "{place}: not a part of the interface; it is ignored")
+            }
             LayoutProblemKind::UnknownKey => write!(f, "{place}: unknown key, ignored"),
             LayoutProblemKind::NotANumber => {
                 write!(f, "{place}: not a whole number; the original value is kept")
@@ -504,7 +503,12 @@ impl MatchLayoutFile {
     /// The picture files the layouts' added buttons name (`Art=`), each once.
     pub fn art_names(&self) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
-        for part in self.layouts.iter().flatten().flat_map(|layout| layout.added.iter()) {
+        for part in self
+            .layouts
+            .iter()
+            .flatten()
+            .flat_map(|layout| layout.added.iter())
+        {
             if let AddedKind::Button { art: Some(art), .. } = &part.kind
                 && !names.iter().any(|name| name.eq_ignore_ascii_case(art))
             {
@@ -648,7 +652,10 @@ pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
     let tree = Tree::read(&[&BUILT_IN], TABLES[0], TABLES[0], &mut Vec::new());
     let mut art = Vec::new();
     for node in &tree.nodes {
-        if node.text("Type").is_some_and(|kind| kind.eq_ignore_ascii_case("CommandBar")) {
+        if node
+            .text("Type")
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("CommandBar"))
+        {
             continue;
         }
         for key in ART_KEYS {
@@ -660,7 +667,9 @@ pub fn sidebar_art(theme: crate::ui::sidebar::SidebarTheme) -> Vec<SidebarArt> {
                 key,
                 file: file.to_owned(),
                 palette: node.text_for("Palette", theme).map(str::to_owned),
-                frames: node.text("Frames").map_or(1, |frames| names(frames).len().max(1)),
+                frames: node
+                    .text("Frames")
+                    .map_or(1, |frames| names(frames).len().max(1)),
             });
         }
     }
@@ -709,7 +718,12 @@ impl<'a> Reader<'a> {
             .enumerate()
             .find(|(_, known)| known.name.eq_ignore_ascii_case(node))?;
         self.read.push((index, key));
-        for value in node.values(key).iter().rev().filter(|value| value.theme.is_none()) {
+        for value in node
+            .values(key)
+            .iter()
+            .rev()
+            .filter(|value| value.theme.is_none())
+        {
             match parse(&value.text) {
                 Ok((parsed, note)) => {
                     if let (Some(kind), true) = (note, value.own) {
@@ -724,7 +738,12 @@ impl<'a> Reader<'a> {
         None
     }
 
-    fn value<T>(&mut self, node: &str, key: &'static str, parse: impl Fn(&str) -> Parsed<T>) -> Option<T> {
+    fn value<T>(
+        &mut self,
+        node: &str,
+        key: &'static str,
+        parse: impl Fn(&str) -> Parsed<T>,
+    ) -> Option<T> {
         self.pick(node, key, parse).map(|(value, _)| value)
     }
 
@@ -762,7 +781,10 @@ fn whole_number(text: &str) -> Option<i32> {
 fn number_in(text: &str, min: i32, max: i32) -> Parsed<i32> {
     let value = whole_number(text).ok_or(Some(LayoutProblemKind::NotANumber))?;
     let used = value.clamp(min, max);
-    Ok((used, (used != value).then_some(LayoutProblemKind::Clamped { used })))
+    Ok((
+        used,
+        (used != value).then_some(LayoutProblemKind::Clamped { used }),
+    ))
 }
 
 /// A size: a whole number of at least one, or `Rest`, what is left.
@@ -782,12 +804,17 @@ fn yes_no(text: &str) -> Parsed<bool> {
 }
 
 fn hold(text: &str) -> Parsed<Hold> {
-    Hold::named(text).map(|hold| (hold, None)).ok_or(Some(LayoutProblemKind::NotYet))
+    Hold::named(text)
+        .map(|hold| (hold, None))
+        .ok_or(Some(LayoutProblemKind::NotYet))
 }
 
 /// A word of `words`, without regard to capitals; another is refused as
 /// `kind`.
-fn one_of<'a, T: Copy>(words: &'a [(&'a str, T)], kind: LayoutProblemKind) -> impl Fn(&str) -> Parsed<T> + 'a {
+fn one_of<'a, T: Copy>(
+    words: &'a [(&'a str, T)],
+    kind: LayoutProblemKind,
+) -> impl Fn(&str) -> Parsed<T> + 'a {
     move |text| {
         words
             .iter()
@@ -832,7 +859,9 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
             TreeProblem::MissingBase { section } => {
                 reader.problem(&section, "Base", LayoutProblemKind::MissingLayout)
             }
-            TreeProblem::Loop { section } => reader.problem(&section, "Base", LayoutProblemKind::Loop),
+            TreeProblem::Loop { section } => {
+                reader.problem(&section, "Base", LayoutProblemKind::Loop)
+            }
             TreeProblem::UnknownSide { section, key } => {
                 reader.problem(&section, &key, LayoutProblemKind::UnknownKey)
             }
@@ -901,13 +930,22 @@ fn read_tabs(reader: &mut Reader, read: &mut MatchLayout) {
 /// `Float=`, and `[Bar] Hold=` (`Top` or `Bottom`).
 fn read_places(reader: &mut Reader, read: &mut MatchLayout) {
     use Edge::{Bottom, Left, Right, Top};
-    let edges = [("Left", Left), ("Right", Right), ("Top", Top), ("Bottom", Bottom)];
+    let edges = [
+        ("Left", Left),
+        ("Right", Right),
+        ("Top", Top),
+        ("Bottom", Bottom),
+    ];
     let places = &mut read.places;
     places.side = reader
         .value("Side", "Hold", one_of(&edges, LayoutProblemKind::NotYet))
         .unwrap_or(Right);
     places.side_floats = reader.value("Side", "Float", yes_no).unwrap_or(false);
-    places.bar = reader.value("Bar", "Hold", one_of(&edges[2..], LayoutProblemKind::NotYet));
+    places.bar = reader.value(
+        "Bar",
+        "Hold",
+        one_of(&edges[2..], LayoutProblemKind::NotYet),
+    );
 }
 
 /// The pieces over the battlefield: `Messages`, `Timers` and `Banner` (a
@@ -946,17 +984,26 @@ fn read_field(reader: &mut Reader, field: &mut FieldLayout) {
 /// draws, in order), the battlefield's (the pieces it shows). Each name
 /// that is no part of the original goes to `listed`, with the list's
 /// section.
-fn read_parts(reader: &mut Reader, read: &mut MatchLayout, listed: &mut Vec<(ListedIn, String, String)>) {
+fn read_parts(
+    reader: &mut Reader,
+    read: &mut MatchLayout,
+    listed: &mut Vec<(ListedIn, String, String)>,
+) {
     let screen = reader.pick("Screen", "Parts", |text| {
         let names = names(text);
         let has = |part: &str| names.iter().any(|name| name.eq_ignore_ascii_case(part));
         if !(has("Field") && has("Side")) {
             return Err(Some(LayoutProblemKind::NotYet));
         }
-        let unknown = names
-            .iter()
-            .any(|name| !["Field", "Side", "Bar"].iter().any(|part| name.eq_ignore_ascii_case(part)));
-        Ok((has("Bar"), unknown.then_some(LayoutProblemKind::UnknownPart)))
+        let unknown = names.iter().any(|name| {
+            !["Field", "Side", "Bar"]
+                .iter()
+                .any(|part| name.eq_ignore_ascii_case(part))
+        });
+        Ok((
+            has("Bar"),
+            unknown.then_some(LayoutProblemKind::UnknownPart),
+        ))
     });
     if let Some((false, _)) = screen {
         read.places.bar = None;
@@ -972,7 +1019,10 @@ fn read_parts(reader: &mut Reader, read: &mut MatchLayout, listed: &mut Vec<(Lis
     // Each panel's own parts, in its list's order.
     let mut held: Vec<(SidebarPart, Vec<SidebarPart>)> = Vec::new();
     for panel in SidebarPart::STOCK_ORDER {
-        if !SidebarPart::STOCK_ORDER.iter().any(|part| part.panel() == Some(panel)) {
+        if !SidebarPart::STOCK_ORDER
+            .iter()
+            .any(|part| part.panel() == Some(panel))
+        {
             continue;
         }
         let Some((children, section)) = reader.pick(panel.name(), "Parts", list) else {
@@ -1010,7 +1060,13 @@ fn read_parts(reader: &mut Reader, read: &mut MatchLayout, listed: &mut Vec<(Lis
                 }
                 order.push(part);
                 if let Some((_, parts)) = held.iter().find(|(panel, _)| *panel == part) {
-                    order.extend(parts.iter().copied().filter(|child| !order.contains(child)).collect::<Vec<_>>());
+                    order.extend(
+                        parts
+                            .iter()
+                            .copied()
+                            .filter(|child| !order.contains(child))
+                            .collect::<Vec<_>>(),
+                    );
                 }
             }
             Some(_) => elsewhere = true,
@@ -1060,8 +1116,13 @@ fn read_added(reader: &mut Reader, mut listed: Vec<(ListedIn, String, String)>) 
             reader.problem(&section, "", LayoutProblemKind::UnknownPart);
             continue;
         };
-        if !ADDED_TYPES.iter().any(|added| added.eq_ignore_ascii_case(kind)) {
-            let known = TYPE_KEYS.iter().any(|(known, _)| known.eq_ignore_ascii_case(kind));
+        if !ADDED_TYPES
+            .iter()
+            .any(|added| added.eq_ignore_ascii_case(kind))
+        {
+            let known = TYPE_KEYS
+                .iter()
+                .any(|(known, _)| known.eq_ignore_ascii_case(kind));
             if known {
                 reader.problem(&section, "Type", LayoutProblemKind::NotYet);
             } else {
@@ -1136,7 +1197,14 @@ fn read_added_part(
 ) -> Option<AddedPart> {
     let is = |name: &str| kind.eq_ignore_ascii_case(name);
     let word = |text: &str| -> Parsed<String> { Ok((text.to_owned(), None)) };
-    reader.read.push((reader.tree.nodes.iter().position(|known| known.name == node)?, "Type"));
+    reader.read.push((
+        reader
+            .tree
+            .nodes
+            .iter()
+            .position(|known| known.name == node)?,
+        "Type",
+    ));
     let place = PartBox {
         hold: reader.value(node, "Hold", hold).unwrap_or_default(),
         x: reader.number(node, "X", -FAR).unwrap_or_default(),
@@ -1154,7 +1222,9 @@ fn read_added_part(
         }
         AddedKind::Group {
             column: is("Column"),
-            gap: reader.value(node, "Gap", |text| number_in(text, 0, FAR)).unwrap_or(0),
+            gap: reader
+                .value(node, "Gap", |text| number_in(text, 0, FAR))
+                .unwrap_or(0),
         }
     } else if is("CameoGrid") {
         // The four tabs, by the names of the tab commands' strips.
@@ -1189,10 +1259,15 @@ fn read_added_part(
             command,
         }
     } else {
-        let values: Vec<(&str, TextValue)> =
-            TextValue::ALL.into_iter().map(|value| (value.name(), value)).collect();
-        let Some(value) = reader.value(node, "Value", one_of(&values, LayoutProblemKind::UnknownValue))
-        else {
+        let values: Vec<(&str, TextValue)> = TextValue::ALL
+            .into_iter()
+            .map(|value| (value.name(), value))
+            .collect();
+        let Some(value) = reader.value(
+            node,
+            "Value",
+            one_of(&values, LayoutProblemKind::UnknownValue),
+        ) else {
             reader.problem(section, "Value", LayoutProblemKind::UnknownValue);
             return None;
         };
@@ -1214,13 +1289,20 @@ fn read_leftovers(reader: &mut Reader) {
     for (index, node) in tree.nodes.iter().enumerate() {
         let Some(keys) = node
             .text("Type")
-            .and_then(|kind| TYPE_KEYS.iter().find(|(known, _)| known.eq_ignore_ascii_case(kind)))
+            .and_then(|kind| {
+                TYPE_KEYS
+                    .iter()
+                    .find(|(known, _)| known.eq_ignore_ascii_case(kind))
+            })
             .map(|(_, keys)| *keys)
         else {
             continue;
         };
         for (key, values) in &node.keys {
-            let known = COMMON_KEYS.iter().chain(keys).any(|known| known.eq_ignore_ascii_case(key));
+            let known = COMMON_KEYS
+                .iter()
+                .chain(keys)
+                .any(|known| known.eq_ignore_ascii_case(key));
             let read = reader
                 .read
                 .iter()
@@ -1383,7 +1465,11 @@ mod tests {
                 ..stock
             }
         );
-        assert!(MatchLayoutFile::none().for_side(Some("GDI"), true).is_none());
+        assert!(
+            MatchLayoutFile::none()
+                .for_side(Some("GDI"), true)
+                .is_none()
+        );
         assert!(MatchLayoutFile::none().is_original() && !file.is_original());
     }
 
@@ -1993,7 +2079,11 @@ mod tests {
                 .all(|part| part.holder == Holder::Group(0))
         );
         // Yuri's is wider, three cameos to a row, with an empty top strip.
-        let (spec, view) = sidebar_with(SidebarTheme::Yuri, file.for_side(Some("ThirdSide"), false), 4);
+        let (spec, view) = sidebar_with(
+            SidebarTheme::Yuri,
+            file.for_side(Some("ThirdSide"), false),
+            4,
+        );
         assert_eq!((view.panel_rect.w, spec.columns()), (232.0, 3));
         assert_eq!(view.items[3].rect.x, view.items[0].rect.x);
         assert!(spec.shows(SidebarPart::Top) && !spec.shows(SidebarPart::Options));
@@ -2115,7 +2205,11 @@ mod tests {
             0., 158., 33., 7., 85., 7., 20., 39., 32., 0., 227., 2., 60., 48., 22., 1., 64., 50.,
             25., 39., 7., 45., 0., 227., 3., 64.,
         ];
-        for theme in [SidebarTheme::Allied, SidebarTheme::Soviet, SidebarTheme::Yuri] {
+        for theme in [
+            SidebarTheme::Allied,
+            SidebarTheme::Soviet,
+            SidebarTheme::Yuri,
+        ] {
             for (gdi_positions, expected) in [(true, gdi), (false, nod)] {
                 let spec = SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
                 assert_eq!(numbers(spec), expected, "{theme:?} {gdi_positions}");
@@ -2144,7 +2238,13 @@ mod tests {
         // The child's own Y over the parent's, and the parent's Repair. Sell,
         // whose base is Repair, has its own place.
         assert_eq!(
-            (spec.radar_housing_y, spec.repair_x, spec.repair_y, spec.sell_x, spec.sell_y),
+            (
+                spec.radar_housing_y,
+                spec.repair_x,
+                spec.repair_y,
+                spec.sell_x,
+                spec.sell_y
+            ),
             (70.0, 1.0, 12.0, 84.0, 8.0)
         );
         let added = file.for_side(Some("GDI"), true).unwrap().added();
@@ -2154,8 +2254,20 @@ mod tests {
                 .map(|part| (part.kind.clone(), part.place.x, part.place.y))
                 .collect::<Vec<_>>(),
             [
-                (AddedKind::Text { value: TextValue::Time }, 4, 5),
-                (AddedKind::Text { value: TextValue::Kills }, 4, 20),
+                (
+                    AddedKind::Text {
+                        value: TextValue::Time
+                    },
+                    4,
+                    5
+                ),
+                (
+                    AddedKind::Text {
+                        value: TextValue::Kills
+                    },
+                    4,
+                    20
+                ),
             ]
         );
     }
@@ -2171,7 +2283,13 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         let piece = |node: &str, key: &'static str, file: &str, palette: Option<&str>, frames| {
-            (node.to_owned(), key, file.to_owned(), palette.map(str::to_owned), frames)
+            (
+                node.to_owned(),
+                key,
+                file.to_owned(),
+                palette.map(str::to_owned),
+                frames,
+            )
         };
         let allied = art(SidebarTheme::Allied);
         for expected in [
