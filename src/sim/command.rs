@@ -548,6 +548,33 @@ pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
 pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
 pub const TARGET_HOUSE_OPCODE: u8 = 0x33;
 pub const TARGET_HOUSE_PAYLOAD_LEN: u8 = 2 + VERA_PAID_SUPER_PAYLOAD_LEN;
+/// `CycleProducerRecord`'s one category byte.
+pub const VERA_CYCLE_PRODUCER_PAYLOAD_LEN: u8 = 1;
+
+/// Original byte table8208EC, indexed by the 47 Event opcodes (0..2E).
+/// RESPONSE_TIME1B starts at Event+0D; ADDPLAYER1F carries external storage.
+const NATIVE_EVENT_BODY_LENGTHS: [u8; 47] = [
+    0, 5, 5, 4, 23, 24, 5, 5, 0, 5, 5, 16, 0, 4, 12, 12, 12, 5, 8, 0, 16, 5, 5, 4, 4, 0, 0, 1, 7,
+    0, 10, 4, 5, 2, 0, 4, 4, 104, 64, 0, 4, 5, 10, 0, 5, 4, 12,
+];
+
+/// The payload bytes an Event carries on the wire: its8208EC row, or a VERA
+/// or Ares record's fixed length; `None` for an opcode nothing defines. The
+/// packet codec (`net::event_packet`) and `TargetHouseRecord` both size a
+/// body from here.
+pub(crate) fn event_body_len(opcode: u8) -> Option<u8> {
+    match opcode {
+        VERA_PAID_SUPER_OPCODE => Some(VERA_PAID_SUPER_PAYLOAD_LEN),
+        // Constructor4C65E0's object token, as SELL carries.
+        VERA_EJECT_BUNKER_OPCODE => event_body_len(ObjectAction::Sell.opcode()),
+        VERA_CYCLE_PRODUCER_OPCODE => Some(VERA_CYCLE_PRODUCER_PAYLOAD_LEN),
+        TARGET_HOUSE_OPCODE => Some(TARGET_HOUSE_PAYLOAD_LEN),
+        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
+        // a game Ares plays in raises one (`context_order`'s trench Enter).
+        ARES_TRENCH_REDIRECT_OPCODE => Some(ARES_TRENCH_REDIRECT_PAYLOAD_LEN),
+        _ => NATIVE_EVENT_BODY_LENGTHS.get(usize::from(opcode)).copied(),
+    }
+}
 
 /// An explicit third-party House for a VERA economic event. The enclosing
 /// record retains the issuing source in its native header.
@@ -558,15 +585,23 @@ pub struct TargetHouseRecord {
 }
 
 impl TargetHouseRecord {
+    /// The economic events that may name a third-party House, each with its
+    /// own body length.
     fn inner_payload_len(opcode: u8) -> Option<usize> {
-        match opcode {
-            PRODUCE_OPCODE | SUSPEND_OPCODE | ABANDON_OPCODE | ABANDON_ALL_OPCODE => Some(12),
-            PLACE_OPCODE => Some(16),
-            SpecialPlaceRecord::OPCODE => Some(8),
-            VERA_PAID_SUPER_OPCODE => Some(usize::from(VERA_PAID_SUPER_PAYLOAD_LEN)),
-            VERA_CYCLE_PRODUCER_OPCODE => Some(1),
-            _ => None,
-        }
+        matches!(
+            opcode,
+            PRODUCE_OPCODE
+                | SUSPEND_OPCODE
+                | ABANDON_OPCODE
+                | ABANDON_ALL_OPCODE
+                | PLACE_OPCODE
+                | SpecialPlaceRecord::OPCODE
+                | VERA_PAID_SUPER_OPCODE
+                | VERA_CYCLE_PRODUCER_OPCODE
+        )
+        .then(|| event_body_len(opcode))
+        .flatten()
+        .map(usize::from)
     }
 
     pub fn encode(target_house: u8, command: &CommandRecord) -> Option<CommandRecord> {

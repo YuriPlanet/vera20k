@@ -144,7 +144,7 @@ SizeLimit=15              ; the largest Size= that may enter
 | `0x443414` | `10016F60` | BuildingClass_ActionOnObject | ported: `app::input::context_order::building_object_orders` raises event 0x60 (`AresTrenchRedirectRecord`; handler `Simulation::ares_respond_to_trench_redirect`); its Deactivated arm is `Simulation::click_order_receivers` ([ares-techno-hooks.md](ares-techno-hooks.md)) |
 | `0x44725F` | `100171B0` | BuildingClass_GetActionOnObject_TargetABuilding | ported: `app::input::cursor::capability_cursor_for_hover` and the click release, through `Simulation::ares_can_traverse_to` |
 | `0x4C6CCD` | `1006A540` | Networking_RespondToEvent | ported for 0x60: `decode_native_command_record` keeps the record raw and `apply_command` runs `Simulation::ares_respond_to_trench_redirect`; the 0x61 FirewallToggle arm has no raiser ([ares-firestorm.md](ares-firestorm.md)) |
-| `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `net::event_packet::event_payload_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |
+| `0x64B704` | `1006A5F0` | sub_64B660_PayloadSize | ported: `sim::command::event_body_len` answers 10 for 0x60 (GetEventPayloadSize `1006A130`); 0x61 has no raiser |
 | `0x64BE83` | `1006A620` | sub_64BDD0_PayloadSize1 | ported: as above, the one payload table serves both directions |
 | `0x64C314` | `1006A660` | sub_64BDD0_PayloadSize2 | ported: as above |
 | `0x4586CA` | `10017220` | BuildingClass_KillOccupiers_EachOccupierKilled | ported: `passenger::garrison_eject::kill_building_occupants` runs evalRaidStatus before each assaulted occupant's kill; the vector still holds them all there, so only the all-killed hook `0x458729` can return a raided building |
