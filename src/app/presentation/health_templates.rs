@@ -309,15 +309,50 @@ fn templates() -> Vec<StatusTemplate> {
 }
 
 /// The built-in bars, the same for every match.
-static BUILT_IN: LazyLock<World> = LazyLock::new(|| {
-    let mut world = World::default();
+/// The built-in templates, the same for every match, one world per family:
+/// a query matches only its own family's few templates, which keeps a
+/// frame of 5000 units' status well inside its budget.
+struct BuiltIn {
+    bars: World,
+    scale: World,
+    shields: World,
+    /// By `Mark as usize`.
+    marks: Vec<World>,
+}
+
+static BUILT_IN: LazyLock<BuiltIn> = LazyLock::new(|| {
+    let mut built = BuiltIn {
+        bars: World::default(),
+        scale: World::default(),
+        shields: World::default(),
+        marks: MARKS.iter().map(|_| World::default()).collect(),
+    };
     for template in templates() {
+        let world = if template.name.starts_with("health.") {
+            &mut built.bars
+        } else if template.name.starts_with("scale.") {
+            &mut built.scale
+        } else if template.name.starts_with("shield.") {
+            &mut built.shields
+        } else {
+            let (mark, _) = MARKS
+                .iter()
+                .find(|(_, name)| *name == template.name)
+                .expect("every other built-in template is a mark's");
+            &mut built.marks[*mark as usize]
+        };
         world
             .add_template(Origin::Host, template)
-            .expect("the built-in health templates are within the limits");
+            .expect("the built-in status templates are within the limits");
     }
-    world
+    built
 });
+
+thread_local! {
+    /// [`mark`]'s commands, kept from call to call.
+    static MARK_CMDS: std::cell::RefCell<Vec<WorldCmd<'static>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
 
 /// Where a unit class's pip row starts from the bar's anchor, as the
 /// original adds it to the anchor: in floating point.
@@ -366,7 +401,7 @@ pub(crate) fn paint(
     // The bars' templates ask for health or the background, never for the
     // scale (its own state bit), so they take only their own commands.
     cmds.clear();
-    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    BUILT_IN.bars.paint_status(std::slice::from_ref(&object), cmds);
     let (start, step) = row(class);
     for cmd in cmds.iter() {
         let WorldOp::Image { rect, art } = cmd.op else {
@@ -486,7 +521,7 @@ pub(crate) fn scale_pips(
         slots,
     };
     cmds.clear();
-    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    BUILT_IN.scale.paint_status(std::slice::from_ref(&object), cmds);
     for cmd in cmds.iter() {
         if let WorldOp::Image { rect, art } = cmd.op {
             out(art.0 as usize, [rect.x, rect.y]);
@@ -513,11 +548,13 @@ pub(crate) fn mark(mark: Mark, frame: usize) -> Option<(usize, [i32; 2])> {
         values: &[],
         slots: &slot,
     };
-    let mut cmds = Vec::with_capacity(1);
-    BUILT_IN.paint_status(std::slice::from_ref(&object), &mut cmds);
-    cmds.iter().find_map(|cmd| match cmd.op {
-        WorldOp::Image { rect, art } => Some((art.0 as usize, [rect.x, rect.y])),
-        _ => None,
+    MARK_CMDS.with_borrow_mut(|cmds| {
+        cmds.clear();
+        BUILT_IN.marks[mark as usize].paint_status(std::slice::from_ref(&object), cmds);
+        cmds.iter().find_map(|cmd| match cmd.op {
+            WorldOp::Image { rect, art } => Some((art.0 as usize, [rect.x, rect.y])),
+            _ => None,
+        })
     })
 }
 
@@ -554,7 +591,7 @@ pub(crate) fn shield_pips(
         slots,
     };
     cmds.clear();
-    BUILT_IN.paint_status(std::slice::from_ref(&object), cmds);
+    BUILT_IN.shields.paint_status(std::slice::from_ref(&object), cmds);
     for cmd in cmds.iter() {
         if let WorldOp::Image { rect, art } = cmd.op {
             out(art.0 as usize, [rect.x, rect.y]);
