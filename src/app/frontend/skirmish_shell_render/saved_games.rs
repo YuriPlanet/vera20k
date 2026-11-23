@@ -6,7 +6,7 @@
 
 use super::gui_paint::{ButtonArt, CellRow, GuiPaint, GuiStyle, paint_gui_into};
 use super::in_game_shell::{InGamePaint, render_in_game_shell_frame};
-use super::shell_box::{BoxLook, push_skirmish_box};
+use super::shell_box::{BoxLook, push_skirmish_box, skirmish_parts};
 use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -15,7 +15,7 @@ use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
 use crate::ui::skirmish_shell::saved_seed_browser::{
-    ACTION, BACK, BROWSER_DIALOG, LIST, PROMPT, TITLE,
+    ACTION, BACK, BROWSER_DIALOG, LIST, PROMPT, PROMPT_DIALOG, TITLE,
 };
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
@@ -122,14 +122,18 @@ pub(crate) fn push_saved_browser_box<I>(
         return;
     };
     let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
-    let size = (layout.screen.w, layout.screen.h);
+    let shell_box = prompt.shell_box();
+    let parts = skirmish_parts(&shell_box, (layout.screen.w, layout.screen.h));
     let pressed = |id| browser.pressed(id);
     let texts = (texts, true);
+    // Its widgets, which the browser's input put on it.
+    let tree = super::controller_tree(&browser.ui, PROMPT_DIALOG);
     push_skirmish_box(
         state,
         atlas,
-        size,
-        &prompt.shell_box(),
+        tree,
+        &shell_box,
+        &parts,
         pressed,
         look,
         sprites,

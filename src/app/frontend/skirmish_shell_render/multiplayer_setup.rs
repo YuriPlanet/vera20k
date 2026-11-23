@@ -42,6 +42,20 @@ pub(crate) fn render_multiplayer_setup(
     let layout = crate::app::input::multiplayer_setup::layout_of(state, &view);
     let scale = layout.page.scale;
     let (width, height) = (state.render_width(), state.render_height());
+    // The notice on its widgets before it paints.
+    let notice_parts = (state.frontend.multiplayer_setup.as_ref())
+        .and_then(|ui| ui.notice.as_ref())
+        .map(|notice| super::shell_box::skirmish_parts(notice, (width as i32, height as i32)));
+    {
+        let frontend = &mut state.frontend;
+        let notice = frontend.multiplayer_setup.as_ref().and_then(|ui| ui.notice.as_ref());
+        if let (Some(notice), Some(parts)) = (notice, notice_parts.as_ref()) {
+            let controller = &mut frontend.shell_controller;
+            if let Some(root) = controller.root_in(notice.dialog) {
+                notice.sync(controller.gui_mut(), root, parts);
+            }
+        }
+    }
     let now = Instant::now();
     let exit = crate::app::frontend::shell_transition::shell_exit_wave(
         state,
@@ -630,7 +644,7 @@ pub(crate) fn render_multiplayer_setup(
             }
         }
     }
-    if let Some(notice) = &ui.notice {
+    if let (Some(notice), Some(parts)) = (&ui.notice, notice_parts.as_ref()) {
         // 5D3514 replaces the parent dialog with the shared empty shell
         // backdrop, centred under the box as on every other page, VERA's
         // room's too.
@@ -643,13 +657,14 @@ pub(crate) fn render_multiplayer_setup(
         let ok = look.notice_ok;
         let pressed = |id| ok && id == crate::ui::shell::modal::control::OK;
         let box_look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
-        let size = (width as i32, height as i32);
         let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
+        let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
         super::shell_box::push_skirmish_box(
             state,
             Some(atlas),
-            size,
+            tree,
             notice,
+            parts,
             pressed,
             box_look,
             sprites,

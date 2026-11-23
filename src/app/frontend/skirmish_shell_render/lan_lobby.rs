@@ -55,12 +55,32 @@ fn paint_create_box(
     overlay.texts.extend(widgets.texts);
 }
 
+/// BB's message box as it shows, when one is up.
+fn lan_notice(state: &AppState) -> Option<crate::ui::shell::modal::ShellBox> {
+    use crate::app::shell_lan::{MODAL, OK};
+    let runtime = state.frontend.lan.as_ref()?;
+    let key = runtime.modal?;
+    let body = (runtime.modal_body.clone()).unwrap_or_else(|| state.csf_label(key, key));
+    let ok = state.csf_label("TXT_OK", "OK");
+    Some(crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok))
+}
+
 pub(crate) fn render_lan_lobby(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     crate::app::shell_lan::sync_gui(state);
+    // The message box on its widgets (built as it opened) before it paints.
+    let notice = lan_notice(state);
+    let size = (state.render_width() as i32, state.render_height() as i32);
+    let notice_parts = notice.as_ref().map(|notice| super::shell_box::skirmish_parts(notice, size));
+    if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
+        let controller = &mut state.frontend.shell_controller;
+        if let Some(root) = controller.root_in(notice.dialog) {
+            notice.sync(controller.gui_mut(), root, parts);
+        }
+    }
     let now = Instant::now();
     let layout = crate::app::shell_lan::layout(state);
     let scale = layout.page.scale;
@@ -226,24 +246,19 @@ pub(crate) fn render_lan_lobby(
                 SHELL_CONTROL_DEPTH,
             );
         }
-        if let Some(key) = runtime.modal {
-            use crate::app::shell_lan::{MODAL, OK};
-            let body = runtime
-                .modal_body
-                .clone()
-                .unwrap_or_else(|| state.csf_label(key, key));
-            let ok = state.csf_label("TXT_OK", "OK");
-            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok);
+        if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
+            use crate::app::shell_lan::OK;
             let pressed = box_pressed(state, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
             let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
-            let size = (width as i32, height as i32);
             let pressed = |id| pressed && id == OK;
+            let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
             super::shell_box::push_skirmish_box(
                 state,
                 Some(atlas),
-                size,
-                &notice,
+                tree,
+                notice,
+                parts,
                 pressed,
                 look,
                 sprites,

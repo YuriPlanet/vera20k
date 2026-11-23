@@ -839,8 +839,14 @@ pub(crate) fn paint_gui_into(
                                 r, pressed,
                             )
                         });
-                        let shown = caption(node)
-                            .filter(|_| !super::text_covered_by_overlay(at, overlays));
+                        // The box's own caption (`ShellBox::sync`) over a
+                        // host spec's `Label`.
+                        let own = match gui.get(node, Prop::Text) {
+                            Ok(Some(Value::Text(own))) => Some(Cow::Borrowed(own.as_str())),
+                            _ => caption(node),
+                        };
+                        let shown =
+                            own.filter(|_| !super::text_covered_by_overlay(at, overlays));
                         if let Some(label) = shown {
                             let rgb = if enabled { style.rgb } else { look.disabled_rgb };
                             let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;

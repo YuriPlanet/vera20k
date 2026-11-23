@@ -1368,7 +1368,7 @@ impl App {
                     crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
                 ),
                 panel_statics: Default::default(),
-                shell_box_tree: Default::default(),
+                loading_box: Default::default(),
                 shell_exit: None,
                 quit_cascade: None,
                 startup_splash,

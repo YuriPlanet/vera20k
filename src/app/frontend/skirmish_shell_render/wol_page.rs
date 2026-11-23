@@ -173,7 +173,10 @@ pub(crate) fn paint_wol_verify(
         let pressed = verify.ok_pressed();
         let look = super::BoxLook::new(atlas.mode_two_dialog_background(side(state)), POPUP_DEPTHS);
         let ok = |id| pressed && id == crate::ui::wol_shell::BOX_OK;
-        let draw = super::paint_shell_box(state, Some(atlas), message, &parts, ok, look);
+        // The box's widgets in the verify's own tree
+        // ([`crate::ui::wol_verify::WolVerifyDialog::sync_mismatch`]).
+        let tree = verify.widgets();
+        let draw = super::paint_shell_box(state, Some(atlas), tree, message, &parts, ok, look);
         paint.controls = draw.sprites;
         paint.texts.extend(draw.text);
         return paint;

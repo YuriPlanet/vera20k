@@ -83,6 +83,12 @@ pub(crate) fn render_saved_game_loading(
     let body = state.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
     let shell_box =
         crate::ui::shell::modal::ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0xF0), body);
+    // Its widgets, which only this paint keeps.
+    let ui = &mut state.frontend.loading_box;
+    if ui.root_in(shell_box.dialog).is_none() {
+        ui.push(shell_box.dialog);
+    }
+    crate::ui::shell::menu_page::sync_box(ui, &shell_box, &layout);
     // A zoomed match's text is drawn in the window (`window_ui`).
     let raster = crate::app::presentation::window_ui::shell_raster(state, false)
         .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
@@ -91,7 +97,9 @@ pub(crate) fn render_saved_game_loading(
         atlas.mode_two_dialog_background(side),
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    let modal = super::paint_shell_box(state, Some(atlas), &shell_box, &layout, |_| false, look);
+    let tree = super::controller_tree(&state.frontend.loading_box, shell_box.dialog);
+    let modal =
+        super::paint_shell_box(state, Some(atlas), tree, &shell_box, &layout, |_| false, look);
     let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,

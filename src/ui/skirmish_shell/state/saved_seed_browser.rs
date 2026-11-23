@@ -4,7 +4,7 @@
 //! scroll and double-click. SED identities carry the save folder and native
 //! filename. List rebuild 5596A0 keeps filenames separate from text.
 
-use super::super::layout::{RectPx, SavedSeedMode};
+use super::super::layout::SavedSeedMode;
 use crate::map::rmg::{
     SeedDescription,
     saved_seeds::{SavedSeed, SavedSeedFile},
@@ -82,14 +82,6 @@ impl<I> SavedSeedPrompt<I> {
             Some(no) => shell_box.button(NO, no.as_str()),
             None => shell_box,
         }
-    }
-
-    /// Both shapes use the shared native message-box templates: dialog,
-    /// body, affirmative and negative.
-    pub fn layout(&self, width: u32, height: u32) -> (RectPx, RectPx, RectPx, Option<RectPx>) {
-        let retail = crate::ui::shell::geom::RETAIL_SCALE;
-        let parts = self.shell_box().parts(width as i32, height as i32, retail);
-        (parts.dialog, parts.body, parts.button(0), parts.rect_of(NO))
     }
 }
 
