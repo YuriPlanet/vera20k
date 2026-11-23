@@ -388,6 +388,10 @@ fn cold_and_warm_rules_share_world_and_agreement_identity(
         warm.runtime.resources.rules.file_inputs_hash(),
         cold.runtime.resources.rules.file_inputs_hash()
     );
+    // And the retail install changes none of it: a refused start would name
+    // no file of its folder.
+    let folder_files = cold.runtime.resources.rules.file_input_folder_files();
+    assert!(folder_files.is_empty(), "{folder_files:?}");
     assert_eq!(checkpoint, Some(0));
     assert_eq!(warm.sim().native_identity_prefix_checkpoint(), Some(0));
     assert_eq!(

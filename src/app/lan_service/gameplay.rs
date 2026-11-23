@@ -67,6 +67,14 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
     // building's unfolding or an animation's length that differs between two
     // games would take their battles apart in mid-match.
     let file_inputs = rules.file_inputs_hash();
+    // The refusal's box names three files; the log names them all.
+    let picture_files = super::shell_network_setup::agreement::match_picture_files(state);
+    if !picture_files.is_empty() {
+        log::info!(
+            "Game files that change what this start certifies of pictures and models: {}",
+            picture_files.join(", ")
+        );
+    }
     super::shell_network_setup::agreement::log_rules_parts(state);
     let sim = &state
         .match_state

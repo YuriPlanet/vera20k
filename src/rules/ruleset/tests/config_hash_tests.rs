@@ -736,7 +736,9 @@ fn file_inputs_hash_follows_what_the_simulation_reads_from_files() {
 /// On the retail install, through the production binder: a game folder that
 /// redraws a power plant's Buildup with the same frames leaves what a start
 /// certifies as it is, and one that gives it fewer frames changes it, with
-/// the construction control the simulation reads.
+/// the construction control the simulation reads. The rules name the folder
+/// file only then, as a refused start says which files change what it
+/// certifies; a file that only redraws and the retail install name none.
 #[test]
 fn a_replaced_buildup_changes_the_file_inputs_only_with_its_frames() {
     use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -754,9 +756,13 @@ fn a_replaced_buildup_changes_the_file_inputs_only_with_its_frames() {
     let original = retail.get_ref(&name).unwrap().to_vec();
     let mut bound = |assets: &AssetManager| {
         rules.bind_building_buildup_assets(assets, "TEMPERATE");
-        (rules.file_inputs_hash(), rules.buildup_control("GAPOWR"))
+        (
+            (rules.file_inputs_hash(), rules.buildup_control("GAPOWR")),
+            rules.file_input_folder_files(),
+        )
     };
-    let base = bound(&retail);
+    let (base, retail_files) = bound(&retail);
+    assert!(retail_files.is_empty(), "{retail_files:?}");
     let pack = crate::map::source::test_support::TestDirectory::new("file-inputs-pack");
     let with_pack = |bytes: &[u8]| {
         pack.write(&name, bytes);
@@ -768,11 +774,47 @@ fn a_replaced_buildup_changes_the_file_inputs_only_with_its_frames() {
     };
     let mut redrawn = original.clone();
     *redrawn.last_mut().unwrap() ^= 1;
-    assert_eq!(bound(&with_pack(&redrawn)), base);
+    let (same, redrawn_files) = bound(&with_pack(&redrawn));
+    assert_eq!(same, base);
+    assert!(redrawn_files.is_empty(), "{redrawn_files:?}");
     let mut shorter = original;
     let frames = i16::from_le_bytes([shorter[6], shorter[7]]);
     shorter[6..8].copy_from_slice(&(frames - 2).to_le_bytes());
-    let changed = bound(&with_pack(&shorter));
+    let (changed, shorter_files) = bound(&with_pack(&shorter));
     assert_ne!(changed.0, base.0);
     assert_ne!(changed.1, base.1);
+    assert_eq!(shorter_files, [name]);
+}
+
+/// Of two animations only a game folder supplies, the rules name the file of
+/// the one whose frames the simulation reads (it deals damage) and not the
+/// file of the one that changes nothing but its picture, whose frames no
+/// start certifies.
+#[test]
+fn the_rules_name_the_folder_file_of_an_animation_the_simulation_reads() {
+    let ini = IniFile::from_str("[Animations]\n0=BURN\n1=FLASH\n");
+    let art_ini = IniFile::from_str("[BURN]\nDamage=5\n[FLASH]\nRate=900\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let folder = crate::map::source::test_support::TestDirectory::new("file-inputs-anims");
+    // An SHP header: zero, width, height, then the frame count.
+    for name in ["BURN.SHP", "FLASH.SHP"] {
+        folder.write(name, &[0, 0, 4, 0, 4, 0, 6, 0]);
+    }
+    let assets =
+        crate::assets::asset_manager::AssetManager::from_loose_root_for_test(folder.path());
+    rules.bind_scheduler_anim_assets(
+        &["BURN".to_owned(), "FLASH".to_owned()],
+        &assets,
+        "tem",
+        "TEMPERATE",
+    );
+    let bound = |name| {
+        rules
+            .art()
+            .anim_runtime_config(name)
+            .and_then(|config| config.raw_shp_frame_count)
+    };
+    assert_eq!((bound("BURN"), bound("FLASH")), (Some(6), Some(6)));
+    assert_eq!(rules.file_input_folder_files(), ["BURN.SHP"]);
 }

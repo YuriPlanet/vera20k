@@ -357,10 +357,17 @@ smudging animation's frame size on the same side of the size test the smudge pic
 makes. A graphics pack that keeps the folded values plays with games without it. Of
 the picture-only animations something in the simulation waits on, only a unit's
 `DeployingAnim=`, the Psychic Dominator's two and the Lightning Storm's clouds are
-folded yet. A refused game is not told which part differed, and no game names its
-picture or model files yet: the box says to compare game files, and a game with
-such a pack still says it plays the original game, since it tracks only the INI and
-terrain files it changes. Nothing new is exchanged and the identity stays 32 bytes.
+folded yet. A refused game is not told which part differed, so its box names what its
+own folder changes: before the changed game files, every game-folder file whose
+picture or model gives the number another value than the copy a retail install reads,
+or one a retail install lacks (`RuleSet::file_input_folder_files`; each binder holds
+the file it reads against that copy, `retail_sources::FolderFiles`). A file that only
+redraws is not named, nor one from the shipped archives, and a selected mod's own files
+are left out, as the rules digest compares them with the mod
+(`agreement::match_picture_files`). The box names three files and the log all of them.
+A launcher's match that names such a file does not point at the launcher, whose rules
+parts leave those files out. On LAN the refusal keeps the native text without this
+list. Nothing new is exchanged and the identity stays 32 bytes.
 A game from before this is another build, which the build check refuses first; a
 rollback starts such games together again.
 At each deadline, missing input is empty; a command joins the next unsealed

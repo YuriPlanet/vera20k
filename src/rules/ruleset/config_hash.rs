@@ -1749,16 +1749,8 @@ impl RuleSet {
         // (`anim_class`), and of the ones that pace a deployment
         // (`unit_simple_deploy`), the Psychic Dominator and the Lightning
         // Storm (`Simulation::anim_stage_and_frames`).
-        let paced = self
-            .object_list
-            .iter()
-            .filter_map(|object| object.deploying_anim.as_deref())
-            .chain([
-                self.general.dominator_first_anim.as_str(),
-                self.general.dominator_second_anim.as_str(),
-            ])
-            .chain(self.general.weather_con_clouds.iter().map(String::as_str));
-        self.art_registry.fold_anim_frame_bounds(paced, &mut hasher);
+        self.art_registry
+            .fold_anim_frame_bounds(self.paced_anims(), &mut hasher);
         // `LightningStorm::CreateCloudBolt` (`0x0053A16B`) lifts its clouds
         // by half the first bolt image's height.
         self.general
@@ -1784,6 +1776,48 @@ impl RuleSet {
                 .hash(&mut hasher);
         }
         hasher.finish()
+    }
+
+    /// The picture-only AnimTypes a simulation owner waits on, which
+    /// [`Self::file_inputs_hash`] folds with the ones that affect play: each
+    /// unit's `DeployingAnim=`, the Psychic Dominator's two and the Lightning
+    /// Storm's clouds.
+    fn paced_anims(&self) -> impl Iterator<Item = &str> {
+        self.object_list
+            .iter()
+            .filter_map(|object| object.deploying_anim.as_deref())
+            .chain([
+                self.general.dominator_first_anim.as_str(),
+                self.general.dominator_second_anim.as_str(),
+            ])
+            .chain(self.general.weather_con_clouds.iter().map(String::as_str))
+    }
+
+    /// VERA: the game-folder files (a loose file's name, else an archive's,
+    /// `retail_sources::game_folder_file`) that change what
+    /// [`Self::file_inputs_hash`] folds, in name order: each supplies a
+    /// picture or model whose folded value is not the one the copy a retail
+    /// install reads gives, or one a retail install lacks. Empty for a game
+    /// whose folder changes none, a graphics pack that only redraws
+    /// included. Each binder notes them as it reads
+    /// (`retail_sources::FolderFiles`), and a refused start names them
+    /// (`agreement::start_changes_text`).
+    pub fn file_input_folder_files(&self) -> Vec<String> {
+        let weather_bolt = self.general.weather_con_bolts.first().map(String::as_str);
+        let mut files: std::collections::BTreeSet<&str> = self
+            .art_registry
+            .anim_folder_files(self.paced_anims(), weather_bolt);
+        files.extend(self.buildup_assets.folder_files());
+        files.extend(self.terrain_assets.folder_files());
+        files.extend(self.rubble_assets.folder_files());
+        files.extend(self.voxel_assets.folder_files());
+        if self.ares {
+            files.extend(
+                self.particle_types_iter()
+                    .filter_map(|particle| self.alpha_images.folder_file(&particle.alpha_image)),
+            );
+        }
+        files.into_iter().map(str::to_owned).collect()
     }
 
     /// Slot constructors consume selected names, offsets and the common runtime
