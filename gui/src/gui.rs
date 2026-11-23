@@ -1151,8 +1151,10 @@ impl Gui {
     pub fn hit_at(&self, root: NodeId, x: i32, y: i32, press: bool) -> Option<NodeId> {
         self.tree
             .walk(root, &mut |id, kind| {
-                // A static with status help hovers too (it takes no press).
-                let help = kind == NodeKind::Text && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
+                // A static or picture with status help hovers too (it takes
+                // no press).
+                let help = matches!(kind, NodeKind::Text | NodeKind::Image)
+                    && self.tree.get(id, Prop::Tooltip).is_ok_and(|t| t.is_some());
                 let through = press && matches!(self.tree.get(id, Prop::PressThrough), Ok(Some(Value::Bool(true))));
                 if !through
                     && (kind.is_focusable() || help)

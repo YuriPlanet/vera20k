@@ -62,25 +62,61 @@ pub(crate) fn layout(state: &AppState) -> BoxParts {
     message_box_parts(2, RectPx::new(0, 0, w, h))
 }
 
+/// The box's body static `0x5B0`, which takes no pointer.
+pub(crate) const BODY: u16 = 0x5B0;
+
+/// The box's widgets in the order they paint: the body, OK and Cancel.
+fn nodes() -> vera20k_gui::NodeSpec {
+    use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+    let button = |id: SurrenderButton| NodeSpec::new(NodeKind::Button).id(id as i32);
+    NodeSpec::new(NodeKind::Dialog)
+        .child(
+            NodeSpec::new(NodeKind::Text)
+                .id(BODY.into())
+                .with(Prop::Align, Value::Int(0)),
+        )
+        .child(button(SurrenderButton::Ok))
+        .child(button(SurrenderButton::Cancel))
+}
+
+/// Where control `id` of the box stands.
+fn rect_of(layout: &BoxParts, id: u16) -> Option<RectPx> {
+    match id {
+        BODY => Some(layout.body),
+        0x5AE => Some(layout.button(0)),
+        2 => Some(layout.button(1)),
+        _ => None,
+    }
+}
+
+/// The box's nodes on its layout before it paints: input syncs them only
+/// on a pointer message.
+pub(crate) fn sync(state: &mut AppState) {
+    if state.match_state.match_presentation.in_game_menu != InGameMenuState::Surrender {
+        return;
+    }
+    let layout = layout(state);
+    let ui = &mut state.match_state.match_presentation.dialog_ui;
+    let rect = |id| rect_of(&layout, id);
+    super::dialog_page::sync_dialog(ui, DIALOG, nodes, rect, super::dialog_page::no_sync);
+}
+
+/// The box's widgets under its live dialog.
+pub(crate) fn root(state: &AppState) -> Option<vera20k_gui::NodeId> {
+    state
+        .match_state
+        .match_presentation
+        .dialog_ui
+        .root_in(DIALOG)
+}
+
 /// One pointer message on the box (`down`: `None` moves).
 pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let event = super::dialog_page::event_at(x, y, down);
     let ui = &mut state.match_state.match_presentation.dialog_ui;
-    let button = |id: SurrenderButton| {
-        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Button).id(id as i32)
-    };
-    let nodes = || {
-        vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog)
-            .child(button(SurrenderButton::Ok))
-            .child(button(SurrenderButton::Cancel))
-    };
-    let rect = |id| match id {
-        0x5AE => Some(layout.button(0)),
-        2 => Some(layout.button(1)),
-        _ => None,
-    };
+    let rect = |id| rect_of(&layout, id);
     let events =
         super::dialog_page::route(ui, DIALOG, nodes, rect, super::dialog_page::no_sync, event);
     for event in super::dialog_page::play_cues(state, events) {
