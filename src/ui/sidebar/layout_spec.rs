@@ -216,6 +216,9 @@ pub struct SidebarChromeLayoutSpec {
     /// The edges the sidebar and the command bar sit on, whether the sidebar
     /// floats over the battlefield, and whether the layout has the bar.
     pub places: super::PanelPlaces,
+    /// The column's width, `[Side] Width=`: the frame takes it
+    /// ([`super::SidebarFrame::for_layout`]), and the layout reads the
+    /// sidebar's place and size from the frame.
     pub sidebar_width: f32,
     /// The sidebar's height when its layout puts it on the top or the
     /// bottom edge; on the left or the right it is as tall as the screen.
@@ -314,23 +317,13 @@ impl SidebarChromeLayoutSpec {
         [x - 3.0, y - 1.0]
     }
 
-    /// Layout-space x of the sidebar's left edge on a layout screen
-    /// `screen_w` wide: flush with the edge the layout puts it on.
-    pub fn sidebar_x(&self, screen_w: f32) -> f32 {
-        if self.places.side == super::Edge::Right {
-            screen_w - self.sidebar_width
-        } else {
-            0.0
-        }
-    }
-
-    /// The sidebar's width on a layout screen `screen_w` wide: its own on
-    /// the left or the right edge, the screen's on the top or the bottom.
-    pub fn side_width(&self, screen_w: f32) -> f32 {
-        match self.places.side {
-            super::Edge::Left | super::Edge::Right => self.sidebar_width,
-            super::Edge::Top | super::Edge::Bottom => screen_w,
-        }
+    /// The size of a grid of `columns` by `rows` cameo places: its
+    /// pictures' pitches.
+    pub fn grid_size(&self, columns: usize, rows: usize) -> [f32; 2] {
+        [
+            columns as f32 * self.cameo_column_pitch,
+            rows as f32 * self.cameo_row_height,
+        ]
     }
 
     /// The cameos in one strip row, at least one.

@@ -183,13 +183,8 @@ pub(crate) fn update(state: &mut AppState) -> u64 {
 /// A sidebar rect, in the sidebar's layout space, as a tip region in frame
 /// pixels, where the cursor and the drawn tip are.
 fn tip_rect(frame: crate::ui::sidebar::SidebarFrame, r: crate::ui::sidebar::Rect) -> TipRect {
-    let r = frame.rect_to_frame(r);
-    TipRect::new(
-        r.x.round() as i32,
-        r.y.round() as i32,
-        r.w.round() as i32,
-        r.h.round() as i32,
-    )
+    let [x, y, w, h] = frame.rect_to_frame_px(r);
+    TipRect::new(x, y, w, h)
 }
 
 /// Display4AE580..4AE5FD: CursorCheat formats the signed plane XYZ /256;
@@ -813,8 +808,9 @@ fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
     // weapon name/cost tip as the right cameo.
     #[cfg(feature = "phobos")]
     {
-        let sw = &state.match_state.match_presentation.sw_sidebar;
-        if sw.ui.enabled && sw.expanded {
+        let presentation = &state.match_state.match_presentation;
+        let sw = &presentation.sw_sidebar;
+        if sw.ui.enabled && presentation.sidebar_projection.model.sw_sidebar_expanded() {
             for (index, entry) in sw.entries.iter().enumerate() {
                 let text = dynamic_tip_text(cursor, || {
                     let amount = state

@@ -194,18 +194,14 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     let spec = presentation.sidebar_layout_spec;
     let frame = state.sidebar_frame();
     let scale = frame.scale();
-    let to_frame = |x: f32, y: f32, w: f32, h: f32| {
-        let rect = frame.rect_to_frame(Rect { x, y, w, h });
-        [rect.x, rect.y, rect.w, rect.h].map(|v| v.round() as i32)
-    };
+    let to_frame = |x: f32, y: f32, w: f32, h: f32| frame.rect_to_frame_px(Rect { x, y, w, h });
     let mut out = Vec::new();
 
     // Every part of the sidebar that draws: a button or a tab where the view
     // has it, the map picture as big as the layout makes it, a panel as big
     // as its picture. A part after its panel lies over it, so it is grabbed
     // first.
-    let (screen_w, screen_h) = frame.layout_screen();
-    let layout = crate::ui::sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0);
+    let layout = sidebar_render::current_sidebar_layout(state);
     let atlas = sidebar_render::current_sidebar_chrome(state);
     let view = sidebar_render::current_sidebar_view(state);
     let size = |part, key| {
@@ -219,11 +215,12 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             PartKind::Button | PartKind::Tab => view
                 .and_then(|view| view.button(part))
                 .map(|(rect, _)| [rect.x, rect.y, rect.w, rect.h]),
-            PartKind::Minimap => Some([x, y, spec.radar_width, spec.radar_height]),
-            PartKind::CameoGrid => size(part, ArtKey::RowArt).map(|[w, _]| {
-                let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
-                [x, layout.cameo_grid_top, w, h]
-            }),
+            PartKind::Minimap => {
+                let map = layout.minimap_rect(&spec);
+                Some([map.x, map.y, map.w, map.h])
+            }
+            PartKind::CameoGrid => size(part, ArtKey::RowArt)
+                .map(|[w, _]| [x, layout.cameo_grid_top, w, layout.cameo_grid_height()]),
             // The bar is thin; its handle is wide enough to grab.
             PartKind::PowerBar => {
                 let power = crate::ui::sidebar::power_bar_rect(&layout, spec);

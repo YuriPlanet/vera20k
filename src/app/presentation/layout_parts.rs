@@ -23,7 +23,7 @@ use crate::render::hud_paint::{HudSpace, Material, NodeDraw, Picture};
 use crate::render::retained_hud::{Rest, RetainedHud, rounded};
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::ui::added_parts::{AddedKind, Holder, TextValue};
-use crate::ui::match_layout::MatchLayout;
+use crate::ui::match_layout::{MatchLayout, MoneyText};
 use crate::ui::sidebar::{SidebarPart, SidebarTheme};
 
 /// What a layout button's `Command=` names.
@@ -43,46 +43,6 @@ pub(crate) fn command_named(name: &str) -> Option<ButtonCommand> {
         .position(|bar| bar.eq_ignore_ascii_case(name))
         .map(ButtonCommand::Bar)
         .or_else(|| crate::app::input::hotkeys::command_named(name).map(ButtonCommand::Hotkey))
-}
-
-/// Where a built-in text sits in its part's width: `Align=`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum TextAlign {
-    Left,
-    #[default]
-    Center,
-    Right,
-}
-
-impl TextAlign {
-    /// The alignment a layout file names, without regard to capitals.
-    fn named(name: &str) -> Option<Self> {
-        [
-            ("Left", Self::Left),
-            ("Center", Self::Center),
-            ("Right", Self::Right),
-        ]
-        .into_iter()
-        .find(|(known, _)| known.eq_ignore_ascii_case(name))
-        .map(|(_, align)| align)
-    }
-}
-
-/// What the money counter shows and where: `[Layout.Money] Value=` and
-/// `Align=`. The original's is the credits, centred on the plate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MoneyText {
-    pub value: TextValue,
-    pub align: TextAlign,
-}
-
-impl Default for MoneyText {
-    fn default() -> Self {
-        Self {
-            value: TextValue::Credits,
-            align: TextAlign::Center,
-        }
-    }
 }
 
 /// What the local side's layout gives the built-in parts' own code, read
@@ -113,30 +73,19 @@ impl StockParts {
     pub(crate) fn read(layout: &MatchLayout, original: &MatchLayout, theme: SidebarTheme) -> Self {
         let mut commands = [None; 19];
         for part in SidebarPart::STOCK_ORDER {
-            let (Some(command), Some(own)) = (
-                layout.text(part, "Command", theme),
-                original.text(part, "Command", theme),
-            ) else {
+            let (Some(command), Some(own)) =
+                (layout.command(part, theme), original.command(part, theme))
+            else {
                 continue;
             };
             if !command.eq_ignore_ascii_case(own) {
                 commands[part as usize] = command_named(command);
             }
         }
-        let money = MoneyText {
-            value: layout
-                .text(SidebarPart::Money, "Value", theme)
-                .and_then(TextValue::named)
-                .unwrap_or(TextValue::Credits),
-            align: layout
-                .text(SidebarPart::Money, "Align", theme)
-                .and_then(TextAlign::named)
-                .unwrap_or_default(),
-        };
         Self {
             read_from: Some((layout.added().clone(), theme)),
             commands,
-            money,
+            money: layout.money(theme),
         }
     }
 
@@ -205,7 +154,9 @@ fn value_text(state: &AppState, value: TextValue) -> String {
         sim.houses().get(&sim.session().current_house()?)
     };
     match value {
-        TextValue::Credits => view.map_or(0, |view| view.credits).to_string(),
+        TextValue::Credits => {
+            crate::render::sidebar_text::format_credits(view.map_or(0, |view| view.credits))
+        }
         TextValue::Power => view.map_or(0, |view| view.power_produced).to_string(),
         TextValue::Drain => view.map_or(0, |view| view.power_drained).to_string(),
         TextValue::Name => state
@@ -244,14 +195,7 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
         return Vec::new();
     }
     let font = &state.renderer.bit_font;
-    let frame = state.sidebar_frame();
-    let (side_width, side_height) = frame.surface_size();
-    let side = [
-        frame.layout_left() as i32,
-        0,
-        side_width as i32,
-        side_height as i32,
-    ];
+    let side = state.sidebar_frame().side_area();
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
     let field = [x as i32, y as i32, width as i32, height as i32];
     let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
@@ -368,22 +312,14 @@ pub(crate) fn click_rect(state: &AppState, placed: &Placed) -> [i32; 4] {
     let [x, y, width, height] = placed.rect;
     match placed.holder {
         Holder::Field | Holder::Group(_) => placed.rect,
-        Holder::Side => {
-            let rect = state
-                .sidebar_frame()
-                .rect_to_frame(crate::ui::sidebar::Rect {
-                    x: x as f32,
-                    y: y as f32,
-                    w: width as f32,
-                    h: height as f32,
-                });
-            [
-                rect.x.round() as i32,
-                rect.y.round() as i32,
-                rect.w.round() as i32,
-                rect.h.round() as i32,
-            ]
-        }
+        Holder::Side => state
+            .sidebar_frame()
+            .rect_to_frame_px(crate::ui::sidebar::Rect {
+                x: x as f32,
+                y: y as f32,
+                w: width as f32,
+                h: height as f32,
+            }),
     }
 }
 
@@ -589,6 +525,7 @@ fn grown([x, y, width, height]: [i32; 4], by: i32) -> [i32; 4] {
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
+    use crate::ui::match_layout::TextAlign;
 
     #[test]
     fn a_button_names_a_command_bar_button_or_a_hotkey() {

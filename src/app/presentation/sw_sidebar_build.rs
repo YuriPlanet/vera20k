@@ -63,7 +63,7 @@ pub(crate) fn build(
             );
         }
     }
-    if !sw.expanded {
+    if !crate::app::presentation::sw_sidebar::expanded(state) {
         return out;
     }
     if let Some(rect) = crate::app::presentation::sw_sidebar::hovered_entry_rect(state) {

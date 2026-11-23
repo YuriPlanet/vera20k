@@ -37,6 +37,19 @@ pub(crate) fn current_sidebar_view(state: &AppState) -> Option<&SidebarView> {
         .view()
 }
 
+/// Where the sidebar's parts sit: the retained view's layout, or, before a
+/// view is built (or while the world has no local player), the layout the
+/// view is built with, from the same table and frame.
+pub(crate) fn current_sidebar_layout(state: &AppState) -> sidebar::SidebarLayout {
+    match current_sidebar_view(state) {
+        Some(view) => view.layout,
+        None => sidebar::compute_layout_with_spec(
+            state.match_state.match_presentation.sidebar_layout_spec,
+            state.sidebar_frame(),
+        ),
+    }
+}
+
 /// The money the credits counter counts toward: `CreditsClass::AI @
 /// 0x004A2600` reads the player's Available_Money and shows a balance at or
 /// below zero as 0 (`0x004A2687..0x004A2698`).
@@ -223,14 +236,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
     use crate::ui::added_parts::{AddedKind, Holder};
     let presentation = &state.match_state.match_presentation;
     let spec = presentation.sidebar_layout_spec;
-    let frame = state.sidebar_frame();
-    let (side_width, side_height) = frame.surface_size();
-    let side = [
-        frame.layout_left() as i32,
-        0,
-        side_width as i32,
-        side_height as i32,
-    ];
+    let side = state.sidebar_frame().side_area();
     presentation
         .added_parts
         .iter()
@@ -244,10 +250,7 @@ fn added_grids(state: &AppState) -> Vec<sidebar::AddedGrid> {
             }
             let columns = columns.unwrap_or(spec.columns());
             // The grid is as big as its pictures' places.
-            let natural = [
-                (columns as f32 * spec.cameo_column_pitch) as i32,
-                (rows as f32 * spec.cameo_row_height) as i32,
-            ];
+            let natural = spec.grid_size(columns, rows).map(|v| v as i32);
             let [x, y, _, _] = added.rect_in(side, natural);
             Some(sidebar::AddedGrid {
                 part,
@@ -301,9 +304,8 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     state.match_state.match_presentation.sidebar_layout_spec = spec;
     refresh_added_parts(state);
     // The sidebar lays out on its own surface (`ui::sidebar::SidebarFrame`).
-    let (screen_w, screen_h) = state.sidebar_frame().layout_screen();
-    let visible_rows =
-        sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0).side2_tile_count;
+    let sidebar_frame = state.sidebar_frame();
+    let visible_rows = sidebar::compute_layout_with_spec(spec, sidebar_frame).side2_tile_count;
     let Some(owner_name) = preferred_local_owner_name(state) else {
         state
             .match_state
@@ -511,7 +513,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         });
     let view_inputs = SidebarViewInputs {
         spec: state.match_state.match_presentation.sidebar_layout_spec,
-        screen: (screen_w, screen_h),
+        frame: sidebar_frame,
         tab: state.match_state.match_presentation.active_sidebar_tab,
         credits: display_credits,
         sim: inputs,
@@ -571,8 +573,7 @@ fn build_view(
 ) -> SidebarView {
     let mut view = sidebar::build_sidebar_view_with_spec(
         inputs.spec,
-        inputs.screen.0,
-        inputs.screen.1,
+        inputs.frame,
         inputs.tab,
         inputs.credits,
         inputs.sim.power_produced,
@@ -917,15 +918,15 @@ pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option
     let rect = active_minimap_screen_rect(state);
     let minimap = state.match_state.match_presentation.minimap.as_ref()?;
     let (x, y) = minimap.native_object_click_point_in_rect(id, [rect.x, rect.y, rect.w, rect.h])?;
-    let frame = state
+    let [x, y, ..] = state
         .sidebar_frame()
-        .rect_to_frame(crate::ui::sidebar::Rect {
+        .rect_to_frame_px(crate::ui::sidebar::Rect {
             x,
             y,
             w: 1.0,
             h: 1.0,
         });
-    Some([frame.x.round() as u32, frame.y.round() as u32])
+    Some([x.max(0) as u32, y.max(0) as u32])
 }
 
 pub(crate) fn update_camera_from_minimap_cursor(state: &mut AppState) {
@@ -1019,13 +1020,13 @@ fn sidebar_cursor_centre(state: &AppState) -> (f32, f32) {
 /// The radar aperture in the sidebar's layout space. Input regions take it in
 /// frame pixels through [`crate::ui::sidebar::SidebarFrame::rect_to_frame`].
 pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar::Rect {
-    let (sw, sh) = state.sidebar_frame().layout_screen();
     if current_sidebar_chrome(state).is_some() {
-        crate::ui::sidebar::radar_minimap_rect_with_spec(
-            sw,
-            state.match_state.match_presentation.sidebar_layout_spec,
-        )
+        current_sidebar_layout(state)
+            .minimap_rect(&state.match_state.match_presentation.sidebar_layout_spec)
     } else {
+        // Archives without any sidebar art (`build_sidebar_chrome_set`'s
+        // `None`) still draw the map, in the battlefield's corner.
+        let (_, sh) = state.sidebar_frame().layout_screen();
         let (x, y, w, h) = crate::render::radar::minimap::default_minimap_rect(sh);
         crate::ui::sidebar::Rect { x, y, w, h }
     }

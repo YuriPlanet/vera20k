@@ -46,8 +46,8 @@ pub(crate) fn packed_command_bar_fixture(
     theme: SidebarTheme,
 ) -> (CommandBarArt<SidebarChromeEntry>, Vec<u8>, [u32; 2]) {
     let route = SidebarSideRoute::for_theme(assets, theme);
-    let palette = decode_sidebar_palette(route.resolve("SIDEBAR.PAL").unwrap().bytes).unwrap();
-    let rendered = command_bar::load(route, &palette);
+    let palette = decode_sidebar_palette(route.resolve(SIDEBAR_PALETTE).unwrap().bytes).unwrap();
+    let rendered = command_bar::load(route, &palette, theme);
     let width = rendered.entries().map(|entry| entry.width).max().unwrap();
     let height = rendered
         .entries()
@@ -68,31 +68,19 @@ const CHROME_PADDING: u32 = 2;
 const RADAR_DEFAULT_FRAME: usize = 0;
 const ALLIED_SIDE_ARCHIVE_ORDER: &[&str] = &["sidec01md.mix", "sidec01.mix", "sidenc01.mix"];
 const SIDE_TWO_ARCHIVE_ORDER: &[&str] = &["sidec02md.mix", "sidec02.mix", "sidenc02.mix"];
-// SidebarClass::LoadSHPs 6A5840 loads SIDE1..3, ADDON, GCLOCK2 and the button
-// shapes (FreeSHPs 6A5BF0 frees them). Its observer backgrounds and flags are
-// not side art; `observer_art` finds them.
-const GENERIC_SIDEBAR_SHP_NAMES: &[&str] = &[
-    "side1.shp",
-    "side2.shp",
-    "side2b.shp",
-    "sidebttn.shp",
-    "side3.shp",
-    "addon.shp",
-    "top.shp",
-    "credits.shp",
-    "tab00.shp",
-    "tab01.shp",
-    "tab02.shp",
-    "tab03.shp",
-    "repair.shp",
-    "sell.shp",
-    "r-up.shp",
-    "r-dn.shp",
-    "powerp.shp",
-    "diplobtn.shp",
-    "optbtn.shp",
-    "gclock2.shp",
-];
+/// The sidebar's own palette, which its generic chrome is drawn with.
+const SIDEBAR_PALETTE: &str = "SIDEBAR.PAL";
+
+/// The built-in `veraui_default.ini`'s `key` of the part `node` for the side
+/// whose pictures are `theme`: the file of a picture that a layout cannot
+/// change yet (`LayoutProblemKind::NotYet` keeps the original's), and the
+/// one the radar's Ares filename switch picks. SidebarClass::LoadSHPs
+/// 6A5840 loads SIDE1..3, ADDON, GCLOCK2 and the button shapes (FreeSHPs
+/// 6A5BF0 frees them), the file's pictures; its observer backgrounds and
+/// flags are not side art, which `observer_art` finds.
+fn built_in_name(node: &str, key: &str, theme: SidebarTheme) -> Option<&'static str> {
+    MatchLayout::original(true).node_text(node, key, theme)
+}
 
 pub use crate::ui::sidebar::SidebarTheme;
 
@@ -222,14 +210,6 @@ impl<'a> SidebarSideRoute<'a> {
             render_shp(&shp, palette, frame)
         })
     }
-
-    #[cfg(test)]
-    fn resolve_generic_shp(&self, shp_name: &str) -> Option<ResolvedSidebarAsset<'a>> {
-        if !is_generic_sidebar_shp_name(shp_name) {
-            return None;
-        }
-        self.resolve(shp_name)
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -250,12 +230,6 @@ fn resolve_sidebar_asset_in_order<'a>(
                 bytes,
             })
     })
-}
-
-fn is_generic_sidebar_shp_name(name: &str) -> bool {
-    GENERIC_SIDEBAR_SHP_NAMES
-        .iter()
-        .any(|candidate| candidate.eq_ignore_ascii_case(name))
 }
 
 /// UV coordinates and pixel dimensions for one chrome piece in the atlas.
@@ -331,11 +305,14 @@ impl SidebarDarkenMask {
         batch: &BatchRenderer,
         assets: &AssetManager,
         palette: &Palette,
+        theme: SidebarTheme,
     ) -> Option<Self> {
         // SidebarClass::One_Time 6A5000 (6A500B..6A5018): literal DARKEN.SHP
-        // through LoadFileFromMIX, not the side-only generic chrome resolver.
-        let source = assets.load_file_from_mix("DARKEN.SHP")?;
-        log::info!("Sidebar DARKEN.SHP resolved from {}", source.source_archive);
+        // (the cameo grid's `Darken=`) through LoadFileFromMIX, not the
+        // side-only generic chrome resolver.
+        let name = built_in_name(SidebarPart::Cameos.name(), "Darken", theme)?;
+        let source = assets.load_file_from_mix(name)?;
+        log::info!("Sidebar {name} resolved from {}", source.source_archive);
         Self::from_bytes(&gpu.device, &gpu.queue, batch, &source.bytes, palette)
     }
 }
@@ -653,8 +630,8 @@ pub(crate) fn select_sidebar_theme<'a, T>(
 /// switch, not the actual side index or the selected MIX number.
 #[derive(Clone, Copy)]
 struct SidebarArtNames {
-    radar_palette: &'static str,
-    radar: &'static str,
+    /// The switch: the Yuri file names.
+    yuri: bool,
     background_palette: &'static str,
     backgrounds: (&'static str, &'static str, &'static str),
 }
@@ -663,19 +640,42 @@ impl SidebarArtNames {
     const fn for_yuri(yuri: bool) -> Self {
         if yuri {
             Self {
-                radar_palette: "radaryuri.pal",
-                radar: "radary.shp",
+                yuri,
                 background_palette: "UIBKGDY.PAL",
                 backgrounds: ("bkgdlgy.shp", "bkgdmdy.shp", "bkgdsmy.shp"),
             }
         } else {
             Self {
-                radar_palette: "sidebar.pal",
-                radar: "radar.shp",
+                yuri,
                 background_palette: "UIBKGD.PAL",
                 backgrounds: ("bkgdlg.shp", "bkgdmd.shp", "bkgdsm.shp"),
             }
         }
+    }
+
+    /// The pictures whose radar entries of the built-in `veraui_default.ini`
+    /// (`Art@Yuri=`, `Palette@Yuri=`) the radar of `theme` draws with. The
+    /// one override of the file's own choice: Ares picks the radar's file
+    /// and palette by the switch, not by the side's pictures, so an Ares
+    /// side 1 with the switch on draws Yuri's radar in a Soviet sidebar, and
+    /// side 2 with it off the Soviet radar. Without Ares the switch is the
+    /// Yuri theme's own (`stock_theme_source`), so this is `theme`.
+    fn radar_theme(self, theme: SidebarTheme) -> SidebarTheme {
+        match (self.yuri, theme) {
+            (true, _) => SidebarTheme::Yuri,
+            (false, SidebarTheme::Yuri) => SidebarTheme::Soviet,
+            (false, theme) => theme,
+        }
+    }
+
+    /// The radar's built-in picture and palette for `theme`.
+    fn radar(self, theme: SidebarTheme) -> (&'static str, &'static str) {
+        let theme = self.radar_theme(theme);
+        let name = |key| {
+            built_in_name(SidebarPart::Radar.name(), key, theme)
+                .expect("veraui_default.ini names the radar's picture and palette")
+        };
+        (name("Art"), name("Palette"))
     }
 }
 
@@ -791,13 +791,15 @@ struct CpuGclockAtlas {
     source_archive: String,
 }
 
-/// Resolve all GCLOCK2 frames from the active side stack and pack them into a
-/// CPU atlas. The GPU wrapper below consumes this exact output.
+/// Resolve all frames of the progress clock `name` (GCLOCK2, the cameo
+/// grid's `Clock=`) from the active side stack and pack them into a CPU
+/// atlas. The GPU wrapper below consumes this exact output.
 fn build_gclock_cpu_atlas(
     route: SidebarSideRoute<'_>,
+    name: &str,
     palette: &Palette,
 ) -> Option<CpuGclockAtlas> {
-    route.decode("GCLOCK2.SHP", |asset| {
+    route.decode(name, |asset| {
         let shp = parse_sidebar_shape(route.asset_manager, asset.bytes)?;
         build_gclock_cpu_atlas_from_shape(&shp, palette, asset.source)
     })
@@ -883,9 +885,10 @@ fn build_gclock_texture(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     route: SidebarSideRoute<'_>,
+    name: &str,
     palette: &Palette,
 ) -> Option<(BatchTexture, Vec<SidebarChromeEntry>)> {
-    let atlas = build_gclock_cpu_atlas(route, palette)?;
+    let atlas = build_gclock_cpu_atlas(route, name, palette)?;
     log::debug!(
         "Uploading GCLOCK2 from {} ({}x{})",
         atlas.source_archive,
@@ -1003,8 +1006,10 @@ fn render_piece<'a>(
             .collect();
         return (rendered, None);
     }
+    // The built-in file's generic pictures, through mod art and the active
+    // side archive chain.
     let rendered = (0..frames)
-        .map(|frame| render_side_entry(side_route, file, generic_palette, frame))
+        .map(|frame| side_route.render(file, generic_palette, frame))
         .collect();
     (rendered, None)
 }
@@ -1019,8 +1024,7 @@ fn build_theme_atlas(
     ares: bool,
     layout: &MatchLayout,
 ) -> Option<SidebarChromeAtlas> {
-    let palette_name = names.radar_palette;
-    let radar_name = names.radar;
+    let (radar_name, palette_name) = names.radar(theme);
     let mix = asset_manager.archive(mix_name)?;
     let theme_route = SidebarThemeRoute {
         assets: asset_manager,
@@ -1034,12 +1038,12 @@ fn build_theme_atlas(
     } else {
         SidebarSideRoute::for_theme(asset_manager, theme)
     };
-    let generic_palette_name = "SIDEBAR.PAL";
+    let generic_palette_name = SIDEBAR_PALETTE;
     let (generic_palette, generic_palette_source) = side_route
         .decode(generic_palette_name, |asset| {
             Some((decode_sidebar_palette(asset.bytes).ok()?, asset.source))
         })?;
-    let command_bar_art = command_bar::load(side_route, &generic_palette);
+    let command_bar_art = command_bar::load(side_route, &generic_palette, theme);
     let in_game_shell_art = in_game_shell::load(side_route, &generic_palette);
     let layout_art_rendered = layout_art::load(side_route, &generic_palette);
     let observer_art_rendered = observer_art::load(theme_route);
@@ -1182,17 +1186,19 @@ fn build_theme_atlas(
     let extra_rendered = collect_extra_entries(mix, &theme_palette, &excluded_extra_ids);
 
     // GCLOCK2.SHP — production progress clock overlay (separate texture).
-    let (gclock_texture, gclock_frames) =
-        match build_gclock_texture(gpu, batch, side_route, &generic_palette) {
-            Some((tex, entries)) => (Some(tex), entries),
-            None => {
-                log::warn!(
-                    "GCLOCK2.SHP not found in {:?} side route, progress overlay disabled",
-                    side_route.archive_names
-                );
-                (None, Vec::new())
-            }
-        };
+    let clock = built_in_name(SidebarPart::Cameos.name(), "Clock", theme);
+    let (gclock_texture, gclock_frames) = match clock
+        .and_then(|clock| build_gclock_texture(gpu, batch, side_route, clock, &generic_palette))
+    {
+        Some((tex, entries)) => (Some(tex), entries),
+        None => {
+            log::warn!(
+                "{clock:?} not found in {:?} side route, progress overlay disabled",
+                side_route.archive_names
+            );
+            (None, Vec::new())
+        }
+    };
 
     // Collect all pieces to pack into the atlas, one below the other.
     let backgrounds = [&background_large, &background_medium, &background_small];
@@ -1297,7 +1303,7 @@ fn build_theme_atlas(
         extra_entries,
         gclock_texture,
         gclock_frames,
-        darken: SidebarDarkenMask::load(gpu, batch, asset_manager, &generic_palette),
+        darken: SidebarDarkenMask::load(gpu, batch, asset_manager, &generic_palette, theme),
         sidebar_pieces,
         smooth: None,
     })
@@ -1423,20 +1429,6 @@ fn render_shp(shp: &ShpFile, palette: &Palette, frame_index: usize) -> Option<Re
     })
 }
 
-/// Resolve the known generic sidebar roles through mod art and the active
-/// side archive chain.
-fn render_side_entry(
-    route: SidebarSideRoute<'_>,
-    shp_name: &str,
-    palette: &Palette,
-    frame_index: usize,
-) -> Option<RenderedChromeEntry> {
-    if !is_generic_sidebar_shp_name(shp_name) {
-        return None;
-    }
-    route.render(shp_name, palette, frame_index)
-}
-
 fn parse_sidebar_shape(assets: &AssetManager, bytes: &[u8]) -> Option<ShpFile> {
     if assets.mod_dir().is_some() {
         decode_ui_shp(bytes).ok()
@@ -1491,11 +1483,12 @@ mod provenance_tests {
             let flag = row["input"]["yuri_file_names"].as_bool().unwrap();
             let names = super::SidebarArtNames::for_yuri(flag);
             let expected = &corpus["filename_sets"][if flag { "yuri" } else { "plain" }];
-            assert_eq!(names.radar.to_ascii_uppercase(), expected["radar"]);
-            assert_eq!(
-                names.radar_palette.to_ascii_uppercase(),
-                expected["radar_palette"]
-            );
+            // The switch, not the side's pictures, picks the radar's files.
+            for theme in [SidebarTheme::Soviet, SidebarTheme::Yuri] {
+                let (radar, radar_palette) = names.radar(theme);
+                assert_eq!(radar.to_ascii_uppercase(), expected["radar"]);
+                assert_eq!(radar_palette.to_ascii_uppercase(), expected["radar_palette"]);
+            }
             assert_eq!(
                 names.background_palette.to_ascii_uppercase(),
                 expected["background_palette"]

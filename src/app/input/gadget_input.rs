@@ -162,17 +162,8 @@ impl InGameGadgets {
 /// A sidebar rect, in the sidebar's layout space, as a gadget rect in frame
 /// pixels, where the cursor is.
 fn rect_px(frame: sidebar::SidebarFrame, r: sidebar::Rect) -> GadgetRect {
-    frame_rect_px(frame.rect_to_frame(r))
-}
-
-/// A frame-pixel rect, rounded to whole pixels.
-fn frame_rect_px(r: sidebar::Rect) -> GadgetRect {
-    GadgetRect::new(
-        r.x.round() as i32,
-        r.y.round() as i32,
-        r.w.round() as i32,
-        r.h.round() as i32,
-    )
+    let [x, y, w, h] = frame.rect_to_frame_px(r);
+    GadgetRect::new(x, y, w, h)
 }
 
 /// Build the list once (retained order = tabs 0..3, repair, sell, scroll-down,

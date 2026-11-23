@@ -250,8 +250,9 @@ fn refresh_fixture_sidebar(
         &[],
     );
     let layout_spec = SidebarChromeLayoutSpec::stock();
-    let visible_rows = crate::ui::sidebar::compute_layout_with_spec(layout_spec, 800.0, 1200.0, 0)
-        .side2_tile_count;
+    let frame = crate::ui::sidebar::SidebarFrame::native(800, 1200);
+    let visible_rows =
+        crate::ui::sidebar::compute_layout_with_spec(layout_spec, frame).side2_tile_count;
     // Use the production Sidebar seed/pending-additions boundary. Eligibility
     // changes cannot admit a new cameo without its real House lifecycle pass.
     let seed_additions = fixture
@@ -282,8 +283,7 @@ fn refresh_fixture_sidebar(
         production::power_balance_for_owner(&fixture.sim, &fixture.rules, &owner_name);
     let mut view = build_sidebar_view_with_spec(
         layout_spec,
-        800.0,
-        1200.0,
+        frame,
         tab,
         production::credits_for_owner(&fixture.sim, &owner_name),
         power_produced,

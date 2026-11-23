@@ -18,8 +18,7 @@ fn sidebar_item(
     let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &views);
     let view = sidebar::build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
-        800.0,
-        600.0,
+        sidebar::SidebarFrame::native(800, 600),
         SidebarTab::Defense,
         0,
         0,

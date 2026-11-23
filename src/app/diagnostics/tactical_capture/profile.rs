@@ -787,7 +787,6 @@ mod tests {
     fn current_profiles_match_compiled_native_geometry_and_reject_old_scale() {
         use crate::ui::sidebar::{
             SidebarChromeLayoutSpec, SidebarPart, SidebarTheme, compute_layout_with_spec,
-            radar_minimap_rect_with_spec,
         };
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for (side, theme) in [
@@ -809,7 +808,10 @@ mod tests {
             .value;
             assert_eq!(profile.capture.app_ui_scale, 1.0);
             let spec = SidebarChromeLayoutSpec::for_theme(theme);
-            let layout = compute_layout_with_spec(spec, 800.0, 600.0, 0);
+            let layout = compute_layout_with_spec(
+                spec,
+                crate::ui::sidebar::SidebarFrame::for_layout(800, 600, 100, &spec),
+            );
             assert_eq!(
                 (
                     layout.sidebar_x,
@@ -822,7 +824,7 @@ mod tests {
             );
             // The NOD position table moves the top buttons, not the radar
             // aperture (MapAreaX 16 in both Init_For_House arms).
-            let aperture = radar_minimap_rect_with_spec(800.0, spec);
+            let aperture = layout.minimap_rect(&spec);
             assert_eq!(
                 (aperture.x, aperture.y, aperture.w, aperture.h),
                 (648.0, 49.0, 140.0, 108.0)

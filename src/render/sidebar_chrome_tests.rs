@@ -3,8 +3,7 @@
 use std::path::PathBuf;
 
 use super::{
-    SidebarSideRoute, SidebarThemeRoute, build_gclock_cpu_atlas, is_generic_sidebar_shp_name,
-    resolve_sidebar_asset_in_order,
+    SidebarSideRoute, SidebarThemeRoute, build_gclock_cpu_atlas, resolve_sidebar_asset_in_order,
 };
 use crate::app::presentation::sidebar_build::build_gclock_instance;
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
@@ -116,7 +115,7 @@ fn side_route_prefers_md_then_base_then_neutral() {
 }
 
 fn resolved_shp<'a>(route: SidebarSideRoute<'a>, name: &str) -> (&'a str, ShpFile) {
-    let resolved = route.resolve_generic_shp(name).expect(name);
+    let resolved = route.resolve(name).expect(name);
     let shp = ShpFile::from_bytes(resolved.bytes).expect(name);
     (resolved.archive_name, shp)
 }
@@ -149,7 +148,7 @@ fn non_ares_clock_uses_valid_mod_art_ahead_of_the_named_side() {
     .unwrap();
     let route = SidebarSideRoute::for_theme(&assets, SidebarTheme::Allied);
     let palette = Palette::from_bytes(&[0; 768]).unwrap();
-    let clock = build_gclock_cpu_atlas(route, &palette).unwrap();
+    let clock = build_gclock_cpu_atlas(route, "GCLOCK2.SHP", &palette).unwrap();
     assert_eq!(clock.source_archive, "expandmd01.mix");
     assert_eq!(clock.indices, [2]);
 }
@@ -209,10 +208,21 @@ fn retail_yuri_generic_route_uses_side_two_and_builds_production_clock() {
     assert!(yuri_theme.get_by_name("RADARYURI.PAL").is_some());
     assert!(yuri_theme.get_by_name("RADARY.SHP").is_some());
     assert!(yuri_theme.get_by_name("BKGDLGY.SHP").is_some());
-    assert!(!is_generic_sidebar_shp_name("RADARY.SHP"));
-    assert!(!is_generic_sidebar_shp_name("BKGDLGY.SHP"));
+    // The generic chrome is the built-in layout's pictures but the radar's.
+    let generic: Vec<String> = crate::ui::match_layout::sidebar_art(
+        crate::ui::match_layout::MatchLayout::original(false),
+        SidebarTheme::Yuri,
+    )
+    .into_iter()
+    .filter(|art| art.part != crate::ui::sidebar::SidebarPart::Radar)
+    .map(|art| art.file)
+    .collect();
+    for name in ["RADARY.SHP", "BKGDLGY.SHP"] {
+        assert!(!generic.iter().any(|file| file.eq_ignore_ascii_case(name)));
+    }
 
-    let atlas = build_gclock_cpu_atlas(yuri, &generic_palette).expect("Yuri GCLOCK2 atlas");
+    let atlas =
+        build_gclock_cpu_atlas(yuri, "GCLOCK2.SHP", &generic_palette).expect("Yuri GCLOCK2 atlas");
     assert_eq!(atlas.source_archive, "sidec02.mix");
     assert_eq!((atlas.width, atlas.height), (480, 336));
     assert_eq!(atlas.frames.len(), 55);

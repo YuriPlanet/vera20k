@@ -18,7 +18,7 @@ mod sidebar_view;
 
 use crate::sim::production::ProductionCategory;
 
-pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
+pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SidebarFrame};
 pub use layout_spec::{ArtKey, PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
@@ -55,25 +55,6 @@ impl Rect {
             }
         }
     }
-}
-
-#[cfg(test)]
-pub fn radar_minimap_rect(screen_w: f32) -> Rect {
-    radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
-}
-
-pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
-    // The aperture sits in the radar housing; the GDI/NOD tables move it,
-    // which the spec carries.
-    let [radar_x, radar_y] = spec.place(SidebarPart::Radar);
-    let [x, y] = spec.place(SidebarPart::Minimap);
-    Rect {
-        x: spec.sidebar_x(screen_w) + radar_x + x,
-        y: radar_y + y,
-        w: spec.radar_width,
-        h: spec.radar_height,
-    }
-    .shown(spec.shows(SidebarPart::Radar))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,6 +255,26 @@ impl SidebarLayout {
         }
     }
 
+    /// The radar's map picture: the minimap's corner in the radar housing,
+    /// which the GDI/NOD tables move, and the aperture's size
+    /// (`RadarClass::One_Time @ 0x00652CF0`). Empty for a layout without the
+    /// radar.
+    pub fn minimap_rect(&self, spec: &SidebarChromeLayoutSpec) -> Rect {
+        let [x, y] = self.origin(spec, SidebarPart::Minimap);
+        Rect {
+            x,
+            y,
+            w: spec.radar_width,
+            h: spec.radar_height,
+        }
+        .shown(spec.shows(SidebarPart::Radar))
+    }
+
+    /// The height of the cameo strip's rows.
+    pub fn cameo_grid_height(&self) -> f32 {
+        self.cameo_grid_bottom - self.cameo_grid_top
+    }
+
     /// The top-left corner of the cameo grid's first picture: the strip's
     /// corner and the cameo inset.
     pub fn grid_origin(&self, spec: &SidebarChromeLayoutSpec) -> [f32; 2] {
@@ -408,23 +409,15 @@ pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
 }
 
-/// Compute the vertical layout of chrome sections for a given screen height.
-/// The sidebar shell fills the available height; item count only affects scrolling.
-pub fn compute_layout(screen_w: f32, screen_h: f32, item_rows: usize) -> SidebarLayout {
-    compute_layout_with_spec(
-        SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
-        item_rows,
-    )
-}
-
+/// Where the chrome sections sit on `frame`'s layout screen
+/// ([`SidebarFrame::layout_screen`]): the sidebar at the frame's left edge
+/// for it, filling the screen's height. The item count only affects
+/// scrolling.
 pub(crate) fn compute_layout_with_spec(
     spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
-    _item_rows: usize,
+    frame: SidebarFrame,
 ) -> SidebarLayout {
+    let (_, screen_h) = frame.layout_screen();
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
     // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
@@ -442,7 +435,7 @@ pub(crate) fn compute_layout_with_spec(
     let rows = ((screen_h as i32 - strip_y as i32 - spec.strip_footer as i32) / row_height).max(0)
         as usize;
     SidebarLayout {
-        sidebar_x: spec.sidebar_x(screen_w),
+        sidebar_x: frame.layout_left(),
         cameo_grid_top: strip_y,
         cameo_grid_bottom: strip_y + (rows as i32 * row_height) as f32,
         // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's
@@ -467,7 +460,7 @@ pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> 
         x,
         y,
         w: 8.0,
-        h: layout.cameo_grid_bottom - layout.cameo_grid_top,
+        h: layout.cameo_grid_height(),
     }
     .shown(spec.shows(SidebarPart::Power))
 }

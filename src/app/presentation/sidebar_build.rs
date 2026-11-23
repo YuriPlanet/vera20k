@@ -38,7 +38,6 @@ pub(crate) fn build_sidebar_chrome_instances(
         pictures,
         atlas,
         state.match_state.match_presentation.sidebar_layout_spec,
-        &view.layout,
         view,
         &state.match_state.match_presentation.power_bar_anim,
         [
@@ -68,12 +67,12 @@ pub(crate) fn draw_sidebar_chrome(
     pictures: &mut PictureHud,
     atlas: &SidebarChromeAtlas,
     spec: SidebarChromeLayoutSpec,
-    layout: &SidebarLayout,
     view: &SidebarView,
     power_bar_anim: &PowerBarAnimState,
     camera_offset: [f32; 2],
     static_radar_fallback: bool,
 ) {
+    let layout = &view.layout;
     pictures.begin();
     let inst = pictures;
     let d = 0.00048;
@@ -1200,8 +1199,7 @@ mod tests {
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
             sidebar::build_sidebar_view_with_spec(
                 SidebarChromeLayoutSpec::stock(),
-                800.0,
-                600.0,
+                sidebar::SidebarFrame::native(800, 600),
                 SidebarTab::Defense,
                 0,
                 0,

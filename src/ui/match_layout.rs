@@ -308,6 +308,11 @@ pub struct MatchLayout {
     side_text: [[u8; 3]; 3],
     /// The cameo labels' `LabelColor=`, resolved the same way.
     label_text: [[u8; 3]; 3],
+    /// Each built-in part's `Command=` for each side's pictures, by
+    /// `SidebarTheme as usize` and `SidebarPart as usize`.
+    commands: [[Option<String>; 19]; 3],
+    /// The money's `Value=` and `Align=` for each side's pictures.
+    money: [MoneyText; 3],
 }
 
 impl MatchLayout {
@@ -320,7 +325,13 @@ impl MatchLayout {
     /// pictures are `theme`: `Key@Side`, else `Key`. For what the parts'
     /// own code reads once a file is loaded (`STOCK_KEYS`), not every frame.
     pub fn text(&self, part: SidebarPart, key: &str, theme: SidebarTheme) -> Option<&str> {
-        self.tree.node(part.name())?.text_for(key, theme as usize)
+        self.node_text(part.name(), key, theme)
+    }
+
+    /// [`Self::text`] of the part named `node`, for a part that is no
+    /// [`SidebarPart`], the command bar's `Bar`.
+    pub fn node_text(&self, node: &str, key: &str, theme: SidebarTheme) -> Option<&str> {
+        self.tree.node(node)?.text_for(key, theme as usize)
     }
 
     /// The colour a `Color=` value names for the side whose pictures are
@@ -337,6 +348,19 @@ impl MatchLayout {
             Some((.., text)) => channels(text),
             None => channels(value),
         }
+    }
+
+    /// The `Command=` of built-in part `part` for the side whose pictures
+    /// are `theme`, read with the layout.
+    pub fn command(&self, part: SidebarPart, theme: SidebarTheme) -> Option<&str> {
+        self.commands[theme as usize][part as usize].as_deref()
+    }
+
+    /// What the money counter shows and where, for the side whose pictures
+    /// are `theme`; a `Value=` or `Align=` the game has not keeps the
+    /// original's (`MatchLayoutFile::check_commands` names it).
+    pub fn money(&self, theme: SidebarTheme) -> MoneyText {
+        self.money[theme as usize]
     }
 
     /// A position table as it is built in: the allied one (`GDI`) or the
@@ -375,6 +399,46 @@ impl MatchLayout {
                 .unwrap_or([255; 4]);
             [r, g, b]
         })
+    }
+}
+
+/// Where a built-in text sits in its part's width: `Align=`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+
+impl TextAlign {
+    /// The alignment a layout file names, without regard to capitals.
+    pub fn named(name: &str) -> Option<Self> {
+        [
+            ("Left", Self::Left),
+            ("Center", Self::Center),
+            ("Right", Self::Right),
+        ]
+        .into_iter()
+        .find(|(known, _)| known.eq_ignore_ascii_case(name))
+        .map(|(_, align)| align)
+    }
+}
+
+/// What the money counter shows and where: `[Layout.Money] Value=` and
+/// `Align=`. The original's is the credits, centred on the plate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MoneyText {
+    pub value: TextValue,
+    pub align: TextAlign,
+}
+
+impl Default for MoneyText {
+    fn default() -> Self {
+        Self {
+            value: TextValue::Credits,
+            align: TextAlign::Center,
+        }
     }
 }
 
@@ -595,7 +659,6 @@ impl MatchLayoutFile {
         // the layout is loaded (`MatchLayout::text`), and one it cannot use
         // keeps the built-in action or text. A key the part does not have
         // in the built-in file is not checked here.
-        const ALIGNS: [&str; 3] = ["Left", "Center", "Right"];
         for pair in &self.layouts {
             for (table, layout) in pair.iter().enumerate() {
                 let original = &ORIGINAL[table];
@@ -633,9 +696,7 @@ impl MatchLayoutFile {
                                 || match key {
                                     "Command" => known(text),
                                     "Value" => TextValue::named(text).is_some(),
-                                    _ => {
-                                        ALIGNS.iter().any(|align| align.eq_ignore_ascii_case(text))
-                                    }
+                                    _ => TextAlign::named(text).is_some(),
                                 };
                             let problem = LayoutProblem {
                                 section: value.section.clone(),
@@ -972,6 +1033,24 @@ fn read_layout(files: &[&IniFile], layout: &str, table: &str) -> (MatchLayout, V
     read.tree = Arc::new(tree);
     read.side_text = read.side_colors(SidebarPart::Money, "Color");
     read.label_text = read.side_colors(SidebarPart::Cameos, "LabelColor");
+    let themes = [
+        SidebarTheme::Allied,
+        SidebarTheme::Soviet,
+        SidebarTheme::Yuri,
+    ];
+    read.commands = themes.map(|theme| {
+        SidebarPart::STOCK_ORDER.map(|part| read.text(part, "Command", theme).map(str::to_owned))
+    });
+    read.money = themes.map(|theme| MoneyText {
+        value: read
+            .text(SidebarPart::Money, "Value", theme)
+            .and_then(TextValue::named)
+            .unwrap_or(TextValue::Credits),
+        align: read
+            .text(SidebarPart::Money, "Align", theme)
+            .and_then(TextAlign::named)
+            .unwrap_or_default(),
+    });
     (read, problems)
 }
 
@@ -1465,7 +1544,7 @@ mod tests {
     use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
     use crate::ui::sidebar::{
         SidebarFrame, SidebarTab, SidebarTheme, SidebarView, build_sidebar_view_with_spec,
-        power_bar_rect, radar_minimap_rect_with_spec,
+        power_bar_rect,
     };
 
     /// `count` buildings to offer, each a cameo of the Building strip.
@@ -1538,8 +1617,7 @@ mod tests {
         let (options, interner) = options(count);
         let view = build_sidebar_view_with_spec(
             spec,
-            800.0,
-            600.0,
+            SidebarFrame::for_layout(800, 600, 100, &spec),
             SidebarTab::Building,
             0,
             0,
@@ -1583,7 +1661,7 @@ mod tests {
         assert_eq!(view.repair_button.rect.y, 177.0);
         assert_eq!((view.tabs[0].rect.x, view.tabs[0].rect.y), (652.0, 209.0));
         assert_eq!(view.tabs[1].rect.x, 692.0);
-        let radar = radar_minimap_rect_with_spec(800.0, spec);
+        let radar = view.layout.minimap_rect(&spec);
         // MapX and MapWidth are the file's; y keeps every side's MapAreaY 49
         // (`RadarClass::One_Time @ 0x00652CF0`).
         assert_eq!(
@@ -1699,8 +1777,8 @@ mod tests {
         assert_eq!(view.tabs, stock.tabs);
         assert_eq!(view.scroll_down_button.rect, stock.scroll_down_button.rect);
         assert_eq!(
-            radar_minimap_rect_with_spec(800.0, spec),
-            radar_minimap_rect_with_spec(800.0, stock_spec)
+            view.layout.minimap_rect(&spec),
+            stock.layout.minimap_rect(&stock_spec)
         );
         for left_out in [
             view.repair_button.rect,
@@ -1748,7 +1826,7 @@ mod tests {
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
         assert_eq!((view.panel_rect.x, view.panel_rect.w), (600.0, 200.0));
         // The frame gives the battlefield and the bottom bar what is left.
-        let frame = SidebarFrame::native(800, 600).with_column_width(spec.sidebar_width as u32);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_size(), (600, 568));
         assert_eq!(frame.surface_size(), (200, 600));
         assert_eq!(frame.bar_surface_size(), (600, 32));
@@ -1775,16 +1853,16 @@ mod tests {
         );
 
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         // The sidebar's parts follow it to the left edge, and the battlefield
         // starts beside it and under the bar.
         assert_eq!((view.panel_rect.x, view.tabs[0].rect.x), (0.0, 26.0));
-        assert_eq!(radar_minimap_rect_with_spec(800.0, spec).x, 16.0);
+        assert_eq!(view.layout.minimap_rect(&spec).x, 16.0);
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
 
         // A floating sidebar and no bar leave the battlefield the whole frame.
         let (spec, _) = sidebar(SidebarTheme::Soviet, file.for_side(Some("Nod"), false));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 600));
         assert_eq!(frame.column(), (632, 0, 168, 600));
         assert!(!frame.has_bar());
@@ -1801,19 +1879,16 @@ mod tests {
         file.for_side(Some("GDI"), true)
             .unwrap()
             .apply_to_sidebar(&mut spec);
-        let frame = SidebarFrame::native(800, 600)
-            .with_band_height(spec.side_height as u32)
-            .with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.column(), (0, 440, 800, 160));
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
         // The parts lay out in the band: it starts at the screen's left
         // edge, and its rows are the ones that fit in its own height.
-        let (width, height) = frame.layout_screen();
-        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, frame);
         assert_eq!(layout.sidebar_x, 0.0);
         assert_eq!(layout.origin(&spec, SidebarPart::Cameos)[0], 336.0);
         assert_eq!(layout.side2_tile_count, (160 - 33) / 50);
-        assert_eq!(spec.side_width(width), 800.0);
+        assert_eq!(frame.surface_size().0, 800);
     }
 
     #[test]
@@ -2012,8 +2087,7 @@ mod tests {
         let strips = CameoStrips::layout_fixture(&options, &[], &[]);
         let mut view = build_sidebar_view_with_spec(
             spec,
-            800.0,
-            600.0,
+            SidebarFrame::native(800, 600),
             SidebarTab::Building,
             0,
             0,
@@ -2136,7 +2210,7 @@ mod tests {
         // four places.
         let (_, stock) = sidebar(SidebarTheme::Allied, None);
         let (spec, view) = sidebar(SidebarTheme::Allied, file.for_side(Some("GDI"), true));
-        let frame = SidebarFrame::native(800, 600).with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (168, 32, 632, 568));
         let from_side = |view: &SidebarView, x: f32| x - view.panel_rect.x;
         assert_eq!(
@@ -2162,12 +2236,9 @@ mod tests {
         file.for_side(Some("Nod"), false)
             .unwrap()
             .apply_to_sidebar(&mut spec);
-        let frame = SidebarFrame::native(800, 600)
-            .with_band_height(spec.side_height as u32)
-            .with_places(spec.places);
+        let frame = SidebarFrame::for_layout(800, 600, 100, &spec);
         assert_eq!(frame.tactical_rect(), (0, 0, 800, 408));
-        let (width, height) = frame.layout_screen();
-        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, width, height, 0);
+        let layout = crate::ui::sidebar::compute_layout_with_spec(spec, frame);
         assert_eq!(
             [SidebarPart::Radar, SidebarPart::Middle, SidebarPart::Cameos]
                 .map(|part| layout.origin(&spec, part)[0]),
@@ -2446,7 +2517,7 @@ mod tests {
             piece("Credits", "Art", "credits.shp", None, 1),
             piece("Diplomacy", "Art", "diplobtn.shp", None, 2),
             piece("Options", "Art", "optbtn.shp", None, 2),
-            piece("Radar", "Art", "radar.shp", None, 1),
+            piece("Radar", "Art", "radar.shp", Some("sidebar.pal"), 1),
             piece("Repair", "Art", "repair.shp", None, 5),
             piece("Sell", "Art", "sell.shp", None, 5),
             piece("Vehicles", "Art", "tab03.shp", None, 5),
