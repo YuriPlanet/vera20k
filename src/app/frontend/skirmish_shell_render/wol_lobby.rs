@@ -525,9 +525,9 @@ pub(crate) fn paint_wol_card_countries(state: &AppState, scale: ShellScale) -> W
         combos: ComboArt::Host,
         ..GuiStyle::default()
     };
-    let list = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
+    let mut list = super::gui_paint::paint_gui_styled(state, ui.gui(), node, scale, &[], style);
     WolLobbyPaint {
-        controls: list.lane(Material::Popup).copied().collect(),
+        controls: list.take_lane(Material::Popup),
         icons: Vec::new(),
         texts: list.popup_texts,
     }

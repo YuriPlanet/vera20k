@@ -159,9 +159,6 @@ pub(super) struct InGamePaint<'a> {
     pub(super) art: Vec<SpriteInstance>,
     pub(super) controls: Vec<SpriteInstance>,
     pub(super) texts: Vec<crate::render::shell_text::ShellTextDraw>,
-    /// What [`Self::nodes_in`] paints before it goes onto these lanes,
-    /// kept for its buffers.
-    widgets: HudPaint,
 }
 
 impl<'a> InGamePaint<'a> {
@@ -178,7 +175,6 @@ impl<'a> InGamePaint<'a> {
             art: background_instances(atlas, shell.layout, shell.width, shell.height),
             controls: Vec::new(),
             texts: Vec::new(),
-            widgets: HudPaint::default(),
         }
     }
 
@@ -232,15 +228,16 @@ impl<'a> InGamePaint<'a> {
     ) {
         let state = self.state;
         let atlas = state.frontend.skirmish_shell_chrome.as_ref();
-        let paint = &mut self.widgets;
-        paint.clear();
+        // The controls and texts move in and back out: no new buffers.
+        let (controls, texts) = (std::mem::take(&mut self.controls), std::mem::take(&mut self.texts));
+        let mut paint = HudPaint::from_lane(Material::Controls, controls, texts);
         let scale = crate::ui::shell::geom::RETAIL_SCALE;
         for node in ids
             .iter()
             .filter_map(|id| gui.find_id(root, i32::from(*id)))
         {
             super::gui_paint::paint_gui_into(
-                paint,
+                &mut paint,
                 state,
                 atlas,
                 gui,
@@ -251,9 +248,9 @@ impl<'a> InGamePaint<'a> {
             );
         }
         // The type-2 buttons' art under the rest, onto this shell's lanes.
-        self.art.extend(paint.lane(Material::Side).copied());
-        self.controls.extend(paint.lane(Material::Controls).copied());
-        self.texts.append(&mut paint.texts);
+        paint.drain_lane(Material::Side, &mut self.art);
+        self.controls = paint.take_lane(Material::Controls);
+        self.texts = std::mem::take(&mut paint.texts);
     }
 }
 

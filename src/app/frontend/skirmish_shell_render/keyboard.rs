@@ -231,9 +231,9 @@ pub(crate) fn render_keyboard_shell(
     // The type-2 Back over the art; the open category list paints over
     // every control and text.
     let mut art = art;
-    art.extend(paint.lane(Material::Side).copied());
-    let controls = paint.lane(Material::Controls).copied().collect();
-    let popup = paint.lane(Material::Popup).copied().collect();
+    paint.drain_lane(Material::Side, &mut art);
+    let popup = paint.take_lane(Material::Popup);
+    let controls = paint.take_lane(Material::Controls);
     let (mut texts, popup_texts) = (paint.texts, paint.popup_texts);
     // The status line is a family static like the heading: it scales with the
     // page, as on every other family page.

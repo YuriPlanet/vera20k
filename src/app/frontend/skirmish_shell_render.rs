@@ -548,7 +548,7 @@ fn render_skirmish_shell_with_atlas(
     if let Some(root) = page_root {
         show_skirmish_flags(state, root, layout.shown_rows);
     }
-    let page_paint = page_root.map_or_else(Default::default, |root| {
+    let mut page_paint = page_root.map_or_else(Default::default, |root| {
         let gui = state.frontend.shell_controller.gui();
         // While a slide runs the column's art covers the buttons.
         let buttons = match sliding {
@@ -664,8 +664,8 @@ fn render_skirmish_shell_with_atlas(
     // every dialog text, which this unbuffered pass paints in queue order.
     // VERA's Game Options box takes the same place; the two never show at
     // once, as each takes every press while it is open.
-    let popups = page_paint.lane(Material::Popup).chain(dialog_paint.lane(Material::Popup));
-    let mut dropdown_instances: Vec<SpriteInstance> = popups.copied().collect();
+    let mut dropdown_instances = page_paint.take_lane(Material::Popup);
+    dialog_paint.drain_lane(Material::Popup, &mut dropdown_instances);
     let mut dropdown_text_draws = page_paint.popup_texts;
     dropdown_text_draws.append(&mut dialog_paint.popup_texts);
     if parent_showing {

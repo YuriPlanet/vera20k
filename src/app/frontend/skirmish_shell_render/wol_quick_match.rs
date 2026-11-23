@@ -40,9 +40,9 @@ pub(crate) fn paint_wol_quick_match_children(
         control_lists: true,
         ..Default::default()
     };
-    let paint = paint_gui_ids(state, gui, root, [CAPTION, TRANSCRIPT], layout.page.scale, style);
+    let mut paint = paint_gui_ids(state, gui, root, [CAPTION, TRANSCRIPT], layout.page.scale, style);
     WolLobbyPaint {
-        controls: paint.lane(crate::render::hud_paint::Material::Controls).copied().collect(),
+        controls: paint.take_lane(crate::render::hud_paint::Material::Controls),
         icons: Vec::new(),
         texts: paint.texts,
     }

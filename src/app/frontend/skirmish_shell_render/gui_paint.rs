@@ -42,7 +42,7 @@ use super::{
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::hud_paint::{HudPaint, Material};
+use crate::render::hud_paint::{HudPaint, Material, rgba_tint};
 use crate::render::main_menu_shell_chrome::{MainMenuShellChromeEntry, WolPageArt};
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
@@ -560,7 +560,7 @@ fn flag(gui: &Gui, node: NodeId, prop: Prop, default: bool) -> bool {
 
 fn color(gui: &Gui, node: NodeId, prop: Prop) -> Option<[f32; 3]> {
     match gui.get(node, prop).ok().flatten() {
-        Some(Value::Rgba(c)) => Some([c.0, c.1, c.2].map(|c| f32::from(c) / 255.0)),
+        Some(Value::Rgba(c)) => Some(rgba_tint(*c).0),
         _ => None,
     }
 }
@@ -1533,8 +1533,10 @@ pub(crate) fn paint_gui_into(
             NodeKind::Bar => {
                 let look = BarLook {
                     percent: int(gui, node, Prop::Fill, bar::FULL),
-                    outline: color(gui, node, Prop::Background)
-                        .unwrap_or_else(|| bar::OUTLINE_RGB.map(|c| f32::from(c) / 255.0)),
+                    outline: color(gui, node, Prop::Background).unwrap_or_else(|| {
+                        let [r, g, b] = bar::OUTLINE_RGB;
+                        rgba_tint(vera20k_gui::Rgba(r, g, b, 255)).0
+                    }),
                     fill: color(gui, node, Prop::Color).unwrap_or(style.rgb),
                 };
                 paint.draw(Material::Controls, |out, _| push_bar(out, white, rect, look));
@@ -2911,6 +2913,49 @@ mod tests {
         .unwrap();
         assert_eq!(int(&gui, node, Prop::Fill, 100), 42);
         assert_eq!(color(&gui, node, Prop::Color), Some(rgb([0, 200, 0])));
+    }
+
+    #[test]
+    fn a_shell_bar_is_the_quads_it_drew_before_one_quad_drew_them() {
+        use vera20k_gui::Rgba;
+        let white = entry(1.0, 1.0, 0.9);
+        // `entry_sprite` with the tint over it, as `push_tinted_entry` built
+        // each by hand.
+        let hand_quad = |rect: RectPx, tint: [f32; 3], depth: f32| SpriteInstance {
+            position: [rect.x as f32, rect.y as f32],
+            size: [rect.w as f32, rect.h as f32],
+            uv_origin: white.uv_origin,
+            uv_size: white.uv_size,
+            depth,
+            tint,
+            alpha: 1.0,
+            ..Default::default()
+        };
+        let rect = RectPx::new(500, 120, 96, 14);
+        for percent in [0, 42, 100] {
+            let look = BarLook {
+                percent,
+                outline: rgba_tint(Rgba(90, 91, 92, 255)).0,
+                fill: [0.0, 0.8, 0.0],
+            };
+            let mut hand = Vec::new();
+            for edge in bar::outline_edges(rect).into_iter().flatten() {
+                hand.push(hand_quad(edge, look.outline, SHELL_CONTROL_DEPTH));
+            }
+            let fill = bar::fill_rect(rect, percent);
+            hand.push(hand_quad(fill, look.fill, SHELL_CONTROL_DEPTH - 0.00001));
+            let mut sprites = Vec::new();
+            push_bar(&mut sprites, Some(white), rect, look);
+            same_sprites(&sprites, &hand);
+        }
+        // The skin's colours take the HUD's one conversion, bit for bit
+        // the skin's own.
+        for c in 0..=255u8 {
+            let (rgb, alpha) = rgba_tint(Rgba(c, c, c, c));
+            let old = f32::from(c) / 255.0;
+            assert!(rgb.iter().all(|v| v.to_bits() == old.to_bits()));
+            assert_eq!(alpha.to_bits(), old.to_bits());
+        }
     }
 
     #[test]

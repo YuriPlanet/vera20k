@@ -246,9 +246,9 @@ pub(crate) fn render_launcher_options(
         ColumnArt::Panel
     };
     let page = (!leaving).then(|| paint_page(state, dialog, scale, column, &[]));
-    let page = page.unwrap_or_default();
+    let mut page = page.unwrap_or_default();
     instances.extend(page.lane(Material::Controls).copied());
-    let popup = page.lane(Material::Popup).copied().collect();
+    let popup = page.take_lane(Material::Popup);
     texts.extend(page.texts);
     texts.extend(status_texts);
     super::in_game_shell::render_shell_frame(

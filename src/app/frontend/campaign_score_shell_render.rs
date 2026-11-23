@@ -186,7 +186,7 @@ pub(crate) fn render_campaign_score_page(
         let scale = layout.page.scale;
         paint_gui_into(&mut paint, state, None, gui, root, scale, &[], style);
     }
-    let emblem: Vec<_> = paint.lane(Material::PageArt).copied().collect();
+    let emblem = paint.take_lane(Material::PageArt);
 
     // The family compositor paints the right panel, the monitor, the column
     // or Continue with its caption; the heading and status line are this

@@ -677,13 +677,18 @@ pub(crate) fn encode_family_page(
         shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
     let status = panel.status.map(PanelStatic::status);
     text.extend(paint_panel_statics(state, [title, status], scale));
-    // The column's widgets, then what goes over them, lane by lane.
-    let lane = |material: Material| -> Vec<SpriteInstance> {
-        (widgets.lane(material).chain(over.lane(material)))
-            .copied()
-            .collect()
+    // The column's widgets, then what goes over them, lane by lane: a
+    // paint's own buffer where it alone holds the lane.
+    let joined = |first: &mut HudPaint, then: &mut HudPaint, material| -> Vec<SpriteInstance> {
+        let mut lane = first.take_lane(material);
+        if lane.is_empty() {
+            return then.take_lane(material);
+        }
+        then.drain_lane(material, &mut lane);
+        lane
     };
-    let (column, controls) = (lane(Material::Column), lane(Material::Controls));
+    let column = joined(&mut widgets, &mut over, Material::Column);
+    let controls = joined(&mut widgets, &mut over, Material::Controls);
     text.append(&mut widgets.texts);
     text.append(&mut over.texts);
     draws.push(TexturedDraw {

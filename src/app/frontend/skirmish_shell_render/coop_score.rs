@@ -200,11 +200,11 @@ pub(crate) fn render_coop_score(
         edit_inset: Some(1),
         ..Default::default()
     };
-    let body = match controller.root_in(dialog) {
+    let mut body = match controller.root_in(dialog) {
         Some(root) => super::gui_paint::paint_gui_with(state, atlas, gui, root, scale, &[], style),
         None => Default::default(),
     };
-    let controls = body.lane(Material::Controls).copied().collect();
+    let controls = body.take_lane(Material::Controls);
     let mut texts = body.texts;
     let mut overlay = ShellFrameOverlay {
         score_backdrop,

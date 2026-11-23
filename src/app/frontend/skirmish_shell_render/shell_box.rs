@@ -163,7 +163,7 @@ pub(crate) fn paint_shell_box(
     let mut paint = HudPaint::default();
     paint_box_into(&mut paint, state, atlas, tree, shell_box, parts, &pressed, look);
     ModalDraw {
-        sprites: paint.lane(Material::Controls).copied().collect(),
+        sprites: paint.take_lane(Material::Controls),
         text: paint.texts,
     }
 }
@@ -179,7 +179,7 @@ pub(crate) struct SkirmishBoxDraw {
 impl SkirmishBoxDraw {
     /// Its sprites after `out`'s.
     pub(crate) fn push_sprites(&mut self, out: &mut Vec<SpriteInstance>) {
-        out.extend(self.paint.lane(Material::Controls).copied());
+        self.paint.drain_lane(Material::Controls, out);
     }
 
     /// Its texts after `out`'s, which give up the box's rect first when
