@@ -81,8 +81,9 @@ pub(crate) fn no_sync(_: &mut Gui, _: NodeId) {}
 /// `0x0072F540`), as its router and painter
 /// ([`crate::app::frontend::skirmish_shell_render`]) share it. Every one has
 /// the right-panel title static 0x694, a lower right-panel button
-/// (`0x0060B000`) and the status line 0x695 in the same places; its own
-/// controls are a [`NodeSpec`] kept on its layout's rects.
+/// (`0x0060B000`) and the status line 0x695 in the same places, each a node
+/// of its [`NodeSpec`] ([`crate::ui::shell::in_game_shell::panel_statics`])
+/// kept on its layout's rects with its own controls.
 pub(crate) struct InGameDialog {
     pub(crate) id: DialogResourceId,
     /// Title 0x694's caption, when it shows one.
@@ -97,6 +98,11 @@ pub(crate) struct InGameDialog {
     /// Its boxes play GUICheckboxSound where their proc cases do, not at
     /// the toggle.
     pub(crate) own_checkbox_sound: bool,
+    /// While a trackbar holds the pointer the status line shows the help
+    /// of the control under it ([`help`]).
+    pub(crate) help_under_held: bool,
+    /// The status help's text by its key while no string table is loaded.
+    pub(crate) help_fallback: fn(&str) -> &'static str,
 }
 
 impl InGameDialog {
@@ -205,24 +211,20 @@ pub(crate) fn hovered(ui: &DialogController) -> Option<u16> {
     u16::try_from(ui.gui().id_of(ui.gui().hovered()?)?).ok()
 }
 
-/// The trackbar holding the pointer: the GUI hovers nothing until its
-/// release (`SetCapture` 0x0061E4DF).
-pub(crate) fn held_trackbar(ui: &DialogController) -> Option<u16> {
+/// The status help (`0x006040B0`) of the control under the pointer: its
+/// node's help key. While a trackbar holds the pointer the GUI hovers
+/// nothing until its release (`SetCapture` 0x0061E4DF): the held trackbar
+/// keeps its own help (FF's), or with `under` (the pointer) the control a
+/// press there lands on shows its (B8 reads it on every move).
+pub(crate) fn help(ui: &DialogController, under: Option<(i32, i32)>) -> Option<&str> {
     let gui = ui.gui();
-    let node = gui
+    let held = gui
         .pressed()
-        .filter(|node| gui.tree().kind(*node) == Ok(NodeKind::Trackbar))?;
-    u16::try_from(gui.id_of(node)?).ok()
-}
-
-/// The control a press at `(x, y)` lands on in `ui`'s top dialog.
-pub(crate) fn hit(ui: &DialogController, x: i32, y: i32) -> Option<u16> {
-    let root = ui.root_in(ui.top_id()?)?;
-    let gui = ui.gui();
-    u16::try_from(gui.id_of(gui.hit_at(root, x, y, true)?)?).ok()
-}
-
-/// The status help of the control under the pointer (`0x006040B0`).
-pub(crate) fn help(ui: &DialogController) -> Option<&str> {
-    page::hovered_key(ui.gui()).filter(|key| !key.is_empty())
+        .filter(|node| gui.tree().kind(*node) == Ok(NodeKind::Trackbar));
+    let node = match (held, under) {
+        (Some(_), Some((x, y))) => gui.hit_at(ui.root_in(ui.top_id()?)?, x, y, true),
+        (Some(held), None) => Some(held),
+        (None, _) => gui.hovered(),
+    }?;
+    page::help_key(gui, node).filter(|key| !key.is_empty())
 }

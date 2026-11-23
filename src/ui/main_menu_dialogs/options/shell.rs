@@ -872,6 +872,7 @@ impl OptionsDialogState {
 
     /// The pushed look: the button holds the press and the pointer is still
     /// on it (612B70).
+    #[cfg(all(test, tests_ui))]
     pub(crate) fn shell_button_pressed(&self, id: LauncherButton) -> bool {
         self.shell
             .node(Control::Button(id))

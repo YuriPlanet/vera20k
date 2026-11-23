@@ -4,7 +4,7 @@
 //! monitor are the shared family statics, and its column slides in and out
 //! (`0x006071E0`). Every control paints from the dialog's tree.
 
-use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, paint_gui_styled};
+use super::gui_paint::{ButtonArt, GuiPaint, GuiStyle, SideButtons, paint_gui_styled};
 use super::{chrome::*, *};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -15,32 +15,69 @@ use crate::ui::main_menu_dialogs::options::shell::{Control, LauncherOptionsLayou
 use crate::ui::shell::geom::{RectPx, ShellAlign, ShellScale};
 use crate::util::time::Instant;
 
+/// How the page's right-hand column buttons paint ([`paint_page`]).
+#[derive(Clone, Copy)]
+pub(crate) enum ColumnArt {
+    /// Not at all: a slide's column covers them, or the box has none.
+    Hidden,
+    /// On the launcher panel's art, the page that shows lit (612B70
+    /// record+C5, SDBTNANM 3).
+    Panel,
+    /// The in-game menu's own buttons on the side's type-2 art
+    /// ([`ButtonArt::Side`]), the page that shows lit.
+    Side(SideButtons),
+}
+
 /// The page's controls and its open list, painted from the dialog's tree
 /// (synced to its layout by the caller). The page's own buttons are drawn as
 /// Sound Options' Play and Stop are (609FC7..609FE2/60A330): owner-draw type
-/// 3, MNBTTN centred on the control. With `column` the right-hand column's
-/// buttons paint on the panel's art, the page that shows lit (612B70
-/// record+C5, SDBTNANM 3); without, a slide or the in-game menu draws them.
+/// 3, MNBTTN centred on the control; the right-hand column's in `column`.
 /// Captions under `covered` are left out: a box draws all its art before its
 /// text, so that text would otherwise show through the list.
 pub(crate) fn paint_page(
     state: &AppState,
     dialog: &OptionsDialogState,
     scale: ShellScale,
-    column: bool,
+    column: ColumnArt,
     covered: &[RectPx],
 ) -> GuiPaint {
     let (gui, panel) = dialog.shell_gui();
     let art = |id| match dialog.shell_control(id)? {
         Control::Button(button) if button.on_page() => Some(ButtonArt::ModalSqueezed),
-        Control::Button(_) if column => Some(ButtonArt::Panel),
+        Control::Button(_) => match column {
+            ColumnArt::Hidden => None,
+            ColumnArt::Panel => Some(ButtonArt::Panel),
+            ColumnArt::Side(_) => Some(ButtonArt::Side),
+        },
         _ => None,
     };
     let style = GuiStyle {
         art_of: Some(&art),
+        side: match column {
+            ColumnArt::Side(side) => Some(side),
+            _ => None,
+        },
         ..Default::default()
     };
-    paint_gui_styled(state, gui, panel, scale, covered, style)
+    if state.frontend.skirmish_shell_chrome.is_some() {
+        return paint_gui_styled(state, gui, panel, scale, covered, style);
+    }
+    // Without the control art only the side's column paints: its art is
+    // the sidebar's.
+    let mut paint = GuiPaint::default();
+    if let ColumnArt::Side(_) = column {
+        let side = gui.tree().children(panel).unwrap_or_default().iter().copied();
+        for node in side.filter(|node| {
+            gui.id_of(*node)
+                .and_then(|id| art(id))
+                .is_some_and(|art| art == ButtonArt::Side)
+        }) {
+            super::gui_paint::paint_gui_into(
+                &mut paint, state, None, gui, node, scale, covered, style,
+            );
+        }
+    }
+    paint
 }
 
 /// Options' controls on another box's art: VERA's Esc menu shows a few of
@@ -52,7 +89,13 @@ pub(crate) fn paint_options_settings(
     settings: &OptionsDialogState,
 ) {
     let list = settings.shell_popup_rect();
-    let page = paint_page(state, settings, layout.scale, false, list.as_slice());
+    let page = paint_page(
+        state,
+        settings,
+        layout.scale,
+        ColumnArt::Hidden,
+        list.as_slice(),
+    );
     draw.sprites.extend(page.controls);
     draw.text.extend(page.texts);
     draw.sprites.extend(page.popup);
@@ -208,7 +251,12 @@ pub(crate) fn render_launcher_options(
             scale.factor(),
         ));
     }
-    let page = (!leaving).then(|| paint_page(state, dialog, scale, !sliding, &[]));
+    let column = if sliding {
+        ColumnArt::Hidden
+    } else {
+        ColumnArt::Panel
+    };
+    let page = (!leaving).then(|| paint_page(state, dialog, scale, column, &[]));
     let page = page.unwrap_or_default();
     instances.extend(page.controls);
     texts.extend(page.texts);

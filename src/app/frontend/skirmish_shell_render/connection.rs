@@ -3,16 +3,17 @@
 //! line in the right-panel places, the row buttons, bars, countdown and list
 //! as ordinary children.
 //!
-//! Quit, the row buttons (MNBTTN, type-2 captions), the bars, the countdown
-//! and the list paint from 0xEA's `vera20k-gui` nodes ([`super::gui_paint`]),
-//! made current first every frame; VERA's paging stays the shell's own.
+//! Quit, VERA's paging buttons and page counter, the row buttons (MNBTTN,
+//! type-2 captions), the bars, the countdown and the list paint from 0xEA's
+//! `vera20k-gui` nodes ([`super::gui_paint`]), made current first every
+//! frame.
 
 use super::gui_paint::{ButtonArt, GuiStyle, HostRows};
 use super::in_game_shell;
 use crate::app::AppState;
 use crate::app::input::connection::DIALOG;
-use crate::app::input::dialog_page::pressed;
 use crate::ui::shell::connection::{CONNECTION_ROWS, ConnectionControl, PAINT_ORDER};
+use crate::ui::shell::paging;
 
 /// 0xEA can be drawn: it needs the same art as every active-game page.
 pub(crate) fn connection_shell_drawable(state: &AppState) -> bool {
@@ -29,18 +30,25 @@ pub(crate) fn render_connection_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    let layout = crate::app::input::connection::sync(state).expect("active 0xEA geometry");
-    in_game_shell::paint_dialog_nodes(state, encoder, destination, &DIALOG, |paint, ui| {
+    crate::app::input::connection::sync(state).expect("active 0xEA geometry");
+    in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let page = state.match_state.network_wait.page().expect("open 0xEA");
-        // Paging paints on the side art and the texts only: before the
-        // captions, as it always did.
-        if page.page_count() > 1 {
-            let held = [ConnectionControl::PreviousPage, ConnectionControl::NextPage]
-                .map(|c| pressed(ui, c.id()));
-            let shown = page.page.index(page.rows.len(), CONNECTION_ROWS) + 1;
-            paint.paging(layout.paging, held, shown, page.page_count());
-        }
+        // Paging, shown only where there is more than one page, paints on the
+        // side art and the texts only: before the captions, as it always did.
+        let counter = |id: i32| {
+            (id == i32::from(paging::COUNTER)).then(|| {
+                let index = page.page.index(page.rows.len(), CONNECTION_ROWS);
+                paging::counter_text(index, page.page_count())
+            })
+        };
+        let style = GuiStyle {
+            buttons: ButtonArt::Side,
+            side: Some(paint.side_buttons()),
+            text_of: Some(&counter),
+            ..Default::default()
+        };
+        paint.nodes(ui, &[paging::PREVIOUS, paging::NEXT, paging::COUNTER], style);
         let first = page.visible_range().start;
         let text_of = |id: i32| -> Option<String> {
             match ConnectionControl::from_id(u16::try_from(id).ok()?)? {

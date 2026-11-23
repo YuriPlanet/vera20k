@@ -120,7 +120,7 @@ pub const CANCEL: u16 = 2;
 ///
 /// After them the statics that only paint (no help, so the pointer passes
 /// them by): the captions, the description, the capture field's key and its
-/// sunken frame. The texts sit at their rects' top left, like the rows; the
+/// sunken frame, then the heading and status line. The texts sit at their rects' top left, like the rows; the
 /// combo face's caption is cut at its arrow reserve.
 fn spec() -> NodeSpec {
     use crate::ui::shell::geom::ShellAlign;
@@ -168,6 +168,7 @@ fn spec() -> NodeSpec {
         .child(text().id(DESCRIPTION_TEXT.into()))
         .child(text().id(CAPTURE_TEXT.into()))
         .child(NodeSpec::new(NodeKind::Text).id(CAPTURE_FRAME.into()))
+        .children(in_game_shell::panel_statics())
 }
 
 /// The combo face's caption rect as a `TextInset`: `combo_text_rect`'s,
@@ -308,6 +309,7 @@ impl KeyboardState {
     }
     /// The open category list's lit row: the one under the pointer, or the
     /// selection until the pointer reaches a row.
+    #[cfg(all(test, tests_ui))]
     pub fn category_hot_row(&self) -> Option<usize> {
         let node = self.category_node()?;
         self.ui.gui().combo_drop_down(node)?.hot_row
@@ -499,6 +501,8 @@ impl KeyboardLayout {
     pub fn rect(self, id: u16) -> Option<RectPx> {
         let capture = self.capture;
         match id {
+            in_game_shell::TITLE => return Some(self.title),
+            in_game_shell::FOOTER => return Some(self.footer),
             DESCRIPTION_TEXT => return Some(self.description),
             //620F60 ignores the supplied0x24 flags; it paints at the inset origin.
             CAPTURE_TEXT => {

@@ -125,8 +125,8 @@ impl DiplomacyControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Return => 0x423,
-            Self::PreviousPage => 0xF201,
-            Self::NextPage => 0xF202,
+            Self::PreviousPage => super::paging::PREVIOUS,
+            Self::NextPage => super::paging::NEXT,
             Self::Header(DiplomacyHeader::Player) => 0x421,
             Self::Header(DiplomacyHeader::Allies) => 0x597,
             Self::Header(DiplomacyHeader::Chat) => 0x425,
@@ -275,10 +275,11 @@ pub struct DiplomacyView {
 /// Every child: Return and the paging buttons, the boxes (taking their
 /// press, `0x00616700`; the row boxes anywhere in their window), the
 /// insignia pictures and the left-aligned statics, each with its status
-/// help. Disabled children still hover.
+/// help, then VERA's page counter, the title and the status line. Disabled
+/// children still hover.
 pub fn spec() -> NodeSpec {
     let left = Value::Int(i32::from(crate::ui::shell::geom::ShellAlign::NONE.0));
-    NodeSpec::new(NodeKind::Dialog).children(DiplomacyControl::all().map(|control| {
+    let controls = DiplomacyControl::all().map(|control| {
         let kind = match control {
             DiplomacyControl::Return
             | DiplomacyControl::PreviousPage
@@ -292,11 +293,17 @@ pub fn spec() -> NodeSpec {
         let node = NodeSpec::new(kind)
             .id(control.id().into())
             .tooltip(control.help_key().unwrap_or_default());
-        match kind {
-            NodeKind::Text => node.with(Prop::Align, left.clone()),
+        match control {
+            DiplomacyControl::PreviousPage => node.label(super::paging::PREVIOUS_LABEL),
+            DiplomacyControl::NextPage => node.label(super::paging::NEXT_LABEL),
+            _ if kind == NodeKind::Text => node.with(Prop::Align, left.clone()),
             _ => node,
         }
-    }))
+    });
+    NodeSpec::new(NodeKind::Dialog)
+        .children(controls)
+        .child(super::paging::counter_node())
+        .children(in_game_shell::panel_statics())
 }
 
 impl DiplomacyView {
@@ -321,6 +328,14 @@ impl DiplomacyView {
 
     /// Control `id`'s rect; `None` while it is hidden.
     pub fn rect(&self, layout: &DiplomacyLayout, id: u16) -> Option<RectPx> {
+        match id {
+            super::paging::COUNTER => {
+                return (self.page_count > 1).then(|| super::paging::counter_rect(layout.paging));
+            }
+            in_game_shell::TITLE => return Some(layout.title),
+            in_game_shell::FOOTER => return Some(layout.status_line),
+            _ => {}
+        }
         let control = DiplomacyControl::from_id(id)?;
         self.shows(control).then(|| layout.control_rect(control))
     }

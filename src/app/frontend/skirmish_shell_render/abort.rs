@@ -18,7 +18,7 @@ pub(crate) fn render_abort_shell(
 ) -> anyhow::Result<()> {
     let layout = crate::app::input::abort::sync(state).expect("active B6 geometry");
     let secondary = layout.secondary_kind;
-    super::in_game_shell::paint_dialog_nodes(state, encoder, destination, &DIALOG, |paint, ui| {
+    super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let text_of = |id: i32| -> Option<String> {
             let id = u16::try_from(id).ok()?;

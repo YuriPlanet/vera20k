@@ -41,7 +41,7 @@ pub enum SoundControl {
 }
 
 impl SoundControl {
-    const ALL: [Self; 9] = [
+    pub const ALL: [Self; 9] = [
         Self::Button(SoundButton::Back),
         Self::Button(SoundButton::Play),
         Self::Button(SoundButton::Stop),
@@ -141,7 +141,8 @@ impl SoundState {
             };
             node.id(control.id().into()).tooltip(control.help().0)
         });
-        // The slider captions are statics with no help.
+        // The slider captions, title and status line are statics with no
+        // help.
         let labels = [0, 1, 2].map(slider_label);
         let mut ui = DialogController::default();
         ui.reset_to(DIALOG);
@@ -150,6 +151,7 @@ impl SoundState {
                 NodeSpec::new(NodeKind::Dialog)
                     .children(controls)
                     .children(labels)
+                    .children(in_game_shell::panel_statics())
             });
         }
         Self { rows, ui }
@@ -381,10 +383,16 @@ impl SoundLayout {
         }
     }
 
-    /// Control `id`'s rect, a slider caption's included.
+    /// Control `id`'s rect, a slider caption's, the title's and the status
+    /// line's included.
     pub fn rect(self, id: u16) -> Option<RectPx> {
         if let Some(index) = SHELL_SOUND_LABELS.iter().position(|label| *label == id) {
             return Some(self.labels[index]);
+        }
+        match id {
+            in_game_shell::TITLE => return Some(self.title),
+            in_game_shell::FOOTER => return Some(self.footer),
+            _ => {}
         }
         Some(match SoundControl::from_id(id)? {
             SoundControl::Button(button) => self.button(button),

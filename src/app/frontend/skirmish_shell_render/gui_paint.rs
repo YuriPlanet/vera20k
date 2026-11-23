@@ -35,6 +35,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
+use crate::render::shell_text_reveal::PathAReveal;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::checkbox::CheckboxFace;
@@ -96,6 +97,11 @@ pub(crate) enum ButtonArt {
     /// pressed or not, and the normal colour when disabled (the saved-file
     /// browsers over Skirmish): only the art shows either.
     PanelCentred,
+    /// [`Self::Panel`]'s art pushed only while the press is held with the
+    /// pointer still on it (612B70), with the type-2 caption of
+    /// [`Self::Side`] in the label colour (the front-end Keyboard page's
+    /// Back).
+    PanelType2,
     /// [`Self::Panel`] on a family page's column: the SDBTNANM art on the
     /// main-menu chrome ([`GuiPaint::column`]), fitted right-anchored to the
     /// cell, and the type-1 caption inset in the window rect.
@@ -118,12 +124,12 @@ pub(crate) enum ButtonArt {
     /// [`GuiStyle::side`]'s SIDEBTTN frame on [`GuiPaint::side`], pushed
     /// only while the press is held with the pointer still on it, lit while
     /// `Toggled`; the caption centred in the type-2 rect
-    /// (`pause_menu::button_text_rect`, pressed +2/+4) in
-    /// `pause_menu::button_text_rgb`: the side's dark colour while disabled
+    /// ([`button_text_rect`], pressed +2/+4) in
+    /// [`button_text_rgb`]: the side's dark colour while disabled
     /// or lit. `Color` is not read. Nothing paints without `side`.
     Side,
     /// [`Self::Modal`]'s MNBTTN art with the type-2 caption of the in-game
-    /// dialogs' MNBTTN buttons: centred in `pause_menu::button_text_rect`
+    /// dialogs' MNBTTN buttons: centred in [`button_text_rect`]
     /// (pressed +2/+4, not owner-draw's +2/+5).
     ModalType2,
 }
@@ -138,6 +144,7 @@ impl ButtonArt {
             | ButtonArt::ModalCentred
             | ButtonArt::ModalSqueezed
             | ButtonArt::ModalType2
+            | ButtonArt::PanelType2
             | ButtonArt::Side => held,
             _ => captured,
         }
@@ -159,8 +166,8 @@ impl ButtonArt {
                 centred,
             ),
             (ButtonArt::ModalCentred | ButtonArt::PanelCentred, _) => (rect, centred),
-            (ButtonArt::ModalType2 | ButtonArt::Side, _) => {
-                (super::pause_menu::button_text_rect(rect, pressed), centred)
+            (ButtonArt::ModalType2 | ButtonArt::PanelType2 | ButtonArt::Side, _) => {
+                (button_text_rect(rect, pressed), centred)
             }
             (_, Some(align)) => (rect, align),
             (ButtonArt::Column, None) => (
@@ -214,6 +221,11 @@ pub(crate) enum ComboArt {
     /// No face: the host paints it (VERA's roster cells); only an open
     /// list paints.
     Host,
+    /// [`Self::Plain`]'s face; its open list (the host's rows, all shown,
+    /// no scrollbar) in the owner-draw two-pixel bevel round its
+    /// `PopupRect`, the row under the pointer lit, else the selection
+    /// (A3's category list).
+    Beveled,
 }
 
 /// Share the right-panel heading's text width while keeping the retail
@@ -256,6 +268,10 @@ pub(crate) struct GuiStyle<'a> {
     /// The host's enable for a node by its `Id`, in place of its `Enabled`
     /// (a button the host greys while it still takes presses).
     pub(crate) enabled_of: Option<&'a dyn Fn(i32) -> Option<bool>>,
+    /// Whether a button shows pushed by its `Id`, in place of its art's
+    /// rule ([`ButtonArt::pushed`]): a host whose buttons keep the pushed
+    /// look off the pointer, or lose it under a box.
+    pub(crate) pressed_of: Option<&'a dyn Fn(i32) -> Option<bool>>,
     /// Lists paint as the shell dialogs' own ([`super::controls::list_view_controls`]:
     /// frame, selection, the control scrollbar) rather than as the WOL
     /// pages' over their art ([`super::list::paint_list`]).
@@ -287,6 +303,9 @@ pub(crate) struct GuiStyle<'a> {
     /// A disabled checkbox shows its face dimmed (`0x006163A0`); off, a
     /// checkbox's `Enabled` greys only its caption.
     pub(crate) dim_disabled_checkboxes: bool,
+    /// A text that reveals as a kind-1 static does by its `Id` (a heading),
+    /// in place of its colour.
+    pub(crate) reveal_of: Option<&'a dyn Fn(i32) -> Option<PathAReveal>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -300,6 +319,7 @@ impl Default for GuiStyle<'_> {
             cells_of: None,
             art: None,
             enabled_of: None,
+            pressed_of: None,
             control_lists: false,
             combos: ComboArt::Plain,
             skirmish_lists: false,
@@ -311,6 +331,7 @@ impl Default for GuiStyle<'_> {
             side: None,
             frame_of: None,
             dim_disabled_checkboxes: false,
+            reveal_of: None,
         }
     }
 }
@@ -616,7 +637,14 @@ pub(crate) fn paint_gui_into(
                     .zip(id(node))
                     .and_then(|(art_of, id)| art_of(id))
                     .unwrap_or(style.buttons);
-                let pressed = art.pushed(held, captured) == Some(node);
+                let pressed = match style
+                    .pressed_of
+                    .zip(id(node))
+                    .and_then(|(pressed_of, id)| pressed_of(id))
+                {
+                    Some(pressed) => pressed,
+                    None => art.pushed(held, captured) == Some(node),
+                };
                 if art == ButtonArt::Side {
                     let Some(side) = style.side else { continue };
                     let look = PauseMenuButtonState {
@@ -647,7 +675,10 @@ pub(crate) fn paint_gui_into(
                     }
                     // The rest are the shell control art's.
                     (_, None) => continue,
-                    (ButtonArt::Panel | ButtonArt::PanelCentred, Some(atlas)) => {
+                    (
+                        ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
+                        Some(atlas),
+                    ) => {
                         super::chrome::push_right_panel_button_shp(
                             &mut paint.controls,
                             atlas,
@@ -961,10 +992,26 @@ pub(crate) fn paint_gui_into(
             NodeKind::Text => {
                 if let Some(label) = caption(node).filter(|t| !covered && !t.is_empty()) {
                     let at = inset(gui, node, rect, scale).unwrap_or(rect);
-                    let rgb = text_rgb(gui, node, enabled, style.rgb, None);
-                    paint
-                        .texts
-                        .push(text(state, &label, at, align, glyph, rgb, depth));
+                    let reveal = style
+                        .reveal_of
+                        .zip(id(node))
+                        .and_then(|(reveal_of, id)| reveal_of(id));
+                    paint.texts.push(match reveal {
+                        Some(reveal) => shell_text::draw_in_rect_path_a_scaled(
+                            font,
+                            &label,
+                            rect_to_text_rect(at),
+                            align,
+                            [0.0; 2],
+                            depth,
+                            reveal,
+                            glyph,
+                        ),
+                        None => {
+                            let rgb = text_rgb(gui, node, enabled, style.rgb, None);
+                            text(state, &label, at, align, glyph, rgb, depth)
+                        }
+                    });
                 }
             }
             // A flag or insignia PCX (`Art`) from the shell art's flags,
@@ -1022,6 +1069,39 @@ pub(crate) fn checkbox_face(gui: &Gui, node: NodeId) -> CheckboxFace {
     }
 }
 
+/// Type2 chooses released0 / pressed1 / timer-highlight2 (612EE8..612F5B).
+/// Disabled buttons retain their SHP frame;612F5F changes their text color only.
+pub(crate) fn button_frame(state: PauseMenuButtonState) -> usize {
+    vera20k_gui::shell::button::owner_button_frame(state.pressed, state.highlighted)
+}
+
+pub(crate) fn button_text_rgb(theme: SidebarTheme, enabled: bool) -> [f32; 3] {
+    if enabled {
+        return SHELL_LABEL_TEXT_RGB;
+    }
+    // Original612F5F..613136 uses active scenario side and the initialized colors
+    // 72A8E0/72A900/72A920 (registered815454/58/5C). Its RGB565 encode/decode
+    // truncates [0,82,117] to[0,80,112] for Allied and [72,0,0] for Soviet/Yuri.
+    let rgb = match theme {
+        SidebarTheme::Allied => [0, 80, 112],
+        SidebarTheme::Soviet | SidebarTheme::Yuri => [72, 0, 0],
+    };
+    rgb.map(|value| value as f32 / 255.0)
+}
+
+pub(crate) fn button_text_rect(rect: RectPx, pressed: bool) -> RectPx {
+    // Common native type2 text tail61358D..6135EE: fixed right/bottom, and
+    // the pressed state moves left/top by2/4 within that same rectangle.
+    let dx = if pressed { 2 } else { 0 };
+    let dy = if pressed { 4 } else { 0 };
+    RectPx::new(
+        rect.x + dx,
+        rect.y + 1 + dy,
+        rect.w - 2 - dx,
+        rect.h - 1 - dy,
+    )
+}
+
 /// [`ButtonArt::Side`]: `look`'s SIDEBTTN frame (frame 0 when the art lacks
 /// it) at its canvas size on `rect`, cut to the clip, then the caption, if
 /// any, centred in the type-2 rect in the type-2 colour.
@@ -1037,13 +1117,13 @@ pub(crate) fn push_side_button(
     glyph: f32,
 ) {
     let frames = side.frames;
-    if let Some(entry) = frames[super::pause_menu::button_frame(look)].or(frames[0]) {
+    if let Some(entry) = frames[button_frame(look)].or(frames[0]) {
         super::in_game_shell::push_art(art, entry, rect, side.clip);
     }
     let Some(caption) = caption else { return };
     // A lit face takes the art's dark label colour, as a disabled one
     // does: yellow is hard to read on it.
-    let rgb = super::pause_menu::button_text_rgb(side.theme, look.enabled && !look.highlighted);
+    let rgb = button_text_rgb(side.theme, look.enabled && !look.highlighted);
     let scale = crate::ui::shell::geom::RETAIL_SCALE;
     let (at, align) = ButtonArt::Side.caption_rect(rect, look.pressed, None, scale);
     texts.push(shell_text::draw_in_rect_scaled(
@@ -1237,6 +1317,57 @@ fn paint_combo(
     }
     let Some(drop_down) = drop_down else { return };
     let popup = drop_down.popup;
+    if style.combos == ComboArt::Beveled {
+        let rows_rect = popup.rect;
+        let frame = RectPx::new(
+            rows_rect.x - 2,
+            rows_rect.y - 2,
+            rows_rect.w + 4,
+            rows_rect.h + 4,
+        );
+        super::chrome::push_solid_rect(
+            &mut paint.popup,
+            atlas,
+            frame,
+            super::SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+            SHELL_DROPDOWN_DEPTH,
+        );
+        let row_h = vera20k_gui::shell::list::ListMetrics::combo(scale).row_h;
+        let lit = drop_down.hot_row.or(selected);
+        for (index, (item, _)) in rows.iter().enumerate() {
+            let row = RectPx::new(
+                rows_rect.x,
+                rows_rect.y + index as i32 * row_h,
+                rows_rect.w,
+                row_h,
+            );
+            if lit == Some(index) {
+                super::chrome::push_solid_rect(
+                    &mut paint.popup,
+                    atlas,
+                    row,
+                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                    SHELL_DROPDOWN_DEPTH - 0.00001,
+                );
+            }
+            paint.popup_texts.push(text(
+                state,
+                item,
+                RectPx::new(row.x + 3, row.y, row.w - 6, row.h),
+                ShellAlign::V_CENTER,
+                scale.factor(),
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_DROPDOWN_TEXT_DEPTH,
+            ));
+        }
+        super::chrome::push_ownerdraw_two_pixel_bevel_frame(
+            &mut paint.popup,
+            atlas,
+            frame,
+            SHELL_DROPDOWN_DEPTH - 0.00002,
+        );
+        return;
+    }
     if style.combos == ComboArt::Framed {
         // `0x105`'s list is no `ComboDropWin`: a one-pixel outline, the
         // selection lit wherever the pointer is, its rows uncut.
@@ -1393,14 +1524,14 @@ mod tests {
     ) -> (Vec<SpriteInstance>, Vec<ShellTextDraw>) {
         let (mut art, mut texts) = (Vec::new(), Vec::new());
         let buttons = side.frames;
-        if let Some(entry) = buttons[super::super::pause_menu::button_frame(look)].or(buttons[0]) {
+        if let Some(entry) = buttons[super::button_frame(look)].or(buttons[0]) {
             super::super::in_game_shell::push_art(&mut art, entry, rect, side.clip);
         }
-        let rgb = super::super::pause_menu::button_text_rgb(
+        let rgb = super::button_text_rgb(
             side.theme,
             look.enabled && !look.highlighted,
         );
-        let at = super::super::pause_menu::button_text_rect(rect, look.pressed);
+        let at = super::button_text_rect(rect, look.pressed);
         texts.push(shell_text::draw_in_rect_scaled(
             font,
             caption,
@@ -1497,7 +1628,7 @@ mod tests {
         for pressed in [false, true] {
             let centred = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
             let hand = (
-                super::super::pause_menu::button_text_rect(rect, pressed),
+                super::button_text_rect(rect, pressed),
                 centred,
             );
             for art in [ButtonArt::ModalType2, ButtonArt::Side] {
@@ -1751,5 +1882,58 @@ mod tests {
                 scale.scale_rect(expected),
             );
         }
+    }
+
+    #[test]
+    fn disabled_type2_changes_side_specific_text_without_dimming_art() {
+        for theme in [
+            SidebarTheme::Allied,
+            SidebarTheme::Soviet,
+            SidebarTheme::Yuri,
+        ] {
+            assert_eq!(button_text_rgb(theme, true), SHELL_LABEL_TEXT_RGB);
+        }
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Allied, false),
+            [0.0, 80.0 / 255.0, 112.0 / 255.0]
+        );
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Soviet, false),
+            [72.0 / 255.0, 0.0, 0.0]
+        );
+        assert_eq!(
+            button_text_rgb(SidebarTheme::Yuri, false),
+            button_text_rgb(SidebarTheme::Soviet, false)
+        );
+        let released = PauseMenuButtonState {
+            enabled: false,
+            ..Default::default()
+        };
+        assert_eq!(button_frame(released), 0);
+        assert_eq!(
+            button_frame(PauseMenuButtonState {
+                highlighted: true,
+                ..released
+            }),
+            2
+        );
+        assert_eq!(
+            button_frame(PauseMenuButtonState {
+                pressed: true,
+                highlighted: true,
+                ..released
+            }),
+            1
+        );
+    }
+
+    #[test]
+    fn pressed_caption_preserves_native_right_and_bottom_clip_edges() {
+        let rect = RectPx::new(653, 227, 125, 25);
+        assert_eq!(
+            button_text_rect(rect, false),
+            RectPx::new(653, 228, 123, 24)
+        );
+        assert_eq!(button_text_rect(rect, true), RectPx::new(655, 232, 121, 20));
     }
 }

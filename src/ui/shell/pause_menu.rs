@@ -149,11 +149,13 @@ impl PauseMenuTemplate {
             Self::Offline | Self::Network => PauseMenuControl {
                 id: TITLE,
                 csf_key: "GUI:GameOptions",
+                fallback: "Game Options",
                 help: None,
             },
             Self::Internet => PauseMenuControl {
                 id: TITLE,
                 csf_key: "GUI:OptionsInternet",
+                fallback: "Internet Options",
                 help: None,
             },
         }
@@ -178,55 +180,72 @@ impl Default for PauseMenuButtonState {
     }
 }
 
-/// A template control: id, CSF caption and executed `0x006040B0` help key.
-/// The rects are `shell_layout.ini`'s.
+/// A template control: id, CSF caption (and its text while no string table
+/// is loaded) and executed `0x006040B0` help key. The rects are
+/// `shell_layout.ini`'s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuControl {
     pub id: u16,
     pub csf_key: &'static str,
+    pub fallback: &'static str,
     pub help: Option<&'static str>,
 }
 
-const fn button(id: u16, csf_key: &'static str, help: &'static str) -> PauseMenuControl {
+impl PauseMenuControl {
+    pub const fn caption(self) -> (&'static str, &'static str) {
+        (self.csf_key, self.fallback)
+    }
+}
+
+const fn button(
+    id: u16,
+    (csf_key, fallback): (&'static str, &'static str),
+    help: &'static str,
+) -> PauseMenuControl {
     PauseMenuControl {
         id,
         csf_key,
+        fallback,
         help: Some(help),
     }
 }
 
+const GAME_CONTROLS: (&str, &str) = ("GUI:GameControls", "Game Controls");
+const ABORT: (&str, &str) = ("GUI:AbortMission", "Abort Mission");
+const RESUME: (&str, &str) = ("GUI:ResumeMission", "Resume Mission");
+
 /// B5 in [`PauseMenuButton::NATIVE`] order.
 const B5_BUTTONS: [PauseMenuControl; 6] = [
-    button(0x521, "GUI:GameControls", "STT:IGSingleOptButtonControls"),
-    button(0x51e, "GUI:LoadGame", "STT:IGSingleOptButtonLoad"),
-    button(0x51f, "GUI:SaveGame", "STT:IGSingleOptButtonSave"),
-    button(0x520, "GUI:DeleteGame", "STT:IGSingleOptButtonDelete"),
-    button(0x522, "GUI:AbortMission", "STT:IGSingleOptButtonAbort"),
-    button(0x686, "GUI:ResumeMission", "STT:IGSingleOptButtonBack"),
+    button(0x521, GAME_CONTROLS, "STT:IGSingleOptButtonControls"),
+    button(0x51e, ("GUI:LoadGame", "Load Game"), "STT:IGSingleOptButtonLoad"),
+    button(0x51f, ("GUI:SaveGame", "Save Game"), "STT:IGSingleOptButtonSave"),
+    button(0x520, ("GUI:DeleteGame", "Delete Game"), "STT:IGSingleOptButtonDelete"),
+    button(0x522, ABORT, "STT:IGSingleOptButtonAbort"),
+    button(0x686, RESUME, "STT:IGSingleOptButtonBack"),
 ];
 
 /// BBA (C019C8, five controls): Game Controls, Abort, Resume.
 const BBA_BUTTONS: [PauseMenuControl; 3] = [
-    button(0x521, "GUI:GameControls", "STT:IGMultiOptButtonControls"),
-    button(0x522, "GUI:AbortMission", "STT:IGMultiOptButtonAbort"),
-    button(0x686, "GUI:ResumeMission", "STT:IGMultiOptButtonResume"),
+    button(0x521, GAME_CONTROLS, "STT:IGMultiOptButtonControls"),
+    button(0x522, ABORT, "STT:IGMultiOptButtonAbort"),
+    button(0x686, RESUME, "STT:IGMultiOptButtonResume"),
 ];
 
 /// FF (BFAB00, twelve controls): Resume is control675, not686.
 const FF_BUTTONS: [PauseMenuControl; 3] = [
-    button(0x521, "GUI:GameControls", "STT:OptionInternetGameControls"),
-    button(0x522, "GUI:AbortMission", "STT:OptionInternetAbortMission"),
-    button(0x675, "GUI:ResumeMission", "STT:IGMultiOptButtonResume"),
+    button(0x521, GAME_CONTROLS, "STT:OptionInternetGameControls"),
+    button(0x522, ABORT, "STT:OptionInternetAbortMission"),
+    button(0x675, RESUME, "STT:IGMultiOptButtonResume"),
 ];
 
 /// The right-panel title static and the status line: every template has
 /// both, each a node of its own ([`spec`]).
-pub const TITLE: u16 = 0x694;
-pub const FOOTER: u16 = 0x695;
+pub use super::in_game_shell::{FOOTER, TITLE};
 
 pub const PAUSE_MENU_FOOTER: PauseMenuControl = PauseMenuControl {
     id: FOOTER,
     csf_key: "GUI:Blank",
+    fallback: "",
     help: None,
 };
 
@@ -516,10 +535,7 @@ pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &st
             None => node,
         }
     };
-    let statics = [
-        text(TITLE, Some(ShellAlign::PANEL_TITLE)),
-        text(FOOTER, Some(ShellAlign::NONE)),
-    ];
+    let statics = in_game_shell::panel_statics();
     // The group's caption takes no alignment.
     let internet = (template == PauseMenuTemplate::Internet)
         .then(|| {
@@ -542,6 +558,11 @@ pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &st
 
 /// FF's group box and the sliders' left captions (template statics `0xFFFF`).
 pub const INTERNET_GROUP: u16 = 0xFF02;
+/// The group box's caption.
+pub const INTERNET_GROUP_LABEL: (&str, &str) =
+    ("GUI:InternetGameControls", "Internet Game Controls");
+/// BBB's 0x52C caption, VERA's Keyboard button's.
+pub const KEYBOARD_LABEL: (&str, &str) = ("GUI:Keyboard", "");
 pub const INTERNET_CAPTIONS: [u16; 2] = [0xFF00, 0xFF01];
 /// The sliders' value statics 0x672 and 0x671.
 pub const INTERNET_VALUES: [u16; 2] = [0x672, 0x671];

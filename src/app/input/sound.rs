@@ -44,6 +44,13 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
         )
     },
     own_checkbox_sound: false,
+    // B8 reads the control under the pointer on every move, a held
+    // trackbar's drag included.
+    help_under_held: true,
+    help_fallback: |key| {
+        let mut helps = SoundControl::ALL.into_iter().map(SoundControl::help);
+        helps.find(|(of, _)| *of == key).map_or("", |(_, fallback)| fallback)
+    },
 };
 pub(crate) fn open(state: &mut AppState) {
     if !state.audio.launcher_audio_available {

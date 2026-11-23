@@ -512,10 +512,11 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
     })
 }
 
-/// The status-line help for the control under the pointer.
-/// A string-table or `VERA:` key.
+/// The status-line help for the control under the pointer: the Options
+/// page's, else the menu's ([`super::dialog_page::help`]; a held trackbar
+/// keeps the help it showed at the press, FF's pointer moves going only to
+/// it until the release). A string-table or `VERA:` key.
 pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
-    let template = current_template(state);
     let presentation = &state.match_state.match_presentation;
     if let Some(help) = presentation
         .options_page
@@ -524,18 +525,7 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
     {
         return Some(help);
     }
-    // A held trackbar keeps the help it showed at the press: FF's pointer
-    // moves go only to it until the release.
-    let ui = &presentation.dialog_ui;
-    let hovered =
-        super::dialog_page::held_trackbar(ui).or_else(|| super::dialog_page::hovered(ui))?;
-    if let Some(slider) = InternetSlider::from_id(hovered) {
-        return Some(slider.help());
-    }
-    match template.button(hovered)? {
-        PauseMenuButton::Keyboard => Some(IN_GAME_KEYBOARD_HELP),
-        button => template.control(button)?.help,
-    }
+    super::dialog_page::help(&presentation.dialog_ui, None)
 }
 
 /// Puts the menu's live values on its nodes: each button's enable and lit
@@ -568,12 +558,20 @@ fn sync_values(
 /// (a disabled one too, which paints in the side's dark colour) in its
 /// `states`: its renderer's call every drawn frame before it paints from
 /// them. The pointer's own sync hides the disabled buttons, so they neither
-/// hover nor take a press.
+/// hover nor take a press. The open Options page's tree is brought in line
+/// with its layout too, which it returns.
 pub(crate) fn sync(
     state: &mut AppState,
     states: &[PauseMenuButtonState; 8],
-) -> Option<PauseMenuLayout> {
+) -> Option<(PauseMenuLayout, Option<LauncherOptionsLayout>)> {
     let layout = current_layout(state)?;
+    let page_layout = options_page_layout(state);
+    if let (Some(page_layout), Some(page)) = (
+        &page_layout,
+        state.match_state.match_presentation.options_page.as_mut(),
+    ) {
+        page.dialog.shell_sync(page_layout);
+    }
     let template = layout.template;
     let positions = state
         .match_state
@@ -587,7 +585,7 @@ pub(crate) fn sync(
         |id| layout.rect(id),
         |gui, root| sync_values(gui, root, template, states, positions),
     );
-    Some(layout)
+    Some((layout, page_layout))
 }
 
 /// One pointer message on the menu (`down`: `None` moves). The Options page

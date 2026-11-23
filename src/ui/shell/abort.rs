@@ -138,8 +138,10 @@ impl AbortLayout {
 
     /// Control `id`'s rect, `None` for the hidden 712.
     pub fn rect(self, id: u16) -> Option<RectPx> {
-        if id == QUESTION {
-            return Some(self.question);
+        match id {
+            QUESTION => return Some(self.question),
+            in_game_shell::FOOTER => return Some(self.footer),
+            _ => {}
         }
         self.button(AbortButton::from_id(id)?)
     }
@@ -148,7 +150,8 @@ impl AbortLayout {
 /// B6's buttons in resource order, each with the help its stored result
 /// keys (`0x006040B0`), then the question. Plain static `0x00615A81`
 /// takes its style's horizontal centring but not `SS_CENTERIMAGE`'s
-/// vertical one; it has no help, so the pointer passes it by.
+/// vertical one; it has no help, so the pointer passes it by. Then the
+/// status line (B6 has no title).
 pub fn spec(secondary: AbortSecondary) -> NodeSpec {
     let buttons = AbortButton::ALL.map(|button| {
         NodeSpec::new(NodeKind::Button)
@@ -162,6 +165,7 @@ pub fn spec(secondary: AbortSecondary) -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         .children(buttons)
         .child(question)
+        .children(in_game_shell::panel_statics())
 }
 
 pub fn abort_layout(
