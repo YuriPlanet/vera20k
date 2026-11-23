@@ -1120,8 +1120,10 @@ fn upload_to_gpu(
     // their step (the Supers' blinks, the dock's rows and hit areas) runs
     // first, then the drawing reads it.
     crate::app::presentation::super_timers::update_super_timers(state);
+    let mut timer_hud = std::mem::take(&mut state.match_state.match_presentation.super_timer_hud);
     let (mut super_timer_fill, mut super_timer_text) =
-        crate::app::presentation::super_timers::build_super_timer_instances(state);
+        crate::app::presentation::super_timers::build_super_timer_instances(state, &mut timer_hud);
+    state.match_state.match_presentation.super_timer_hud = timer_hud;
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {

@@ -17,6 +17,7 @@ pub(crate) mod field_parts;
 pub(crate) mod health_templates;
 pub(crate) mod layout_parts;
 pub(crate) mod picture_hud;
+pub(crate) mod text_hud;
 pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 pub(crate) mod flying_credits;

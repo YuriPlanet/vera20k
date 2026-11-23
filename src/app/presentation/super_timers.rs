@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use crate::app::AppState;
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
 use crate::assets::csf_file::{CsfFile, type_ui_name};
 use crate::map::houses::is_allied_with;
@@ -701,64 +702,71 @@ pub(crate) fn update_super_timers(state: &mut AppState) {
     presentation.super_timer_frame.toggle = toggle;
 }
 
-/// The timer lines as UI sprites: the black boxes, drawn first, and the
-/// text, from what [`update_super_timers`] worked out this frame.
+/// The timer lines as UI sprites, from what [`update_super_timers`] worked
+/// out this frame: a box and a text node of `hud` for each text, the boxes
+/// drawn first, then the text. Returns the boxes and the glyphs.
 pub(crate) fn build_super_timer_instances(
     state: &AppState,
+    hud: &mut TextHud,
 ) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
     use crate::app::presentation::field_parts;
     use crate::ui::field_layout::FieldPart;
     let frame = &state.match_state.match_presentation.super_timer_frame;
-    if frame.texts.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
     // Screen-space lanes add back the world camera the UI shader subtracts,
     // and the box's corner.
-    let camera = field_parts::lane_camera(state, FieldPart::Timers);
-    let font = &state.renderer.bit_font;
-    let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
-    let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
-        position: [x as f32 + camera[0], y as f32 + camera[1]],
-        size: [w as f32, h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        tint: [0.0; 3],
-        alpha: 1.0,
-        ..Default::default()
+    let camera = if frame.texts.is_empty() {
+        [0.0; 2]
+    } else {
+        field_parts::lane_camera(state, FieldPart::Timers)
     };
-    let mut fills = Vec::with_capacity(frame.texts.len());
-    let mut texts = Vec::new();
-    for (text, at, rgb) in &frame.texts {
-        fills.push(fill(at.fill));
-        texts.extend(font.build_text(
-            text,
-            at.x as f32,
-            at.y as f32,
-            1.0,
-            0.0,
-            tint(*rgb),
-            camera,
-        ));
-    }
-    if let Some((rect, expanded)) = frame.toggle {
-        // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
-        for row in 0..4 {
-            let width = if expanded {
-                7 - row * 2
-            } else {
-                1 + row * 2
-            };
-            let mut triangle = fill([
-                rect.x + (rect.w - width) / 2,
-                rect.y + (rect.h - 4) / 2 + row,
-                width,
-                1,
-            ]);
-            triangle.tint = [0.0, 0.0, 0.0];
-            fills.push(triangle);
+    draw_timer_frame(frame, camera, &state.renderer.bit_font, hud)
+}
+
+/// [`build_super_timer_instances`] for a given frame and lane camera.
+fn draw_timer_frame(
+    frame: &TimerFrame,
+    camera: [f32; 2],
+    font: &crate::render::bit_font::BitFont,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    hud.begin();
+    if !frame.texts.is_empty() {
+        let black = text_hud::rgb([0; 3]);
+        let fill = |hud: &mut TextHud, [x, y, w, h]: [i32; 4]| {
+            hud.fill(
+                vera20k_gui::Rect::new(x, y, w, h),
+                [x as f32 + camera[0], y as f32 + camera[1]],
+                [w as f32, h as f32],
+                black,
+            );
+        };
+        for (text, at, rgb) in &frame.texts {
+            fill(hud, at.fill);
+            hud.text(
+                vera20k_gui::Rect::new(at.x, at.y, at.fill[2], at.fill[3]),
+                text,
+                [at.x as f32 + camera[0], at.y as f32 + camera[1]],
+                text_hud::rgb(*rgb),
+            );
+        }
+        if let Some((rect, expanded)) = frame.toggle {
+            // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
+            for row in 0..4 {
+                let width = if expanded { 7 - row * 2 } else { 1 + row * 2 };
+                fill(
+                    hud,
+                    [
+                        rect.x + (rect.w - width) / 2,
+                        rect.y + (rect.h - 4) / 2 + row,
+                        width,
+                        1,
+                    ],
+                );
+            }
         }
     }
-    (fills, texts)
+    hud.finish(font);
+    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
 }
 
 /// Whether a 0 s Super line's blink flips on the next timer draw
