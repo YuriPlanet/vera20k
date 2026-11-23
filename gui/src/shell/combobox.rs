@@ -2,9 +2,7 @@
 //! The item's identity and selected value remain with each control's owner.
 
 use super::geom::{RectPx, ShellScale};
-use super::list::{
-    ListMetrics, ListScrollPart, ShellListGeometry, scrollbar_thumb_y, thumb_height,
-};
+use super::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 
 /// Default combo metrics, measured from gamemd's `ComboDropWin` and owner-draw
 /// combo: the face height, the drop-down's row height (its scrollbar is the
@@ -72,15 +70,7 @@ impl ComboPopup {
         self
     }
     pub fn scrollbar(&self) -> Option<RectPx> {
-        (self.total > self.visible_rows).then(|| {
-            let width = ListMetrics::combo(self.scale).scrollbar_w;
-            RectPx::new(
-                self.rect.x + self.rect.w - width,
-                self.rect.y,
-                width,
-                self.rect.h,
-            )
-        })
+        self.panes().1
     }
     /// The shared scrollbar child's metrics on this list's rows.
     fn metrics(&self) -> ListMetrics {
@@ -89,34 +79,28 @@ impl ComboPopup {
             ..ListMetrics::combo(self.scale)
         }
     }
+    /// The row content and scrollbar: the list's, without its frame inset.
+    fn panes(&self) -> (RectPx, Option<RectPx>) {
+        let scrolls = self.total > self.visible_rows;
+        ShellListGeometry::panes(self.rect, 0, scrolls, self.metrics())
+    }
     pub fn thumb(&self) -> Option<RectPx> {
-        let bar = self.scrollbar()?;
-        let (metrics, max_top) = (self.metrics(), self.total - self.visible_rows);
-        let height = thumb_height(bar.h, max_top, metrics);
-        let y = scrollbar_thumb_y(bar, height, self.first, max_top, metrics);
-        Some(RectPx::new(bar.x + 1, y, bar.w - 2, height))
+        self.scroll_geometry().thumb
     }
     pub fn scroll_geometry(&self) -> ShellListGeometry {
-        ShellListGeometry {
-            outer: self.rect,
-            content: self.content(),
-            scrollbar: self.scrollbar(),
-            thumb: self.thumb(),
-            visible_rows: self.visible_rows,
-            max_top: self.total - self.visible_rows,
-            metrics: self.metrics(),
-        }
+        ShellListGeometry::unframed(
+            self.rect,
+            self.total,
+            self.visible_rows,
+            self.first,
+            self.metrics(),
+        )
     }
     pub fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {
         self.scroll_geometry().scroll_part_at(x, y)
     }
     pub fn content(&self) -> RectPx {
-        RectPx::new(
-            self.rect.x,
-            self.rect.y,
-            self.rect.w - self.scrollbar().map_or(0, |bar| bar.w),
-            self.rect.h,
-        )
+        self.panes().0
     }
     pub fn row_rect(&self, index: usize) -> Option<RectPx> {
         if index < self.first || index >= self.first + self.visible_rows {

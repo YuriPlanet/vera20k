@@ -22,6 +22,8 @@ pub const ROW_HEIGHT: i32 = 19;
 const SCROLLBAR_WIDTH: i32 = 20;
 const ARROW_HEIGHT: i32 = 22;
 const MIN_THUMB_HEIGHT: i32 = 14;
+/// The list frame's border inside its window, on every side.
+const FRAME_INSET: i32 = 1;
 
 /// A list box's row and scrollbar metrics in the pixels its page is drawn in:
 /// the default metrics on an unscaled layout, grown with the window on a
@@ -182,7 +184,7 @@ pub struct ShellListGeometry {
 }
 impl ShellListGeometry {
     pub fn new(outer: RectPx, count: usize, top: usize, metrics: ListMetrics) -> Self {
-        let visible_rows = ((outer.h - 2).max(0) / metrics.row_h) as usize;
+        let visible_rows = ((outer.h - 2 * FRAME_INSET).max(0) / metrics.row_h) as usize;
         Self::with_visible_rows(outer, count, visible_rows, top, metrics)
     }
     /// A list whose rows its owner lays out, `visible_rows` of them showing:
@@ -194,29 +196,30 @@ impl ShellListGeometry {
         top: usize,
         metrics: ListMetrics,
     ) -> Self {
-        let inner_height = (outer.h - 2).max(0);
+        Self::laid_out(outer, FRAME_INSET, count, visible_rows, top, metrics)
+    }
+    /// [`Self::with_visible_rows`] on a window without the list's frame
+    /// inset: the combo drop-down (`ComboDropWin`), whose rows and scrollbar
+    /// reach its edges.
+    pub fn unframed(
+        outer: RectPx,
+        count: usize,
+        visible_rows: usize,
+        top: usize,
+        metrics: ListMetrics,
+    ) -> Self {
+        Self::laid_out(outer, 0, count, visible_rows, top, metrics)
+    }
+    fn laid_out(
+        outer: RectPx,
+        inset: i32,
+        count: usize,
+        visible_rows: usize,
+        top: usize,
+        metrics: ListMetrics,
+    ) -> Self {
         let max_top = count.saturating_sub(visible_rows);
-        let scrollbar = (max_top > 0).then(|| {
-            RectPx::new(
-                outer.x + outer.w - metrics.scrollbar_w - 1,
-                outer.y,
-                metrics.scrollbar_w,
-                outer.h,
-            )
-        });
-        let content = RectPx::new(
-            outer.x + 1,
-            outer.y + 1,
-            (outer.w
-                - 2
-                - if scrollbar.is_some() {
-                    metrics.scrollbar_w
-                } else {
-                    0
-                })
-            .max(0),
-            inner_height,
-        );
+        let (content, scrollbar) = Self::panes(outer, inset, max_top > 0, metrics);
         let thumb = scrollbar.map(|bar| {
             let height = thumb_height(bar.h, max_top, metrics);
             RectPx::new(
@@ -235,6 +238,32 @@ impl ShellListGeometry {
             max_top,
             metrics,
         }
+    }
+    /// The row content and, when it `scrolls`, the scrollbar of window
+    /// `outer` whose frame takes `inset` px on each side: the bar spans the
+    /// window's height at its right, inside the right inset.
+    pub(crate) fn panes(
+        outer: RectPx,
+        inset: i32,
+        scrolls: bool,
+        metrics: ListMetrics,
+    ) -> (RectPx, Option<RectPx>) {
+        let bar_w = if scrolls { metrics.scrollbar_w } else { 0 };
+        let scrollbar = scrolls.then(|| {
+            RectPx::new(
+                outer.x + outer.w - metrics.scrollbar_w - inset,
+                outer.y,
+                metrics.scrollbar_w,
+                outer.h,
+            )
+        });
+        let content = RectPx::new(
+            outer.x + inset,
+            outer.y + inset,
+            (outer.w - 2 * inset - bar_w).max(0),
+            (outer.h - 2 * inset).max(0),
+        );
+        (content, scrollbar)
     }
     pub fn row(&self, visible: usize) -> RectPx {
         RectPx::new(
