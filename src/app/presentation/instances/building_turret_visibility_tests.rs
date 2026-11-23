@@ -116,7 +116,9 @@ impl Patriot {
         let colors = HouseColorMap::default();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
+            None,
         );
         let input = ShpInputs {
             runtime: &self.runtime,
@@ -177,7 +179,9 @@ fn retail_patriot_turret_appears_on_the_last_buildup_frame() {
         building_voxel_turret_visible(
             crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default(), false
+                &Default::default(),
+                false,
+                None,
             )
             .object(scene.id)
             .unwrap(),

@@ -132,7 +132,9 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default(), false,
+                &Default::default(),
+                false,
+                None,
             ),
             atlas: Some(&atlas),
             overlay_atlas: None,

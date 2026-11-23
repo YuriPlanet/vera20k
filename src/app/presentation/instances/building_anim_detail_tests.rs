@@ -136,7 +136,9 @@ fn emit(
     let building = sim.entities().get(plant).unwrap();
     let frame = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(), false,
+        &Default::default(),
+        false,
+        None,
     );
     let record = frame.object(plant).unwrap();
     let order = NativeDisplayOrder::from_world(&sim, None);

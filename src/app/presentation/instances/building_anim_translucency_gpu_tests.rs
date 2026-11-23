@@ -610,7 +610,9 @@ impl SlotScene {
         let building = sim.entities().get(self.plant).unwrap();
         let frame = crate::app::presentation::frame::PresentationFrame::capture(
             &self.scene.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
+            None,
         );
         let record = frame.object(self.plant).unwrap();
         let viewer_id = sim.session().current_house();

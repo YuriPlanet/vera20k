@@ -644,7 +644,9 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
             .unwrap();
         let record = crate::app::presentation::frame::PresentationFrame::capture(
             &scene.runtime,
-            &Default::default(), false,
+            &Default::default(),
+            false,
+            None,
         )
         .object(plane.stable_id())
         .cloned()

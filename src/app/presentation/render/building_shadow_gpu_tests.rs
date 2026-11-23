@@ -73,7 +73,9 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let entity = sim.entities().get(actor_id).expect("spawned SHP entity");
     let presented = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(), false,
+        &Default::default(),
+        false,
+        None,
     );
     let record = presented.object(actor_id).unwrap();
     let type_id = sim.interner().resolve(entity.type_ref());

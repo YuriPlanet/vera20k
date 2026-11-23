@@ -494,7 +494,9 @@ fn render_original_body_pixels(
             let gi = sim.entities().get(1).unwrap();
             let presented = crate::app::presentation::frame::PresentationFrame::capture(
                 &runtime,
-                &Default::default(), false,
+                &Default::default(),
+                false,
+                None,
             );
             let gi_record = presented.object(1).unwrap();
             let before = sim.state_hash();
