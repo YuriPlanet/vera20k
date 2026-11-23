@@ -244,9 +244,8 @@ Some parts have more keys:
 | `Cameos` | `Footer` | The height kept free under the last row, for the scroll buttons | 33 | 25 |
 | `Power` | `Step` | The height of one piece of the bar | 3 | 3 |
 
-The tabs stand in a line, one step apart: `Defenses` sets the step from `Buildings`,
-and `Infantry` and `Vehicles` follow it. A step below zero runs them from right to
-left:
+Each tab and each scroll button sits where its own `X` and `Y` say. This runs the tabs
+from right to left:
 
 ```ini
 [Mine.Buildings]
@@ -601,7 +600,6 @@ skipped, and the game tells you.
 | `Art`, `Frames`, `Palette` and the other picture keys on an original part | The pictures an original part draws. Replace the picture files instead |
 | `Color`, `Align`, `Font` | How a text looks |
 | `Command`, `Value`, `Tab` on an original part | A new command for an original button, a new value for the money number, or another tab for a tab button |
-| `Y` of one tab or of `ScrollUp` alone | The tabs share one `Y`, and so do the scroll buttons |
 
 The three big parts hold on to their edges: they have no `X` or `Y`. The command bar
 can't stand on the left or the right, and its buttons can't be changed here yet. A
