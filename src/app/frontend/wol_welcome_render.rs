@@ -552,7 +552,7 @@ pub(crate) fn render_wol_page(
             (
                 view.layout.dialog,
                 crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
-                    state, &view, art, scale,
+                    state, &view, scale,
                 ),
                 view.countries.as_ref().map(|list| {
                     (

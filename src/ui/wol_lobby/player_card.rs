@@ -36,6 +36,8 @@ pub(crate) const CARD_ROWS: u16 = 0x7FE0;
 /// then the status line [`CARD_STATUS`].
 pub(crate) const CARD_CAPTIONS: u16 = 0x7FE5;
 pub(crate) const CARD_STATUS: u16 = CARD_CAPTIONS + 2 * PLAYER_CARD_ROWS as u16;
+/// The player list's badge before the name, a picture the host names.
+pub(crate) const CARD_BADGE: u16 = 0x7FDF;
 
 /// The country list's visible rows, which end a little below the card.
 pub(crate) const CARD_COUNTRY_ROWS: usize = 7;
@@ -115,6 +117,7 @@ pub(super) fn card_spec() -> NodeSpec {
         .children(buttons)
         .child(countries)
         .children(rows)
+        .child(NodeSpec::new(NodeKind::Image).id(CARD_BADGE.into()))
         .children(statics)
 }
 
@@ -185,11 +188,13 @@ impl WolLobbyState {
     /// Puts the card on `dialog`: its rows' hover statics on `rows`, its
     /// statics ([`CARD_CAPTIONS`]..=[`CARD_STATUS`]) on `statics`' rects
     /// with their texts (copied in only when they change; a static without
-    /// one is hidden), and each button `place` puts with its enable.
+    /// one is hidden), the badge on `badge` (hidden without one), and each
+    /// button `place` puts with its enable.
     pub(crate) fn sync_card<'t>(
         &mut self,
         dialog: RectPx,
         rows: &[RectPx],
+        badge: Option<RectPx>,
         statics: impl Fn(u16) -> Option<(&'t str, RectPx)>,
         place: impl Fn(u16) -> Option<(RectPx, bool)>,
     ) {
@@ -211,6 +216,7 @@ impl WolLobbyState {
                 rows.get(usize::from(id - CARD_ROWS)).copied()
             }
             id if (CARD_CAPTIONS..=CARD_STATUS).contains(&id) => statics(id).map(|(_, rect)| rect),
+            CARD_BADGE => badge,
             id => place(id).map(|(rect, _)| rect),
         });
         let count = self.gui.tree().children(root).map_or(0, <[vera20k_gui::NodeId]>::len);

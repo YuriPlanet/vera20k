@@ -8,7 +8,7 @@
 //! paint their caption only; their owner-draw face is not traced.
 
 use super::chrome::*;
-use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows};
+use super::gui_paint::{ButtonArt, CellRow, ComboArt, GuiStyle, HostRows, Picture};
 use super::{SHELL_CONTROL_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -465,7 +465,6 @@ pub(crate) fn paint_wol_lobby_popup(
 pub(crate) fn paint_wol_player_card(
     state: &AppState,
     view: &crate::app::shell_wol::player_card::PlayerCardView,
-    art: Option<&WolPageArt>,
     scale: ShellScale,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
@@ -473,28 +472,30 @@ pub(crate) fn paint_wol_player_card(
         return paint;
     };
     let layout = &view.layout;
-    // The name's badge before its value.
-    if let (Some(file), Some(art), Some((_, value))) = (view.badge, art, layout.rows.first()) {
-        push_icon(&mut paint.icons, art, file, *value, 2, scale);
-    }
     paint.controls = online_box(atlas, layout.dialog, scale);
     let Some(lobby) = state.frontend.wol.as_ref().and_then(|visit| visit.lobby()) else {
         return paint;
     };
-    // The rows' captions and values and the status line from their nodes
-    // (`app::shell_wol::player_card::sync`).
+    // The name's badge, the rows' captions and values and the status line
+    // from their nodes (`app::shell_wol::player_card::sync`).
     if let Some(root) = lobby.ui.card_root() {
         let gui = lobby.ui.gui();
+        let badge = i32::from(CARD_BADGE);
+        let picture_of = |id: i32| view.badge.filter(|_| id == badge).map(Picture::Badge);
+        let style = GuiStyle {
+            picture_of: Some(&picture_of),
+            ..GuiStyle::default()
+        };
         let mut statics = super::gui_paint::GuiPaint::default();
         for &node in gui.tree().children(root).unwrap_or_default() {
             let id = gui.id_of(node).and_then(|id| u16::try_from(id).ok());
-            if id.is_some_and(|id| (CARD_CAPTIONS..=CARD_STATUS).contains(&id)) {
-                let style = GuiStyle::default();
+            if id.is_some_and(|id| id == CARD_BADGE || (CARD_CAPTIONS..=CARD_STATUS).contains(&id)) {
                 super::gui_paint::paint_gui_into(
                     &mut statics, state, Some(atlas), gui, node, scale, &[], style,
                 );
             }
         }
+        paint.controls.extend(statics.controls);
         paint.texts = statics.texts;
     }
     // The buttons from the lobby's tree, with the card's captions.

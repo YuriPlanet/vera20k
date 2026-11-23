@@ -115,6 +115,19 @@ pub(super) fn sync(state: &mut AppState) {
     let badged = super::lobby::player_badge(state, &name).is_some()
         && super::leaf::art(state, crate::ui::wol_lobby::DIALOG).is_some();
     let scale = super::lobby::popup_scale(state);
+    // The badge at its own size, 2 pixels into the name's value and centred
+    // on it, as the player list draws it.
+    let badge = super::lobby::player_badge(state, &name)
+        .filter(|_| badged)
+        .and_then(|file| state.frontend.skirmish_shell_chrome.as_ref()?.wol_badge(file))
+        .zip(layout.rows.first())
+        .map(|(entry, &(_, value))| {
+            let base = scale.base_rect(value);
+            let h = entry.pixel_size[1] as i32;
+            let [x, y] = scale.scale_point([base.x + 2, base.y + (base.h - h) / 2]);
+            let [w, h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            RectPx::new(x, y, w.round() as i32, h.round() as i32)
+        });
     let status = status_help(state).unwrap_or_default();
     // Each row's caption and value, then the status line.
     let statics = |id: u16| {
@@ -137,7 +150,7 @@ pub(super) fn sync(state: &mut AppState) {
         })
     };
     if let Some(ui) = card_ui_mut(state) {
-        ui.sync_card(layout.dialog, &rows, statics, |id| {
+        ui.sync_card(layout.dialog, &rows, badge, statics, |id| {
             placed
                 .iter()
                 .find(|(known, ..)| *known == id)
