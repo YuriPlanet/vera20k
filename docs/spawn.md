@@ -19,7 +19,7 @@ Both print the probe's `version` and `build_identity` (below) and nothing else, 
 folder, retail files or rules:
 
 ```json
-{"version":"0.3.9:<network build>","build_identity":{"package_version":"0.3.9","network_build":"<sha-256>","phobos":true,"npatch":true,"verax":true,"target":"macos","commit":"00f524cc8…"}}
+{"version":"0.3.9:<network build>","build_identity":{"package_version":"0.3.9","network_build":"<sha-256>","phobos":true,"npatch":true,"target":"macos","commit":"00f524cc8…"}}
 ```
 
 `package_version` is `Cargo.toml`'s, which a release raises right after it is made, so a

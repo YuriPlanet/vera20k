@@ -1,9 +1,9 @@
+use crate::rules::PHOBOS_ENABLED;
 use crate::rules::compatibility::RulesCompatibility;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponKind;
-use crate::rules::{PHOBOS_ENABLED, VERAX_ENABLED};
 
 fn processed() -> ProcessedRulesLayers {
     RulesLayerStack::new(IniFile::from_str(
@@ -98,7 +98,7 @@ fn stock_rules_hash_records_the_compiled_capability() {
     // Each build configuration's validation receipts compare this actual
     // production hash for identical stock input. No extension tags decide the mode.
     println!(
-        "BUILD_CAPABILITY_HASH phobos={PHOBOS_ENABLED} verax={VERAX_ENABLED} hash={}",
+        "BUILD_CAPABILITY_HASH phobos={PHOBOS_ENABLED} hash={}",
         rules.simulation_config_hash()
     );
 }
@@ -159,11 +159,15 @@ fn all_capability_combinations_round_trip_and_describe_themselves() {
         !RulesCompatibility::default().has_ares(),
         "no build records Ares any more"
     );
+    assert!(
+        !RulesCompatibility::default().has_verax(),
+        "no build records VeraX any more"
+    );
     let other = RulesCompatibility::from_capabilities(
         true,
         !PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
-        !VERAX_ENABLED,
+        true,
         !crate::rules::NPBUG_ENABLED,
     );
     assert!(

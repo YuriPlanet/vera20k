@@ -843,6 +843,14 @@ impl RuleSet {
         self.phobos
     }
 
+    /// Whether VeraX plays in this game: its Rules layers or map hold a VeraX
+    /// key (`rules::verax_switch`). Every build reads this one answer, so a
+    /// game that ships the key plays the same everywhere.
+    #[inline]
+    pub fn verax(&self) -> bool {
+        self.verax
+    }
+
     /// Whether this game's Rules were read the Ares way
     /// (`ares_switch::ares_way`). The game's readers after the projection (its
     /// fixed ART, the asset closures) open the same mode with

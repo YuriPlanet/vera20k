@@ -160,12 +160,12 @@ fn snapshot_capability_rejects_foreign_mode_before_body_decode() {
     let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "synthetic", 0);
     let mut header = GameSnapshot::read_header(&bytes).unwrap();
     // Flip every capability bit: the result is a foreign mode for any build.
-    // No build records the Ares bit any more, so it flips to set.
+    // No build records the Ares or the VeraX bit any more, so they flip to set.
     header.compatibility = RulesCompatibility::from_capabilities(
         true,
         !crate::rules::PHOBOS_ENABLED,
         !crate::rules::NPATCH_ENABLED,
-        !crate::rules::VERAX_ENABLED,
+        true,
         !crate::rules::NPBUG_ENABLED,
     );
     // A complete header with no body proves capability admission runs before

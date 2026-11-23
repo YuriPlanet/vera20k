@@ -95,8 +95,9 @@ sound, graphics and controls or turn on VERA features. The game saves your prefe
 `VERA.INI`, with VERA-specific options under `[VERA]`.
 
 Lobby settings, mods and maps can change the rules for a match. Mods and maps can enable supported
-[Ares](docs/ares.md) and [Phobos](docs/phobos.md) features through their INI files. A mod can also
-enable Ares by including `ares.mix`. Some Phobos features still require a build with `--features phobos`.
+[Ares](docs/ares.md), [Phobos](docs/phobos.md) and [VeraX](docs/verax.md) features through their INI
+files. A mod can also enable Ares by including `ares.mix`. Some Phobos features still require a
+build with `--features phobos`.
 
 To create a mod, start with the [modding guide](docs/modding.md).
 

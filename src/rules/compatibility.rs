@@ -12,9 +12,10 @@
 //! must keep working when the others are compiled in — the modes differ in what
 //! they read, never in whether a feature is available.
 //!
-//! Ares was such a capability until every build played it (`RuleSet::ares`).
-//! Its variants stay, so a save from an `ares` build still reads and is
-//! refused; no build records them any more.
+//! Ares was such a capability until every build played it (`RuleSet::ares`),
+//! and VeraX until every build held it and its data switched it on
+//! (`RuleSet::verax`). Their variants stay, so a save from an `ares` or a
+//! `verax` build still reads and is refused; no build records them any more.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum RulesCompatibility {
@@ -55,11 +56,14 @@ pub enum RulesCompatibility {
 
 impl Default for RulesCompatibility {
     fn default() -> Self {
+        // No build records Ares or VeraX any more: both switch on from a
+        // game's data (`RuleSet::ares`, `RuleSet::verax`), so their variants
+        // stay for saves that recorded them, and every build refuses those.
         Self::from_capabilities(
             false,
             super::PHOBOS_ENABLED,
             super::NPATCH_ENABLED,
-            super::VERAX_ENABLED,
+            false,
             super::NPBUG_ENABLED,
         )
     }

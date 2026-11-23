@@ -973,6 +973,9 @@ pub struct RuleSet {
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,
+    /// Whether VeraX plays in this game, decided once from its Rules layers
+    /// by `rules::verax_switch`. Read through [`Self::verax`].
+    verax: bool,
     /// Whether its Rules were read the Ares way (`ares_switch::ares_way`).
     /// Read through [`Self::reads_ares_way`].
     reads_ares_way: bool,

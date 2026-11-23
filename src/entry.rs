@@ -75,7 +75,6 @@ pub fn log_banner(log_path: Option<&Path>) {
         "NPatch support compiled in: {}",
         crate::rules::NPATCH_ENABLED
     );
-    log::info!("VeraX support compiled in: {}", crate::rules::VERAX_ENABLED);
     log::info!("NPBUG support compiled in: {}", crate::rules::NPBUG_ENABLED);
     if let Some(path) = log_path {
         log::info!("Log file: {}", path.display());
