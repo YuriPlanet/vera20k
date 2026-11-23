@@ -21,8 +21,8 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1050; the chain docs give 392 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 6 are
+  removed). The engine source cites 1055; the chain docs give 389 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 4 are
   untouched, listed at the end. A residual disposition is still a gap: every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
@@ -123,8 +123,7 @@ Resurrection's nine pairs) have no such pair.
 
 ## Presentation and UI not ported
 
-- Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
-  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) is a
+- Unit art still needs the mixed indexed-gun draws above. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) is a
   residual in [ares-techno-hooks.md](ares-techno-hooks.md).
 - Technos: the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
@@ -221,7 +220,7 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 5 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+These 4 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
 hook script above skips this page).
 
 | Hook | Ares.dll | Name | Source |
@@ -230,4 +229,3 @@ hook script above skips this page).
 | `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |
 | `0x5FACDF` | `10006030` | Options_LoadFromINI | `Ares.UISettings.cpp` |
-| `0x73D219` | `10053E50` | UnitClass_Draw_OreGatherAnim | `Ext/WarheadType/Hooks.EMP.cpp` |
