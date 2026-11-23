@@ -1395,11 +1395,6 @@ impl SidebarModel {
     pub(crate) fn set_observer_clock(&mut self, owner: &str, seconds: i32) {
         self.displayed_credits.insert(owner.to_owned(), seconds);
     }
-
-    #[cfg(test)]
-    fn displayed_credits_for_test(&self, owner: &str) -> Option<i32> {
-        self.displayed_credits.get(owner).copied()
-    }
 }
 
 /// Project comparison fields from their existing owners. The full build
@@ -2355,7 +2350,7 @@ mod tests {
             Some(CreditTick { counting_up: true })
         );
         assert_eq!(
-            projection.model.displayed_credits_for_test("Americans"),
+            projection.model.displayed_credits.get("Americans").copied(),
             Some(0x8F)
         );
     }
@@ -2380,7 +2375,10 @@ mod tests {
         assert_eq!(credit_tick_sound(&ticks, down.unwrap()), Some("CreditDown"));
         // Settle, then no change → no tick.
         while projection.model.advance_credits("Americans", 0).is_some() {}
-        assert_eq!(projection.model.displayed_credits_for_test("Americans"), Some(0));
+        assert_eq!(
+            projection.model.displayed_credits.get("Americans").copied(),
+            Some(0)
+        );
         assert_eq!(projection.model.advance_credits("Americans", 0), None);
         // A list shorter than two names never plays.
         let short = vec!["CreditUp".to_string()];
