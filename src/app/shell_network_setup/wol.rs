@@ -826,13 +826,14 @@ pub(crate) fn verify_sync(state: &mut AppState) {
     let Some(shown) = verify(state) else {
         return;
     };
-    let ok = Some(shown)
+    let parts = Some(shown)
         .and_then(|verify| verify.mismatch.as_ref())
-        .map(|message| verify_mismatch_parts(state, message).button(0))
-        .unwrap_or_default();
+        .map(|message| verify_mismatch_parts(state, message));
+    let ok = parts.as_ref().map(|parts| parts.button(0)).unwrap_or_default();
     let layout = verify_layout(state);
     if let Ok(verify) = verify_mut(state) {
         verify.sync_widgets(&layout, ok);
+        verify.sync_mismatch(parts.as_ref());
     }
 }
 

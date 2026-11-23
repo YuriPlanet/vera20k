@@ -643,6 +643,7 @@ pub(crate) fn render_shell_message_box_over_page(
     destination: &wgpu::Texture,
 ) {
     sync_shell_menu_settings(state);
+    let parts = sync_shell_message_box(state);
     // The box's lists keep their widgets on the box as it lays out now.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     let _ = crate::app::updater::notes::sync(state);
@@ -650,7 +651,7 @@ pub(crate) fn render_shell_message_box_over_page(
     let _ = crate::app::shell_mod_import::sync(state);
     let state = &*state;
     let (Some(overlay), Some(chrome)) = (
-        build_shell_message_box_overlay(state),
+        parts.and_then(|parts| build_shell_message_box_overlay(state, &parts)),
         state.frontend.skirmish_shell_chrome.as_ref(),
     ) else {
         return;
@@ -678,6 +679,20 @@ pub(crate) fn render_shell_message_box_over_page(
                 ),
         },
     );
+}
+
+/// The box's own widgets on the shell controller follow it and its layout
+/// before they paint ([`crate::ui::shell::modal::ShellBox::sync`]).
+/// Its rects; none while no box is open.
+fn sync_shell_message_box(state: &mut AppState) -> Option<crate::ui::shell::modal::BoxParts> {
+    let message_box = state.frontend.shell_message_box.as_ref()?;
+    let parts = shell_layout::shell_box_parts(state, &message_box.shell_box);
+    let frontend = &mut state.frontend;
+    if let Some(message_box) = frontend.shell_message_box.as_ref() {
+        let controller = &mut frontend.shell_controller;
+        crate::ui::shell::menu_page::sync_box(controller, &message_box.shell_box, &parts);
+    }
+    Some(parts)
 }
 
 /// The Esc menu's settings tree follows its layout and values before it
@@ -711,7 +726,10 @@ fn sync_shell_menu_settings(state: &mut AppState) {
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
-fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
+fn build_shell_message_box_overlay(
+    state: &AppState,
+    parts: &crate::ui::shell::modal::BoxParts,
+) -> Option<shell_paint::ModalDraw> {
     use crate::app::frontend::state::ShellMessageBoxPurpose;
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
@@ -746,7 +764,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     })
     .or_else(|| atlas.mode_two_dialog_background(None));
     let shell_box = &message_box.shell_box;
-    let parts = shell_layout::shell_box_parts(state, shell_box);
     let controller = &state.frontend.shell_controller;
     let pressed = controller
         .top_id()
@@ -779,11 +796,16 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         },
         ..base_look
     };
+    let tree = crate::app::frontend::skirmish_shell_render::controller_tree(
+        controller,
+        shell_box.dialog,
+    );
     let mut draw = crate::app::frontend::skirmish_shell_render::paint_shell_box(
         state,
         Some(atlas),
+        tree,
         shell_box,
-        &parts,
+        parts,
         |id| pressed == Some(id),
         look,
     );

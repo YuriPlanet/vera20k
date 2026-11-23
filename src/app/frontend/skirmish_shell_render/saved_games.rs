@@ -4,9 +4,9 @@
 //! the active-game parent and button art; outside, the seed browser over
 //! `0x105`, VERA's Setups page and Single Player's Load `0xB7`.
 
-use super::gui_paint::{ButtonArt, CellRow, GuiPaint, GuiStyle, paint_gui_with};
+use super::gui_paint::{ButtonArt, CellRow, GuiPaint, GuiStyle, paint_gui_into};
 use super::in_game_shell::{InGamePaint, render_in_game_shell_frame};
-use super::shell_box::{BoxLook, push_skirmish_box};
+use super::shell_box::{BoxLook, push_skirmish_box, skirmish_parts};
 use super::{SHELL_LABEL_TEXT_RGB, SHELL_MODAL_PANEL_RGB};
 use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
@@ -14,7 +14,9 @@ use crate::render::shell_text::ShellTextDraw;
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
-use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};
+use crate::ui::skirmish_shell::saved_seed_browser::{
+    ACTION, BACK, BROWSER_DIALOG, LIST, PROMPT, PROMPT_DIALOG, TITLE,
+};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
@@ -63,9 +65,11 @@ fn row_cells<I>(
     browser.entries.iter().map(cells).collect()
 }
 
-/// The browser's widgets from its tree: the list (its rows unless `rows` is
-/// off, as the `0xB7` teardown slide blanks it), the description edit on its
-/// plain sunken plate, and the column's buttons in `buttons`' art.
+/// The browser's widgets from its tree: the active game's heading and
+/// prompt, the list (its rows unless `rows` is off, as the `0xB7` teardown
+/// slide blanks it), the description edit on its plain sunken plate, and
+/// the column's buttons in `buttons`' art. Without `atlas` only the texts
+/// paint.
 pub(crate) fn paint_saved_browser<I>(
     state: &AppState,
     atlas: Option<&SkirmishShellChromeAtlas>,
@@ -75,20 +79,33 @@ pub(crate) fn paint_saved_browser<I>(
     rows: bool,
 ) -> GuiPaint {
     let ui = &browser.ui;
-    let (Some(atlas), Some(root)) = (atlas, ui.root_in(BROWSER_DIALOG)) else {
-        return GuiPaint::default();
+    let mut paint = GuiPaint::default();
+    let Some(root) = ui.root_in(BROWSER_DIALOG) else {
+        return paint;
     };
     let cells =
         |id: i32| (rows && id == i32::from(LIST)).then(|| row_cells(state, layout, browser));
     let caret = |node| ui.caret_visible(node);
+    // 558F8A's hide40C condition is false in the active-game route. Both
+    // resource statics use lowstylebits1: ownerdraw615A81 selects top/H_CENTER.
+    let text_of = |id: i32| {
+        let label = match u16::try_from(id).ok()? {
+            TITLE => saved_game_title_label(browser.mode),
+            PROMPT => browser.mode.prompt_label(),
+            _ => return None,
+        };
+        browser.statics.then(|| state.csf_label(label.0, label.1))
+    };
     let style = GuiStyle {
         buttons,
+        text_of: Some(&text_of),
         cells_of: Some(&cells),
         caret_of: Some(&caret),
         edit_fill: Some(SHELL_MODAL_PANEL_RGB),
         ..GuiStyle::default()
     };
-    paint_gui_with(state, atlas, ui.gui(), root, layout.scale, &[], style)
+    paint_gui_into(&mut paint, state, atlas, ui.gui(), root, layout.scale, &[], style);
+    paint
 }
 
 /// The browser's message box, when one is up: its art after `sprites`, its
@@ -105,17 +122,21 @@ pub(crate) fn push_saved_browser_box<I>(
         return;
     };
     let look = BoxLook::prompt(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
-    let size = (layout.screen.w, layout.screen.h);
+    let shell_box = prompt.shell_box();
+    let parts = skirmish_parts(&shell_box, (layout.screen.w, layout.screen.h));
     let pressed = |id| browser.pressed(id);
-    let texts = Some((texts, true));
+    let texts = (texts, true);
+    // Its widgets, which the browser's input put on it.
+    let tree = super::controller_tree(&browser.ui, PROMPT_DIALOG);
     push_skirmish_box(
         state,
         atlas,
-        size,
-        &prompt.shell_box(),
+        tree,
+        &shell_box,
+        &parts,
         pressed,
         look,
-        Some(sprites),
+        sprites,
         texts,
     );
 }
@@ -168,24 +189,8 @@ pub(crate) fn render_saved_game_shell(
         let layout = paint
             .shell
             .place(|w, h, shell, size| saved_game_layout(browser.mode, w, h, shell, size));
-        // 558F8A's hide40C condition is false in the active-game route. Both
-        // resource statics use lowstylebits1: ownerdraw615A81 selects top/H_CENTER.
-        for (label, rect, align) in [
-            (
-                saved_game_title_label(browser.mode),
-                layout.title,
-                ShellAlign::PANEL_TITLE,
-            ),
-            (
-                browser.mode.prompt_label(),
-                layout.prompt,
-                ShellAlign::H_CENTER,
-            ),
-        ] {
-            let text = paint.label(label);
-            paint.text(&text, rect, align);
-        }
-        // The column's buttons are the active game's SIDEBTTN art.
+        // The heading and the prompt, then the widgets; the column's buttons
+        // are the active game's SIDEBTTN art.
         let widgets = paint_saved_browser(
             state,
             state.frontend.skirmish_shell_chrome.as_ref(),

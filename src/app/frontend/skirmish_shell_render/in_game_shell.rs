@@ -12,7 +12,6 @@ use crate::render::scaled_copy::ScaledSurface;
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
-use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
 use crate::ui::sidebar::command_bar::spacer_pieces;
 use crate::ui::sidebar::{ArtKey, SidebarPart};
@@ -191,10 +190,6 @@ impl<'a> InGamePaint<'a> {
         RectPx::new(0, 0, self.shell.width, self.shell.height)
     }
 
-    pub(super) fn label(&self, (key, fallback): (&str, &str)) -> String {
-        self.state.csf_label(key, fallback)
-    }
-
     /// This shell's type-2 button art for [`super::gui_paint::ButtonArt::Side`].
     pub(super) fn side_buttons(&self) -> super::gui_paint::SideButtons {
         super::gui_paint::SideButtons {
@@ -258,20 +253,6 @@ impl<'a> InGamePaint<'a> {
         self.art = paint.side;
         self.controls = paint.controls;
         self.texts = paint.texts;
-    }
-
-    /// A static's text in the label colour.
-    pub(super) fn text(&mut self, value: &str, rect: RectPx, align: ShellAlign) {
-        self.texts.push(crate::render::shell_text::draw_in_rect_scaled(
-            &self.state.renderer.bit_font,
-            value,
-            crate::render::shell_text::TextRect::of(rect),
-            super::SHELL_LABEL_TEXT_RGB,
-            align,
-            [0.0, 0.0],
-            super::SHELL_CONTROL_TEXT_DEPTH,
-            1.0,
-        ));
     }
 }
 

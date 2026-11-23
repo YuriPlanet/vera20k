@@ -21,7 +21,7 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::{
     ButtonArt, FrameArt, GuiPaint, GuiStyle, Picture, paint_gui_ids, paint_gui_styled,
 };
-use crate::app::frontend::skirmish_shell_render::{BoxLook, paint_shell_box};
+use crate::app::frontend::skirmish_shell_render::{BoxLook, controller_tree, paint_shell_box};
 use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
@@ -301,6 +301,14 @@ pub(crate) fn render_wol_page(
     let visit = state.frontend.wol.as_ref().expect("checked");
     let message = visit.message().cloned();
     let wait = visit.wait_box().filter(|wait| wait.shown).cloned();
+    // The box over the page, on its widgets before they paint.
+    let open = message.or(wait.map(|wait| wait.shell_box));
+    let box_parts = open.as_ref().map(|shell_box| {
+        let parts = shell_box.parts(screen_w, screen_h, scale);
+        let controller = &mut state.frontend.shell_controller;
+        crate::ui::shell::menu_page::sync_box(controller, shell_box, &parts);
+        parts
+    });
 
     // The teardown slide starts with a full dialog repaint (`0x00622C4F`)
     // and pumps no messages until it ends: every child stays blank.
@@ -547,7 +555,7 @@ pub(crate) fn render_wol_page(
             (
                 view.layout.dialog,
                 crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
-                    state, &view, art, scale,
+                    state, &view, scale,
                 ),
                 view.countries.as_ref().map(|list| {
                     (
@@ -674,17 +682,21 @@ pub(crate) fn render_wol_page(
     // The boxes over the backdrop: PUDLGBGN with MNBTTN buttons.
     let mut box_sprites = Vec::new();
     let mut box_dialog = None;
-    let open = message.or(wait.map(|wait| wait.shell_box));
-    if let (Some(shell_box), Some(atlas)) = (open, state.frontend.skirmish_shell_chrome.as_ref()) {
-        let parts = shell_box.parts(screen_w, screen_h, scale);
+    if let (Some(shell_box), Some(parts), Some(atlas)) = (
+        open.as_ref(),
+        box_parts.as_ref(),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) {
         box_dialog = Some(parts.dialog);
         let held = crate::app::App::wol_held(state);
         let look = BoxLook::new(atlas.mode_two_dialog_background(None), BOX_DEPTHS);
+        let tree = controller_tree(&state.frontend.shell_controller, shell_box.dialog);
         let draw = paint_shell_box(
             state,
             Some(atlas),
-            &shell_box,
-            &parts,
+            tree,
+            shell_box,
+            parts,
             |id| held == Some(id),
             look,
         );

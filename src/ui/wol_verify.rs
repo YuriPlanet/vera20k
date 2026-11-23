@@ -173,6 +173,20 @@ impl WolVerifyDialog {
         self.sync(layout, ok);
     }
 
+    /// The mismatch box on `parts` in the dialog's widgets while it is up
+    /// ([`ShellBox::sync`]), its body hidden otherwise: the one tree its OK
+    /// takes the pointer on and the box paints from.
+    pub fn sync_mismatch(&mut self, parts: Option<&crate::ui::shell::modal::BoxParts>) {
+        let Some(root) = self.ui.root_in(DIALOG) else {
+            return;
+        };
+        let gui = self.ui.gui_mut();
+        match (&self.mismatch, parts) {
+            (Some(message), Some(parts)) => message.sync(gui, root, parts),
+            _ => crate::ui::shell::modal::hide_body(gui, root),
+        }
+    }
+
     /// The dialog's widgets: their gui and its root.
     pub fn widgets(&self) -> Option<(&vera20k_gui::Gui, vera20k_gui::NodeId)> {
         Some((self.ui.gui(), self.ui.root_in(DIALOG)?))

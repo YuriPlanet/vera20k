@@ -19,6 +19,8 @@ pub(crate) fn render_network_failure(
         state.csf_label(button.0, button.1),
     )
     .on_screen();
+    let parts = super::shell_box::skirmish_parts(&shell_box, (width as i32, height as i32));
+    crate::app::match_runtime::network_failure::sync_box(state, &shell_box, &parts);
     let pressed = crate::app::match_runtime::network_failure::ok_pressed(state);
     let pressed = |id| pressed && id == crate::ui::shell::modal::control::OK;
     let mut art = Vec::new();
@@ -47,13 +49,14 @@ pub(crate) fn render_network_failure(
     }
     let look =
         super::BoxLook::skirmish(atlas.and_then(|atlas| atlas.mode_two_dialog_background(None)));
-    let size = (width as i32, height as i32);
-    let (controls_out, texts_out) = (Some(&mut controls), Some((&mut texts, false)));
+    let (controls_out, texts_out) = (&mut controls, (&mut texts, false));
+    let tree = super::controller_tree(&state.frontend.shell_controller, shell_box.dialog);
     super::shell_box::push_skirmish_box(
         state,
         atlas,
-        size,
+        tree,
         &shell_box,
+        &parts,
         pressed,
         look,
         controls_out,

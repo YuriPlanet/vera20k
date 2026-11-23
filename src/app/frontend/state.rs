@@ -108,6 +108,10 @@ pub(crate) struct FrontendState {
     /// ([`crate::app::frontend::menu_page_render::paint_panel_statics`]).
     pub(crate) panel_statics:
         std::cell::RefCell<crate::app::frontend::menu_page_render::PanelStatics>,
+    /// The saved-game loading box `0xF0`'s widgets: it takes no input, so
+    /// no other controller holds it
+    /// ([`crate::app::frontend::skirmish_shell_render::render_saved_game_loading`]).
+    pub(crate) loading_box: crate::ui::shell::controller::DialogController,
     /// The showing family dialog's teardown slide-out while it runs; its
     /// continuation commits the route change when the slide ends.
     pub(crate) shell_exit: Option<crate::app::frontend::shell_transition::ShellExit>,

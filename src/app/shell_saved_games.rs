@@ -29,7 +29,9 @@ impl App {
         let Some(layout) = Self::saved_game_layout(state, mode) else {
             return;
         };
-        let browser = Self::open_saved_game_rows(state, mode, saved_browser_rows(&layout));
+        let mut browser = Self::open_saved_game_rows(state, mode, saved_browser_rows(&layout));
+        // The active-game browser shows its heading and prompt.
+        browser.statics = true;
         // The child replaces its hidden parent and owns all subsequent input.
         state.match_state.match_presentation.saved_game_browser = Some(browser);
         Self::enter_in_game_menu_state(state, InGameMenuState::SavedGame(mode));
