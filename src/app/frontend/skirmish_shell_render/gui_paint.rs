@@ -318,6 +318,16 @@ pub(crate) struct GuiStyle<'a> {
     /// A list's message by its `Id` while it holds no rows (why it is
     /// empty), wrapped down the list from its first row.
     pub(crate) empty_of: Option<&'a dyn Fn(i32) -> Option<String>>,
+    /// The lists' rows and scrollbar track are backed with the panel
+    /// colour, for lists no art backs ([`super::list::paint_list`]'s
+    /// `solid_fill`).
+    pub(crate) solid_lists: bool,
+    /// Where row `row` of a list (by its `Id`) starts its text, in base
+    /// pixels into the row, in place of its `TextInset`: rounded once at
+    /// the page's scale onto the row's left, and run to the list window's
+    /// right edge (rows wrapped narrower than the list, such as hanging
+    /// lines under a bullet).
+    pub(crate) indent_of: Option<&'a dyn Fn(i32, usize) -> Option<i32>>,
 }
 
 impl Default for GuiStyle<'_> {
@@ -347,6 +357,8 @@ impl Default for GuiStyle<'_> {
             hint_of: None,
             search_lines: false,
             empty_of: None,
+            solid_lists: false,
+            indent_of: None,
         }
     }
 }
@@ -889,7 +901,7 @@ pub(crate) fn paint_gui_into(
                         view.top,
                         selected,
                         view.pressed,
-                        false,
+                        style.solid_lists,
                         scale,
                     ),
                 }
@@ -927,14 +939,25 @@ pub(crate) fn paint_gui_into(
                         .collect(),
                 };
                 let shown = rows.into_iter().skip(view.top).take(geometry.visible_rows);
+                let right = geometry.outer.x + geometry.outer.w - 1;
                 for (visible, (row, packed)) in shown.enumerate().filter(|_| !covered) {
                     let r = geometry.row(visible);
-                    let at = inset(gui, node, r, scale).unwrap_or(RectPx::new(
-                        r.x + 2,
-                        r.y,
-                        r.w - 2,
-                        r.h,
-                    ));
+                    let indent = style
+                        .indent_of
+                        .zip(id(node))
+                        .and_then(|(indent_of, id)| indent_of(id, view.top + visible));
+                    let at = match indent {
+                        Some(indent) => {
+                            let x = r.x + (indent as f32 * scale.factor()).round() as i32;
+                            RectPx::new(x, r.y, right - x, r.h)
+                        }
+                        None => inset(gui, node, r, scale).unwrap_or(RectPx::new(
+                            r.x + 2,
+                            r.y,
+                            r.w - 2,
+                            r.h,
+                        )),
+                    };
                     let rgb = match packed {
                         u32::MAX => normal,
                         c => {
