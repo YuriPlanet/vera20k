@@ -879,8 +879,7 @@ impl crate::sim::world::Simulation {
                 };
                 // Native samples this world coordinate through Map565730,
                 // then reads the selected Cell's floor, without a deck rise.
-                point.z =
-                    crate::sim::movement::ground_pose::query_ground_height(&cells, point).ok()?;
+                point.z = crate::sim::movement::ground_pose::query_ground_height(&cells, point);
                 if crate::sim::vision::point_is_shrouded(&self.fog, &cells, viewer, point) {
                     pool.push(cell);
                     if pool.len() == MAX_CANDIDATES {

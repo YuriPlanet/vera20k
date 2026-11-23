@@ -83,23 +83,20 @@ fn original_approach_candidate_heights() {
         sampled.bridge_facts.raw_flags = row["flags"].as_u64().unwrap().try_into().unwrap();
         let cells = NativeCellQuery::canonical(&terrain);
         assert_eq!(
-            i64::from(
-                crate::sim::movement::ground_pose::query_ground_height(
-                    &cells,
-                    DriveCoord {
-                        x: point[0],
-                        y: point[1],
-                        z: 0
-                    },
-                )
-                .unwrap()
-            ),
+            i64::from(crate::sim::movement::ground_pose::query_ground_height(
+                &cells,
+                DriveCoord {
+                    x: point[0],
+                    y: point[1],
+                    z: 0
+                },
+            )),
             row["ground_z"].as_i64().unwrap(),
             "{row}"
         );
         assert_eq!(
             in_range::native_ground_target_z(point[0], point[1], &cells),
-            row["candidate_z"].as_i64(),
+            row["candidate_z"].as_i64().unwrap(),
             "{row}"
         );
     }

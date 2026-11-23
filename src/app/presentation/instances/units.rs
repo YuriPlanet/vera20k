@@ -2251,7 +2251,7 @@ fn lifted_unit_shadow_pose(
     entity: &crate::app::presentation::frame::ObjectRecord,
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
     binary_frame: u32,
-) -> Option<crate::render::unit_shadow::UnitShadowPose> {
+) -> crate::render::unit_shadow::UnitShadowPose {
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     crate::render::unit_shadow::pose(
         crate::render::unit_shadow::UnitShadowContext {
@@ -2293,10 +2293,7 @@ fn emit_lifted_unit_shadow(
     let Some(terrain) = view.resolved_terrain() else {
         return;
     };
-    let Some(mut pose) = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame())
-    else {
-        return;
-    };
+    let mut pose = lifted_unit_shadow_pose(entity, terrain, view.session().binary_frame());
     pose.anchor[1] -= f32::from(entity.ion_blast_lift_pixels());
     let key = pose.key(type_id);
     // `0x0073C21E..0x0073C287`, `0x0073C43F..0x0073C472`: a BalloonHover or

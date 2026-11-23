@@ -236,8 +236,13 @@ fn voxel_anim_draw_instance(
 ) -> Option<()> {
     let parent = order.object_draw(id, SpriteEncoding::Voxel)?;
     let location = piece.world_coord();
+<<<<<<< HEAD
     let (ground_z, deck) = super::foot_depth::floor_probe(view.terrain, location.x, location.y)?;
     let geometry = geometry(location, ground_z, deck);
+=======
+    let (ground_z, bridge) = super::foot_depth::floor_probe(view.terrain, location.x, location.y);
+    let geometry = geometry(location, ground_z, bridge);
+>>>>>>> feature/ground-height-policy
     let matrix = piece.bounce().drawing_matrix().ok().map(|matrix| {
         crate::render::vxl_raster::hva_to_mat4(&matrix.map(|v| f32::from_bits(v.bits())), 1.)
     })?;

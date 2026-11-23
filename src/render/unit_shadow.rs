@@ -87,9 +87,16 @@ pub(crate) fn shadow_point_y(
 pub(crate) fn pose(
     context: UnitShadowContext,
     lookup: impl FnOnce([i16; 2]) -> DepthCell,
-) -> Option<UnitShadowPose> {
+) -> UnitShadowPose {
     let [x, y, z] = context.xyz;
+<<<<<<< HEAD
     let (height, cell) = height_over_cell(context.xyz, context.on_bridge, lookup)?;
+=======
+    let cell = lookup([(x / 256) as i16, (y / 256) as i16]);
+    let floor =
+        crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, x, y);
+    let height = crate::sim::movement::ground_pose::height_at_z(z, floor, context.on_bridge);
+>>>>>>> feature/ground-height-policy
     // The inherited Shadow_Point55A8C0 is added by Foot4DB0D0. Preserve
     // the body's projection and the point's separate integer conversion.
     let (sx, sy) = absolute_leptons_to_screen(x, y, z);
@@ -114,7 +121,7 @@ pub(crate) fn pose(
     } else {
         UnitShadowMask::Retained
     };
-    Some(UnitShadowPose {
+    UnitShadowPose {
         anchor: [sx, sy + point_y as f32],
         facing: crate::render::vxl_raster::voxel_facing_step_u16(context.primary_facing) * 8,
         slope: if context.on_bridge && cell.fixed_deck_z.is_some() {
@@ -126,7 +133,7 @@ pub(crate) fn pose(
         //73C4C8..73C4D5 adds one only on the positive-height arm. This
         //offset samples the elevated body surface; it does not move the quad.
         mask_offset: [0, point_y.wrapping_add(i32::from(height > 0))],
-    })
+    }
 }
 
 #[cfg(all(test, tests_render_s_z))]

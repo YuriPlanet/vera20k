@@ -25,8 +25,7 @@ impl Simulation {
             0,
         );
         let (x, y) = (center.x, center.y);
-        let z = query_ground_height(&cells, DriveCoord { x, y, z: 0 })
-            .expect("authored camera ground query requires a valid native slope");
+        let z = query_ground_height(&cells, DriveCoord { x, y, z: 0 });
         Some([x, y, z])
     }
 

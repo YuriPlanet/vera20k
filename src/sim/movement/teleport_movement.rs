@@ -726,7 +726,7 @@ impl crate::sim::world::Simulation {
             // Original717EC0 startup establishes B0EC38=104.
             let deck = cells.flags(cell) & 0x100 != 0
                 && physical.z
-                    > super::ground_pose::query_ground_height(&cells, requested)?
+                    > super::ground_pose::query_ground_height(&cells, requested)
                         .wrapping_add(3 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
             // 0x00718C7A..0x00718C80: every class but Infantry takes the Unit
             // arm; the latched one returned above.
@@ -904,7 +904,7 @@ impl crate::sim::world::Simulation {
         ) else {
             return Ok(None);
         };
-        let floor = super::ground_pose::query_ground_height(&cells, input)?;
+        let floor = super::ground_pose::query_ground_height(&cells, input);
         Ok(Some(super::walk_head::selected_head(
             input, slot, floor, deck,
         )))
@@ -1112,7 +1112,7 @@ impl crate::sim::world::Simulation {
         let own_cell = ((x / 256) as i16, (y / 256) as i16);
         let mut resolved =
             DriveCoord::from(crate::sim::cell_kernel::cell_center(own_cell.into(), 0));
-        resolved.z = super::ground_pose::query_ground_height(&cells, resolved)?;
+        resolved.z = super::ground_pose::query_ground_height(&cells, resolved);
         Self::object_raw_receiver_at(
             &mut self.substrate,
             &self.path_grid,

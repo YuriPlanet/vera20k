@@ -130,8 +130,8 @@ fn tube_first_z(
     let steps = i32::try_from(tube.path_len()).map_err(|_| "tube path too long")?;
     let [x, y] = ground_pose::position_world_xy(position);
     let cells = NativeCellQuery::canonical(terrain);
-    let ground = ground_pose::query_ground_height(&cells, DriveCoord { x, y, z: 0 })?;
-    let exit = ground_pose::query_ground_height(&cells, tube_exit_centre(tube))?;
+    let ground = ground_pose::query_ground_height(&cells, DriveCoord { x, y, z: 0 });
+    let exit = ground_pose::query_ground_height(&cells, tube_exit_centre(tube));
     if position.exact_z_leptons().is_none() {
         let z = if on_bridge {
             ground_pose::deck_surface_z(&cells, cells.lookup_world(x, y), ground)
@@ -821,7 +821,7 @@ impl Simulation {
                     .ok_or("Infantry tube exit requires map cells")?,
             );
             let exit = DriveCoord {
-                z: ground_pose::query_ground_height(&cells, out)?,
+                z: ground_pose::query_ground_height(&cells, out),
                 ..out
             };
             (

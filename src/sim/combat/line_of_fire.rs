@@ -443,13 +443,12 @@ fn ares_obstacle<'a>(
         let CellRef::Real(real) = &cell else {
             return false;
         };
-        let floor = crate::util::lepton::ground_height_leptons(
+        let floor = crate::util::lepton::ground_height_leptons_clamped(
             real.level,
             real.slope_type,
             probe.sample.x,
             probe.sample.y,
-        )
-        .expect("Map578080 requires a supported CellClass slope");
+        );
         probe.sample.z <= height.wrapping_shl(8).wrapping_add(floor)
     };
     (cliff() || wall() || building()).then_some(cell)

@@ -449,8 +449,7 @@ impl Simulation {
                 if let (Some(coord), Some(terrain)) = (coord, self.resolved_terrain.as_ref()) {
                     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
                     let ground =
-                        crate::sim::movement::ground_pose::query_ground_height(&cells, coord)
-                            .expect("authored camera ground query requires a valid native slope");
+                        crate::sim::movement::ground_pose::query_ground_height(&cells, coord);
                     let cell = cells.lookup_world(coord.x, coord.y);
                     let on_bridge = cells.flags(cell) & 0x100 != 0
                         || cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x400 != 0;

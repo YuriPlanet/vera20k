@@ -688,7 +688,7 @@ fn range_target_coords_3d(
             // Map queries use GetCoords (including a foundation centre).
             let own_z = i64::from(object_world_z_leptons(target, Some(cells.terrain())));
             let tz = if is_low_flying_in_query(target, cells, Some((rules, interner))) {
-                native_ground_target_z(tx as i32, ty as i32, cells)?
+                native_ground_target_z(tx as i32, ty as i32, cells)
             } else {
                 own_z
             };
@@ -699,7 +699,7 @@ fn range_target_coords_3d(
             // remains Object5F6B60 before InRange6F7332's ground snap.
             let point = target.world_coord();
             let z = if target.is_low_flying_in_query(Some(cells)) {
-                native_ground_target_z(point.x, point.y, cells)?
+                native_ground_target_z(point.x, point.y, cells)
             } else {
                 i64::from(point.z)
             };
@@ -717,25 +717,33 @@ pub(crate) fn native_cell_range_coords(
     let (x, y, mut z) = native_cell_own_coords(cell, cells)?;
     // Cell vt+0x50 (`0x004867E0`): true outside the WaterSet window.
     if !cells.terrain().native_cell_is_water_set_tile(cell) {
-        z = native_ground_target_z(x as i32, y as i32, cells)?;
+        z = native_ground_target_z(x as i32, y as i32, cells);
     }
     Some((x, y, z))
 }
 
 /// InRange6F7340/6F7353: first read ground through Map578080, then
 /// independently resolve Cell flags through Map565730. Both may stamp Dummy.
-pub(crate) fn native_ground_target_z(x: i32, y: i32, cells: &NativeCellQuery<'_>) -> Option<i64> {
+pub(crate) fn native_ground_target_z(x: i32, y: i32, cells: &NativeCellQuery<'_>) -> i64 {
     let ground = crate::sim::movement::ground_pose::query_ground_height(
         cells,
         crate::sim::components::DriveCoord { x, y, z: 0 },
-    )
-    .ok()?;
+    );
     let cell = cells.lookup_world(x, y);
+<<<<<<< HEAD
     Some(i64::from(if cells.flags(cell) & 0x100 != 0 {
         crate::sim::movement::ground_pose::deck_surface_z(cells, cell, ground)
     } else {
         ground
     }))
+=======
+    i64::from(ground)
+        + if cells.flags(cell) & 0x100 != 0 {
+            i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
+        } else {
+            0
+        }
+>>>>>>> feature/ground-height-policy
 }
 
 /// InRange6F7601 first reads source flags; only a structural span reaches
@@ -749,19 +757,24 @@ fn native_source_under_bridge(
     if cells.flags(cell) & 0x100 == 0 {
         return false;
     }
-    let Ok(ground) = crate::sim::movement::ground_pose::query_ground_height(
+    let ground = crate::sim::movement::ground_pose::query_ground_height(
         cells,
         crate::sim::components::DriveCoord {
             x: src.0 as i32,
             y: src.1 as i32,
             z: 0,
         },
+<<<<<<< HEAD
     ) else {
         return false;
     };
     let top = i64::from(crate::sim::movement::ground_pose::deck_surface_z(
         cells, cell, ground,
     ));
+=======
+    );
+    let top = i64::from(ground) + i64::from(BRIDGE_DECK_HEIGHT_LEPTONS);
+>>>>>>> feature/ground-height-policy
     src.2 < top && target_z >= top
 }
 

@@ -16,6 +16,7 @@ use crate::util::native_x87::adjust_for_z_standard;
 /// Cell578080's floor height at world X/Y and, on a structural cell, its
 /// bridge Z, without the shared dummy-coordinate write.
 /// Rendering must not change a retained DummyCell target or future
+<<<<<<< HEAD
 /// gameplay/RNG state. `None` for a cell slope the map data gives that has no
 /// native height: the object is not drawn there.
 pub(super) fn floor_probe(
@@ -30,6 +31,15 @@ pub(super) fn floor_probe(
         ground,
         (cell.flags & 0x100 != 0).then(|| cell.deck_z(ground)),
     ))
+=======
+/// gameplay/RNG state. The floor always exists: a slope byte outside the
+/// native table reads as flat ground at the cell's level.
+pub(super) fn floor_probe(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> (i32, bool) {
+    let cell = depth_cell(terrain, None, None, [(x / 256) as i16, (y / 256) as i16]);
+    let ground =
+        crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, x, y);
+    (ground, cell.flags & 0x100 != 0)
+>>>>>>> feature/ground-height-policy
 }
 
 /// Exact fixed-slot aliases and fallback values, without GetCell's simulation
@@ -246,6 +256,7 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
         None,
         [(xy[0] / 256) as i16, (xy[1] / 256) as i16],
     );
+<<<<<<< HEAD
     let Ok(ground) =
         crate::util::lepton::ground_height_leptons(cell.level as u8, cell.ramp, xy[0], xy[1])
     else {
@@ -253,6 +264,12 @@ pub(super) fn shp_z_adjust(world: DepthWorld<'_>, entity: &ObjectRecord) -> f32 
     };
     let surface = if entity.on_bridge() {
         cell.deck_z(ground)
+=======
+    let ground =
+        crate::util::lepton::ground_height_leptons_clamped(cell.level as u8, cell.ramp, xy[0], xy[1]);
+    let surface = ground.wrapping_add(if entity.on_bridge() {
+        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+>>>>>>> feature/ground-height-policy
     } else {
         ground
     };
@@ -369,9 +386,9 @@ pub(super) fn unit_z_adjust_in(
             .as_ref()
             .and_then(|loco| loco.tunnel_runtime())
             .map_or(0, |tunnel| {
-                let floor_rows = floor_probe(terrain, xy[0], xy[1]).map_or(0, |(floor, _)| {
-                    adjust_for_z_standard(floor).wrapping_sub(adjust_for_z_standard(world_z))
-                });
+                let (floor, _) = floor_probe(terrain, xy[0], xy[1]);
+                let floor_rows =
+                    adjust_for_z_standard(floor).wrapping_sub(adjust_for_z_standard(world_z));
                 let frame = view.session().binary_frame();
                 tunnel.draw_z_adjust(frame, entity.body_facing_current(frame), floor_rows)
             }),

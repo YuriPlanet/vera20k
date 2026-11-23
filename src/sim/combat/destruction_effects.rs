@@ -701,10 +701,9 @@ impl Simulation {
                                     z: location.z,
                                 },
                             )
-                            .ok()
                         };
-                        let source = ground(location.x, location.y)?;
-                        Some(ground(x, y)?.wrapping_add(location.z.wrapping_sub(source)))
+                        let source = ground(location.x, location.y);
+                        Some(ground(x, y).wrapping_add(location.z.wrapping_sub(source)))
                     })
                     .unwrap_or(location.z);
                 let coord = AnimWorldCoord { x, y, z };

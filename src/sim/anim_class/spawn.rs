@@ -91,9 +91,7 @@ impl Simulation {
                     y: location.y,
                     z: location.z,
                 };
-                let ground_z =
-                    crate::sim::movement::ground_pose::query_ground_height(&cells, point)
-                        .unwrap_or(0);
+                let ground_z = crate::sim::movement::ground_pose::query_ground_height(&cells, point);
                 // The mark reads live Cell+140 bit100. A stamped side cell needs
                 // no own overlay (constructor5FC380, bridge_constructor.json
                 // cases8..11).
@@ -438,19 +436,25 @@ impl Simulation {
             },
             0,
         );
-        let Ok(mut z) = crate::sim::movement::ground_pose::query_ground_height(
+        let mut z = crate::sim::movement::ground_pose::query_ground_height(
             &cells,
             crate::sim::components::DriveCoord {
                 x: centre.x,
                 y: centre.y,
                 z: 0,
             },
+<<<<<<< HEAD
         ) else {
             return false;
         };
         let target = cells.lookup_world(centre.x, centre.y);
         if cells.flags(target) & 0x100 != 0 {
             z = crate::sim::movement::ground_pose::deck_surface_z(&cells, target, z);
+=======
+        );
+        if cells.flags(cells.lookup_world(centre.x, centre.y)) & 0x100 != 0 {
+            z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+>>>>>>> feature/ground-height-policy
         }
         let world_coord = AnimWorldCoord {
             x: centre.x,

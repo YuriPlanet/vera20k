@@ -333,8 +333,7 @@ fn air_impact_from_layer_z(
     let ground_z = crate::sim::movement::ground_pose::query_ground_height(
         &cells,
         impact.world_point(impact_rx, impact_ry),
-    )
-    .ok()?;
+    );
     let level_delta = impact_z.wrapping_sub(i32::from(level as i8));
     impact.z_leptons = ground_z.wrapping_add(level_delta.wrapping_mul(LEPTONS_PER_LEVEL as i32));
     Some(impact)
@@ -1085,7 +1084,6 @@ fn select_object_damage_layer(
             &cells,
             impact.world_point(impact_rx, impact_ry),
         )
-        .expect("AreaDamage floor requires a supported native Cell slope")
     } else {
         0 // Unread by the topology selector on the non-bridge arm.
     };
@@ -1110,12 +1108,10 @@ fn impact_is_above_ground(
     rules: &RuleSet,
 ) -> bool {
     let cells = NativeCellQuery::canonical(terrain);
-    let Ok(floor) = crate::sim::movement::ground_pose::query_ground_height(
+    let floor = crate::sim::movement::ground_pose::query_ground_height(
         &cells,
         impact.world_point(impact_rx, impact_ry),
-    ) else {
-        return false;
-    };
+    );
     // Ares DamageArea_DamageAir (100533A0, hook 0x4893BA): the height above
     // the floor must exceed DamageAirThreshold (default 0, the native
     // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
@@ -1296,7 +1292,7 @@ fn push_entity_aoe_damage(
             .wrapping_add(CELL_CENTER_LEPTON.to_num::<i32>());
         let z = terrain
             .and_then(|terrain| terrain.cell(scan_rx, scan_ry))
-            .and_then(|cell| ground_height_leptons(cell.level, cell.slope_type, x, y).ok())
+            .map(|cell| ground_height_leptons_clamped(cell.level, cell.slope_type, x, y))
             .unwrap_or_else(|| {
                 i32::from(entity.position.z()).wrapping_mul(LEPTONS_PER_LEVEL as i32)
             });

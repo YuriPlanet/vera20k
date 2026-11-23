@@ -129,7 +129,6 @@ pub(crate) fn body_extra_light(
                 || (side
                     && location.z
                         > ground_pose::query_ground_height(cells, location)
-                            .unwrap_or(0)
                             .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS / 2));
             if height_arm {
                 //51941A..519457: Object5F5F40 subtracts ground AND the

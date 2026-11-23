@@ -31,11 +31,8 @@ fn hover_on_ramp(terrain: &ResolvedTerrainGrid, type_id: &str, height: i32) -> G
         y: i32::from(CELL.1) * 256 + 128,
         z: 0,
     };
-    let ground = crate::sim::movement::ground_pose::query_ground_height(
-        &NativeCellQuery::isolated(terrain),
-        centre,
-    )
-    .unwrap();
+    let ground =
+        crate::sim::movement::ground_pose::query_ground_height(&NativeCellQuery::isolated(terrain), centre);
     entity.position.put_location(DriveCoord {
         z: ground + height,
         ..centre
@@ -69,9 +66,7 @@ fn body_slope(
 
 /// The slope [`lifted_unit_shadow_pose`] lays a Hover's shadow on.
 fn shadow_slope(terrain: &ResolvedTerrainGrid, entity: &GameEntity) -> u8 {
-    lifted_unit_shadow_pose(&on(terrain, entity), terrain, 0)
-        .unwrap()
-        .slope
+    lifted_unit_shadow_pose(&on(terrain, entity), terrain, 0).slope
 }
 
 /// Teleport keeps the base Draw_Matrix (`0x0055A730`, vtable slot
@@ -152,7 +147,7 @@ fn a_floating_hover_draws_its_shadow_on_the_ground_below_its_body() {
     let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
     let hover = hover_on_ramp(&terrain, "LCRF", 80);
     assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&hover)));
-    let pose = lifted_unit_shadow_pose(&on(&terrain, &hover), &terrain, 0).unwrap();
+    let pose = lifted_unit_shadow_pose(&on(&terrain, &hover), &terrain, 0);
     let (x, y) = crate::render::locomotor_visual::screen_position(&hover);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert!(drop > 0);
@@ -171,7 +166,7 @@ fn a_falling_vehicle_draws_its_shadow_on_the_ground_below_its_body() {
     assert!(!has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
     tank.set_falling_down_for_test(true);
     assert!(has_lifted_unit_shadow(&ObjectRecord::of_test(&tank)));
-    let pose = lifted_unit_shadow_pose(&on(&terrain, &tank), &terrain, 0).unwrap();
+    let pose = lifted_unit_shadow_pose(&on(&terrain, &tank), &terrain, 0);
     let (x, y) = crate::render::locomotor_visual::screen_position(&tank);
     let drop = crate::util::native_x87::adjust_for_z_standard(80);
     assert_eq!(pose.anchor, [x, y + drop as f32]);

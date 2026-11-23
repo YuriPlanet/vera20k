@@ -252,7 +252,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
         let (level, slope) = self.cell_terrain(xy);
-        let centre = ground_height_leptons(level, slope, 128, 128).unwrap_or(0);
+        let centre = ground_height_leptons_clamped(level, slope, 128, 128);
         let (cx, cy) = self.cell_of(xy);
         if cx < 0 || cy < 0 {
             return jumpjet_flight::cell_top_height(centre, None, false);

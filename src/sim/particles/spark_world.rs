@@ -85,8 +85,7 @@ fn ground_height_for_selection(
             (snapshot.level as u8, snapshot.slope_type)
         }
     };
-    ground_height_leptons(level, slope_type, world_x, world_y)
-        .map_err(|UnsupportedGroundSlope(slope)| SparkWorldError::UnsupportedSlope(slope))
+    ground_height_leptons_clamped(level, slope_type, world_x, world_y)
 }
 
 /// Constructor-only terrain query. Missing terrain retains the pre-existing

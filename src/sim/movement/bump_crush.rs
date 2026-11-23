@@ -418,7 +418,7 @@ impl crate::sim::world::Simulation {
             resolved_terrain.as_ref().unwrap(),
         );
         let [x, y] = cell_kernel::native_cell_own_xy(cell, &cells);
-        let z = super::ground_pose::query_ground_height(&cells, request)?;
+        let z = super::ground_pose::query_ground_height(&cells, request);
         Ok(Some(super::walk_head::selected_head(
             DriveCoord { x, y, z },
             slot,

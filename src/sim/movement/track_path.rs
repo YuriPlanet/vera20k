@@ -547,7 +547,7 @@ impl Simulation {
         };
         //4B2BB2..4B2BC6: the deck list when the Foot rides above the ground
         //at the cell centre by more than two levels.
-        let ground = ground_pose::query_ground_height(&cells, centre)?;
+        let ground = ground_pose::query_ground_height(&cells, centre);
         let alt = location.z > ground + 2 * GROUND_LEVEL_HEIGHT_LEPTONS;
         let layer = if alt {
             MovementLayer::Bridge

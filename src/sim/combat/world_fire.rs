@@ -1906,8 +1906,7 @@ pub(super) fn emit_admitted_fire(
                     Some(ProjectileCoord::new(
                         x,
                         y,
-                        crate::util::lepton::ground_height_leptons(level, slope, x, y)
-                            .expect("native target cell slope"),
+                        crate::util::lepton::ground_height_leptons_clamped(level, slope, x, y),
                     ))
                 }
             }

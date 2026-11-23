@@ -544,7 +544,7 @@ impl Simulation {
                 .map_or((0, None), |terrain| {
                     let cells = NativeCellQuery::canonical(terrain);
                     let ground =
-                        super::ground_pose::query_ground_height(&cells, coord).unwrap_or(0);
+                        super::ground_pose::query_ground_height(&cells, coord);
                     let cell = cells.lookup_world(coord.x, coord.y);
                     let deck = (cells.flags(cell) & CELL_FLAG_BRIDGE != 0)
                         .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground));

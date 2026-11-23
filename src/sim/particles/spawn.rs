@@ -428,16 +428,14 @@ impl Simulation {
             0,
         );
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let Ok(z) = crate::sim::movement::ground_pose::query_ground_height(
+        let z = crate::sim::movement::ground_pose::query_ground_height(
             &cells,
             crate::sim::components::DriveCoord {
                 x: center.x,
                 y: center.y,
                 z: 0,
             },
-        ) else {
-            return false;
-        };
+        );
         self.spawn_particle_system(
             type_id,
             IVec3::new(center.x, center.y, z),

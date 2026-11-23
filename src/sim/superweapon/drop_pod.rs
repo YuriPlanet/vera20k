@@ -354,7 +354,6 @@ impl Simulation {
                 &NativeCellQuery::canonical(terrain),
                 to,
             )
-            .unwrap_or(0)
         });
         let destination = DriveCoord { z: ground, ..to };
         let Some(run) = entry_run(locomotor.height, locomotor.angle) else {

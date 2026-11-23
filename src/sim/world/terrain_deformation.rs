@@ -133,13 +133,12 @@ impl Simulation {
         }
         let ground = self.resolved_terrain.as_ref().and_then(|terrain| {
             let cell = terrain.cell(cell.0, cell.1)?;
-            crate::util::lepton::ground_height_leptons(
+            Some(crate::util::lepton::ground_height_leptons_clamped(
                 cell.level,
                 cell.slope_type,
                 impact.x,
                 impact.y,
-            )
-            .ok()
+            ))
         });
         let Some(ground) = ground else {
             return;
