@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| RFC version | 0.0.19 |
+| RFC version | 0.0.20 |
 | Status | Draft |
 | Created | 2026-11-16 |
 | APIs | `vera:sim@1`, `vera:client@1` (proposed) |
@@ -184,7 +184,7 @@ onScenarioStart((): void => {
 | Runs on | Every machine in lockstep | Local machine only |
 | Deterministic | Yes | No |
 | Can change | Gameplay state through its engine owner | UI nodes, camera, cursor, local settings and sound |
-| Affects gameplay through | Actions, property writes, variables and orders for computer houses | Standard player orders and messages through the command stream |
+| Affects gameplay through | Actions, property writes, variables, missions for any house's units and orders for computer houses | Standard player orders and messages through the command stream |
 | Engine side | `sim/` | `ui/`, `render/`, `audio/` |
 
 The existing dependency rule applies. `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`. The loader rejects a simulation module that imports `client_*` functions and a client module that imports simulation functions.
@@ -615,7 +615,7 @@ Version 1 freezes three decidable events: `TakeDamage` (settled final damage), `
 
 An action performs an operation directly. An order asks the house to do what its player could, at a player's cost and under a player's checks. `CreateObject` makes a unit for free, while a `QueueProduction` order pays for it and waits for a factory.
 
-- **Houses.** `house` must be a house no player controls (`IsHuman` is 0 and no campaign player controls it) that is not defeated. Otherwise `order` returns `Refused`. A player's house takes orders only from that player, including the player's client module. Modules move a player's units with `SetMission`. A null or non-house reference is an invalid argument (section 3).
+- **Houses.** `house` must be a house no player controls (`IsHuman` is 0 and no campaign player controls it) that is not defeated. Otherwise `order` returns `Refused`. A player's house takes orders only from that player, including the player's client module. This limits `order` only: a `Mission` write or the `SetMission` action gives any object, a player's included, a mission through its own house, as its player's click would. A null or non-house reference is an invalid argument (section 3).
 - **Timing.** The engine queues the order. An order issued in frame F executes in frame F + 1, in the step that executes received player commands, wherever the module phase falls. The command step follows object turns, so units act on it from the object turns of frame F + 2. That step executes the frame's player commands first, then the mod module's orders, then the map module's, each in issue order. Orders have no network command delay. Every machine issues them in lockstep, and the native AI that runs beside them has no delay either.
 - **Admission.** Natively the command step accepts commands only for houses a player controls. It also accepts module orders for computer houses. Stock play never sends a command for a computer house, so stock play is unchanged.
 - **Validation.** At execution an order passes the same checks as the identical command from the house's player, against the state at that moment, such as unit ownership, prerequisites and building placement. Units that ignore player orders (`IgnoreOrders`) also ignore module orders. Units that are gone or no longer belong to the house drop out of the order. An order that fails does nothing, as for a player. Production spends credits and build time as it does for a player. At issue time `order` checks only the house, the command table (target and value kinds, every unit entry an object handle, a unit list only where the table lists one) and the per-frame limit. A violation returns `Refused` and queues nothing. An unknown command returns `Unsupported`.
@@ -723,7 +723,7 @@ See [client nodes](0001-wasm-extension-modules-api.md#710-client-nodes) for INI 
 - Local actions (`client_action`) play sounds and EVA voices, move the camera, select locally, flash an object, display a message or register a hotkey. Camera, cursor and local settings are also client-owned references. `Camera.cell()` reads the camera cell and `Camera.jumpTo(cell)` jumps to a cell. Lepton-precision camera writes are left for later. Version 1 local settings are the read-only `Viewer` and `IsSpectator`. Modules cannot read or write other player settings.
 - Clicks on clickable nodes do not reach the map. Map clicks reach the module as `MapClick` client events and normally also reach the game. Setting the cursor's `CaptureMapClick` to 1 sends map clicks exclusively to the module. Game hotkeys take precedence over conflicting module hotkeys. The client may read the cursor's screen position and the cell beneath it (appendix 7.10).
 - Unit selection and button clicks are client events. To change the game, send a message for the simulation module's `on_message`, keeping multiplayer and replays consistent.
-- Client modules can issue standard player orders (move, attack, deploy, build, etc.) through `client_send_order`. The engine validates these like all player input. Simulation modules use the same command table for computer houses (section 6g). Messages carry custom logic.
+- Client modules can issue standard player orders (move, attack, deploy, build, etc.) through `client_send_order`. The engine validates these like all player input. Simulation modules use the same command table for computer houses (section 6g) and give any house's units missions (`SetMission`). Messages carry custom logic.
 - Images, animations and models are referenced by name, independent of file format, allowing future asset formats (a separate RFC) without API changes.
 - `client_log` writes to the in-game console.
 - Player-installed UI modules are deferred. The mod or room may prohibit them.
@@ -980,6 +980,7 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 
 ## Revision history
 
+- **0.0.20** (2026-11-23): Stated where gameplay effects are listed that missions (`Mission` writes, `SetMission`) reach any house's units, a player's included; only `order` is limited to computer houses. The text read as if modules could not command a player's units.
 - **0.0.19** (2026-11-23): The first event batch of a frame always starts. `ProductionAllowed` draws from B, so a module that refuses production every frame could otherwise receive no events at all until its backlog stopped it. The worst-frame bound gains one decision call's limit.
 - **0.0.18** (2026-11-22): Sized a search page by the caller's budget as well. With two clauses a page of 16,384 items cost more than a whole callback's budget, so the paging 0.0.17 describes could never start. Keys without an item are charged and capped.
 - **0.0.17** (2026-11-22): Corrected open question 7: the 4.6 ms search figure in 0.0.16 was extrapolated from 42,442 operations and presented as a measurement. Direct measurement gives 2.34 ms with one clause and 10.05 ms with eight, and the computation and property-read figures are now labelled as extrapolations. Made search pagination consistent with the per-call scan limit: `next` is nonzero whenever a scan is unfinished, `.first()` follows it and a scan never outruns the caller's budget.
