@@ -220,7 +220,7 @@ use crate::assets::bink_data::{
     BINK_INTER_QUANT, BINK_INTRA_QUANT, BINK_PATTERNS, BINK_RLELENS, BINK_SCAN, BINK_TREE_BITS,
     BINK_TREE_LENS, DC_START_BITS,
 };
-use crate::assets::bink_file::{BinkHeader, BinkVersion};
+use crate::assets::bink_file::{BinkHeader, BinkVersion, validate_dimensions};
 use crate::assets::error::AssetError;
 
 /// Bundle IDs for modern Bink (BIKi/BIKk).
@@ -273,6 +273,14 @@ pub enum ColorRange {
     Jpeg,
 }
 
+fn zeroed_buffer(bytes: usize, buffer: &'static str) -> Result<Vec<u8>, AssetError> {
+    let mut data = Vec::new();
+    data.try_reserve_exact(bytes)
+        .map_err(|_| AssetError::BinkAllocationFailed { buffer, bytes })?;
+    data.resize(bytes, 0);
+    Ok(data)
+}
+
 impl BinkFrame {
     /// The frame's planes, allocated fallibly: a header that names a large
     /// frame asks for more memory than a machine may have, and a movie that
@@ -297,11 +305,11 @@ impl BinkFrame {
             width,
             height,
             color_range,
-            y: zeroed(y_size)?,
+            y: zeroed_buffer(y_size, "luma plane")?.into_boxed_slice(),
             stride_y,
-            u: zeroed(uv_size)?,
+            u: zeroed_buffer(uv_size, "U chroma plane")?.into_boxed_slice(),
             stride_uv,
-            v: zeroed(uv_size)?,
+            v: zeroed_buffer(uv_size, "V chroma plane")?.into_boxed_slice(),
         })
     }
 }
@@ -311,19 +319,6 @@ fn bink_error(reason: &str) -> AssetError {
     AssetError::BinkError {
         reason: reason.to_owned(),
     }
-}
-
-/// A zeroed buffer of `size` bytes, or the error that says it could not be
-/// had. The size is the caller's own arithmetic; nothing is reserved twice.
-fn zeroed(size: usize) -> Result<Box<[u8]>, AssetError> {
-    let mut bytes: Vec<u8> = Vec::new();
-    bytes
-        .try_reserve_exact(size)
-        .map_err(|_| AssetError::BinkError {
-            reason: format!("Bink frame needs {size} bytes of plane memory"),
-        })?;
-    bytes.resize(size, 0);
-    Ok(bytes.into_boxed_slice())
 }
 
 /// Per-bundle state.
@@ -372,6 +367,8 @@ impl BinkDecoder {
             });
         }
 
+        validate_dimensions(header.width, header.height)?;
+
         let color_range = match header.version {
             BinkVersion::BikK => ColorRange::Jpeg,
             _ => ColorRange::Mpeg,
@@ -405,16 +402,7 @@ impl BinkDecoder {
         // The block scratch is sized by the header alone, so a movie that
         // cannot hold its own scratch does not play; it must not abort the
         // process on a machine without that much memory.
-        let mut bundle_data = Vec::new();
-        bundle_data
-            .try_reserve_exact(total_bytes)
-            .map_err(|_| AssetError::BinkError {
-                reason: format!(
-                    "Bink {}x{} needs {} bytes of block scratch",
-                    header.width, header.height, total_bytes
-                ),
-            })?;
-        bundle_data.resize(total_bytes, 0);
+        let bundle_data = zeroed_buffer(total_bytes, "block scratch")?;
 
         let block_per_bundle = blocks.saturating_mul(64);
         let bundles: [Bundle; NB_SRC] = std::array::from_fn(|i| Bundle {
@@ -1780,22 +1768,59 @@ mod tests {
         assert_eq!(recovered.y[32..40], next);
     }
 
-    #[test]
-    fn init_bundle_lengths_matches_ffmpeg_formula() {
-        let h = crate::assets::bink_file::BinkHeader {
+    fn video_header(width: u32, height: u32) -> BinkHeader {
+        BinkHeader {
             version: BinkVersion::BikI,
             file_size: 1000,
             num_frames: 1,
-            width: 320,
-            height: 240,
+            width,
+            height,
             fps_num: 30,
             fps_den: 1,
             video_flags: 0,
             num_audio_tracks: 0,
             audio_tracks: vec![],
             frame_index_offset: 0,
-        };
-        let mut d = BinkDecoder::new(&h).unwrap();
+        }
+    }
+
+    #[test]
+    fn decoder_allocates_zeroed_scratch_and_padded_frames() {
+        let decoder = BinkDecoder::new(&video_header(320, 200)).unwrap();
+        assert_eq!(decoder.bundle_data.len(), 576_000);
+        assert!(decoder.bundle_data.iter().all(|&byte| byte == 0));
+        for frame in [&decoder.cur, &decoder.prev] {
+            assert_eq!((frame.width, frame.height), (320, 200));
+            assert_eq!((frame.stride_y, frame.stride_uv), (320, 160));
+            assert_eq!(frame.y.len(), 320 * 208);
+            assert_eq!(frame.u.len(), 160 * 112);
+            assert_eq!(frame.v.len(), 160 * 112);
+            for plane in [&frame.y, &frame.u, &frame.v] {
+                assert!(plane.iter().all(|&byte| byte == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn decoder_rejects_dimensions_outside_parser_bounds() {
+        for (width, height, expected) in [
+            (0, 1, "invalid width 0"),
+            (7681, 1, "invalid width 7681"),
+            (1, 0, "invalid height 0"),
+            (1, 4801, "invalid height 4801"),
+        ] {
+            let Err(AssetError::BinkError { reason }) =
+                BinkDecoder::new(&video_header(width, height))
+            else {
+                panic!("expected a dimension error for {width}x{height}");
+            };
+            assert_eq!(reason, expected);
+        }
+    }
+
+    #[test]
+    fn init_bundle_lengths_matches_ffmpeg_formula() {
+        let mut d = BinkDecoder::new(&video_header(320, 240)).unwrap();
         let bw = (320u32 + 7) >> 3;
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
@@ -1885,7 +1910,7 @@ mod tests {
     /// 13 chroma block rows, both odd) must fit the planes.
     #[test]
     fn planes_hold_a_scaled_block_on_an_odd_last_block_row() {
-        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg);
+        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg).unwrap();
         let luma_rows = (200u32 + 7) >> 3;
         assert_eq!(luma_rows % 2, 1);
         let base = ((luma_rows - 1) as usize) * 8 * frame.stride_y;

@@ -70,6 +70,10 @@ pub enum AssetError {
     #[error("Bink error: {reason}")]
     BinkError { reason: String },
 
+    /// A Bink video buffer could not be reserved.
+    #[error("Bink error: could not allocate {bytes} bytes for {buffer}")]
+    BinkAllocationFailed { buffer: &'static str, bytes: usize },
+
     /// Requested video packet index out of range in a Bink file.
     #[error("Bink frame index {index} out of range (file has {count} frames)")]
     BinkFrameOutOfRange { index: usize, count: usize },
