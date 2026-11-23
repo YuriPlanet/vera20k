@@ -219,6 +219,23 @@ fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
 }
 
 #[test]
+fn occupy_height_is_bounded_at_limit_and_one_past() {
+    // VERA's own bound applies to both spellings: an absent
+    // `OccupyHeight=` inherits `Height=`. The exact limit passes through.
+    let ini: IniFile = IniFile::from_str(&format!(
+        "[GAREFN]\nOccupyHeight={}\n\n[GAPOWR]\nHeight={}\n\n[NAPOWR]\nOccupyHeight={}\n",
+        OCCUPY_HEIGHT_LIMIT,
+        OCCUPY_HEIGHT_LIMIT + 1,
+        OCCUPY_HEIGHT_LIMIT + 1,
+    ));
+    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
+
+    assert_eq!(reg.occupy_height("GAREFN"), OCCUPY_HEIGHT_LIMIT);
+    assert_eq!(reg.occupy_height("GAPOWR"), OCCUPY_HEIGHT_LIMIT);
+    assert_eq!(reg.occupy_height("NAPOWR"), OCCUPY_HEIGHT_LIMIT);
+}
+
+#[test]
 fn test_resolve_effective_image_id_chain() {
     let ini: IniFile =
         IniFile::from_str("[NACNST]\nImage=CIVNC\n\n[E1]\nFixtureOnly=1\n\n[MTNK]\nImage=MTNK\n");

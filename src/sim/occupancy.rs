@@ -668,7 +668,13 @@ fn hidden_diagonal_cells(
     occupy_height: i32,
     map_size: Option<(u16, u16)>,
 ) -> BTreeSet<(u16, u16)> {
-    let depth = occupy_height.saturating_sub(1).max(1);
+    // The profile's height is read from the rules, but a save carries its
+    // own copy, so the pass is bounded here too: VERA's own
+    // `OCCUPY_HEIGHT_LIMIT`, which gamemd has no counterpart of.
+    let depth = occupy_height
+        .saturating_sub(1)
+        .max(1)
+        .min(crate::rules::art_data::OCCUPY_HEIGHT_LIMIT);
     let mut cells = BTreeSet::new();
     for (dx, dy) in foundation.cell_offsets() {
         for k in 0..depth {
@@ -1444,6 +1450,30 @@ mod tests {
             [9]
         );
         assert_eq!(grid.occupied_cell_count(), 1);
+    }
+
+    #[test]
+    fn hidden_occupancy_bounds_a_saved_height() {
+        // A save carries its own copy of the profile's height, so the pass
+        // is bounded here as well as at the rules reader: VERA's own
+        // `OCCUPY_HEIGHT_LIMIT`, which gamemd has no counterpart of.
+        let foundation: crate::rules::foundation::Foundation = "4x3".into();
+        let map_size = Some((512u16, 512u16));
+        let origin = (256u16, 256u16);
+
+        let mut unbounded = HiddenOccupationGrid::new();
+        let mut profile = crate::rules::object_type::BuildingHiddenOccupancyProfile {
+            occupy_height: 200_000,
+            ..Default::default()
+        };
+        assert!(unbounded.enter_building(origin, &foundation, profile, map_size, false));
+
+        profile.occupy_height = crate::rules::art_data::OCCUPY_HEIGHT_LIMIT;
+        let mut bounded = HiddenOccupationGrid::new();
+        assert!(bounded.enter_building(origin, &foundation, profile, map_size, false));
+
+        assert!(bounded.entry_count() > 0);
+        assert_eq!(unbounded.entry_count(), bounded.entry_count());
     }
 
     #[test]

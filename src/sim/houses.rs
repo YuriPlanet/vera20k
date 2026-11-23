@@ -36,10 +36,11 @@ impl Houses {
     }
     /// Append a constructed House to the array under its own name.
     ///
-    /// Panics when a House of that name is already registered: scenario
-    /// construction admits distinct House names only (the map's `[Houses]`
-    /// reader, `parse_house_roster`, drops a repeated name).
-    #[track_caller]
+    /// A House of that name is already registered is refused: the first
+    /// registration stays and the newcomer is dropped, the way the map's
+    /// `[Houses]` reader keeps the first of a repeated name. gamemd admits
+    /// distinct House names only, and a repeated name in a map or a save
+    /// must not end the game.
     pub fn register(&mut self, mut house: HouseState) -> &mut HouseState {
         house.configure_spatial_threat_grid(self.cell_grid);
         let name = house.name();
@@ -48,7 +49,10 @@ impl Houses {
                 self.order.push(name);
                 slot.insert(house)
             }
-            btree_map::Entry::Occupied(_) => panic!("House {name:?} is already registered"),
+            btree_map::Entry::Occupied(slot) => {
+                log::warn!("House {name:?} is already registered; the first stays");
+                slot.into_mut()
+            }
         }
     }
 
@@ -282,5 +286,29 @@ impl<'a> IntoIterator for &'a mut Houses {
 
     fn into_iter(self) -> Self::IntoIter {
         self.states.iter_mut()
+    }
+}
+
+#[cfg(all(test, tests_sim_h_o))]
+mod tests {
+    use super::*;
+    use crate::sim::intern::test_intern;
+
+    /// A repeated House name is refused, not fatal: the first registration
+    /// stays, the newcomer is dropped, and the array holds one House under
+    /// that name.
+    #[test]
+    fn a_repeated_house_name_keeps_the_first_registration() {
+        let mut houses = Houses::default();
+        let name = test_intern("Americans");
+
+        houses.register(HouseState::new(name, 0, None, true, 100, 10));
+        let returned = houses.register(HouseState::new(name, 3, None, false, 900, 10));
+
+        assert_eq!(returned.side_index(), 0, "the first registration stays");
+        assert_eq!(houses.len(), 1);
+        assert_eq!(houses.order().to_vec(), vec![name]);
+        let kept = houses.get(&name).expect("the House is registered");
+        assert!(kept.is_human());
     }
 }
