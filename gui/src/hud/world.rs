@@ -1,5 +1,4 @@
-//! World-anchored UI: status templates evaluated per object and free draw
-//! lists at an anchor.
+//! World-anchored UI: status templates evaluated per object.
 //!
 //! The host passes only the objects the local player may see, in draw order,
 //! with positions already projected. A template is declared once; nothing
@@ -8,13 +7,12 @@
 use crate::Rect;
 use crate::node::{Refused, Rgba};
 
-use super::layout::bounded;
 use super::{Origin, others_share};
 
 // Every count limit is per world, shared by all origins. Going past one is
 // `Refused::Limit` and changes nothing.
 
-/// Templates registered at once, hidden ones included.
+/// Templates registered at once.
 pub const MAX_TEMPLATES: usize = 256;
 pub const MAX_ELEMENTS_PER_TEMPLATE: usize = 32;
 pub const MAX_CONDITIONS_PER_TEMPLATE: usize = 16;
@@ -34,10 +32,7 @@ pub const MAX_SLOT_ARTS: usize = 256;
 /// together, the first not to fit whole is left out with those registered
 /// after it; one of another origin's takes none of the host's with it.
 pub const MAX_COMMANDS_PER_OBJECT: usize = 512;
-pub const MAX_LISTS: usize = 4096;
-pub const MAX_SHAPES_PER_LIST: usize = 128;
-/// UTF-8 bytes of a template's name, of one text shape's key or of a node's
-/// `Command`.
+/// UTF-8 bytes of a template's name.
 pub const MAX_TEXT_BYTES: usize = 256;
 
 /// A picture the host registered.
@@ -160,40 +155,6 @@ pub struct StatusTemplate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TemplateId(u64);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ListId(u64);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Anchor {
-    Object(u64),
-    Cell { x: i32, y: i32 },
-    Screen { x: i32, y: i32 },
-}
-
-/// Coordinates are relative to the anchor's projected point.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Shape {
-    Rect {
-        rect: Rect,
-        color: Rgba,
-    },
-    Image {
-        rect: Rect,
-        art: ArtId,
-    },
-    Line {
-        from: (i32, i32),
-        to: (i32, i32),
-        width: u16,
-        color: Rgba,
-    },
-    Text {
-        rect: Rect,
-        key: String,
-        color: Rgba,
-    },
-}
-
 /// No rect has a negative size, and `x + w` and `y + h` fit an i32.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldOp<'a> {
@@ -204,12 +165,6 @@ pub enum WorldOp<'a> {
     Image {
         rect: Rect,
         art: ArtId,
-    },
-    Line {
-        from: (i32, i32),
-        to: (i32, i32),
-        width: u16,
-        color: Rgba,
     },
     Number {
         rect: Rect,
@@ -230,83 +185,17 @@ pub struct WorldCmd<'a> {
     pub op: WorldOp<'a>,
 }
 
-struct Entry<T> {
-    id: u64,
+/// A registered template, as [`normalized`] left it.
+struct Entry {
     origin: Origin,
-    item: T,
-}
-
-/// Rows in registration order, which is also ascending id order.
-struct Store<T> {
-    rows: Vec<Entry<T>>,
-    /// Every id below it was issued.
-    next: u64,
-}
-
-impl<T> Default for Store<T> {
-    fn default() -> Self {
-        Store {
-            rows: Vec::new(),
-            next: 0,
-        }
-    }
-}
-
-impl<T> Store<T> {
-    fn add(&mut self, origin: Origin, item: T, limit: usize) -> Result<u64, Refused> {
-        let limit = origin.share(limit);
-        if self.rows.len() >= limit {
-            return Err(Refused::Limit);
-        }
-        let id = self.next;
-        self.next = id.checked_add(1).ok_or(Refused::Limit)?;
-        self.rows.push(Entry { id, origin, item });
-        Ok(id)
-    }
-
-    fn index(&self, id: u64) -> Result<usize, Refused> {
-        self.rows
-            .binary_search_by_key(&id, |row| row.id)
-            .map_err(|_| {
-                if id < self.next {
-                    Refused::Stale
-                } else {
-                    Refused::NotFound
-                }
-            })
-    }
-
-    fn get_mut(&mut self, id: u64) -> Result<&mut T, Refused> {
-        let index = self.index(id)?;
-        Ok(&mut self.rows[index].item)
-    }
-
-    fn remove(&mut self, id: u64) -> Result<(), Refused> {
-        let index = self.index(id)?;
-        self.rows.remove(index);
-        Ok(())
-    }
-
-    /// Whether anything went.
-    fn remove_origin(&mut self, origin: Origin) -> bool {
-        let before = self.rows.len();
-        self.rows.retain(|row| row.origin != origin);
-        self.rows.len() != before
-    }
-}
-
-struct Template {
-    /// As [`normalized`] left it.
     def: StatusTemplate,
-    shown: bool,
 }
 
-impl Template {
+impl Entry {
     fn matches(&self, object: &ObjectView<'_>) -> bool {
         let def = &self.def;
         // The cheapest tests first: most templates fail one for most objects.
-        self.shown
-            && mask_matches(def.category, object.category)
+        mask_matches(def.category, object.category)
             && mask_matches(def.relation, object.relation)
             && mask_matches(def.state, object.state)
             && (def.types.is_empty() || def.types.binary_search(&object.type_id).is_ok())
@@ -317,132 +206,25 @@ impl Template {
     }
 }
 
-struct DrawList {
-    anchor: Anchor,
-    shapes: Vec<Shape>,
-}
-
 #[derive(Default)]
 pub struct World {
-    revision: u64,
-    templates: Store<Template>,
-    lists: Store<DrawList>,
+    /// In registration order; a template's id is its index.
+    templates: Vec<Entry>,
 }
 
 impl World {
-    pub fn template_origin(&self, id: TemplateId) -> Result<Origin, Refused> {
-        Ok(self.templates.rows[self.templates.index(id.0)?].origin)
-    }
-
-    pub fn list_origin(&self, id: ListId) -> Result<Origin, Refused> {
-        Ok(self.lists.rows[self.lists.index(id.0)?].origin)
-    }
-
-    /// Changes whenever a template or list changes.
-    pub fn revision(&self) -> u64 {
-        self.revision
-    }
-
     pub fn add_template(
         &mut self,
         origin: Origin,
         template: StatusTemplate,
     ) -> Result<TemplateId, Refused> {
-        let item = Template {
-            def: normalized(template, origin)?,
-            shown: true,
-        };
-        let id = self.templates.add(origin, item, MAX_TEMPLATES)?;
-        self.revision += 1;
-        Ok(TemplateId(id))
-    }
-
-    /// Keeps the template's origin, place in the order and whether it shows.
-    pub fn set_template(
-        &mut self,
-        id: TemplateId,
-        template: StatusTemplate,
-    ) -> Result<(), Refused> {
-        let index = self.templates.index(id.0)?;
-        let row = &mut self.templates.rows[index];
-        let def = normalized(template, row.origin)?;
-        if row.item.def != def {
-            row.item.def = def;
-            self.revision += 1;
+        let def = normalized(template, origin)?;
+        if self.templates.len() >= origin.share(MAX_TEMPLATES) {
+            return Err(Refused::Limit);
         }
-        Ok(())
-    }
-
-    /// A hidden template stays registered, so a replacement can be undone.
-    pub fn show_template(&mut self, id: TemplateId, shown: bool) -> Result<(), Refused> {
-        let current = self.templates.get_mut(id.0)?;
-        if current.shown != shown {
-            current.shown = shown;
-            self.revision += 1;
-        }
-        Ok(())
-    }
-
-    pub fn remove_template(&mut self, id: TemplateId) -> Result<(), Refused> {
-        self.templates.remove(id.0)?;
-        self.revision += 1;
-        Ok(())
-    }
-
-    /// The template named `name`, hidden ones included, by the precedence of
-    /// [`super::Hud::find`]; the first registered among one origin's.
-    pub fn find_template(&self, from: Origin, name: &str) -> Option<TemplateId> {
-        self.templates
-            .rows
-            .iter()
-            .filter(|row| row.item.def.name.eq_ignore_ascii_case(name))
-            // The first of equal minima wins.
-            .min_by_key(|row| (row.origin != from, row.origin))
-            .map(|row| TemplateId(row.id))
-    }
-
-    pub fn add_list(
-        &mut self,
-        origin: Origin,
-        anchor: Anchor,
-        shapes: Vec<Shape>,
-    ) -> Result<ListId, Refused> {
-        check_shapes(&shapes)?;
-        let id = self
-            .lists
-            .add(origin, DrawList { anchor, shapes }, MAX_LISTS)?;
-        self.revision += 1;
-        Ok(ListId(id))
-    }
-
-    /// Keeps the list's origin and place in the order.
-    pub fn set_list(
-        &mut self,
-        id: ListId,
-        anchor: Anchor,
-        shapes: Vec<Shape>,
-    ) -> Result<(), Refused> {
-        let current = self.lists.get_mut(id.0)?;
-        check_shapes(&shapes)?;
-        if current.anchor != anchor || current.shapes != shapes {
-            *current = DrawList { anchor, shapes };
-            self.revision += 1;
-        }
-        Ok(())
-    }
-
-    pub fn remove_list(&mut self, id: ListId) -> Result<(), Refused> {
-        self.lists.remove(id.0)?;
-        self.revision += 1;
-        Ok(())
-    }
-
-    pub fn remove_origin(&mut self, origin: Origin) {
-        let templates = self.templates.remove_origin(origin);
-        let lists = self.lists.remove_origin(origin);
-        if templates || lists {
-            self.revision += 1;
-        }
+        let id = TemplateId(self.templates.len() as u64);
+        self.templates.push(Entry { origin, def });
+        Ok(id)
     }
 
     /// Appends the templates' commands for `objects`: object order first,
@@ -454,13 +236,13 @@ impl World {
             let first = out.len();
             // What is left for other origins than the host.
             let mut spare = others_share(MAX_COMMANDS_PER_OBJECT);
-            for row in &self.templates.rows {
+            for row in &self.templates {
                 let host = row.origin == Origin::Host;
-                if (!host && spare == 0) || !row.item.matches(object) {
+                if (!host && spare == 0) || !row.matches(object) {
                     continue;
                 }
                 let before = out.len();
-                for element in &row.item.def.elements {
+                for element in &row.def.elements {
                     paint_element(object, element, out);
                 }
                 let used = out.len() - before;
@@ -476,29 +258,6 @@ impl World {
                     spare -= used;
                 }
             }
-        }
-    }
-
-    /// Appends the draw lists in registration order. `project` gives an
-    /// anchor's point, or none while it is not to be seen.
-    pub fn paint_lists<'a>(
-        &'a self,
-        project: impl Fn(Anchor) -> Option<(i32, i32)>,
-        out: &mut Vec<WorldCmd<'a>>,
-    ) {
-        for row in &self.lists.rows {
-            let DrawList { anchor, shapes } = &row.item;
-            let Some(point) = project(*anchor) else {
-                continue;
-            };
-            let object = match *anchor {
-                Anchor::Object(id) => Some(id),
-                Anchor::Cell { .. } | Anchor::Screen { .. } => None,
-            };
-            out.extend(shapes.iter().map(|shape| WorldCmd {
-                object,
-                op: placed(shape, point),
-            }));
         }
     }
 }
@@ -545,15 +304,6 @@ fn normalized(mut template: StatusTemplate, origin: Origin) -> Result<StatusTemp
     Ok(template)
 }
 
-fn check_shapes(shapes: &[Shape]) -> Result<(), Refused> {
-    let too_long =
-        |shape: &Shape| matches!(shape, Shape::Text { key, .. } if key.len() > MAX_TEXT_BYTES);
-    if shapes.len() > MAX_SHAPES_PER_LIST || shapes.iter().any(too_long) {
-        return Err(Refused::Limit);
-    }
-    Ok(())
-}
-
 fn mask_matches(mask: u32, bits: u32) -> bool {
     mask == 0 || mask & bits != 0
 }
@@ -585,7 +335,7 @@ fn saturate(v: i64) -> i32 {
 }
 
 fn moved(rect: Rect, (x, y): (i32, i32)) -> Rect {
-    bounded(rect.translate(x, y))
+    rect.translate(x, y).bounded()
 }
 
 fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<WorldCmd<'_>>) {
@@ -644,11 +394,12 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
                 let Some(art) = (if i < lit { Some(full) } else { empty }) else {
                     break;
                 };
-                let rect = bounded(Rect {
+                let rect = Rect {
                     x: saturate(x + i * i64::from(step.0)),
                     y: saturate(y + i * i64::from(step.1)),
                     ..at
-                });
+                }
+                .bounded();
                 push(WorldOp::Image { rect, art });
             }
         }
@@ -670,11 +421,12 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
                 let Some(art) = (if i < lit { Some(full) } else { empty }) else {
                     break;
                 };
-                let rect = bounded(Rect {
+                let rect = Rect {
                     x: saturate(x + i * i64::from(step.0)),
                     y: saturate(y + i * i64::from(step.1)),
                     ..at
-                });
+                }
+                .bounded();
                 push(WorldOp::Image { rect, art });
             }
         }
@@ -686,11 +438,12 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
                     continue;
                 };
                 let i = i64::from(slot.index);
-                let rect = bounded(Rect {
+                let rect = Rect {
                     x: saturate(x + i * i64::from(step.0)),
                     y: saturate(y + i * i64::from(step.1) + i64::from(slot.lift)),
                     ..at
-                });
+                }
+                .bounded();
                 push(WorldOp::Image { rect, art });
             }
         }
@@ -713,59 +466,6 @@ fn paint_element(object: &ObjectView<'_>, element: &Element, out: &mut Vec<World
             });
         }
     }
-}
-
-fn placed(shape: &Shape, point: (i32, i32)) -> WorldOp<'_> {
-    let end = |(x, y): (i32, i32)| (x.saturating_add(point.0), y.saturating_add(point.1));
-    match *shape {
-        Shape::Rect { rect, color } => WorldOp::Rect {
-            rect: moved(rect, point),
-            color,
-        },
-        Shape::Image { rect, art } => WorldOp::Image {
-            rect: moved(rect, point),
-            art,
-        },
-        Shape::Line {
-            from,
-            to,
-            width,
-            color,
-        } => WorldOp::Line {
-            from: end(from),
-            to: end(to),
-            width,
-            color,
-        },
-        Shape::Text {
-            rect,
-            ref key,
-            color,
-        } => WorldOp::Text {
-            rect: moved(rect, point),
-            key,
-            color,
-        },
-    }
-}
-
-/// Runs of neighbouring commands one draw call can take (`material` names
-/// the host's texture or pipeline). Order is never changed.
-pub fn batches<'c, 'a: 'c, M: PartialEq + 'c>(
-    cmds: &'c [WorldCmd<'a>],
-    material: impl Fn(&WorldOp<'a>) -> M + 'c,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'c {
-    let mut start = 0;
-    std::iter::from_fn(move || {
-        let kind = material(&cmds.get(start)?.op);
-        let more = cmds[start + 1..]
-            .iter()
-            .take_while(|cmd| material(&cmd.op) == kind)
-            .count();
-        let run = start..start + 1 + more;
-        start = run.end;
-        Some(run)
-    })
 }
 
 #[cfg(test)]
@@ -880,198 +580,6 @@ mod tests {
             [WorldOp::Rect { rect, color }] => Some((rect.w, color)),
             ref other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn removed_ids_are_stale_and_never_reused() {
-        let mut world = World::default();
-        let template_id = world.add_template(Origin::Host, named("one")).unwrap();
-        let list_id = world
-            .add_list(Origin::Host, Anchor::Object(1), vec![])
-            .unwrap();
-        world.remove_template(template_id).unwrap();
-        world.remove_list(list_id).unwrap();
-        let revision = world.revision();
-        assert_eq!(
-            world.set_template(template_id, named("two")),
-            Err(Refused::Stale)
-        );
-        assert_eq!(world.show_template(template_id, false), Err(Refused::Stale));
-        assert_eq!(world.remove_template(template_id), Err(Refused::Stale));
-        assert_eq!(
-            world.set_list(list_id, Anchor::Object(1), vec![]),
-            Err(Refused::Stale)
-        );
-        assert_eq!(world.remove_list(list_id), Err(Refused::Stale));
-        assert_eq!(world.revision(), revision);
-        assert_ne!(
-            world.add_template(Origin::Host, named("one")).unwrap(),
-            template_id
-        );
-        assert_ne!(
-            world
-                .add_list(Origin::Host, Anchor::Object(1), vec![])
-                .unwrap(),
-            list_id
-        );
-    }
-
-    #[test]
-    fn ids_taken_by_remove_origin_are_stale() {
-        let mut world = World::default();
-        let template_id = world.add_template(Origin::Player, named("one")).unwrap();
-        let list_id = world
-            .add_list(Origin::Player, Anchor::Object(1), vec![])
-            .unwrap();
-        world.remove_origin(Origin::Player);
-        assert_eq!(world.remove_template(template_id), Err(Refused::Stale));
-        assert_eq!(world.remove_list(list_id), Err(Refused::Stale));
-    }
-
-    #[test]
-    fn ids_never_issued_are_not_found() {
-        let mut world = World::default();
-        for id in [0, 5, u64::MAX] {
-            let (template_id, list_id) = (TemplateId(id), ListId(id));
-            assert_eq!(
-                world.set_template(template_id, named("one")),
-                Err(Refused::NotFound)
-            );
-            assert_eq!(
-                world.show_template(template_id, true),
-                Err(Refused::NotFound)
-            );
-            assert_eq!(world.remove_template(template_id), Err(Refused::NotFound));
-            assert_eq!(
-                world.set_list(list_id, Anchor::Object(1), vec![]),
-                Err(Refused::NotFound)
-            );
-            assert_eq!(world.remove_list(list_id), Err(Refused::NotFound));
-        }
-        assert_eq!(world.revision(), 0);
-    }
-
-    #[test]
-    fn exhausted_ids_are_refused() {
-        let mut world = World::default();
-        world.templates.next = u64::MAX;
-        world.lists.next = u64::MAX;
-        assert_eq!(
-            world.add_template(Origin::Host, named("one")),
-            Err(Refused::Limit)
-        );
-        assert_eq!(
-            world.add_list(Origin::Host, Anchor::Object(1), vec![]),
-            Err(Refused::Limit)
-        );
-        assert_eq!(world.revision(), 0);
-    }
-
-    #[test]
-    fn revision_moves_only_on_a_change() {
-        let mut world = World::default();
-        let original = StatusTemplate {
-            types: vec![3, 1, 3],
-            elements: vec![bar(9, &[(0, A), (50, B)], None)],
-            ..named("one")
-        };
-        let id = world
-            .add_template(Origin::Player, original.clone())
-            .unwrap();
-        assert_eq!(world.revision(), 1);
-        let same = StatusTemplate {
-            types: vec![1, 3],
-            elements: vec![bar(9, &[(50, B), (0, A)], None)],
-            ..named("one")
-        };
-        world.set_template(id, original).unwrap();
-        world.set_template(id, same).unwrap();
-        world.show_template(id, true).unwrap();
-        assert_eq!(world.revision(), 1);
-        world.show_template(id, false).unwrap();
-        assert_eq!(world.revision(), 2);
-        world.set_template(id, named("two")).unwrap();
-        assert_eq!(world.revision(), 3);
-
-        let list = world
-            .add_list(Origin::Player, Anchor::Object(1), vec![])
-            .unwrap();
-        assert_eq!(world.revision(), 4);
-        world.set_list(list, Anchor::Object(1), vec![]).unwrap();
-        assert_eq!(world.revision(), 4);
-        world.set_list(list, Anchor::Object(2), vec![]).unwrap();
-        assert_eq!(world.revision(), 5);
-        let shapes = vec![Shape::Rect {
-            rect: UNIT,
-            color: A,
-        }];
-        world.set_list(list, Anchor::Object(2), shapes).unwrap();
-        assert_eq!(world.revision(), 6);
-
-        world.remove_origin(Origin::Layout);
-        assert_eq!(world.revision(), 6);
-        world.remove_origin(Origin::Player);
-        assert_eq!(world.revision(), 7);
-        world.remove_origin(Origin::Player);
-        assert_eq!(world.revision(), 7);
-
-        let id = world.add_template(Origin::Host, named("one")).unwrap();
-        world.remove_template(id).unwrap();
-        assert_eq!(world.revision(), 9);
-        let list = world
-            .add_list(Origin::Host, Anchor::Object(1), vec![])
-            .unwrap();
-        world.remove_list(list).unwrap();
-        assert_eq!(world.revision(), 11);
-    }
-
-    #[test]
-    fn remove_origin_takes_only_that_origins() {
-        let mut world = World::default();
-        for origin in [Origin::External(1), Origin::External(2)] {
-            world.add_template(origin, named("one")).unwrap();
-            world.add_list(origin, Anchor::Object(1), vec![]).unwrap();
-        }
-        world.remove_origin(Origin::External(1));
-        assert_eq!(world.templates.rows.len(), 1);
-        assert_eq!(world.templates.rows[0].origin, Origin::External(2));
-        assert_eq!(world.lists.rows.len(), 1);
-        assert_eq!(world.lists.rows[0].origin, Origin::External(2));
-    }
-
-    #[test]
-    fn find_follows_the_origin_precedence() {
-        let mut world = World::default();
-        let order = [
-            Origin::External(9),
-            Origin::External(2),
-            Origin::Player,
-            Origin::Layout,
-            Origin::Host,
-        ];
-        let ids = order.map(|origin| world.add_template(origin, named("Gauge")).unwrap());
-        world.add_template(Origin::Host, named("gauge")).unwrap();
-        for (origin, id) in order.into_iter().zip(ids) {
-            assert_eq!(world.find_template(origin, "gAUGE"), Some(id), "{origin:?}");
-        }
-        // For a caller with none of its own: host, layout, player, then external by number.
-        let outsider = Origin::External(5);
-        assert_eq!(world.find_template(outsider, "gauge"), Some(ids[4]));
-        world.remove_origin(Origin::Host);
-        for id in [ids[3], ids[2], ids[1], ids[0]] {
-            assert_eq!(world.find_template(outsider, "gauge"), Some(id));
-            world.remove_template(id).unwrap();
-        }
-        assert_eq!(world.find_template(outsider, "gauge"), None);
-    }
-
-    #[test]
-    fn find_is_ascii_caseless_and_sees_hidden_templates() {
-        let mut world = World::default();
-        let id = world.add_template(Origin::Host, named("\u{e9}T")).unwrap();
-        world.show_template(id, false).unwrap();
-        assert_eq!(world.find_template(Origin::Host, "\u{e9}t"), Some(id));
-        assert_eq!(world.find_template(Origin::Host, "\u{c9}T"), None);
     }
 
     #[test]
@@ -1428,10 +936,10 @@ mod tests {
     #[test]
     fn output_is_by_object_then_registration_then_element() {
         let mut world = World::default();
-        let first = world
+        world
             .add_template(Origin::External(3), template(vec![icon(1), icon(2)]))
             .unwrap();
-        let second = world
+        world
             .add_template(Origin::Host, template(vec![icon(3)]))
             .unwrap();
         let objects = [
@@ -1447,38 +955,11 @@ mod tests {
         let all = [(20, 1), (20, 2), (20, 3), (10, 1), (10, 2), (10, 3)];
         let all = all.map(|(id, art)| (Some(id), art));
         assert_eq!(arts(&status(&world, &objects)), all);
-
-        // Setting keeps the place; hiding is undone without losing it.
-        world.set_template(first, template(vec![icon(4)])).unwrap();
-        assert_eq!(
-            arts(&status(&world, &objects[..1])),
-            [(Some(20), 4), (Some(20), 3)]
-        );
-        world.show_template(first, false).unwrap();
-        world.set_template(first, template(vec![icon(6)])).unwrap();
-        assert_eq!(arts(&status(&world, &objects[..1])), [(Some(20), 3)]);
-        world.show_template(first, true).unwrap();
-        assert_eq!(
-            arts(&status(&world, &objects[..1])),
-            [(Some(20), 6), (Some(20), 3)]
-        );
-        world.remove_template(second).unwrap();
-        assert_eq!(arts(&status(&world, &objects[..1])), [(Some(20), 6)]);
     }
 
     #[test]
     fn painting_appends() {
-        let mut world = world(template(vec![icon(1)]));
-        world
-            .add_list(
-                Origin::Host,
-                Anchor::Object(2),
-                vec![Shape::Rect {
-                    rect: UNIT,
-                    color: A,
-                }],
-            )
-            .unwrap();
+        let world = world(template(vec![icon(1)]));
         let earlier = WorldCmd {
             object: None,
             op: WorldOp::Rect {
@@ -1488,130 +969,8 @@ mod tests {
         };
         let mut out = vec![earlier];
         world.paint_status(&[object(&[])], &mut out);
-        world.paint_lists(|_| Some((0, 0)), &mut out);
-        assert_eq!(out.len(), 3);
+        assert_eq!(out.len(), 2);
         assert_eq!(out[0], earlier);
-    }
-
-    #[test]
-    fn lists_keep_their_order_and_follow_the_anchor() {
-        let mut world = World::default();
-        let cell = Anchor::Cell { x: 3, y: 4 };
-        let screen = Anchor::Screen { x: 5, y: 6 };
-        let shapes = vec![
-            Shape::Rect {
-                rect: UNIT,
-                color: A,
-            },
-            Shape::Image {
-                rect: UNIT,
-                art: FULL,
-            },
-            Shape::Line {
-                from: (-1, -2),
-                to: (1, 2),
-                width: 3,
-                color: B,
-            },
-            Shape::Text {
-                rect: UNIT,
-                key: "label".into(),
-                color: C,
-            },
-        ];
-        world.add_list(Origin::External(1), screen, shapes).unwrap();
-        let unseen = vec![Shape::Rect {
-            rect: UNIT,
-            color: BACK,
-        }];
-        world
-            .add_list(Origin::Host, Anchor::Object(404), unseen)
-            .unwrap();
-        let dot = || {
-            vec![Shape::Image {
-                rect: UNIT,
-                art: EMPTY,
-            }]
-        };
-        world
-            .add_list(Origin::Host, Anchor::Object(8), dot())
-            .unwrap();
-        world.add_list(Origin::Player, cell, dot()).unwrap();
-
-        let mut out = Vec::new();
-        let project = |anchor| match anchor {
-            Anchor::Object(8) => Some((10, 10)),
-            Anchor::Object(_) => None,
-            Anchor::Cell { x, y } => Some((x * 10, y * 10)),
-            // Not the anchor's own numbers: screen anchors are projected too.
-            Anchor::Screen { x, y } => Some((x + 100, y + 100)),
-        };
-        world.paint_lists(project, &mut out);
-        let at = Rect::new(105, 106, 1, 1);
-        let cmd = |object, op| WorldCmd { object, op };
-        let expected = [
-            cmd(None, WorldOp::Rect { rect: at, color: A }),
-            cmd(
-                None,
-                WorldOp::Image {
-                    rect: at,
-                    art: FULL,
-                },
-            ),
-            cmd(
-                None,
-                WorldOp::Line {
-                    from: (104, 104),
-                    to: (106, 108),
-                    width: 3,
-                    color: B,
-                },
-            ),
-            cmd(
-                None,
-                WorldOp::Text {
-                    rect: at,
-                    key: "label",
-                    color: C,
-                },
-            ),
-            cmd(
-                Some(8),
-                WorldOp::Image {
-                    rect: Rect::new(10, 10, 1, 1),
-                    art: EMPTY,
-                },
-            ),
-            cmd(
-                None,
-                WorldOp::Image {
-                    rect: Rect::new(30, 40, 1, 1),
-                    art: EMPTY,
-                },
-            ),
-        ];
-        assert_eq!(out, expected);
-    }
-
-    #[test]
-    fn a_changed_list_keeps_its_place() {
-        let mut world = World::default();
-        let image = |art| {
-            vec![Shape::Image {
-                rect: UNIT,
-                art: ArtId(art),
-            }]
-        };
-        let first = world
-            .add_list(Origin::Host, Anchor::Object(1), image(1))
-            .unwrap();
-        world
-            .add_list(Origin::Host, Anchor::Object(2), image(2))
-            .unwrap();
-        world.set_list(first, Anchor::Object(3), image(3)).unwrap();
-        let mut out = Vec::new();
-        world.paint_lists(|_| Some((0, 0)), &mut out);
-        assert_eq!(arts(&out), [(Some(3), 3), (Some(2), 2)]);
     }
 
     #[test]
@@ -1644,20 +1003,15 @@ mod tests {
         ];
         for (make, limit) in cases {
             let mut world = World::default();
-            let id = world.add_template(Origin::Host, make(limit)).unwrap();
-            let kept = world.templates.rows[0].item.def.clone();
+            world.add_template(Origin::Host, make(limit)).unwrap();
+            let kept = world.templates[0].def.clone();
             assert_eq!(
-                world.set_template(id, make(limit + 1)),
+                world.add_template(Origin::Host, make(limit + 1)),
                 Err(Refused::Limit),
                 "{limit}"
             );
-            assert_eq!(
-                world.add_template(Origin::Host, make(limit + 1)),
-                Err(Refused::Limit)
-            );
-            assert_eq!(world.revision(), 1);
-            assert_eq!(world.templates.rows.len(), 1);
-            assert_eq!(world.templates.rows[0].item.def, kept);
+            assert_eq!(world.templates.len(), 1);
+            assert_eq!(world.templates[0].def, kept);
         }
     }
 
@@ -1681,28 +1035,25 @@ mod tests {
             world.add_template(Origin::Host, template(elements)),
             Err(Refused::Limit)
         );
-        assert_eq!(world.revision(), 1);
+        assert_eq!(world.templates.len(), 1);
     }
 
     #[test]
     fn templates_past_the_output_bound_are_left_out_whole() {
         let per_element = usize::from(MAX_SEGMENTS);
         let nearly = MAX_COMMANDS_PER_OBJECT / per_element - 1;
-        let mut world = world(template(vec![segments(MAX_SEGMENTS, Some(EMPTY)); nearly]));
-        let wide = vec![segments(MAX_SEGMENTS, Some(EMPTY)); 2];
-        let second = world.add_template(Origin::Host, template(wide)).unwrap();
-        world
-            .add_template(Origin::Host, template(vec![icon(9)]))
-            .unwrap();
         let values = some(1, 1);
         let objects = [object(&values), object(&values)];
-        assert_eq!(status(&world, &objects).len(), 2 * nearly * per_element);
-
-        // Exactly at the bound fits; the next template does not.
-        world
-            .set_template(second, template(vec![segments(MAX_SEGMENTS, Some(EMPTY))]))
-            .unwrap();
-        assert_eq!(status(&world, &objects).len(), 2 * MAX_COMMANDS_PER_OBJECT);
+        for (second, painted) in [(2, nearly * per_element), (1, MAX_COMMANDS_PER_OBJECT)] {
+            let mut world = world(template(vec![segments(MAX_SEGMENTS, Some(EMPTY)); nearly]));
+            let wide = vec![segments(MAX_SEGMENTS, Some(EMPTY)); second];
+            world.add_template(Origin::Host, template(wide)).unwrap();
+            world
+                .add_template(Origin::Host, template(vec![icon(9)]))
+                .unwrap();
+            // Exactly at the bound fits; past it the template and the next are left out.
+            assert_eq!(status(&world, &objects).len(), 2 * painted, "{second}");
+        }
     }
 
     #[test]
@@ -1710,106 +1061,31 @@ mod tests {
         let per_element = usize::from(MAX_SEGMENTS);
         let wide = |count| template(vec![segments(MAX_SEGMENTS, Some(EMPTY)); count]);
         let client = Origin::External(1);
-        let mut world = World::default();
-        let first = world.add_template(client, wide(5)).unwrap();
-        // The first not to fit, and the one after it that would.
-        world.add_template(client, wide(2)).unwrap();
-        world.add_template(client, template(vec![icon(9)])).unwrap();
-        world.add_template(Origin::Host, wide(2)).unwrap();
         let values = some(1, 1);
         let count = |world: &World| status(world, &[object(&values)]).len();
-        assert_eq!(count(&world), 7 * per_element);
-
-        assert_eq!(world.set_template(first, wide(7)), Err(Refused::Limit));
-        assert_eq!(world.add_template(client, wide(7)), Err(Refused::Limit));
-        world.set_template(first, wide(6)).unwrap();
-        assert_eq!(count(&world), MAX_COMMANDS_PER_OBJECT);
+        assert_eq!(World::default().add_template(client, wide(7)), Err(Refused::Limit));
+        for (first, painted) in [(5, 7 * per_element), (6, MAX_COMMANDS_PER_OBJECT)] {
+            let mut world = World::default();
+            world.add_template(client, wide(first)).unwrap();
+            // The first not to fit, and the one after it that would.
+            world.add_template(client, wide(2)).unwrap();
+            world.add_template(client, template(vec![icon(9)])).unwrap();
+            world.add_template(Origin::Host, wide(2)).unwrap();
+            assert_eq!(count(&world), painted, "{first}");
+        }
     }
 
     #[test]
     fn template_count_is_limited() {
         let mut world = World::default();
-        let first = world.add_template(Origin::Host, named("t")).unwrap();
-        world.show_template(first, false).unwrap();
-        for _ in 1..MAX_TEMPLATES {
+        for _ in 0..MAX_TEMPLATES {
             world.add_template(Origin::Host, named("t")).unwrap();
         }
-        let revision = world.revision();
         assert_eq!(
-            world.add_template(Origin::Player, named("t")),
+            world.add_template(Origin::Host, named("t")),
             Err(Refused::Limit)
         );
-        assert_eq!(world.revision(), revision);
-        world.remove_template(first).unwrap();
-        world.add_template(Origin::Host, named("t")).unwrap();
-    }
-
-    #[test]
-    fn list_count_is_limited() {
-        let mut world = World::default();
-        let first = world
-            .add_list(Origin::Host, Anchor::Object(0), vec![])
-            .unwrap();
-        for _ in 1..MAX_LISTS {
-            world
-                .add_list(Origin::Host, Anchor::Object(0), vec![])
-                .unwrap();
-        }
-        let revision = world.revision();
-        assert_eq!(
-            world.add_list(Origin::Player, Anchor::Object(0), vec![]),
-            Err(Refused::Limit)
-        );
-        assert_eq!(world.revision(), revision);
-        world.remove_list(first).unwrap();
-        world
-            .add_list(Origin::Host, Anchor::Object(0), vec![])
-            .unwrap();
-    }
-
-    #[test]
-    fn shape_limits() {
-        let cases: [(fn(usize) -> Vec<Shape>, usize); 2] = [
-            (
-                |n| {
-                    vec![
-                        Shape::Rect {
-                            rect: UNIT,
-                            color: A
-                        };
-                        n
-                    ]
-                },
-                MAX_SHAPES_PER_LIST,
-            ),
-            (
-                |n| {
-                    vec![Shape::Text {
-                        rect: UNIT,
-                        key: "k".repeat(n),
-                        color: A,
-                    }]
-                },
-                MAX_TEXT_BYTES,
-            ),
-        ];
-        for (make, limit) in cases {
-            let anchor = Anchor::Object(1);
-            let mut world = World::default();
-            let id = world.add_list(Origin::Host, anchor, make(limit)).unwrap();
-            assert_eq!(
-                world.set_list(id, Anchor::Object(2), make(limit + 1)),
-                Err(Refused::Limit)
-            );
-            assert_eq!(
-                world.add_list(Origin::Host, anchor, make(limit + 1)),
-                Err(Refused::Limit)
-            );
-            assert_eq!(world.revision(), 1);
-            assert_eq!(world.lists.rows.len(), 1);
-            assert_eq!(world.lists.rows[0].item.anchor, anchor);
-            assert_eq!(world.lists.rows[0].item.shapes, make(limit));
-        }
+        assert_eq!(world.templates.len(), MAX_TEMPLATES);
     }
 
     #[test]
@@ -1929,34 +1205,6 @@ mod tests {
             .map(|cmd| cmd.op)
             .collect();
         assert_eq!(found, expected);
-    }
-
-    #[test]
-    fn list_points_saturate() {
-        let mut world = World::default();
-        let (low, high) = ((i32::MIN, i32::MIN), (i32::MAX, i32::MAX));
-        let line = Shape::Line {
-            from: low,
-            to: high,
-            width: u16::MAX,
-            color: A,
-        };
-        world
-            .add_list(Origin::Host, Anchor::Object(0), vec![line])
-            .unwrap();
-        for (point, from, to) in [(low, low, (-1, -1)), (high, (-1, -1), high)] {
-            let mut out = Vec::new();
-            world.paint_lists(|_| Some(point), &mut out);
-            assert_eq!(
-                out[0].op,
-                WorldOp::Line {
-                    from,
-                    to,
-                    width: u16::MAX,
-                    color: A
-                }
-            );
-        }
     }
 
     #[test]

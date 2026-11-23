@@ -38,10 +38,6 @@ pub enum NodeKind {
     /// A lone vertical scrollbar over rows its host lays out
     /// ([`crate::widget::scrollbar`]).
     ScrollBar,
-    /// Children left to right ([`crate::hud`]).
-    Row,
-    /// Children top to bottom ([`crate::hud`]).
-    Column,
     /// A picture named by `Prop::Art` ([`crate::hud`]).
     Image,
     /// A proportional bar, `Prop::Fill` percent full ([`crate::hud`]).
@@ -53,7 +49,7 @@ pub enum NodeKind {
 
 impl NodeKind {
     pub fn is_container(self) -> bool {
-        matches!(self, NodeKind::Panel | NodeKind::Dialog | NodeKind::Row | NodeKind::Column)
+        matches!(self, NodeKind::Panel | NodeKind::Dialog)
     }
 
     pub fn is_focusable(self) -> bool {
@@ -77,30 +73,10 @@ pub enum Prop {
     // The [`crate::hud`] props.
     /// The node's name among its origin's nodes ([`crate::hud::Hud::find`]).
     Name,
-    /// Offsets from the [`crate::hud::Hold`] point of the parent's rect.
-    X,
-    Y,
-    Width,
-    Height,
-    /// A [`crate::hud::Hold`] as an int.
-    Hold,
-    /// Pixels between a `Row`'s or `Column`'s children.
-    Gap,
     /// 0..=100.
     Fill,
     /// A picture or surface name; the host resolves it.
     Art,
-    /// The command a click reports; the host runs it.
-    Command,
-    /// A `Button` is clickable by default, every other kind is not.
-    Clickable,
-    Hoverable,
-    /// A click is reported on the press instead of the release.
-    ActivateOnPress,
-    /// The pointer does not reach what lies beneath the node.
-    BlocksPointer,
-    /// A press outside, or Escape, reports `Dismiss`.
-    Dismissable,
     /// The subtree is clipped to the node's rect.
     Clip,
     Background,
@@ -316,11 +292,6 @@ impl Prop {
             | Prop::WheelPicks
             | Prop::SelectOnFocus
             | Prop::AllSelected
-            | Prop::Clickable
-            | Prop::Hoverable
-            | Prop::ActivateOnPress
-            | Prop::BlocksPointer
-            | Prop::Dismissable
             | Prop::Clip
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches | Prop::SelectedRows => ValueType::Items,
@@ -329,7 +300,6 @@ impl Prop {
             | Prop::Tooltip
             | Prop::Name
             | Prop::Art
-            | Prop::Command
             | Prop::Rejected
             | Prop::Allowed => {
                 ValueType::Text
@@ -355,12 +325,6 @@ impl Prop {
             | Prop::PopupFlipBelow
             | Prop::RowHeight
             | Prop::FocusTarget
-            | Prop::X
-            | Prop::Y
-            | Prop::Width
-            | Prop::Height
-            | Prop::Hold
-            | Prop::Gap
             | Prop::Fill
             | Prop::WheelStep => ValueType::Int,
         }
@@ -389,7 +353,6 @@ impl Prop {
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
             Prop::Min | Prop::Step => kind == NodeKind::Trackbar,
             Prop::Max => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
-            Prop::Gap => matches!(kind, NodeKind::Row | NodeKind::Column),
             Prop::Fill => kind == NodeKind::Bar,
             Prop::Clip => kind.is_container(),
             _ => true,

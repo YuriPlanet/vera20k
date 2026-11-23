@@ -2,7 +2,7 @@
 //! frame and change only where a part does. At a match zoom a part falls
 //! between whole pixels, so each also keeps its exact place.
 
-use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
+use vera20k_gui::hud::{Hud, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Rgba, Value};
 
 use crate::render::bit_font::BitFont;
@@ -27,7 +27,7 @@ pub(super) struct PanelView {
 
 impl PanelView {
     pub(super) fn new() -> Self {
-        let mut hud = Hud::new(MAX_NODES, InputPolicy::default());
+        let mut hud = Hud::new(MAX_NODES);
         let solids = Slots::new(&mut hud, NodeKind::Panel);
         let texts = Slots::new(&mut hud, NodeKind::Text);
         Self {

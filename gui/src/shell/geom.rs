@@ -36,6 +36,25 @@ impl RectPx {
             && i64::from(x) < i64::from(self.x) + i64::from(self.w)
             && i64::from(y) < i64::from(self.y) + i64::from(self.h)
     }
+
+    /// Without a negative size, the far edges saturated so that `x + w` and
+    /// `y + h` fit an i32.
+    pub fn bounded(self) -> Self {
+        Self::new(
+            self.x,
+            self.y,
+            self.w.clamp(0, i32::MAX - self.x.max(0)),
+            self.h.clamp(0, i32::MAX - self.y.max(0)),
+        )
+    }
+
+    /// What both share; of zero size where they share nothing.
+    pub fn intersect(self, other: Self) -> Self {
+        let (x, y) = (self.x.max(other.x), self.y.max(other.y));
+        let right = self.x.saturating_add(self.w).min(other.x.saturating_add(other.w));
+        let bottom = self.y.saturating_add(self.h).min(other.y.saturating_add(other.h));
+        Self::new(x, y, right.saturating_sub(x).max(0), bottom.saturating_sub(y).max(0))
+    }
 }
 
 /// Corner-rounded uniform mapping from a layout authored at a base size

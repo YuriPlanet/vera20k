@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use vera20k_gui::hud::{Hud, InputPolicy, Layer, Origin};
+use vera20k_gui::hud::{Hud, Layer, Origin};
 use vera20k_gui::{NodeId, NodeKind, Prop, Rect, Value};
 
 use crate::render::batch::SpriteInstance;
@@ -35,7 +35,7 @@ pub(crate) struct PictureHud {
 impl Default for PictureHud {
     fn default() -> Self {
         Self {
-            hud: Hud::new(usize::MAX, InputPolicy::default()),
+            hud: Hud::new(usize::MAX),
             nodes: Vec::new(),
             part: None,
             used: 0,
@@ -298,7 +298,7 @@ pub(crate) struct AreaHud {
 impl Default for AreaHud {
     fn default() -> Self {
         Self {
-            hud: Hud::new(1, InputPolicy::default()),
+            hud: Hud::new(1),
             node: None,
             paint: HudPaint::default(),
             draw: NodeDraw::default(),

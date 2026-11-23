@@ -4,17 +4,8 @@ use crate::Rect;
 use crate::node::{Node, NodeId, NodeKind, Prop, Rgba, Value};
 
 use super::Hud;
-use super::layout::intersect;
 
 const WHITE: Rgba = Rgba(255, 255, 255, 255);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ButtonState {
-    Normal,
-    Hovered,
-    Pressed,
-    Disabled,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaintOp<'a> {
@@ -25,7 +16,6 @@ pub enum PaintOp<'a> {
     Image {
         rect: Rect,
         art: &'a str,
-        state: ButtonState,
     },
     /// `key` is a string-table key or literal text; the host resolves it.
     Text {
@@ -50,8 +40,8 @@ pub struct PaintCmd<'a> {
 }
 
 impl Hud {
-    /// Appends the last layout's commands to `out`, bottom to top. Drawing
-    /// them in this order is correct; see [`batches`].
+    /// Appends the last layout's commands to `out`, bottom to top, the order
+    /// to draw them in.
     ///
     /// A node gives, in this order and before its children: its
     /// `Background`; its picture (`Image`, `Button`), filled part (`Bar`) or
@@ -61,10 +51,9 @@ impl Hud {
     /// and so is a fill of alpha 0.
     pub fn paint<'a>(&'a self, out: &mut Vec<PaintCmd<'a>>) {
         let viewport = self.layout.viewport();
-        let hovered = self.hovered();
         for placed in self.layout.nodes() {
             let (id, rect, clip) = (placed.id, placed.rect, placed.clip);
-            let area = clip.map_or(viewport, |clip| intersect(clip, viewport));
+            let area = clip.map_or(viewport, |clip| clip.intersect(viewport));
             if !shows(rect, area) {
                 continue;
             }
@@ -80,12 +69,7 @@ impl Hud {
             match node.kind {
                 NodeKind::Image | NodeKind::Button => {
                     if let Some(art) = node.text_prop(Prop::Art).filter(|art| !art.is_empty()) {
-                        let state = button_state(
-                            placed.enabled,
-                            self.shows_pressed(id),
-                            hovered == Some(id),
-                        );
-                        push(PaintOp::Image { rect, art, state });
+                        push(PaintOp::Image { rect, art });
                     }
                 }
                 NodeKind::Bar => {
@@ -128,7 +112,7 @@ impl Hud {
 }
 
 fn shows(rect: Rect, area: Rect) -> bool {
-    let seen = intersect(rect, area);
+    let seen = rect.intersect(area);
     seen.w > 0 && seen.h > 0
 }
 
@@ -152,48 +136,10 @@ fn text_color(node: &Node, enabled: bool) -> Option<Rgba> {
     disabled.or_else(|| color_prop(node, Prop::Color))
 }
 
-fn button_state(enabled: bool, pressed: bool, hovered: bool) -> ButtonState {
-    if !enabled {
-        ButtonState::Disabled
-    } else if pressed {
-        ButtonState::Pressed
-    } else if hovered {
-        ButtonState::Hovered
-    } else {
-        ButtonState::Normal
-    }
-}
-
-/// Runs of neighbouring commands one draw call can take: the same clip and
-/// material (`material` names the host's texture or pipeline). Order is never
-/// changed.
-pub fn batches<'c, 'a, M: PartialEq>(
-    cmds: &'c [PaintCmd<'a>],
-    material: impl Fn(&PaintOp<'a>) -> M + 'c,
-) -> impl Iterator<Item = std::ops::Range<usize>> + 'c
-where
-    'a: 'c,
-    M: 'c,
-{
-    let mut start = 0;
-    std::iter::from_fn(move || {
-        let first = cmds.get(start)?;
-        let kind = material(&first.op);
-        let len = cmds[start..]
-            .iter()
-            .take_while(|c| c.clip == first.clip && material(&c.op) == kind)
-            .count();
-        let run = start..start + len.max(1);
-        start = run.end;
-        Some(run)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::MouseButton;
-    use crate::hud::{Layer, Origin, Pointer};
+    use crate::hud::{Layer, Origin};
 
     const VIEW: Rect = Rect::new(0, 0, 100, 100);
     const BOX: Rect = Rect::new(10, 10, 40, 20);
@@ -201,7 +147,7 @@ mod tests {
     const FADED: Rgba = Rgba(40, 50, 60, 128);
 
     fn hud() -> Hud {
-        Hud::new(64, Default::default())
+        Hud::new(64)
     }
 
     fn root(hud: &mut Hud, kind: NodeKind, rect: Rect) -> NodeId {
@@ -296,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn a_disabled_ancestor_disables_picture_and_text() {
+    fn a_disabled_ancestor_disables_the_text() {
         let mut hud = hud();
         let panel = root(&mut hud, NodeKind::Panel, VIEW);
         let button = child(&mut hud, panel, NodeKind::Button, BOX);
@@ -305,27 +251,18 @@ mod tests {
         color(&mut hud, button, Prop::Color, INK);
         color(&mut hud, button, Prop::DisabledColor, FADED);
 
-        let cmds = painted(&mut hud);
-        let image = |state| PaintOp::Image {
+        let image = PaintOp::Image {
             rect: BOX,
             art: "plate",
-            state,
         };
-        assert_eq!(cmds[0].op, image(ButtonState::Normal));
+        let cmds = painted(&mut hud);
+        assert_eq!(cmds[0].op, image);
         assert_eq!(cmds[1].op, label("go", Some(INK), true));
 
         hud.set(panel, Prop::Enabled, Value::Bool(false)).unwrap();
         let cmds = painted(&mut hud);
-        assert_eq!(cmds[0].op, image(ButtonState::Disabled));
+        assert_eq!(cmds[0].op, image);
         assert_eq!(cmds[1].op, label("go", Some(FADED), false));
-    }
-
-    #[test]
-    fn disabled_then_pressed_then_hovered() {
-        assert_eq!(button_state(false, true, true), ButtonState::Disabled);
-        assert_eq!(button_state(true, true, true), ButtonState::Pressed);
-        assert_eq!(button_state(true, false, true), ButtonState::Hovered);
-        assert_eq!(button_state(true, false, false), ButtonState::Normal);
     }
 
     #[test]
@@ -358,25 +295,6 @@ mod tests {
         color(&mut hud, bar, Prop::Background, Rgba(1, 2, 3, 0));
         color(&mut hud, bar, Prop::Color, Rgba(1, 2, 3, 0));
         assert!(painted(&mut hud).is_empty());
-    }
-
-    #[test]
-    fn a_held_button_paints_pressed() {
-        let mut hud = hud();
-        let id = root(&mut hud, NodeKind::Button, BOX);
-        text(&mut hud, id, Prop::Art, "plate");
-        hud.layout(VIEW);
-        hud.input(Pointer::Down {
-            x: 20,
-            y: 20,
-            button: MouseButton::Left,
-        });
-        let pressed = PaintOp::Image {
-            rect: BOX,
-            art: "plate",
-            state: ButtonState::Pressed,
-        };
-        assert_eq!(painted(&mut hud)[0].op, pressed);
     }
 
     #[test]
@@ -462,44 +380,5 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0], before);
         assert_eq!(out[1].node, kept);
-    }
-
-    #[test]
-    fn batches_join_neighbours_and_never_reorder() {
-        let mut hud = hud();
-        let node = root(&mut hud, NodeKind::Panel, BOX);
-        let cmd = |key, clip| PaintCmd {
-            node,
-            clip,
-            op: label(key, None, true),
-        };
-        let cmds = [
-            cmd("a", None),
-            cmd("a", None),
-            cmd("b", None),
-            cmd("a", None),
-            cmd("a", Some(BOX)),
-            cmd("a", Some(BOX)),
-        ];
-        let runs: Vec<_> = batches(&cmds, |op| name(op).to_owned()).collect();
-        assert_eq!(runs, [0..2, 2..3, 3..4, 4..6]);
-    }
-
-    #[test]
-    fn batches_of_nothing_are_none() {
-        assert_eq!(batches(&[], |_| 0).next(), None);
-    }
-
-    #[test]
-    fn batches_advance_when_a_material_never_matches() {
-        let mut hud = hud();
-        let node = root(&mut hud, NodeKind::Panel, BOX);
-        let cmd = PaintCmd {
-            node,
-            clip: None,
-            op: label("a", None, true),
-        };
-        let runs: Vec<_> = batches(&[cmd, cmd], |_| f32::NAN).collect();
-        assert_eq!(runs, [0..1, 1..2]);
     }
 }
