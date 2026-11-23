@@ -44,6 +44,7 @@ Thumbs.db
 /docs/*
 !/docs/save-compatibility.md
 !/docs/capabilities.md
+!/docs/rfcs/
 !/docs/wasm.md
 !/docs/sim-thread.md
 !/docs/ares.md
