@@ -74,6 +74,7 @@ pub(crate) mod action {
     pub(crate) const SABOTAGE: u8 = 0x10;
     pub(crate) const TOTE: u8 = 0x11;
     pub(crate) const GUARD_AREA: u8 = 0x1A;
+    pub(crate) const HEAL: u8 = 0x1B;
     pub(crate) const DAMAGE: u8 = 0x1C;
     pub(crate) const GREPAIR: u8 = 0x1D;
     pub(crate) const NO_DEPLOY: u8 = 0x1E;
@@ -190,6 +191,7 @@ impl CursorOverrides {
             Kind::Grind => REPAIR,
             Kind::NoEnter => NO_ENTER,
             Kind::Tote => TOTE,
+            Kind::Heal => HEAL,
             Kind::EngineerDamage => DAMAGE,
             Kind::RepairAction(true) => GREPAIR,
             Kind::RepairAction(false) => NO_GREPAIR,
