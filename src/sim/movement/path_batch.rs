@@ -740,6 +740,21 @@ fn goal_cell(destination: DriveCoord) -> (u16, u16) {
     ((destination.x / 256) as u16, (destination.y / 256) as u16)
 }
 
+/// Whether the shared goal field's plane is the mover's own: the field is
+/// built over the ground plane, and the ground plane is the vehicle's. The
+/// Infantry class has its own cell gate (Infantry `0x0051BF90`, Unit
+/// `0x0073F0A0`), which lets an infantryman into a cell a terrain object
+/// stands in, while the field's plane closes that cell to everybody. So the
+/// field serves the vehicle class, and an infantryman keeps the stock
+/// search.
+///
+/// The class decides this, not the locomotor: the cell gate is chosen by the
+/// mover's class, so a vehicle that walks is still gated as a vehicle and
+/// walks the field's plane.
+fn field_serves(category: EntityCategory) -> bool {
+    category == EntityCategory::Unit
+}
+
 /// The waiting registrations by the goal cell their Foots head for, and how
 /// many there are of each.
 ///
@@ -766,17 +781,7 @@ fn goal_demand(
         let Some(actor) = entities.get(*id) else {
             continue;
         };
-        if actor.category() != crate::map::entities::EntityCategory::Unit {
-            continue;
-        }
-        if actor
-            .locomotor
-            .as_ref()
-            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Walk)
-        {
-            // An infantryman walks where a terrain object stands, so the
-            // ground plane is not his plane: he keeps the stock search, and
-            // his registrations are no demand.
+        if !field_serves(actor.category()) {
             continue;
         }
         let Some(destination) = no_queue_destination(actor) else {
@@ -1398,7 +1403,7 @@ impl Simulation {
             let Some(request) = request else {
                 continue;
             };
-            if request.snapshot().category != crate::map::entities::EntityCategory::Unit {
+            if !field_serves(request.snapshot().category) {
                 continue;
             }
             // A code-2 re-path keeps the stock search: its urgency makes the
@@ -1406,11 +1411,6 @@ impl Simulation {
             // `AStar_compute_edge_cost @ 0x00429830`), which the field's
             // step count does not know.
             if request.urgency != 0 {
-                continue;
-            }
-            // An infantryman walks where a terrain object stands, so the
-            // ground plane is not his plane: he keeps the stock search.
-            if request.snapshot().locomotor_kind == Some(LocomotorKind::Walk) {
                 continue;
             }
             let goal = goal_cell(request.destination);

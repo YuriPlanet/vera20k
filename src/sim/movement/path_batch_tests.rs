@@ -2289,9 +2289,7 @@ fn a_bridge_goal_takes_no_build_slot() {
     };
     let requests: Vec<Option<FootPathRequest>> = movers
         .iter()
-        .map(|id| {
-            FootPathRequest::track(&sim.substrate.entities, *id, destination, 0, bounds)
-        })
+        .map(|id| FootPathRequest::track(&sim.substrate.entities, *id, destination, 0, bounds))
         .collect();
     // The goal cell holds a deck.
     let mut grid = (*sim.path_grid_snapshot().expect("the grid")).clone();
@@ -2327,9 +2325,7 @@ fn an_infantryman_keeps_the_stock_search() {
     let requests: Vec<Option<FootPathRequest>> = movers
         .iter()
         .chain(std::iter::once(&infantry))
-        .map(|id| {
-            FootPathRequest::track(&sim.substrate.entities, *id, destination, 0, bounds)
-        })
+        .map(|id| FootPathRequest::track(&sim.substrate.entities, *id, destination, 0, bounds))
         .collect();
     let grid = sim.path_grid_snapshot().expect("the grid");
     sim.batch_path_searches();
@@ -2338,9 +2334,31 @@ fn an_infantryman_keeps_the_stock_search() {
     assert_eq!(counts.used, 1, "the tanks share one field");
     assert!(fields[0].is_some(), "the first tank gets the field");
     assert!(fields[1].is_some(), "the second tank gets the field");
+    assert!(requests[2].is_some(), "the infantryman has a request");
     assert!(
         fields[2].is_none(),
         "the infantryman keeps the stock search"
+    );
+}
+
+/// An infantryman is no demand: the field serves vehicles only, so his
+/// registration does not count toward a build it would never repay.
+#[test]
+fn an_infantryman_is_no_demand() {
+    let rules = shared_goal_rules();
+    let (mut sim, movers) = shared_goal_scene(&rules, 64, &SHARED_GOAL_STARTS, SHARED_GOAL);
+    // An infantryman heads for the same cell as a tank.
+    let infantry = spawn(&mut sim, &rules, "E1", (2, 10));
+    send(&mut sim, &rules, infantry, SHARED_GOAL);
+    let pending = vec![
+        (movers[0], WaitingRequest::NoQueue),
+        (infantry, WaitingRequest::NoQueue),
+    ];
+    let demand = super::goal_demand(&sim.substrate.entities, &pending);
+    assert_eq!(
+        demand.get(&SHARED_GOAL).copied(),
+        Some(1),
+        "the infantryman is no demand"
     );
 }
 

@@ -11,7 +11,7 @@ not sufficient evidence that a different search preserves stock play.
 
 | Approach | Where it helps | Fit here |
 | --- | --- | --- |
-| [Tiled flow fields](https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf) | Share a reverse search among movers heading for the same goal or portal. | Best candidate for a separate opt-in mass-order mode. First measure portal/goal reuse with real formation offsets. Key static fields by topology revision, layer and movement profile; retain live cell admission and A* fallback for traffic and special targets. |
+| [Tiled flow fields](https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter23_Crowd_Pathfinding_and_Steering_Using_Flow_Field_Tiles.pdf) | Share a reverse search among movers heading for the same goal or portal. | Landed as an opt-in mass-order mode: `[VERA] SharedGoalField=1` gives the movers of a mass order one reverse search for their common goal. See "The mass order and the shared goal field" below. Key static fields by topology revision, layer and movement profile; retain live cell admission and A* fallback for traffic and special targets. |
 | [Weighted Jump Point Search](https://harabor.net/data/papers/cmhse-aaai23-jpsw.pdf) | Prune symmetric paths on a weighted grid. | Preserves an optimal path under its own movement and tie rules, not the stock route. Directed entry, tubes and changing costs require a new pruning proof. |
 | [HPA*](https://webdocs.cs.ualberta.ca/~mmueller/ps/2004/hpastar.pdf) | Search a portal graph instead of the full grid. | The engine already narrows the search through zones and repairs them after terrain changes. Measure corridor retries before introducing another hierarchy. |
 | [ALT landmarks](https://www.microsoft.com/en-us/research/publication/computing-the-shortest-path-a-search-meets-graph-theory/) | Guide A* around static obstacles using precomputed distance bounds. | Useful for a separate static graph. Even a valid bound changes node order, ties and the stock batch budget; the distance tables also cost memory per graph. |
@@ -167,8 +167,17 @@ What the mode does, and where it stops:
   guide and never a route of its own.
 - A mover on a deck, or one heading for a deck, keeps the stock search: the
   field's plane is the ground one, and a bridge is not on it.
-- An infantryman keeps the stock search: he walks where a terrain object
-  stands, so his field would be another plane. The field serves vehicles.
+- An infantryman keeps the stock search: his cell gate is the Infantry one
+  (`0x0051BF90`, against the vehicle's `0x0073F0A0`), and it lets him into a
+  cell a terrain object stands in, so his plane is not the field's. The class
+  decides this, not the locomotor: a vehicle that walks is still gated as a
+  vehicle, and walks the field's plane.
+- The walk is not a corridor search. The hierarchy's zones are the native
+  search's own filter over the cells it expands (`0x00429E7F..`), and the
+  native drops them when its precheck fails and searches the whole map plain
+  (`0x0042CB8B..0x0042CBA1`, `0x0042CB22..0x0042CB3F`). A field is shared by
+  every mover heading for the goal, and the corridor is one search's own route
+  from its own start, so the walk cannot hold to it for all of them.
 - The field is kept between passes, so a mass order that names its goal every
   frame pays for the build once. The ground walkability plane's revision names
   its state, and a cell that opens or closes (a bridge lost, a wall built)
@@ -188,15 +197,85 @@ not from the benchmark's. `sim-bench --shared-goal` gives the march the player's
 order instead, so that the registrations of a house share a goal and the mode
 has something to answer.
 
+## What the shared goal field measured
+
+The release build, the flat 500x500 march, 20,000 units, 30 houses, 300 ticks,
+seed 1, in six configurations over three alternating rounds:
+
+| | the load | the stock search | the shared field |
+| --- | --- | --- | --- |
+| C vs D | tanks and infantry | 96,104,932 expansions | 92,031,902 (−4.2%) |
+| C vs D | the same | 2,726,612 left out | 2,699,497 |
+| E vs F | tanks only | 209,391,078 expansions | 56,317,215 (−73%) |
+| E vs F | the same | 4,457,527 left out | 3,190,317 (−28%) |
+| E vs F | the same | 0 fields | 30 built, 145 used, 3,742,500 cells visited |
+
+The counts are the mode's own, and they are the same in every round: the batch
+answers a registration or leaves it waiting, the field is built and used, and
+the expansions are the search's own. Only the expansions drift a little between
+rounds, because they include the cancelled speculative work of a parallel
+search, whose amount depends on how the workers got on.
+
+What the numbers say:
+
+- The mode removes the search of every registration the field serves, and with
+  it most of the expansions: on the tanks-only load, three quarters of them.
+- The wait is what a player feels: on the tanks-only load the registrations
+  left waiting for an answer fell by 28%, because a walk down the field is
+  cheap enough that the batch answers more of them a tick.
+- The field's own work is a visit of every cell of the plane per build, and it
+  is not small: on the mixed load the 102 builds visited 12,724,500 cells,
+  three times the 4,073,030 expansions the field took away. That is why the
+  mixed load's expansions fall by 4.2% and no more. On the tanks-only load the
+  30 builds visited 3,742,500 cells against 153,073,863 expansions saved.
+- The mixed load shows less than the tanks-only one because the infantry keep
+  the stock search: their cell gate is the Infantry one (`0x0051BF90`), which
+  lets them into a cell a terrain object stands in, so the ground plane is
+  not their plane. Half of that load's units are infantry, and none of their
+  searches are replaced.
+- The frame time does not move on the mixed load, and falls on the tanks-only
+  one. The frame times of the three rounds, each pair adjacent in time because
+  the bench alternates its configurations within a round:
+
+  | the mean frame time | round 1 | round 2 | round 3 |
+  | --- | --- | --- | --- |
+  | C vs D: tanks and infantry | 138.29 / 138.91 | 336.01 / 190.38 | 154.70 / 155.98 |
+  | E vs F: tanks only | 211.64 / 202.79 | 266.42 / 250.25 | 235.63 / 149.05 |
+
+  The machine's own load moved the frame time by twofold between rounds: the
+  baseline configuration ran the same build on the same work three times and
+  took 149 ms, 279 ms and 334 ms. So only the sign of a paired difference is
+  worth reading, and the counts above, which do not depend on the load, are
+  the measurement. On the mixed load the two quiet rounds agree within one
+  percent, so the field does not move that load's frame. On the tanks-only
+  load the field's load is the faster one in every round, by four percent to
+  thirty-seven.
+
+The mode's price is in the jam, and it is the price the docs name: the movers
+of a house share one route, so a funnel that is a cell wide becomes a queue.
+On the mixed load the jam re-paths grew from 5,197,613 expansions to
+5,946,136 (+14%) and the live object count fell (19,309 to 19,220 at the end
+of the run), because the shared route jams where the spread-out routes did not.
+
+So the mode is not a frame-time win on a flat map with a mixed load. It is a
+win on the load it was built for: many vehicles, one goal, a map where the
+search is the cost.
+
 To compare release builds from the same machine and retail install:
 
 ```sh
 python -m tools.scale_map target/scale/flat500.map --size 250
+python -m tools.scale_map target/scale/flat500-vera.map --vera-shared-goal-field
 python -m tools.cargo_run -- build --locked --release -p vera20k-core --bin sim-bench
 bench=$(python -m tools.cargo_run --resolve sim-bench --profile release)
 "$bench" --map target/scale/flat500.map --scenario march --seed 1 \
   --units 20000 --houses 30 --ticks 300 --frame-hashes target/scale/march.hashes
 ```
+
+The map carries the switch, so the two sides of the comparison are the same
+binary on two maps that differ only in their `[VERA]` section. The map's path
+has to be absolute: the loader resolves a relative one against the retail
+root.
 
 Set `RA2_DIR` to the retail install. Preserve each build's `march.hashes` before
 running the other and compare every line as well as the batch's answer and deferral

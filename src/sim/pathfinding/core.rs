@@ -649,7 +649,6 @@ fn search_cell_allocated(terrain: Option<&ResolvedTerrainGrid>, coord: (u16, u16
 /// cell never gets a node or ends the route here (the retry below only
 /// re-asks gamemd's class and edge cost, a recorded residual), and every
 /// test gamemd makes before its closed test only passes a candidate over.
-///
 #[inline(always)]
 fn neighbour_test(
     grid: &PathGrid,
