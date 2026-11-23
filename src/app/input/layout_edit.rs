@@ -23,7 +23,7 @@ use crate::app::presentation::{field_parts, layout_parts, sidebar_render};
 use crate::render::batch::SpriteInstance;
 use crate::ui::added_parts::{AddedKind, Holder};
 use crate::ui::field_layout::{Along, FieldPart, Hold};
-use crate::ui::sidebar::{ArtKey, Rect, SidebarPart};
+use crate::ui::sidebar::{ArtKey, PartKind, Rect};
 
 /// The mode's state while it is on.
 #[derive(Debug, Default)]
@@ -200,45 +200,39 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     };
     let mut out = Vec::new();
 
-    // The sidebar's panels, each as big as its picture.
+    // Every part of the sidebar that draws: a button or a tab where the view
+    // has it, the map picture as big as the layout makes it, a panel as big
+    // as its picture. A part after its panel lies over it, so it is grabbed
+    // first.
     let (screen_w, screen_h) = frame.layout_screen();
     let layout = crate::ui::sidebar::compute_layout_with_spec(spec, screen_w, screen_h, 0);
     let atlas = sidebar_render::current_sidebar_chrome(state);
-    let size = |part, key, fallback: [f32; 2]| {
+    let view = sidebar_render::current_sidebar_view(state);
+    let size = |part, key| {
         atlas
             .and_then(|atlas| atlas.art(part, key, 0))
-            .map_or(fallback, |entry| entry.pixel_size)
+            .map(|art| art.pixel_size)
     };
-    let power = crate::ui::sidebar::power_bar_rect(&layout, spec);
-    for part in [
-        SidebarPart::Credits,
-        SidebarPart::Top,
-        SidebarPart::Radar,
-        SidebarPart::Middle,
-        SidebarPart::Cameos,
-        SidebarPart::Power,
-    ] {
+    for part in spec.parts_in_order() {
         let [x, y] = layout.origin(&spec, part);
-        let [x, y, w, h] = match part {
-            SidebarPart::Cameos => {
-                let w = size(SidebarPart::Cameos, ArtKey::RowArt, [168.0, 50.0])[0];
+        let rect = match part.kind() {
+            PartKind::Button | PartKind::Tab => view
+                .and_then(|view| view.button(part))
+                .map(|(rect, _)| [rect.x, rect.y, rect.w, rect.h]),
+            PartKind::Minimap => Some([x, y, spec.radar_width, spec.radar_height]),
+            PartKind::CameoGrid => size(part, ArtKey::RowArt).map(|[w, _]| {
                 let h = layout.cameo_grid_bottom - layout.cameo_grid_top;
                 [x, layout.cameo_grid_top, w, h]
-            }
+            }),
             // The bar is thin; its handle is wide enough to grab.
-            SidebarPart::Power => [power.x, power.y, power.w.max(12.0), power.h],
-            _ => {
-                let height = match part {
-                    SidebarPart::Credits => 16.0,
-                    SidebarPart::Top => 32.0,
-                    SidebarPart::Radar => 110.0,
-                    _ => 69.0,
-                };
-                let [w, h] = size(part, ArtKey::Art, [168.0, height]);
-                [x, y, w, h]
+            PartKind::PowerBar => {
+                let power = crate::ui::sidebar::power_bar_rect(&layout, spec);
+                Some([power.x, power.y, power.w.max(12.0), power.h])
             }
+            PartKind::Image | PartKind::Radar => size(part, ArtKey::Art).map(|[w, h]| [x, y, w, h]),
+            PartKind::Text | PartKind::Panel => None,
         };
-        if spec.shows(part) && w > 0.0 && h > 0.0 {
+        if let Some([x, y, w, h]) = rect.filter(|&[.., w, h]| w > 0.0 && h > 0.0) {
             out.push(Target {
                 name: part.name().to_owned(),
                 rect: to_frame(x, y, w, h),
@@ -612,7 +606,12 @@ fn draw_pieces(
                 Some(*colour),
             ),
             EditPiece::Text(text, at, colour) => hud.text_tinted(
-                whole([at[0], at[1], font.text_width(text) as f32, font.cell_height()]),
+                whole([
+                    at[0],
+                    at[1],
+                    font.text_width(text) as f32,
+                    font.cell_height(),
+                ]),
                 text,
                 [at[0] + camera[0], at[1] + camera[1]],
                 text_hud::rounded(*colour),
@@ -623,17 +622,19 @@ fn draw_pieces(
         }
     }
     hud.finish(font);
-    let (boxes, sides) = hud.boxes().copied().partition(|quad| quad.depth == BOX_DEPTH);
+    let (boxes, sides) = hud
+        .boxes()
+        .copied()
+        .partition(|quad| quad.depth == BOX_DEPTH);
     (boxes, sides, hud.glyphs().copied().collect())
 }
-
 
 #[cfg(all(test, tests_app_input_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::ui::match_layout::MatchLayoutFile;
-    use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTheme};
+    use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 
     #[test]
     fn a_drag_moves_x_and_y_by_the_holders_scale_and_inward_from_a_far_edge() {
