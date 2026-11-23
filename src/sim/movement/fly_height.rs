@@ -67,10 +67,19 @@ pub struct FlyRuntime {
     /// Landing reads this instance value; BeginLanding separately reads live type.
     #[serde(default)]
     airport_bound: bool,
-    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`) and
-    /// only Process's fall block writes it (`0x004CD6C6`), never resetting it.
+    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`),
+    /// Process's fall block adds to it (`0x004CD6C6`) and Power_Off of a
+    /// moving Fly (`0x004CFD20`) clears it again.
     #[serde(default)]
     fall_counter: i32,
+    /// Fly+53, Spinning: Power_Off of a moving Fly (`0x004CFD20`) sets it,
+    /// and Process's spin step (`0x004CE5A0`) clears it once power is back.
+    #[serde(default)]
+    spinning: bool,
+    /// Fly+54, SpinRate: what the spin step turns the owner by, in steps of
+    /// 256, before it moves one toward 0. Read only while spinning.
+    #[serde(default)]
+    spin_rate: i32,
     /// Fly+40, the target speed fraction the ramp chases. The constructor
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
     /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
@@ -363,6 +372,45 @@ impl FlyRuntime {
 
     pub(crate) fn fall_counter(&self) -> i32 {
         self.fall_counter
+    }
+
+    /// Power_Off for a moving Fly (`0x004CFD20`): it spins at `rate`.
+    pub(crate) fn start_spin(&mut self, rate: i32) {
+        self.spinning = true;
+        self.spin_rate = rate;
+    }
+
+    /// See the field.
+    pub(crate) fn clear_fall(&mut self) {
+        self.fall_counter = 0;
+    }
+
+    /// SpinRate while the Fly spins, else None.
+    pub(crate) fn spin(&self) -> Option<i32> {
+        self.spinning.then_some(self.spin_rate)
+    }
+
+    /// The spin step (`0x004CE5A0`) for a Fly whose owner is alive: None
+    /// while it does not spin, and a powered one stops spinning
+    /// (`0x004CE636`). An unpowered one answers the PrimaryFacing turn,
+    /// `SpinRate << 8` as a 16-bit direction, and steps SpinRate one toward
+    /// 0 (`0x004CE60A..0x004CE62E`).
+    pub(crate) fn spin_step(&mut self, powered: bool) -> Option<u16> {
+        if !self.spinning {
+            return None;
+        }
+        if powered {
+            self.spinning = false;
+            return None;
+        }
+        let turn = self.spin_rate.wrapping_shl(8) as u16;
+        let step = self.spin_rate.wrapping_abs().min(1);
+        self.spin_rate = if self.spin_rate < 0 {
+            self.spin_rate.wrapping_add(step)
+        } else {
+            self.spin_rate.wrapping_sub(step)
+        };
+        Some(turn)
     }
 
     ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.

@@ -1228,6 +1228,11 @@ fn hash_locomotor_payload(
             state.fall_counter().hash(hasher);
             state.target_speed().bits().hash(hasher);
             state.current_speed().bits().hash(hasher);
+            // Fly+53/+54 (Power_Off `0x004CFD20`), only while it spins: a
+            // game without a spin keeps its hash.
+            if let Some(rate) = state.spin() {
+                rate.hash(hasher);
+            }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);
