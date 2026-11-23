@@ -512,10 +512,11 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
     })
 }
 
-/// The status-line help for the control under the pointer.
-/// A string-table or `VERA:` key.
+/// The status-line help for the control under the pointer: the Options
+/// page's, else the menu's ([`super::dialog_page::help`]; a held trackbar
+/// keeps the help it showed at the press, FF's pointer moves going only to
+/// it until the release). A string-table or `VERA:` key.
 pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
-    let template = current_template(state);
     let presentation = &state.match_state.match_presentation;
     if let Some(help) = presentation
         .options_page
@@ -524,18 +525,7 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
     {
         return Some(help);
     }
-    // A held trackbar keeps the help it showed at the press: FF's pointer
-    // moves go only to it until the release.
-    let ui = &presentation.dialog_ui;
-    let hovered =
-        super::dialog_page::held_trackbar(ui).or_else(|| super::dialog_page::hovered(ui))?;
-    if let Some(slider) = InternetSlider::from_id(hovered) {
-        return Some(slider.help());
-    }
-    match template.button(hovered)? {
-        PauseMenuButton::Keyboard => Some(IN_GAME_KEYBOARD_HELP),
-        button => template.control(button)?.help,
-    }
+    super::dialog_page::help(&presentation.dialog_ui, None)
 }
 
 /// Puts the menu's live values on its nodes: each button's enable and lit

@@ -153,7 +153,12 @@ pub fn edit_input(
 
 /// [`hovered_help`] of the tree's hovered control, borrowed from the tree.
 pub fn hovered_key(gui: &Gui) -> Option<&str> {
-    match gui.get(gui.hovered()?, Prop::Tooltip).ok().flatten()? {
+    help_key(gui, gui.hovered()?)
+}
+
+/// `node`'s status help key, borrowed from the tree.
+pub fn help_key(gui: &Gui, node: NodeId) -> Option<&str> {
+    match gui.get(node, Prop::Tooltip).ok().flatten()? {
         Value::Text(key) => Some(key),
         _ => None,
     }

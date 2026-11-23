@@ -275,7 +275,8 @@ pub struct DiplomacyView {
 /// Every child: Return and the paging buttons, the boxes (taking their
 /// press, `0x00616700`; the row boxes anywhere in their window), the
 /// insignia pictures and the left-aligned statics, each with its status
-/// help, then VERA's page counter. Disabled children still hover.
+/// help, then VERA's page counter, the title and the status line. Disabled
+/// children still hover.
 pub fn spec() -> NodeSpec {
     let left = Value::Int(i32::from(crate::ui::shell::geom::ShellAlign::NONE.0));
     let controls = DiplomacyControl::all().map(|control| {
@@ -302,6 +303,7 @@ pub fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         .children(controls)
         .child(super::paging::counter_node())
+        .children(in_game_shell::panel_statics())
 }
 
 impl DiplomacyView {
@@ -326,8 +328,13 @@ impl DiplomacyView {
 
     /// Control `id`'s rect; `None` while it is hidden.
     pub fn rect(&self, layout: &DiplomacyLayout, id: u16) -> Option<RectPx> {
-        if id == super::paging::COUNTER {
-            return (self.page_count > 1).then(|| super::paging::counter_rect(layout.paging));
+        match id {
+            super::paging::COUNTER => {
+                return (self.page_count > 1).then(|| super::paging::counter_rect(layout.paging));
+            }
+            in_game_shell::TITLE => return Some(layout.title),
+            in_game_shell::FOOTER => return Some(layout.status_line),
+            _ => {}
         }
         let control = DiplomacyControl::from_id(id)?;
         self.shows(control).then(|| layout.control_rect(control))

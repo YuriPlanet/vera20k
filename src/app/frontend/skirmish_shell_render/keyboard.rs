@@ -95,7 +95,7 @@ pub(crate) fn render_keyboard_shell(
             .frontend
             .keyboard_dialog
             .as_ref()
-            .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui))
+            .and_then(|dialog| crate::app::input::dialog_page::help(&dialog.ui, None))
             .map(|key| state.csf_label(key, ""))
             .unwrap_or_default();
         let window =
@@ -323,7 +323,8 @@ pub(crate) fn render_keyboard_shell(
         mut texts,
         ..
     } = paint;
-    if let Some(key) = crate::app::input::dialog_page::help(&dialog.ui).filter(|_| active) {
+    let help = crate::app::input::dialog_page::help(&dialog.ui, None);
+    if let Some(key) = help.filter(|_| active) {
         texts.push(text(
             font,
             &state.csf_label(key, ""),

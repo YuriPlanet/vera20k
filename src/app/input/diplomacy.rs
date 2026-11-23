@@ -352,6 +352,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui_mut: super::dialog_page::shared_ui_mut,
     // The boxes play GUICheckboxSound where their proc cases do, below.
     own_checkbox_sound: true,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 pub(crate) fn layout(state: &AppState) -> Option<DiplomacyLayout> {

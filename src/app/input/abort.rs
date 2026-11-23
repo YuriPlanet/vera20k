@@ -70,6 +70,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui: super::dialog_page::shared_ui,
     ui_mut: super::dialog_page::shared_ui_mut,
     own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 /// The open B6's geometry.

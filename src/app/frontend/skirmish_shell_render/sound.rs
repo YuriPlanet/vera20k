@@ -6,9 +6,8 @@
 
 use super::gui_paint::{ButtonArt, GuiStyle};
 use crate::app::AppState;
-use crate::app::input::dialog_page;
 use crate::app::input::sound::DIALOG;
-use crate::ui::shell::sound::{self, SoundControl};
+use crate::ui::shell::sound;
 
 pub(crate) fn render_sound_shell(
     state: &mut AppState,
@@ -18,17 +17,6 @@ pub(crate) fn render_sound_shell(
     crate::app::input::sound::sync(state).expect("active B8 geometry");
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
-        // B8 reads the control under the pointer on every move, a held
-        // trackbar's drag included.
-        let (x, y) = super::in_game_shell_cursor(state);
-        let hovered = match dialog_page::held_trackbar(ui) {
-            Some(_) => dialog_page::hit(ui, x, y),
-            None => dialog_page::hovered(ui),
-        };
-        let help = hovered
-            .and_then(SoundControl::from_id)
-            .map(|control| paint.label(control.help()));
-        paint.help = help;
         let text_of = |id: i32| -> Option<String> {
             let (key, fallback) = sound::caption(u16::try_from(id).ok()?)?;
             Some(state.csf_label(key, fallback))

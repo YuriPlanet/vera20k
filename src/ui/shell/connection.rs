@@ -137,8 +137,8 @@ impl ConnectionControl {
 
 /// Every child, each with its status help: the buttons, the list (rows the
 /// wait counts, each 2 px in from both ends; presses pass through it), the
-/// statics (the countdown unaligned); then the painted bars and VERA's page
-/// counter.
+/// statics (the countdown unaligned); then the painted bars, VERA's page
+/// counter and the status line (0xEA has no title).
 pub fn spec() -> NodeSpec {
     let align = crate::ui::shell::geom::ShellAlign::NONE;
     NodeSpec::new(NodeKind::Dialog)
@@ -169,6 +169,7 @@ pub fn spec() -> NodeSpec {
         }))
         .children(BAR_FILL_IDS.map(|id| NodeSpec::new(NodeKind::Bar).id(id.into())))
         .child(super::paging::counter_node())
+        .children(in_game_shell::panel_statics())
 }
 
 /// Puts the wait's values on 0xEA's nodes: each shown row's bar as
@@ -358,8 +359,12 @@ impl ConnectionPage {
     /// Control `id`'s rect; `None` while it is hidden (an absent row, the
     /// paging buttons of a single page).
     pub fn rect(&self, layout: &ConnectionLayout, id: u16) -> Option<RectPx> {
-        if id == super::paging::COUNTER {
-            return (self.page_count() > 1).then(|| super::paging::counter_rect(layout.paging));
+        match id {
+            super::paging::COUNTER => {
+                return (self.page_count() > 1).then(|| super::paging::counter_rect(layout.paging));
+            }
+            in_game_shell::FOOTER => return Some(layout.status_line),
+            _ => {}
         }
         if let Some(row) = BAR_FILL_IDS.iter().position(|fill| *fill == id) {
             return self.rect(layout, BAR_IDS[row]);

@@ -61,6 +61,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui: super::dialog_page::shared_ui,
     ui_mut: super::dialog_page::shared_ui_mut,
     own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 /// Makes 0x10C's nodes current without input (rects): its renderer's call

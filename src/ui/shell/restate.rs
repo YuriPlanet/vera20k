@@ -51,7 +51,7 @@ impl RestateControl {
 }
 
 /// Return, then the briefing text (SS_LEFT, top aligned), each with its
-/// status help.
+/// status help, then the title and status line.
 pub fn spec() -> NodeSpec {
     let node = |kind, control: RestateControl| {
         NodeSpec::new(kind)
@@ -62,6 +62,7 @@ pub fn spec() -> NodeSpec {
     NodeSpec::new(NodeKind::Dialog)
         .child(node(NodeKind::Button, RestateControl::Return))
         .child(node(NodeKind::Text, RestateControl::Content).with(Prop::Align, align))
+        .children(in_game_shell::panel_statics())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +97,8 @@ impl RestateLayout {
         match id {
             0x423 => Some(self.return_button),
             0x6E7 => Some(self.content),
+            in_game_shell::TITLE => Some(self.title),
+            in_game_shell::FOOTER => Some(self.status_line),
             _ => None,
         }
     }

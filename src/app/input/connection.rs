@@ -18,6 +18,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui: |state| Some(&state.match_state.match_presentation.connection_ui),
     ui_mut: |state| Some(&mut state.match_state.match_presentation.connection_ui),
     own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 /// Whether 0xEA is open; its controls start afresh on a new dialog.

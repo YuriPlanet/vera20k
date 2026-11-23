@@ -13,9 +13,7 @@ use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellAlign;
-use crate::ui::shell::in_game_shell::{
-    InGameShellLayout, InGameShellSizes, right_panel_title_rect, status_line_rect,
-};
+use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::sidebar::command_bar::spacer_pieces;
 use crate::ui::sidebar::{ArtKey, SidebarPart};
@@ -162,9 +160,6 @@ pub(super) struct InGamePaint<'a> {
     pub(super) art: Vec<SpriteInstance>,
     pub(super) controls: Vec<SpriteInstance>,
     pub(super) texts: Vec<crate::render::shell_text::ShellTextDraw>,
-    /// The status line's text: the hovered control's help (`0x006040B0`)
-    /// unless the dialog puts its own.
-    pub(super) help: Option<String>,
 }
 
 impl<'a> InGamePaint<'a> {
@@ -181,7 +176,6 @@ impl<'a> InGamePaint<'a> {
             art: background_instances(atlas, shell.layout, shell.width, shell.height),
             controls: Vec::new(),
             texts: Vec::new(),
-            help: None,
         }
     }
 
@@ -288,10 +282,11 @@ impl<'a> InGamePaint<'a> {
 
 /// Paints `dialog`, whose nodes are current ([`InGameDialog::sync`]), over
 /// the active-game shell (`0x00621E90` -> `0x0072F540`): the shell art, its
-/// lower right-panel button from its node (its spec's control
-/// `dialog.lower.0` on the layout's lower rect, a
-/// [`super::gui_paint::ButtonArt::Side`] button captioned `dialog.lower.1`)
-/// and title 0x694, what `extras` adds, then the status line 0x695.
+/// lower right-panel button (its spec's control `dialog.lower.0` on the
+/// layout's lower rect, a [`super::gui_paint::ButtonArt::Side`] button
+/// captioned `dialog.lower.1`) and title 0x694, what `extras` adds, then the
+/// status line 0x695 with the help of the control under the pointer
+/// ([`crate::app::input::dialog_page::help`]), each from its node.
 pub(super) fn paint_dialog(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -299,33 +294,30 @@ pub(super) fn paint_dialog(
     dialog: &InGameDialog,
     extras: impl FnOnce(&mut InGamePaint<'_>, &DialogController),
 ) -> anyhow::Result<()> {
+    use crate::ui::shell::in_game_shell::{FOOTER, TITLE};
     let frame = {
         let state: &AppState = state;
         let ui = (dialog.ui)(state).expect("the open dialog's controls");
         let mut paint = InGamePaint::new(state);
-        paint.help = crate::app::input::dialog_page::help(ui).map(|key| state.csf_label(key, ""));
-        let shell = paint.shell;
-        let (id, (key, fallback)) = dialog.lower;
-        let text_of = |_: i32| Some(state.csf_label(key, fallback));
+        let (lower, (key, fallback)) = dialog.lower;
+        let under = dialog.help_under_held.then(|| in_game_shell_cursor(state));
+        let text_of = |id: i32| -> Option<String> {
+            match u16::try_from(id).ok()? {
+                TITLE => dialog.title.map(|(key, fallback)| state.csf_label(key, fallback)),
+                FOOTER => crate::app::input::dialog_page::help(ui, under)
+                    .map(|key| state.csf_label(key, (dialog.help_fallback)(key))),
+                _ => Some(state.csf_label(key, fallback)),
+            }
+        };
         let style = super::gui_paint::GuiStyle {
             buttons: super::gui_paint::ButtonArt::Side,
             side: Some(paint.side_buttons()),
             text_of: Some(&text_of),
             ..Default::default()
         };
-        paint.nodes(ui, &[id], style);
-        if let Some(title) = dialog.title {
-            let title = paint.label(title);
-            paint.text(
-                &title,
-                right_panel_title_rect(shell.width),
-                ShellAlign::PANEL_TITLE,
-            );
-        }
+        paint.nodes(ui, &[lower, TITLE], style);
         extras(&mut paint, ui);
-        if let Some(help) = paint.help.take() {
-            paint.text(&help, status_line_rect(shell.height), ShellAlign::NONE);
-        }
+        paint.nodes(ui, &[FOOTER], style);
         paint.finish(dialog.label)
     };
     render_in_game_shell_frame(state, encoder, destination, frame)

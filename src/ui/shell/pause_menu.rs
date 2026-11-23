@@ -221,8 +221,7 @@ const FF_BUTTONS: [PauseMenuControl; 3] = [
 
 /// The right-panel title static and the status line: every template has
 /// both, each a node of its own ([`spec`]).
-pub const TITLE: u16 = 0x694;
-pub const FOOTER: u16 = 0x695;
+pub use super::in_game_shell::{FOOTER, TITLE};
 
 pub const PAUSE_MENU_FOOTER: PauseMenuControl = PauseMenuControl {
     id: FOOTER,
@@ -516,10 +515,7 @@ pub fn spec(template: PauseMenuTemplate, positions: [i32; 2], keyboard_help: &st
             None => node,
         }
     };
-    let statics = [
-        text(TITLE, Some(ShellAlign::PANEL_TITLE)),
-        text(FOOTER, Some(ShellAlign::NONE)),
-    ];
+    let statics = in_game_shell::panel_statics();
     // The group's caption takes no alignment.
     let internet = (template == PauseMenuTemplate::Internet)
         .then(|| {
