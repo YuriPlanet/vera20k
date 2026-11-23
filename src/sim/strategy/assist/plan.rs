@@ -216,6 +216,9 @@ pub(super) enum Item {
     /// name: the industrial plant is a Soviet structure in retail and a mod may
     // put the key on something else.
     IndustrialPlant,
+    /// `PowersUnit=` control centre; a `PoweredUnit=` robot is inert without it.
+    /// The actual provider may have another name in a mod.
+    RobotControl,
     /// The `SpySat=yes` structure (`[GASPYSAT]`): the whole map's radar, which
     /// the player can see. `[AI] AIBuildThis=no` says the *computer* does not
     /// build it — but auto play is a hand on the player's own base, and a
@@ -238,6 +241,9 @@ pub(super) enum Item {
     /// A building that grants a power which changes the map (`SuperWeapon=`,
     /// `NukeSilo=`): the plot a house buys once its wallet outruns its lines.
     Superweapon,
+    /// A distinct second SuperWeapon= facility: Chronosphere, Iron Curtain,
+    /// or Genetic Mutator, never an unwanted duplicate of the first plot.
+    SupportSuperweapon,
 }
 
 /// When a step of the list is allowed to answer.
@@ -355,6 +361,11 @@ pub(super) const STEPS: &[Step] = &[
         want: 1,
         gate: Gate::StrategicStrike,
     },
+    Step {
+        item: Item::SupportSuperweapon,
+        want: 2,
+        gate: Gate::StrategicStrike,
+    },
     // The second and third bays before the towers and the extra lines: the ore
     // a bay unloads is what pays for everything below it, and a house that
     // reaches the midgame on one bay earns a third of what it could.
@@ -384,6 +395,11 @@ pub(super) const STEPS: &[Step] = &[
     // The spy satellite, which the native computer does not build and a player
     // would: the whole map on the radar. After the tree, because it needs the
     // lab, and behind a surplus because 1500 is an army's worth.
+    Step {
+        item: Item::RobotControl,
+        want: 1,
+        gate: Gate::Surplus,
+    },
     Step {
         item: Item::SpySatellite,
         want: 1,
@@ -574,6 +590,22 @@ pub(super) fn power_short(rules: &RuleSet, obs: &Observation<'_>, census: &Censu
     power_deficit(rules, obs, census, 0) > 0
 }
 
+/// Keep enough spare generation for newly completed defenses and damaged
+/// plants, rather than building a tower until the entire base browns out.
+/// Projected generation already includes any plant in production/placement.
+fn desired_power_reserve(drain: i32) -> i32 {
+    120.max(drain.max(0) / 4)
+}
+
+pub(super) fn needs_power_reserve(
+    rules: &RuleSet, obs: &Observation<'_>, census: &Census, free: i32,
+) -> bool {
+    census.refineries > 0 && census.harvesters >= 2
+        && free >= 2_500 && obs.power_drain() > 0
+        && planned_output(rules, obs, census).saturating_sub(obs.power_drain())
+            < desired_power_reserve(obs.power_drain())
+}
+
 /// The output the base has once everything it is already paying for is built.
 ///
 /// A plant under construction supplies `Power=` scaled by the health it has
@@ -675,6 +707,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         Item::Refinery => census.refineries,
         Item::Purifier => build::count_ore_purifiers(rules, obs),
         Item::IndustrialPlant => build::count_industrial_plants(rules, obs),
+        Item::RobotControl => build::count_robot_centres(rules, obs),
         Item::SpySatellite => build::count_spy_satellites(rules, obs),
         Item::CloningVats => build::count_cloning_vats(rules, obs),
         Item::Barracks => build::count_in(obs, rules, census, &rules.build_barracks_types),
@@ -694,6 +727,7 @@ fn owned(rules: &RuleSet, obs: &Observation<'_>, census: &Census, item: Item) ->
         // One shed is enough: it repairs a whole army, one unit at a time.
         Item::Repair => usize::from(!census.repair_sites.is_empty()),
         Item::Superweapon => build::superweapons(rules, obs, census),
+        Item::SupportSuperweapon => build::count_strategic_facilities(rules, obs),
     }
 }
 
@@ -708,6 +742,7 @@ fn pick<'r>(
         Item::Refinery => build::first_buildable(rules, obs, &rules.build_refinery_types),
         Item::Purifier => build::ore_purifier_building(rules, obs),
         Item::IndustrialPlant => build::industrial_plant_building(rules, obs),
+        Item::RobotControl => build::robot_control_building(rules, obs),
         Item::SpySatellite => build::spy_satellite_building(rules, obs),
         Item::CloningVats => build::cloning_vats_building(rules, obs),
         Item::Barracks => build::first_buildable(rules, obs, &rules.build_barracks_types),
@@ -720,6 +755,7 @@ fn pick<'r>(
         Item::Support => expand::yard_maker_support(rules, obs, census),
         Item::Repair => build::unit_repair_building(rules, obs),
         Item::Superweapon => build::superweapon_building(rules, obs),
+        Item::SupportSuperweapon => build::additional_superweapon_building(rules, obs),
     }
 }
 
@@ -1004,5 +1040,33 @@ mod tests {
                 .is_none_or(|chosen| chosen.step != Some(first_barracks)),
             "the barracks stands, and the house is done with it"
         );
+    }
+}
+
+#[cfg(test)]
+mod v14_power_reserve_tests {
+    use super::*;
+    #[test]
+    fn extra_generation_tracks_an_operational_defense_grid() {
+        assert_eq!(desired_power_reserve(0), 120);
+        assert_eq!(desired_power_reserve(400), 120);
+        assert_eq!(desired_power_reserve(1000), 250);
+        assert_eq!(desired_power_reserve(2400), 600);
+    }
+}
+
+#[cfg(test)]
+mod v15_support_steps_tests {
+    use super::*;
+
+    #[test]
+    fn rule_driven_support_plants_keep_their_build_list_entries() {
+        assert!(STEPS.iter().any(|step| step.item == Item::SupportSuperweapon
+            && step.want == 2 && step.gate == Gate::StrategicStrike));
+        for item in [Item::Purifier, Item::IndustrialPlant,
+                     Item::CloningVats, Item::RobotControl] {
+            assert!(STEPS.iter().any(|step| step.item == item
+                && step.want == 1 && step.gate == Gate::Surplus));
+        }
     }
 }

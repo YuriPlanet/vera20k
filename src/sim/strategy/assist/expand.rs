@@ -93,6 +93,8 @@ const EXPAND_ORE_RING: i32 = 12;
 /// a probe rather than a per-frame question: four seconds is a maker's own
 /// pace, and a cell that has become unusable is re-asked on the next probe.
 const EXPAND_PROBE_FRAMES: u64 = 60;
+/// Hold a chosen mineral-side MCV deployment plot through temporary blockers.
+const EXPANSION_SITE_COMMIT_FRAMES: u64 = 450;
 
 /// Whether `ty` is a Construction Yard maker: its `DeploysInto=` is the
 /// building the rules' `[AI] BuildConst=` list holds. `UnitType`'s
@@ -739,6 +741,15 @@ fn deploy_second_yard(
     }
 }
 
+/// A unit blocking the foundation on a single frame is not a good reason to
+/// abandon a journey to a mineral field. Reachability is a genuine veto;
+/// transient deploy admission is allowed a bounded re-check interval.
+fn keep_expansion_appointment(
+    now: u64, chosen_at: u64, reachable: bool, admits: bool,
+) -> bool {
+    reachable && (admits || now.saturating_sub(chosen_at) < EXPANSION_SITE_COMMIT_FRAMES)
+}
+
 /// A roadside cell is not an expansion site. Keep the selected site stable
 /// across movement and only unfold after arriving within placement tolerance.
 fn at_selected_site(cell: (u16, u16), site: Option<(u16, u16)>) -> bool {
@@ -780,11 +791,18 @@ pub(super) fn expansion_site(
     // A cached answer is used while it still holds: the probe walks the
     // map's ground, and a maker that re-aims on every probe spends the match
     // walking between two patches instead of reaching one.
-    if let Some((_, cell)) = brain.expansion_probe
-        && let Some(cell) = cell
-        && admits(cell)
-    {
-        return Some(cell);
+    if let Some((selected_at, Some(site))) = brain.expansion_probe {
+        let reachable = maker_position.is_none_or(|(from, zone)| {
+            obs.can_reach(zone, from, site)
+        });
+        // MCVs are large. A transient tank or harvester on the foundation
+        // changes deploy_admits_at without making the ore field a bad plan.
+        // Keep walking toward the committed site for a bounded period instead
+        // of alternating between two newly admissible cells each frame.
+        if keep_expansion_appointment(tick, selected_at, reachable, admits(site))
+        {
+            return Some(site);
+        }
     }
     let Some(home) = brain.census.base_cell else {
         brain.expansion_probe = Some((tick, None));
@@ -1522,5 +1540,17 @@ mod rich_ore_tests {
         let mut known = std::collections::BTreeMap::new();
         known.insert((24,24),0_u8);
         assert_eq!(expansion_aim(&known,(12,12),&[(12,12)]),None);
+    }
+}
+
+#[cfg(test)]
+mod v14_site_commit_tests {
+    use super::*;
+    #[test]
+    fn fleeting_obstructions_do_not_redirect_the_mcv() {
+        assert!(keep_expansion_appointment(300,100,true,false));
+        assert!(keep_expansion_appointment(600,100,true,true));
+        assert!(!keep_expansion_appointment(600,100,true,false));
+        assert!(!keep_expansion_appointment(120,100,false,true));
     }
 }

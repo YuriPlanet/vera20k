@@ -298,6 +298,40 @@ pub(super) fn run(
             issued += 1;
             continue;
         }
+        // A vehicle can be shelling a factory while a tank shoots it from
+        // beyond its own range. Even if no hostile is *in* our gun range yet,
+        // the attacker's effective range (not the IFV's range) proves that
+        // continuing to shell the building is a losing commitment.
+        if !item.deployed && obs.attack_target(item.entity_id).is_some_and(|id| {
+            obs.entity_type(rules,id).is_some_and(|ty| ty.category == ObjectCategory::Building)
+        }) {
+            let overmatched = obs.visible_enemy_entities().find_map(|enemy| {
+                if aimed_at.get(&enemy.entity_id) != Some(&item.entity_id)
+                    || !obs.can_hurt(rules,enemy.entity_id,item.entity_id) { return None; }
+                let range = super::tactics::actual_threat_reach(
+                    rules,obs,enemy.entity_id,item.entity_id);
+                (range > item.reach + 1).then_some((enemy.cell,range))
+            });
+            if let Some((gun,reach)) = overmatched {
+                let safe = super::tactics::siege_post(
+                    rules,obs,item.entity_id,item.cell,gun,reach)
+                    .or_else(|| brain.census.rally.or(brain.census.base_cell)
+                        .filter(|cell| !super::tactics::unsafe_post(
+                            rules,obs,item.entity_id,*cell)));
+                if let Some(post) = safe
+                    && super::orders::reachable(rules,obs,item.entity_id,post)
+                    && super::advance::cell_distance(item.cell,post) > 2
+                    && super::orders::issue_tracked(
+                        &mut brain.tracked,brain.trace,out,rules,obs,
+                        item.entity_id,TrackedKind::Avoid,None,Some(post),
+                        Goal::Move { cell: post },
+                    )
+                {
+                    issued += 1;
+                    continue;
+                }
+            }
+        }
         // Nobody's building in the way. It is in no enemy list — nobody owns
         // it — so nothing in this layer would ever shoot it, and the unit
         // stands at its wall for the whole order, which is the "the infantry
@@ -583,10 +617,14 @@ fn collect(
             let reach = obs.object_type(rules, unit.type_id)
                 .map_or(0, |ty| super::advance::weapon_range_cells(rules, ty, deployed));
             let under_fire = brain.census.enemies.iter().any(|enemy| {
+                let enemy_reach = obs.entity_type(rules, enemy.entity_id)
+                    .map_or(0, |ty| super::advance::weapon_range_cells(
+                        rules, ty, obs.is_deployed(enemy.entity_id)));
                 obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
                     && obs.attack_target(enemy.entity_id) == Some(unit.entity_id)
+                    && obs.can_hurt(rules, enemy.entity_id, unit.entity_id)
                     && squared_distance(enemy.cell, unit.cell)
-                        <= (reach + ENGAGE_MARGIN_CELLS).pow(2)
+                        <= (enemy_reach + ENGAGE_MARGIN_CELLS).pow(2)
             });
             // Preserve an ongoing attack unless the unit is *being hit* by a
             // reachable hostile. An attack on a neutral wall is not such a

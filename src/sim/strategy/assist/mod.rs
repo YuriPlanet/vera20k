@@ -128,6 +128,7 @@ pub(super) mod dodge;
 pub(super) mod economy;
 pub(super) mod escort;
 pub(super) mod expand;
+mod frontier;
 pub(super) mod kite;
 pub(super) mod micro;
 pub(super) mod mission;
@@ -234,6 +235,9 @@ pub struct AssistBrain {
     /// Per-ready-building placement mission. Keeps the same footprint during
     /// clearing and awaits L2/native feedback before trying the next one.
     pub(super) site_jobs: BTreeMap<InternedId, build::SiteJob>,
+    /// A completed building must still be placed beside the outpost that requested it.
+    pub(super) outpost_builds: BTreeMap<InternedId, (u16, u16)>,
+    pub(super) outpost_guards: BTreeMap<u64, (u16, u16)>,
     /// An MCV that cannot deploy in its current cell probes alternative yard
     /// positions. Unlike a completed structure, this is a moving actor and
     /// does not share the ready-production site's lifecycle.
@@ -278,6 +282,8 @@ pub struct AssistBrain {
     /// real gate; this only keeps a refused launch from spending the frame
     /// budget every frame it stays lit.
     pub(super) super_at: BTreeMap<InternedId, u64>,
+    /// Chronosphere source and destination share one recoverable two-click mission.
+    pub(super) chrono_trip: Option<orders::ChronoTrip>,
     /// At most two cheap mobile units may leave their routine for visible
     /// distant crates. A durable claim stops two units chasing the same box.
     pub(super) crate_claims: BTreeMap<u64, ((u16,u16), u64)>,
@@ -474,6 +480,8 @@ impl AssistBrain {
             director: strategy::Director::default(),
             escorts: BTreeMap::new(),
             site_jobs: BTreeMap::new(),
+            outpost_builds: BTreeMap::new(),
+            outpost_guards: BTreeMap::new(),
             maker_site_attempts: BTreeMap::new(),
             site_preflight_after: BTreeMap::new(),
             plan_hold: None,
@@ -484,6 +492,7 @@ impl AssistBrain {
             roles: None,
             census: Census::default(),
             super_at: BTreeMap::new(),
+            chrono_trip: None,
             crate_claims: BTreeMap::new(),
             siege_wait: None,
             assault_wait: None,
@@ -924,6 +933,7 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             advanced::protect_base(self, rules, obs, out);
+            advanced::secure_outpost(self, rules, obs, out);
             advanced::relieve_garrison(self, rules, obs, out);
             advanced::combat_carriers(self, rules, obs, out);
             // While the base is being raided, do not return just-evacuated
@@ -996,6 +1006,13 @@ impl Brain for AssistBrain {
                     // the power has been spent and suppress it for 600 frames.
                     // Retrying instantly would flood the same gate, though.
                     self.super_at.insert(*sw_type_id, self.last_tick.saturating_add(30));
+                    if self.chrono_trip.is_some_and(|trip| trip.source_type == *sw_type_id) {
+                        self.chrono_trip = None;
+                    } else if let Some(trip) = self.chrono_trip.as_mut() {
+                        if trip.warp_type == *sw_type_id {
+                            trip.destination_sent_at = None;
+                        }
+                    }
                 }
                 _ => {}
             }

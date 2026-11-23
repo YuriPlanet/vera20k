@@ -234,12 +234,10 @@ pub(super) fn captures(
         })
         .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
         .collect();
-    // The receipts from spies already sent. A spy that reached its building is
-    // gone from the ledger, and that disappearance is the only signal there is:
-    // the infiltration itself lives in Ares' building extension data, which this
-    // brain does not read. A spy that died on the way is indistinguishable from
-    // one that landed, so a class can be marked done by a spy that never
-    // arrived — the cost is one missed unlock, never a wasted walk.
+    // A missing spy is no proof of success: dogs, turrets and capture can
+    // all remove it before infiltration. Only permanent house effects confirm
+    // the one-time veterancy and stolen-tech classes. Money and blackout are
+    // temporary effects, so neither is falsely marked as a lasting unlock.
     if !brain.spy_errand.is_empty() {
         let alive: std::collections::BTreeSet<u64> = brain
             .census
@@ -257,7 +255,11 @@ pub(super) fn captures(
             brain.spy_errand.remove(unit);
         }
         for (_, code) in done {
-            brain.infiltrated.insert(code);
+            // The spy may have been killed by a dog. Only the actual house
+            // veterans/stolen-tech flags are a receipt, not disappearance.
+            if obs.spy_class_effect_observed(code) {
+                brain.infiltrated.insert(code);
+            }
         }
     }
     let mut issued = 0;
@@ -278,7 +280,13 @@ pub(super) fn captures(
         let chosen = if ty.agent {
             spy_targets
                 .iter()
-                .max_by_key(|(target, value)| (*value, -squared_distance(unit.cell, target.cell)))
+                .max_by_key(|(target, value)| {
+                    let blackout_opportunity = brain.siege_wait.is_some()
+                        && obs.object_type(rules, target.type_id)
+                            .is_some_and(|ty| ty.power > 0);
+                    (u8::from(blackout_opportunity), *value,
+                        -squared_distance(unit.cell, target.cell))
+                })
                 .map(|(target, _)| *target)
         } else {
             // One building takes one engineer. Without this both were sent at
@@ -358,10 +366,9 @@ pub(super) fn captures(
         ) {
             continue;
         }
-        // A spy that walks into a barracks, a war factory or a lab has bought
-        // the unlock, and the walk is not worth repeating. Remember which class
-        // this one was sent to: the unit is consumed on arrival, so its
-        // disappearance is the receipt.
+        // Remember the requested one-time infiltration class until the spy
+        // disappears, then check the *actual* house effect before crediting it.
+        // Death on the route must never count as a successful unlock.
         if ty.agent
             && let Some(code) = obs
                 .object_type(rules, target.type_id)
@@ -698,6 +705,7 @@ pub(super) fn garrison(
         .collect();
     let billets: Vec<_> = obs
         .occupiable_buildings(rules)
+        .filter(|billet| obs.is_cell_revealed(billet.cell.0, billet.cell.1))
         .filter(|billet| within(anchors.iter().copied(), billet.cell, HOME_REACH_CELLS))
         .collect();
     if billets.is_empty() {
@@ -718,9 +726,15 @@ pub(super) fn garrison(
             break;
         }
         if !unit.traits.occupier
-            || !unit.orderable
-            || unit.hand
-            || holds_or_fights(unit.mission)
+            || !unit.controllable()
+            || (holds_or_fights(unit.mission)
+                && !(unit.mission == MissionId::from_known(MissionType::Move)
+                    && billets.iter().any(|billet| {
+                        squared_distance(unit.cell, billet.cell) <= 10 * 10
+                            && obs.visible_enemy_entities().any(|enemy| {
+                                squared_distance(enemy.cell, billet.cell) <= 14 * 14
+                            })
+                    })))
             || ordered_this_frame(out, unit.entity_id)
         {
             continue;
@@ -729,7 +743,12 @@ pub(super) fn garrison(
             .iter()
             .filter(|billet| squared_distance(unit.cell, billet.cell) <= HOME_REACH_CELLS.pow(2))
             .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id))
-            .min_by_key(|billet| squared_distance(unit.cell, billet.cell))
+            .min_by_key(|billet| {
+                let at_front = obs.visible_enemy_entities().any(|enemy| {
+                    squared_distance(enemy.cell, billet.cell) <= 14 * 14
+                });
+                (!at_front, squared_distance(unit.cell, billet.cell), billet.building_id)
+            })
         else {
             continue;
         };
@@ -1686,16 +1705,14 @@ const SPY_WATCH_CELLS: i32 = 6;
 const CRATE_SEEK_CELLS: i32 = 8;
 /// A known distant crate is worth one scout's journey, not a tank attack
 /// group. No unseen crate may leak from the scenario's global crate slots.
-const CRATE_SCOUT_CELLS: i32 = 32;
+const CRATE_SCOUT_CELLS: i32 = 56;
 const CRATE_CLAIM_FRAMES: u64 = 600;
 
-/// Send an idle scout to a nearby crate it can actually reach.
+/// Give an available scout a visible crate collection errand.
 ///
-/// Last of the steps that move a unit, and only for a unit with nothing else
-/// to do: a crate is a bonus, not a job, and a scout pulled off a fight or a
-/// walk for one has lost more than the crate is worth. The pickup is the walk
-/// — the map takes the crate when the unit enters the cell — so a Move is the
-/// whole order.
+/// Scout exploration may be interrupted for a valuable crate; ordinary
+/// combat units are borrowed only when idle and nearby. The pickup is the
+/// walk itself, and a claimed box must not attract another unit.
 pub(super) fn crates(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -1732,10 +1749,12 @@ pub(super) fn crates(
         .iter()
         .filter(|unit| {
             (unit.traits.scout || unit.traits.combat)
-                && !unit.hand
-                && unit.orderable
+                && unit.controllable()
                 && !unit.in_service()
-                && !holds_or_fights(unit.mission)
+                // A scout on an ordinary exploration Move is still the
+                // dedicated crate runner. Combat units may only be borrowed
+                // when idle: never interrupt a tank's attack for a box.
+                && (unit.traits.scout || !holds_or_fights(unit.mission))
         })
         .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id);
@@ -1750,9 +1769,11 @@ pub(super) fn crates(
     detail.sort_by_key(|(id, _, _, speed)| {
         (if scouts.contains(id) { 0 } else { 1 }, -*speed, *id)
     });
+    // Do not take the first four globally *before* checking distance.
+    // They may all be on the other side of the map; the fifth scout could
+    // stand on the crate. Cap simultaneous claims, not candidates examined.
     let idle: Vec<(u64, (u16, u16), MovementZone, bool, i32)> = detail
         .into_iter()
-        .take(CRATE_RUNNERS)
         .map(|(id, cell, zone, speed)| (id, cell, zone, false, speed))
         .collect();
     if idle.is_empty() {
@@ -1770,6 +1791,9 @@ pub(super) fn crates(
     crates.sort_by_key(|cell| (squared_distance(anchor, *cell), *cell));
     let mut sent: BTreeSet<u64> = BTreeSet::new();
     for cell in crates {
+        if !crate_runner_available(brain.crate_claims.len(), CRATE_RUNNERS) {
+            break;
+        }
         // Global crate slots are not a fog-of-war observation.
         if !obs.is_cell_visible(cell.0, cell.1) { continue; }
         // The nearest idle unit that can walk there. The unit's own movement
@@ -1824,15 +1848,10 @@ pub(super) fn crates(
         if ordered_this_frame(out, id) {
             continue;
         }
-        if !brain
-            .tracked
-            .admits(tick, id, TrackedKind::Move, None, Some(cell))
-        {
-            continue;
-        }
-        if issue(brain, out, rules, obs, id, Goal::Move { cell }) {
-            brain.tracked.record_goal(tick, id, TrackedKind::Move,
-                None, Some(cell), Goal::Move { cell });
+        if issue_tracked(
+            &mut brain.tracked, brain.trace, out, rules, obs,
+            id, TrackedKind::Move, None, Some(cell), Goal::Move { cell },
+        ) {
             brain.crate_claims.insert(id,(cell,tick.saturating_add(CRATE_CLAIM_FRAMES)));
             log::info!(
                 "auto play: unit {id} goes for the crate at {cell:?} taken={}",
@@ -1840,6 +1859,13 @@ pub(super) fn crates(
             );
         }
     }
+}
+
+/// When planning collectors, all eligible candidates must be considered
+/// before applying the *simultaneous assignment* cap. Cap candidates first and
+/// a fast dog on the wrong side of the map can hide a nearby reachable dog.
+fn crate_runner_available(claimed: usize, cap: usize) -> bool {
+    claimed < cap
 }
 
 /// How fast a unit has to be before it belongs to the crate detail, in the
@@ -2361,16 +2387,146 @@ mod transport_tests {
 /// powers pick a relevant friendly target only when a current threat exists.
 /// Two-click Chronosphere transportation remains disabled until source and
 /// destination can be committed as one recoverable mission.
+/// A two-click Chronosphere mission, retained until the engine confirms the
+/// first click by recording its source. Expiry prevents a rejected or invalid
+/// second click from monopolising abilities indefinitely.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ChronoTrip {
+    pub(super) source_type: crate::sim::intern::InternedId,
+    pub(super) warp_type: crate::sim::intern::InternedId,
+    source: (u16, u16),
+    destination: (u16, u16),
+    earliest: u64,
+    deadline: u64,
+    pub(super) destination_sent_at: Option<u64>,
+}
+
+fn chrono_partner<'r>(
+    rules: &'r RuleSet, source_name: &str,
+) -> Option<&'r str> {
+    let source = rules.super_weapon(source_name)?;
+    if source.kind != SuperWeaponKind::ChronoSphere
+        || !source.pre_click || source.post_click
+    { return None; }
+    if rules.ares_form() {
+        let warp_name = crate::sim::superweapon::ares_chrono_warp_for(rules, source)?;
+        let warp = rules.super_weapon(warp_name)?;
+        // Ares paid two-stage pairs require an explicit sequence ticket; do
+        // not send two unbound Launch intents and pretend the warp succeeded.
+        if crate::sim::superweapon::paid_pair_source(rules, warp).is_some() {
+            return None;
+        }
+        return Some(warp_name);
+    }
+    let index = i32::try_from(rules.super_weapon_order.iter()
+        .position(|name| name == source_name)?).ok()?;
+    rules.super_weapon_order.iter().find(|name| rules.super_weapon(name)
+        .is_some_and(|dest| dest.kind == SuperWeaponKind::ChronoWarp
+            && dest.post_click && dest.pre_dependent == index))
+        .map(String::as_str)
+}
+
+/// A teleporting assault is only useful if the 3x3 source contains a real
+/// armoured group and the destination has a safe landing area near a known
+/// enemy asset. Do not select harvesters, MCVs or unarmed transports.
+fn chrono_assault_cells(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+) -> Option<((u16,u16), (u16,u16))> {
+    use super::census::Slot;
+    let (group, source) = brain.census.units.iter()
+        .filter(|unit| unit.slot == Slot::Vehicle && unit.controllable()
+            && unit.traits.combat && !unit.traits.harvester && !unit.traits.yard_maker
+            && !unit.in_service())
+        .filter_map(|leader| {
+            let group: Vec<_> = brain.census.units.iter()
+                .filter(|mate| mate.slot == Slot::Vehicle && mate.controllable()
+                    && mate.traits.combat && !mate.traits.harvester && !mate.traits.yard_maker
+                    && super::advance::cell_distance(mate.cell, leader.cell) <= 1)
+                .collect();
+            (group.len() >= 2).then_some((group.len(), group.iter()
+                .map(|unit| unit.points.max(0)).sum::<i32>(), leader.cell))
+        })
+        .max_by_key(|(n, points, cell)| (*n, *points, std::cmp::Reverse(*cell)))
+        .map(|(n,_,cell)| (n,cell))?;
+    if group < 2 { return None; }
+    let target = brain.census.enemies.iter()
+        .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
+        .filter_map(|enemy| {
+            let ty = obs.object_type(rules, enemy.type_id)?;
+            (ty.category == ObjectCategory::Building
+                && (ty.build_const_eligible() || ty.resource_destination || ty.is_base_defense))
+                .then_some((enemy.cell, (ty.build_const_eligible(), ty.resource_destination,
+                    ty.is_base_defense, ty.strength)))
+        })
+        .max_by_key(|(cell, weight)| (*weight, std::cmp::Reverse(*cell)))?.0;
+    let offsets = [(-7,0),(7,0),(0,-7),(0,7),(-6,-5),(-6,5),(6,-5),(6,5)];
+    let destination = offsets.into_iter().filter_map(|(dx,dy)| {
+        let (Ok(x), Ok(y)) = (
+            u16::try_from(i32::from(target.0)+dx),
+            u16::try_from(i32::from(target.1)+dy),
+        ) else { return None; };
+        let cell = (x,y);
+        if !obs.is_cell_in_playfield(x,y) || !obs.is_ground_walkable(x,y)
+            || super::advance::cell_distance(source, cell) <= 18
+        { return None; }
+        let danger = obs.visible_enemy_entities().filter(|enemy| {
+            super::advance::cell_distance(enemy.cell,cell) <= 6
+        }).count();
+        // A clear landing zone is part of the attack plan, not a gamble on
+        // teleporting an entire heavy tank column into a friendly-fire blast.
+        (danger <= 1).then_some((danger,cell))
+    }).min_by_key(|(danger,cell)| (*danger,*cell))?.1;
+    Some((source,destination))
+}
+
+fn complete_chrono_trip(
+    brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut Outbox,
+) -> bool {
+    let Some(mut trip) = brain.chrono_trip else { return false; };
+    if obs.tick() > trip.deadline {
+        brain.chrono_trip = None;
+        return false;
+    }
+    if let Some(sent) = trip.destination_sent_at {
+        // A post-click command is a single shot. Don't keep repeating it
+        // every 30 ticks just because the first Super retains chrono_cell.
+        // ControlBoard will independently report an L2 refusal for retry.
+        if obs.tick().saturating_sub(sent) >= 3 {
+            brain.chrono_trip = None;
+            return false;
+        }
+        return true;
+    }
+    // A PreClick is supposed to *consume source readiness*. Thus requiring
+    // the source to appear in ready_super_weapons here silently kills every
+    // legitimate two-stage mission after the first native click.
+    if obs.tick() >= trip.earliest
+        && obs.chrono_source_cell(trip.source_type) == Some(trip.source)
+        && brain.super_at.get(&trip.warp_type).is_none_or(|at| obs.tick() >= *at)
+    {
+        out.intent(Intent::LaunchSuperWeapon {
+            sw_type_id: trip.warp_type, cell: trip.destination,
+        });
+        trip.destination_sent_at = Some(obs.tick());
+        brain.chrono_trip = Some(trip);
+        brain.super_at.insert(trip.warp_type, obs.tick().saturating_add(30));
+    }
+    true
+}
+
 pub(super) fn supers(
     brain: &mut AssistBrain,
     rules: &RuleSet,
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    let ready = obs.ready_super_weapons(rules);
-    if ready.is_empty() {
+    // PostClick is allowed even though the first PreClick consumed the only
+    // ready superweapon. Check the pending pair before the empty-ready gate.
+    if complete_chrono_trip(brain, obs, out) {
         return;
     }
+    let ready = obs.ready_super_weapons(rules);
+    if ready.is_empty() { return; }
     let tick = obs.tick();
     let mut fired = 0;
     for name in &rules.super_weapon_order {
@@ -2405,6 +2561,27 @@ pub(super) fn supers(
             brain.yard_reserve.max(if brain.director.recovering_income() { 3_000 } else { 750 }),
         ) {
             continue;
+        }
+        // Chronosphere is a source click followed by a post-click Warp. Do
+        // not treat it as an ordinary single-target superweapon.
+        if super_weapon.kind == SuperWeaponKind::ChronoSphere {
+            let Some(warp_name) = chrono_partner(rules, name) else { continue; };
+            let Some(warp_type) = obs.type_id(warp_name) else { continue; };
+            if brain.siege_reach.is_none() && brain.census.enemy_strike_sites == 0 {
+                continue;
+            }
+            let Some((source,destination)) = chrono_assault_cells(brain, rules, obs) else {
+                continue;
+            };
+            brain.chrono_trip = Some(ChronoTrip {
+                source_type: type_id, warp_type, source, destination,
+                earliest: tick.saturating_add(1), deadline: tick.saturating_add(120),
+                destination_sent_at: None,
+            });
+            brain.super_at.insert(type_id, tick.saturating_add(SUPER_RETRY_FRAMES));
+            out.intent(Intent::LaunchSuperWeapon { sw_type_id: type_id, cell: source });
+            log::info!("auto play: chrono assault from {source:?} to {destination:?}");
+            return;
         }
         // Where it lands is the power's own answer, not one cell for all of
         // them: a paradrop is soldiers, and soldiers dropped into the enemy's
@@ -2462,12 +2639,25 @@ fn shield_blackout_worth_it(
         {
             return false;
         }
+        // A projectile already in flight can kill a yard before the shooter
+        // appears nearby. The shield decision must observe *incoming damage*,
+        // not only whether one or two guns are currently targeting the site.
+        let incoming: i32 = obs.incoming_shots(building.entity_id)
+            .fold(0i32, |sum, shot| sum.saturating_add(shot.damage.max(0)));
+        if incoming >= building.health.max(1) { return true; }
         let attackers = obs.visible_enemy_entities()
             .filter(|enemy| obs.attack_target(enemy.entity_id) == Some(building.entity_id))
             .count();
-        attackers >= 2 || (attackers >= 1 &&
+        let lethal_attacker = obs.visible_enemy_entities().any(|enemy| {
+            if obs.attack_target(enemy.entity_id) != Some(building.entity_id)
+                || !obs.can_hurt(rules, enemy.entity_id, building.entity_id)
+            { return false; }
+            let Some(gun) = obs.entity_type(rules, enemy.entity_id) else { return false; };
+            super::avoidance::kills_outright(rules, gun, ty, building.health.max(0))
+        });
+        attackers >= 2 || lethal_attacker || (attackers >= 1 &&
             i64::from(building.health.max(0)) * 100
-                < i64::from(ty.strength.max(1)) * 35)
+                < i64::from(ty.strength.max(1)) * 55)
     })
 }
 
@@ -2496,6 +2686,8 @@ enum Aim {
     Shield,
     /// A fighting vehicle is in the middle of a current battle.
     Curtain,
+    /// Enemy infantry worth converting without catching friendly infantry.
+    Genetic,
 }
 
 /// What a power is for, by its kind: `Type=` in the rules.
@@ -2507,6 +2699,7 @@ fn aim_of(kind: SuperWeaponKind) -> Aim {
         SuperWeaponKind::SpyPlane | SuperWeaponKind::PsychicReveal => Aim::Recon,
         SuperWeaponKind::ForceShield => Aim::Shield,
         SuperWeaponKind::IronCurtain => Aim::Curtain,
+        SuperWeaponKind::GeneticConverter => Aim::Genetic,
         _ => Aim::Enemy,
     }
 }
@@ -2519,7 +2712,8 @@ fn landing_cell(
     aim: Aim,
 ) -> Option<(u16, u16)> {
     match aim {
-        Aim::Enemy => enemy_structure_cell(brain, rules, obs),
+        Aim::Enemy => siege_battery_cell(brain, rules, obs)
+            .or_else(|| enemy_structure_cell(brain, rules, obs)),
         // Dropped where the army is, so they arrive as a squad rather than as
         // eight soldiers walking out of the enemy's own base one at a time.
         // With no army yet, the base: they are defenders until there is one.
@@ -2530,6 +2724,7 @@ fn landing_cell(
             .or_else(|| enemy_structure_cell(brain, rules, obs)),
         Aim::Shield => threatened_building(obs, rules),
         Aim::Curtain => engaged_vehicle(brain, rules, obs),
+        Aim::Genetic => genetic_cluster(rules, obs),
     }
 }
 
@@ -2568,7 +2763,8 @@ fn safe_paradrop_cell(brain: &AssistBrain, obs: &Observation<'_>) -> Option<(u16
 /// transaction, so firing either as a single click would consume the charge.
 fn auto_power_supported(kind: SuperWeaponKind) -> bool {
     spent_on_the_enemy(kind)
-        || matches!(kind, SuperWeaponKind::ForceShield | SuperWeaponKind::IronCurtain)
+        || matches!(kind, SuperWeaponKind::ForceShield | SuperWeaponKind::IronCurtain
+            | SuperWeaponKind::ChronoSphere)
 }
 
 /// Pick one still-shrouded *walkable* sample, farthest from home. Spy planes
@@ -2594,6 +2790,27 @@ fn recon_cell(obs: &Observation<'_>, home: Option<(u16, u16)>) -> Option<(u16, u
     best.map(|(_, cell)| cell)
 }
 
+/// A mutation bomb converts infantry, not tank armour. Prefer visible enemy
+/// infantry in groups, never on top of our own infantry. One fleeing soldier
+/// is not worth consuming a long recharge or endangering our own front line.
+fn genetic_cluster(rules: &RuleSet, obs: &Observation<'_>) -> Option<(u16,u16)> {
+    let infantry: Vec<_> = obs.visible_enemy_entities()
+        .filter(|unit| obs.entity_type(rules, unit.entity_id)
+            .is_some_and(|ty| ty.category == ObjectCategory::Infantry))
+        .map(|unit| unit.cell).collect();
+    infantry.iter().copied().filter_map(|center| {
+        let enemies = infantry.iter()
+            .filter(|other| super::advance::cell_distance(**other,center) <= 3).count();
+        if enemies < 3 { return None; }
+        let friendlies = obs.own_entities()
+            .filter(|unit| obs.object_type(rules,unit.type_id)
+                .is_some_and(|ty| ty.category == ObjectCategory::Infantry))
+            .filter(|unit| super::advance::cell_distance(unit.cell, center) <= 5).count();
+        (friendlies == 0).then_some((enemies,center))
+    }).max_by_key(|(n,cell)| (*n, std::cmp::Reverse(*cell)))
+        .map(|(_,cell)| cell)
+}
+
 /// The Force Shield goes over the threatened *structure*, never an arbitrary
 /// empty base location or an enemy. Otherwise it stays charged.
 fn threatened_building(obs: &Observation<'_>, rules: &RuleSet) -> Option<(u16, u16)> {
@@ -2603,11 +2820,14 @@ fn threatened_building(obs: &Observation<'_>, rules: &RuleSet) -> Option<(u16, u
             if ty.category != ObjectCategory::Building {
                 return None;
             }
+            let incoming: i32 = obs.incoming_shots(entity.entity_id)
+                .fold(0i32, |sum, shot| sum.saturating_add(shot.damage.max(0)));
+            let imminent = incoming >= entity.health.max(1);
             let distance = obs.visible_enemy_entities()
                 .map(|enemy| squared_distance(entity.cell, enemy.cell))
-                .min()?;
-            (distance <= 12 * 12).then_some((
-                (ty.construction_yard, ty.refinery, ty.power > 0, -distance),
+                .min().unwrap_or(i32::MAX);
+            (imminent || distance <= 12 * 12).then_some((
+                (imminent, ty.construction_yard, ty.refinery, ty.power > 0, -distance),
                 entity.cell,
             ))
         })
@@ -2680,6 +2900,26 @@ fn spent_on_the_enemy(kind: SuperWeaponKind) -> bool {
     }
 }
 
+/// When artillery has pinned our main force, a charged strike is a way to
+/// break the fortified line without driving short-range units into it. This
+/// uses only current visible defenders near the actual campaign objective;
+/// an old enemy sighting is not permission to aim a new missile precisely.
+fn siege_battery_cell(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+) -> Option<(u16, u16)> {
+    let center = brain.push_target?.2;
+    brain.siege_reach?;
+    brain.census.enemies.iter().filter_map(|enemy| {
+        let ty = obs.object_type(rules, enemy.type_id)?;
+        if !ty.is_base_defense || !obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            || super::advance::cell_distance(enemy.cell, center) > 14
+        { return None; }
+        Some((super::advance::weapon_range_cells(rules, ty,
+            obs.is_deployed(enemy.entity_id)),ty.strength, enemy.entity_id,enemy.cell))
+    }).max_by_key(|(reach,health,id,_)| (*reach,*health,*id))
+        .map(|(_,_,_,cell)| cell)
+}
+
 /// The cell a super is fired at: the enemy Construction Yard when one stands,
 /// otherwise the first enemy structure in storage order.
 ///
@@ -2716,3 +2956,35 @@ pub(super) fn is_combat_unit(rules: &RuleSet, ty: &ObjectType) -> bool {
 
 #[cfg(all(test, tests_sim_p_s))]
 mod tests;
+
+#[cfg(test)]
+mod v14_crate_runner_tests {
+    use super::*;
+    #[test]
+    fn limit_active_crate_claims_not_potential_candidates() {
+        assert!(crate_runner_available(0, CRATE_RUNNERS));
+        assert!(crate_runner_available(1, CRATE_RUNNERS));
+        assert!(crate_runner_available(3, CRATE_RUNNERS));
+        assert!(!crate_runner_available(4, CRATE_RUNNERS));
+        assert!(!crate_runner_available(5, CRATE_RUNNERS));
+    }
+}
+
+#[cfg(test)]
+mod v15_superweapon_tests {
+    use super::*;
+
+    #[test]
+    fn two_stage_chrono_source_is_autonomous_but_warp_is_not_a_first_click() {
+        assert!(auto_power_supported(SuperWeaponKind::ChronoSphere));
+        assert!(!auto_power_supported(SuperWeaponKind::ChronoWarp));
+    }
+
+    #[test]
+    fn support_and_genetic_powers_never_target_enemy_buildings_by_default() {
+        assert_eq!(aim_of(SuperWeaponKind::GeneticConverter), Aim::Genetic);
+        assert_eq!(aim_of(SuperWeaponKind::IronCurtain), Aim::Curtain);
+        assert_eq!(aim_of(SuperWeaponKind::ForceShield), Aim::Shield);
+        assert_eq!(aim_of(SuperWeaponKind::AmerParaDrop), Aim::Rally);
+    }
+}

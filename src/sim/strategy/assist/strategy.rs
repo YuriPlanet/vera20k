@@ -215,12 +215,12 @@ impl Director {
             Objective::RecoverYard | Objective::RecoverIncome => matches!(item,
                 Item::Power | Item::Refinery | Item::Barracks | Item::Weapons | Item::Support),
             Objective::HoldBase => !matches!(item,
-                Item::Superweapon | Item::SpySatellite | Item::CloningVats
+                Item::Superweapon | Item::SupportSuperweapon | Item::SpySatellite | Item::CloningVats | Item::RobotControl
                 | Item::IndustrialPlant | Item::Purifier),
             // The build plan's StrategicStrike gate, not the name of the
             // stage, determines when an affordable strike can be mounted.
             Objective::ExpandOre => !matches!(item,
-                Item::SpySatellite | Item::CloningVats),
+                Item::SpySatellite | Item::CloningVats | Item::RobotControl),
             Objective::Muster => true,
             Objective::PressAttack => true,
         }

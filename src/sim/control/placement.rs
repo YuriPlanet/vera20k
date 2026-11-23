@@ -157,6 +157,8 @@ pub struct Placement<'a, 'b> {
     /// stands on. Not refused outright — a base with nowhere else still has to
     /// build — but ranked behind every cell that leaves the ring alone.
     reserved: BTreeSet<(u16, u16)>,
+    /// Optional local base to which an outpost building is committed.
+    preferred: Option<(u16, u16)>,
 }
 
 /// How many cells a new foundation must leave between itself and any of the
@@ -193,7 +195,17 @@ impl<'a, 'b> Placement<'a, 'b> {
             obs,
             rules,
             reserved: BTreeSet::new(),
+            preferred: None,
         }
+    }
+
+    /// Restrict site search to a committed outpost. The primary base's native
+    /// answer must not steal a refinery paid for by the distant ore base.
+    /// Return None rather than silently constructing it at home when the
+    /// remote foundation is temporarily blocked.
+    pub fn preferring(mut self, anchor: (u16, u16)) -> Self {
+        self.preferred = Some(anchor);
+        self
     }
 
     /// Keep `cells` free of foundations when anything else fits.
@@ -353,6 +365,7 @@ impl<'a, 'b> Placement<'a, 'b> {
         let crowd = self.crowd();
         let native = self.native_site(ty).filter(|&cell| {
             allowed(cell)
+                && self.preferred.is_none_or(|anchor| cell_distance(cell, anchor) <= PLACEMENT_SCAN_RADIUS)
                 && self.obs.placement_admits(self.rules, ty, cell.0, cell.1)
                 && (ty.wall || !self.too_close(cell, foundation, &crowd))
         });
@@ -414,6 +427,7 @@ impl<'a, 'b> Placement<'a, 'b> {
                             u16::try_from(i32::from(anchor.1) + dy).ok(),
                         ) else { continue; };
                         if !allowed((rx, ry))
+                            || self.preferred.is_some_and(|anchor| cell_distance((rx, ry), anchor) > PLACEMENT_SCAN_RADIUS)
                             || self.too_close((rx, ry), (width, height), &crowd)
                         {
                             continue;
@@ -491,7 +505,11 @@ impl<'a, 'b> Placement<'a, 'b> {
         allowed: &impl Fn((u16, u16)) -> bool,
     ) -> Option<(u16, u16)> {
         let blocked = self.occupied_cells();
-        let anchors = self.anchors();
+        let mut anchors = self.anchors();
+        if let Some(anchor) = self.preferred {
+            anchors.retain(|cell| *cell != anchor);
+            anchors.insert(0, anchor);
+        }
         let foundation = ty.foundation.dimensions();
         let crowd = self.crowd();
         let mut seen: BTreeSet<(u16, u16)> = BTreeSet::new();
@@ -515,6 +533,7 @@ impl<'a, 'b> Placement<'a, 'b> {
                         if !seen.insert((rx, ry))
                             || skip == Some((rx, ry))
                             || !allowed((rx, ry))
+                            || self.preferred.is_some_and(|anchor| cell_distance((rx, ry), anchor) > PLACEMENT_SCAN_RADIUS)
                             || !self.obs.placement_admits(self.rules, ty, rx, ry)
                         {
                             continue;

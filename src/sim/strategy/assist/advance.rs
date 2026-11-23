@@ -653,8 +653,12 @@ pub(super) fn advance(
             _ => tick,
         };
         brain.siege_wait = Some((target_id, start));
+        // The first 600 frames are the bounded rally, not an expiry of the
+        // need for a weapon that can actually destroy the visible battery.
+        // Keep the producer's request alive; individual units now refuse
+        // suicidal range trades even after this first preparation window.
+        brain.push_gate = "need-siege";
         if tick.saturating_sub(start) < 600 {
-            brain.push_gate = "need-siege";
             // Waiting must be an actual manoeuvre, not just a label. A tank
             // already walking into the pillbox will keep that native order
             // unless we deliberately move it back out of the gunline.
@@ -905,6 +909,38 @@ pub(super) fn advance(
                 ) { issued += 1; }
                 continue;
             }
+        }
+        // Different units face different counters. A rocket soldier has no
+        // business following a tank into anti-air fire, and an infantryman
+        // cannot trade with a sniper or a grand cannon merely because the
+        // army's *total* points beat the defending base. Unlike the 600-frame
+        // artillery purchase window, this individual protection does not
+        // expire into a guaranteed suicidal march.
+        if let Some((gun, reach)) = super::tactics::lethal_approach(
+            rules, obs, unit.entity_id, unit.cell, march_cell,
+        ) {
+            let safe = super::tactics::siege_post(
+                rules, obs, unit.entity_id, unit.cell, gun, reach,
+            ).or_else(|| {
+                brain.census.rally.or(brain.census.base_cell).filter(|home| {
+                    super::orders::reachable(rules,obs,unit.entity_id,*home)
+                        && !super::tactics::unsafe_post(rules,obs,unit.entity_id,*home)
+                })
+            });
+            if let Some(post) = safe
+                && super::orders::reachable(rules,obs,unit.entity_id,post)
+                && cell_distance(unit.cell,post) > 2
+            {
+                if super::orders::issue_tracked(
+                    &mut brain.tracked,brain.trace,out,rules,obs,unit.entity_id,
+                    super::tracked::TrackedKind::Avoid,None,Some(post),
+                    Goal::Move { cell: post },
+                ) { issued += 1; }
+            } else if super::orders::issue_tracked(
+                &mut brain.tracked,brain.trace,out,rules,obs,unit.entity_id,
+                super::tracked::TrackedKind::Engage,None,None,Goal::Guard,
+            ) { issued += 1; }
+            continue;
         }
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
             && obs.attack_target(unit.entity_id).is_some();

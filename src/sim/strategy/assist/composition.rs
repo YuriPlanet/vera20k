@@ -715,13 +715,18 @@ fn early_spy_infiltration<'r>(
         || brain.census.harvesters == 0
         || obs.tick() < brain.next_spy_purchase
         || brain.census.units.iter().any(|unit| unit.traits.spy)
-        || !brain.census.units.iter().any(|unit| unit.traits.scout)
-        || !brain.census.units.iter().any(|unit| unit.traits.engineer) {
+    {
         return None;
     }
+    // An actual visible spyable target is an opportunity by itself. The old
+    // combined scout+engineer prerequisite made espionage disappear after a
+    // single engineer died, although the spy uses neither unit to infiltrate.
     let target_visible = obs.spyable_buildings(rules)
         .any(|building| obs.is_cell_visible(building.cell.0, building.cell.1));
-    if !target_visible {
+    if !target_visible && !(credits >= 6_000
+        && brain.census.units.iter().any(|unit| unit.traits.scout)
+        && brain.census.units.iter().any(|unit| unit.traits.engineer))
+    {
         return None;
     }
     build::class_types(rules, obs, ObjectCategory::Infantry)
@@ -758,6 +763,97 @@ fn chosen_product<'r>(
         return None;
     }
     Some((ty, type_id))
+}
+
+/// High-value adversaries are different problems, not one army-points number.
+/// Use the live rules: an airship needs a projectile with AA capability, a
+/// standoff tank needs a real ground weapon reaching it, and an armoured tank
+/// needs positive verses against its armour. A Kirov, Prism or Apocalypse in
+/// a mod with a new name retains its tactical properties.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ThreatClass { Airborne, Standoff, HeavyArmour }
+
+fn threat_class(rules: &RuleSet, ty: &ObjectType) -> Option<ThreatClass> {
+    if ty.category == ObjectCategory::Aircraft && ty.strength >= 500 {
+        return Some(ThreatClass::Airborne);
+    }
+    if ty.category != ObjectCategory::Vehicle { return None; }
+    let reach = (0..ty.weapon_record_count()).filter_map(|slot| {
+        let weapon = ty.weapon_at(slot).and_then(|name| rules.weapon(name))?;
+        (!weapon.never_use).then_some(super::advance::weapon_reach_cells(weapon))
+    }).max().unwrap_or(0);
+    if reach >= 7 { Some(ThreatClass::Standoff) }
+    else if ty.strength >= 600 { Some(ThreatClass::HeavyArmour) }
+    else { None }
+}
+
+fn counter_quality(
+    rules: &RuleSet, candidate: &ObjectType,
+    enemy: &ObjectType, kind: ThreatClass,
+) -> i32 {
+    let hostile_reach = super::advance::weapon_range_cells(rules, enemy, false);
+    (0..candidate.weapon_record_count()).filter_map(|slot| {
+        let weapon = candidate.weapon_at(slot).and_then(|name| rules.weapon(name))?;
+        if weapon.never_use || weapon.damage <= 0 { return None; }
+        let projectile = rules.weapon_projectile(weapon)?;
+        let valid = match kind {
+            ThreatClass::Airborne => projectile.aa,
+            ThreatClass::Standoff | ThreatClass::HeavyArmour => projectile.ag,
+        };
+        if !valid { return None; }
+        let head = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))?;
+        let mult = f64::from_bits(head.interaction(enemy.armor_id()).multiplier().bits());
+        if mult <= 0.0 { return None; }
+        let reach = super::advance::weapon_reach_cells(weapon);
+        if kind == ThreatClass::Standoff && reach + 2 < hostile_reach { return None; }
+        let damage = (f64::from(weapon.damage) * mult).clamp(0.0, 8_000.0) as i32;
+        let output = damage.saturating_mul(90) / weapon.rof.max(15);
+        Some(output.saturating_add(reach.saturating_mul(4)))
+    }).max().unwrap_or(0)
+}
+
+fn emergency_counter<'r>(
+    brain: &AssistBrain,
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+    candidates: &[(&'r ObjectType, InternedId, i32)],
+) -> Option<(&'r ObjectType, InternedId)> {
+    let threat = brain.census.enemies.iter()
+        .filter(|enemy| obs.is_cell_visible(enemy.cell.0, enemy.cell.1))
+        .filter(|enemy| {
+            brain.census.base_cell.is_some_and(|base| {
+                super::advance::cell_distance(enemy.cell,base) <= 44
+            }) || brain.push_target.is_some_and(|(_,_,front)| {
+                super::advance::cell_distance(enemy.cell, front) <= 20
+            })
+        })
+        .filter_map(|enemy| {
+            let ty = obs.object_type(rules, enemy.type_id)?;
+            let kind = threat_class(rules,ty)?;
+            Some((ty, kind))
+        })
+        .max_by_key(|(ty,kind)| (
+            match kind { ThreatClass::Airborne => 3, ThreatClass::Standoff => 2,
+                ThreatClass::HeavyArmour => 1 },ty.strength))?;
+    let (enemy, kind) = threat;
+    // If the house already fields two real counters per visible dangerous
+    // target, do not build nothing but anti-air trucks all match.
+    let protected = brain.census.units.iter()
+        .filter(|unit| unit.controllable() && unit.traits.combat)
+        .filter(|unit| obs.object_type(rules, unit.type_id)
+            .is_some_and(|ty| counter_quality(rules,ty,enemy,kind)>0))
+        .count();
+    let attackers = brain.census.enemies.iter()
+        .filter(|unit| obs.is_cell_visible(unit.cell.0,unit.cell.1))
+        .filter(|unit| obs.object_type(rules,unit.type_id)
+            .is_some_and(|ty| threat_class(rules,ty)==Some(kind)))
+        .count();
+    if protected >= attackers.saturating_mul(2).max(2) { return None; }
+    candidates.iter().copied().filter_map(|(ty,id,_)| {
+        let score = counter_quality(rules,ty,enemy,kind);
+        (score>0).then_some((score, ty, id))
+    }).max_by_key(|(score,ty,id)| (*score, ty.strength, std::cmp::Reverse(*id)))
+        .map(|(_,ty,id)| (ty,id))
 }
 
 /// The fighting type of `category` the line should start next.
@@ -800,6 +896,13 @@ fn fighter<'r>(
         return None;
     }
 
+    // Hard threats demand a matching weapon, not simply more army points.
+    // This runs before the normal price/role scorer but yields once two real
+    // counter-capable units exist per visible high-threat attacker.
+    if let Some((ty,id)) = emergency_counter(brain, rules, obs, &affordable) {
+        return Some((ty,id));
+    }
+
     // The previous push identified a real, visible battery that outranges
     // everything in the fist. Buy an unlocked standoff vehicle rather than
     // another short-range tank to lose under the guns. A siege asset is only
@@ -809,9 +912,24 @@ fn fighter<'r>(
         // on the opposite edge of the map must not make every affordable
         // artillery candidate appear inadequate.
         let target_reach = brain.siege_reach.unwrap_or(0);
+        let defended = brain.push_target.map(|(_,_,cell)| cell);
         if let Some((ty,id,_)) = affordable.iter().copied()
-            .filter(|(ty,_,_)| super::advance::weapon_range_cells(rules,ty,false)
-                > target_reach + 1)
+            .filter(|(ty,_,_)| (0..ty.weapon_record_count()).any(|slot| {
+                let Some(weapon) = ty.weapon_at(slot)
+                    .and_then(|name| rules.weapon(name)) else { return false; };
+                let Some(warhead) = weapon.warhead.as_deref()
+                    .and_then(|name| rules.warhead(name)) else { return false; };
+                !weapon.never_use
+                    && super::advance::weapon_reach_cells(weapon) > target_reach + 1
+                    && defended.is_some_and(|center| brain.census.enemies.iter().any(|enemy| {
+                        let Some(defense) = obs.object_type(rules, enemy.type_id)
+                        else { return false; };
+                        defense.is_base_defense
+                            && super::advance::cell_distance(center, enemy.cell) <= 14
+                            && f64::from_bits(warhead.interaction(defense.armor_id())
+                                .multiplier().bits()) > 0.0
+                    }))
+            }))
             .min_by_key(|(_,id,cost)| (brain.census.type_count(*id), *cost, *id))
         { return Some((ty,id)); }
     }

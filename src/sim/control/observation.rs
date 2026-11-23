@@ -1000,6 +1000,13 @@ impl<'a> Observation<'a> {
             || crate::sim::passenger::building_can_be_occupied_by(self.sim, rules, building, actor)
     }
 
+    /// Whether the house actually received a permanent spy effect.
+    /// A spy dying en route must not be recorded as a successful infiltration.
+    pub fn spy_class_effect_observed(&self, class: u8) -> bool {
+        self.sim.houses().get(&self.house)
+            .is_some_and(|house| house.spy_class_effect_observed(class))
+    }
+
     /// Buildings a spy may walk into: alive, not this house's, and `Spyable=`.
     ///
     /// `InfantryClass::What_Action_OnObject`'s infiltration arm
@@ -1677,6 +1684,14 @@ impl<'a> Observation<'a> {
                     .map(|_| type_id)
             })
             .collect()
+    }
+
+    /// Read the first click of a Chronosphere through the observation layer.
+    /// A planned source is not proof of acceptance: the engine only stores it
+    /// after actually executing the native PreClick command.
+    pub fn chrono_source_cell(&self, sw_type_id: InternedId) -> Option<(u16, u16)> {
+        self.sim.super_weapons().get(&self.house)?.get(&sw_type_id)
+            .map(crate::sim::superweapon::SuperWeaponInstance::chrono_cell)
     }
 
     /// The id the rules registered a type under, for a policy holding a name.

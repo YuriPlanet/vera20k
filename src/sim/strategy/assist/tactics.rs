@@ -141,6 +141,74 @@ pub(super) fn exposed_casualty(
     })
 }
 
+/// Effective range for the weapons that can *actually* engage this target.
+/// Checking just a unit's primary weapon loses its secondary AA missile,
+/// which is exactly what makes anti-air look harmless to rocket soldiers.
+fn effective_reach_against(
+    rules: &RuleSet, obs: &Observation<'_>, attacker: u64, victim: u64,
+) -> i32 {
+    use crate::rules::object_type::ObjectCategory;
+    let Some(gun) = obs.entity_type(rules, attacker) else { return 0; };
+    let Some(target) = obs.entity_type(rules, victim) else { return 0; };
+    let air = target.category == ObjectCategory::Aircraft
+        || (target.jumpjet && !obs.is_deployed(victim));
+    (0..gun.weapon_record_count()).filter_map(|slot| {
+        let weapon = rules.weapon(gun.weapon_at(slot)?)?;
+        if weapon.never_use { return None; }
+        let viable = if air {
+            rules.weapon_projectile(weapon).is_some_and(|projectile| projectile.aa)
+        } else {
+            weapon.warhead.as_deref()
+                .and_then(|name| rules.warhead(name))
+                .is_some_and(|warhead| f64::from_bits(
+                    warhead.interaction(target.armor_id()).multiplier().bits()) > 0.0)
+        };
+        viable.then_some(super::advance::weapon_reach_cells(weapon))
+    }).max().unwrap_or(0)
+}
+
+pub(super) fn actual_threat_reach(
+    rules: &RuleSet, obs: &Observation<'_>, attacker: u64, victim: u64,
+) -> i32 {
+    effective_reach_against(rules, obs, attacker, victim)
+}
+
+/// A short-ranged unit must not march through a visible weapon envelope
+/// that it cannot answer. This includes AA against jumpjet infantry, snipers
+/// against infantry and fixed artillery against short-range tanks. A whole
+/// army may have adequate points while one such unit has no useful trade.
+fn loses_range_trade(own_reach: i32, hostile_reach: i32, can_answer: bool) -> bool {
+    hostile_reach > 0 && (!can_answer || own_reach <= hostile_reach + 1)
+}
+
+pub(super) fn lethal_approach(
+    rules: &RuleSet, obs: &Observation<'_>, actor: u64,
+    from: (u16, u16), destination: (u16, u16),
+) -> Option<((u16,u16), i32)> {
+    use crate::rules::object_type::ObjectCategory;
+    let actor_ty = obs.entity_type(rules, actor)?;
+    let fragile = matches!(actor_ty.category,
+        ObjectCategory::Infantry | ObjectCategory::Aircraft) || actor_ty.jumpjet;
+    let own_reach = super::advance::weapon_range_cells(
+        rules, actor_ty, obs.is_deployed(actor));
+    obs.visible_enemy_entities().filter_map(|enemy| {
+        let hostile = obs.entity_type(rules, enemy.entity_id)?;
+        // A tank vs tank exchange is decided by micro, not by the siege gate.
+        // Only fixed guns, or a long-ranged anti-personnel / anti-air weapon,
+        // should stop a normal marching soldier before reaching the line.
+        if !hostile.is_base_defense && !fragile { return None; }
+        let reach = effective_reach_against(rules, obs, enemy.entity_id, actor);
+        if reach <= 0 { return None; }
+        if reach < 4 || (!hostile.is_base_defense && reach < 6) { return None; }
+        if !loses_range_trade(own_reach, reach,
+            obs.can_hurt(rules, actor, enemy.entity_id)) { return None; }
+        let in_lane = distance(enemy.cell, destination) <= reach + 1
+            || distance(enemy.cell, from) <= reach + 1
+            || super::orders::path_crosses(&[enemy.cell], from, destination, reach);
+        in_lane.then_some((enemy.cell, reach))
+    }).max_by_key(|(cell, reach)| (*reach, std::cmp::Reverse(distance(from,*cell))))
+}
+
 /// A rally post is usable only outside all visible fixed guns and psychic
 /// coverage. The decision is shared by artillery staging and reinforcement
 /// assembly, so neither can send its men to the danger the other avoids.
@@ -149,10 +217,15 @@ pub(super) fn unsafe_post(
 ) -> bool {
     controller_covering(rules,obs,post).is_some() || obs.visible_enemy_entities().any(|enemy| {
         let Some(ty) = obs.entity_type(rules, enemy.entity_id) else { return false; };
-        ty.is_base_defense
-            && obs.can_hurt(rules, enemy.entity_id, actor)
-            && distance(enemy.cell,post) <= super::advance::weapon_range_cells(
-                rules,ty,obs.is_deployed(enemy.entity_id)) + 1
+        effective_reach_against(rules, obs, enemy.entity_id, actor) > 0
+            && (ty.is_base_defense
+                || obs.entity_type(rules, actor).is_some_and(|ours| {
+                    ours.jumpjet || matches!(ours.category,
+                        crate::rules::object_type::ObjectCategory::Infantry
+                        | crate::rules::object_type::ObjectCategory::Aircraft)
+                }))
+            && distance(enemy.cell,post) <= effective_reach_against(
+                rules,obs,enemy.entity_id,actor) + 1
     })
 }
 
@@ -287,5 +360,18 @@ mod tests {
         if let Some(grizzly) = rules.object("MTNK") {
             assert!(mind_control_reach(&rules, grizzly).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod v14_counter_tests {
+    use super::*;
+
+    #[test]
+    fn a_short_range_soldier_cannot_trade_into_a_long_range_gun() {
+        assert!(loses_range_trade(5, 12, true));
+        assert!(loses_range_trade(12, 5, false));
+        assert!(!loses_range_trade(12, 5, true));
+        assert!(!loses_range_trade(0, 0, false));
     }
 }

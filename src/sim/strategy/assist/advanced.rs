@@ -80,6 +80,66 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
     }
 }
 
+/// A mining outpost is a military position, not just a newly unfolded
+/// construction yard. Keep two local defenders without weakening the primary
+/// base by borrowing more than the existing Defend reserve can spare.
+/// GuardAt is a native move-and-defend order. It never takes Attack members,
+/// and dangerous front-line micro may still pre-empt its low Guard priority.
+pub(super) fn secure_outpost(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    if brain.director.under_attack_now() || brain.director.recovering_income() { return; }
+    let Some(yard) = super::frontier::remote_yard(&brain.census, &brain.ore_known)
+    else { brain.outpost_guards.clear(); return; };
+    let reserves = brain.squads.squad(Role::Defend)
+        .map(|s| s.members.clone()).unwrap_or_default();
+    if reserves.len() < 4 { return; }
+    let units = &brain.census.units;
+    let eligible = |id: u64| reserves.contains(&id)
+        && units.iter().any(|u| u.entity_id == id
+            && u.controllable() && u.traits.combat && !u.in_service());
+    brain.outpost_guards.retain(|id, post| {
+        *post == yard && eligible(*id)
+    });
+    let local: usize = units.iter().filter(|unit| unit.controllable()
+        && unit.traits.combat && reserves.contains(&unit.entity_id)
+        && squared_distance(unit.cell, yard) <= 9*9).count();
+    let travelling = brain.outpost_guards.keys().filter(|id| {
+        units.iter().any(|unit| unit.entity_id == **id
+            && squared_distance(unit.cell, yard) > 9*9)
+    }).count();
+    if local + travelling >= 2 { return; }
+    // Reserve at least three other defenders at the original base. Count a
+    // travelling guard as assigned, not as an already-arrived local defender.
+    if reserves.len().saturating_sub(brain.outpost_guards.len()) <= 3 { return; }
+    let candidate = units.iter()
+        .filter(|unit| eligible(unit.entity_id)
+            && !brain.outpost_guards.contains_key(&unit.entity_id)
+            && squared_distance(unit.cell, yard) > 10*10
+            && !ordered_this_frame(out, unit.entity_id)
+            && !brain.tracked.held(obs.tick(), unit.entity_id))
+        .min_by_key(|unit| (squared_distance(unit.cell, yard), unit.entity_id));
+    let Some(unit) = candidate else { return; };
+    let Some(ty) = obs.entity_type(rules, unit.entity_id) else { return; };
+    let offsets = [(5,0),(-5,0),(0,5),(0,-5),(4,4),(4,-4),(-4,4),(-4,-4)];
+    let post = offsets.into_iter().filter_map(|(dx,dy)| {
+        let (Ok(x), Ok(y)) = (u16::try_from(i32::from(yard.0)+dx),
+            u16::try_from(i32::from(yard.1)+dy)) else { return None; };
+        let cell = (x,y);
+        (obs.is_cell_in_playfield(x,y) && obs.is_ground_walkable(x,y)
+            && (!obs.has_zone_grid() || obs.can_reach(ty.movement_zone, unit.cell, cell))
+            && !obs.visible_enemy_entities().any(|enemy|
+                squared_distance(enemy.cell,cell) <= 10*10)).then_some(cell)
+    }).next();
+    let Some(post) = post else { return; };
+    if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+        unit.entity_id, TrackedKind::Guard, None, Some(post),
+        Goal::GuardAt { cell: post }) {
+        brain.outpost_guards.insert(unit.entity_id, yard);
+    }
+}
+
 /// A garrison is valuable cover, so do not empty it just because a scout
 /// passes by. If an owned occupied building is being attacked by a vehicle
 /// and nobody nearby can help, a controlled evacuation lets its passengers

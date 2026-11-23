@@ -184,6 +184,9 @@ fn place_finished(
     // an id-sorted set: whichever finished first has the first placement turn.
     let waiting = brain.census.ready.clone();
     brain.site_jobs.retain(|id, _| waiting.contains(id));
+    brain.outpost_builds.retain(|id, _| {
+        waiting.contains(id) || obs.in_production(rules, *id)
+    });
     let reserved = wall_ring(rules, obs);
     for type_id in waiting {
         if !out.intents.is_empty() {
@@ -201,7 +204,10 @@ fn place_finished(
             obs, rules, &brain.census.home_cells, brain.census.base_cell,
         ));
         let allowed = |cell| space.as_ref().is_none_or(|space| space.ground_at(cell).buildable());
-        let placement = Placement::new(obs, rules).reserving(reserved.clone());
+        let mut placement = Placement::new(obs, rules).reserving(reserved.clone());
+        if let Some(&anchor) = brain.outpost_builds.get(&type_id) {
+            placement = placement.preferring(anchor);
+        }
 
         match job.phase {
             SitePhase::AwaitingPlacement { cell } => {
@@ -433,6 +439,8 @@ fn build_next(
         && brain.director.permits_build(Item::Defense)
         && !brain.director.protecting_base()
         && brain.director.objective() != super::strategy::Objective::ExpandOre
+        && super::frontier::needed(rules, obs, &brain.census, &brain.ore_known, budget.free).is_none()
+        && !plan::needs_power_reserve(rules, obs, &brain.census, budget.free)
         && super::walls::queue_segment(brain, rules, obs, budget.free, out)
     {
         return;
@@ -467,14 +475,31 @@ fn build_next(
     }
     let tick = obs.tick();
     let held = brain.plan_hold.filter(|(_, until)| tick < *until);
-    let Some(chosen) = next_building_for(
+    // An MCV that already unfolded by a known ore seam is not yet an
+    // operational mining base. A second local unloading bay and a guard
+    // factory outrank optional luxuries at the original yard.
+    let frontier = super::frontier::needed(
+        rules, obs, &brain.census, &brain.ore_known, budget.free,
+    ).and_then(|(item, anchor)| {
+        if !brain.director.permits_build(item) { return None; }
+        let chosen = match item {
+            Item::Refinery => first_buildable(rules, obs, &rules.build_refinery_types),
+            Item::Power => first_buildable(rules, obs, &rules.build_power_types),
+            Item::Weapons => first_buildable(rules, obs, &rules.build_weapons_types),
+            Item::Defense => defense_building(rules, obs, &brain.census),
+            _ => None,
+        }?;
+        Some((plan::Chosen { step: None, item, ty: chosen.0, type_id: chosen.1 }, anchor))
+    });
+    let focused = frontier.as_ref().map(|(_,anchor)| *anchor);
+    let Some(chosen) = frontier.map(|(chosen, _)| chosen).or_else(|| next_building_for(
         rules,
         obs,
         &brain.census,
         budget,
         held.map(|(step, _)| step),
         |item| brain.director.permits_build(item),
-    ) else {
+    )) else {
         return;
     };
     // Power is spliced in ahead of the plan and held by nobody, so the entry
@@ -562,10 +587,12 @@ fn build_next(
         // Holding only (price - free) let cheap units repeatedly reset the
         // saving, so a stranded house never reached its missing prerequisite.
         Item::Refinery if brain.census.refineries == 0 => budget.free.max(0),
+        Item::Refinery if focused.is_some() => price.saturating_sub(budget.free).max(0),
         Item::Power | Item::Weapons if brain.director.recovering_income() => {
             budget.free.max(0)
         }
-        Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon => {
+        Item::Aircraft | Item::Radar | Item::Tech | Item::Superweapon
+        | Item::SupportSuperweapon => {
             price.saturating_sub(budget.free).max(0)
         }
         _ => 0,
@@ -595,9 +622,12 @@ fn build_next(
         let space = super::terrain::Space::read(
             obs, rules, &brain.census.home_cells, brain.census.base_cell,
         );
-        let site = Placement::new(obs, rules)
-            .reserving(wall_ring(rules, obs))
-            .cell_for_where(type_id, 0, |cell| space.ground_at(cell).buildable());
+        let mut placement = Placement::new(obs, rules)
+            .reserving(wall_ring(rules, obs));
+        if let Some(anchor) = focused {
+            placement = placement.preferring(anchor);
+        }
+        let site = placement.cell_for_where(type_id, 0, |cell| space.ground_at(cell).buildable());
         if site.is_none() {
             brain.site_preflight_after.insert(
                 type_id, obs.tick().saturating_add(SITE_PREFLIGHT_RETRY_FRAMES),
@@ -625,6 +655,9 @@ fn build_next(
         obs.power_drain(),
         plan::planned_output(rules, obs, &brain.census)
     );
+    if let Some(anchor) = focused {
+        brain.outpost_builds.insert(type_id, anchor);
+    }
     out.intent(Intent::QueueProduction { type_id });
 }
 
@@ -741,6 +774,16 @@ fn next_building_for<'r>(
         if let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_weapons_types) {
             return Some(plan::Chosen {
                 step: None, item: Item::Weapons, ty, type_id,
+            });
+        }
+    }
+    // Power margin is a strategic asset, not just a reaction to brownouts.
+    // In a solvent mining economy, buy one extra generator *before* adding
+    // more defenses. All pending generators are already in planned_output.
+    if plan::needs_power_reserve(rules, obs, census, budget.free) {
+        if let Some((ty, type_id)) = first_buildable(rules, obs, &rules.build_power_types) {
+            return Some(plan::Chosen {
+                step: None, item: Item::Power, ty, type_id,
             });
         }
     }
@@ -1203,6 +1246,26 @@ pub(super) fn count_cloning_vats(rules: &RuleSet, obs: &Observation<'_>) -> usiz
     count_building_type(rules, obs, |ty| ty.cloning)
 }
 
+/// The centre whose `PowersUnit=` keeps a remote-control vehicle operational.
+/// Native stock GAROBO names ROBO, but the rule is the relationship, not the
+/// INI section name. Only make a control centre when its dependent powered
+/// unit is a legal unit for this house, rather than spending on a useless shed.
+pub(super) fn robot_control_building<'r>(
+    rules: &'r RuleSet,
+    obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| ty.powers_unit.as_deref().is_some_and(|name| {
+            rules.object(name).is_some_and(|unit| unit.powered_unit
+                && super::build::house_owns(rules, obs, unit))
+        }))
+        .min_by_key(|(ty, _)| (obs.cost_of(rules, ty), ty.id.clone()))
+}
+
+pub(super) fn count_robot_centres(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    count_building_type(rules, obs, |ty| ty.powers_unit.is_some())
+}
+
 /// The `SpySat=yes` structure: the allied spy satellite uplink, `[GASPYSAT]`.
 ///
 /// The native computer does not build it — `[AI] AIBuildThis=no` in the retail
@@ -1318,6 +1381,35 @@ pub(super) fn superweapon_building<'r>(
     class_types(rules, obs, ObjectCategory::Building)
         .filter(|(ty, _)| grants_a_strike(rules, ty))
         .min_by_key(|(ty, id)| (u8::from(!damages_a_base(rules, ty)), *id))
+}
+
+/// The second strategic facility is not the first one's duplicate. Allied
+/// Weather Control must not crowd out Chronosphere, the Soviet missile must
+/// not crowd out Iron Curtain, and Yuri's Dominator must not crowd out the
+/// Genetic Mutator. Follow actual SuperWeapon= relationships, not INI names.
+fn strategic_facility(rules: &RuleSet, ty: &ObjectType) -> bool {
+    grants_a_strike(rules, ty) || [ty.super_weapon.as_deref(), ty.super_weapon2.as_deref()]
+        .into_iter().flatten().filter_map(|name| rules.super_weapon(name))
+        .any(|power| power.kind == SuperWeaponKind::IronCurtain)
+}
+
+pub(super) fn count_strategic_facilities(rules: &RuleSet, obs: &Observation<'_>) -> usize {
+    count_building_type(rules, obs, |ty| strategic_facility(rules, ty))
+}
+
+pub(super) fn additional_superweapon_building<'r>(
+    rules: &'r RuleSet, obs: &Observation<'_>,
+) -> Option<(&'r ObjectType, InternedId)> {
+    class_types(rules, obs, ObjectCategory::Building)
+        .filter(|(ty, _)| strategic_facility(rules, ty))
+        .filter(|(ty, _)| count_building_type(rules, obs, |own| own.id == ty.id) == 0)
+        .min_by_key(|(ty, id)| (
+            u8::from(!ty.super_weapon.as_deref().into_iter()
+                .chain(ty.super_weapon2.as_deref())
+                .filter_map(|name| rules.super_weapon(name))
+                .any(|sw| matches!(sw.kind,
+                    SuperWeaponKind::IronCurtain | SuperWeaponKind::ChronoSphere
+                        | SuperWeaponKind::GeneticConverter))), *id))
 }
 
 /// Whether a strike building's power takes hit points off a base rather than
