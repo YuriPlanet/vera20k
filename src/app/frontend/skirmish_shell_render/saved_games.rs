@@ -15,7 +15,7 @@ use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
 use crate::ui::shell::geom::ShellAlign;
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 use crate::ui::shell::saved_games::{saved_game_layout, saved_game_title_label};
-use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, LIST};
+use crate::ui::skirmish_shell::saved_seed_browser::{ACTION, BACK, BROWSER_DIALOG, CONVERT, LIST};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedLayout};
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
@@ -130,8 +130,14 @@ pub(super) fn seed_browser_paint<I>(
     browser: &SavedSeedBrowserState<I>,
     title: &str,
 ) -> GuiPaint {
-    let mut paint =
-        paint_saved_browser(state, Some(atlas), layout, browser, ButtonArt::PanelCentred, true);
+    let mut paint = paint_saved_browser(
+        state,
+        Some(atlas),
+        layout,
+        browser,
+        ButtonArt::PanelCentred,
+        true,
+    );
     super::text::push_text_draw(
         &mut paint.texts,
         state,
@@ -162,53 +168,69 @@ pub(crate) fn render_saved_game_shell(
         let mut paint = InGamePaint::new(state);
         let state = paint.state;
         let presentation = &state.match_state.match_presentation;
-        let browser = presentation
-            .saved_game_browser
-            .as_ref()
-            .expect("active saved-game browser");
+        let crate::ui::pause_menu::InGameMenuState::SavedGame(menu_mode) =
+            presentation.in_game_menu
+        else {
+            return Ok(());
+        };
+        let browser = presentation.saved_game_browser.as_ref();
+        let mode = browser.map_or(menu_mode, |browser| browser.mode);
         let layout = paint
             .shell
-            .place(|w, h, shell, size| saved_game_layout(browser.mode, w, h, shell, size));
+            .place(|w, h, shell, size| saved_game_layout(mode, w, h, shell, size));
         // 558F8A's hide40C condition is false in the active-game route. Both
         // resource statics use lowstylebits1: ownerdraw615A81 selects top/H_CENTER.
-        for (label, rect, align) in [
-            (
-                saved_game_title_label(browser.mode),
-                layout.title,
-                ShellAlign::PANEL_TITLE,
-            ),
-            (
-                browser.mode.prompt_label(),
-                layout.prompt,
-                ShellAlign::H_CENTER,
-            ),
-        ] {
-            let text = paint.label(label);
-            paint.text(&text, rect, align);
+        let title = paint.label(browser.map_or(
+            saved_game_title_label(mode),
+            SavedSeedBrowserState::game_title_label,
+        ));
+        paint.text(&title, layout.title, ShellAlign::PANEL_TITLE);
+        let prompt = paint.label(mode.prompt_label());
+        paint.text(&prompt, layout.prompt, ShellAlign::H_CENTER);
+        if let Some(key) = browser
+            .filter(|b| b.is_naming_conversion())
+            .and_then(SavedSeedBrowserState::hovered_help)
+        {
+            paint.text(&state.csf_text(key), layout.blank, ShellAlign::NONE);
         }
         // The column's buttons are the active game's SIDEBTTN art.
-        let widgets = paint_saved_browser(
-            state,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-            &layout,
-            browser,
-            ButtonArt::Host,
-            true,
-        );
-        paint.controls.extend(widgets.controls);
-        paint.texts.extend(widgets.texts);
-        for (id, rect, label, enabled) in [
+        if let Some(browser) = browser {
+            let widgets = paint_saved_browser(
+                state,
+                state.frontend.skirmish_shell_chrome.as_ref(),
+                &layout,
+                browser,
+                ButtonArt::Host,
+                true,
+            );
+            paint.controls.extend(widgets.controls);
+            paint.texts.extend(widgets.texts);
+        }
+        let convert = layout.convert.map(|rect| {
             (
+                CONVERT,
+                rect,
+                ("VERA:ConvertSave", "Convert"),
+                browser.is_some_and(SavedSeedBrowserState::convert_enabled),
+            )
+        });
+        for (id, rect, label, enabled) in [
+            Some((
                 ACTION,
                 layout.action,
-                browser.action_label(),
-                browser.action_enabled(),
-            ),
-            (BACK, layout.back, ("GUI:Back", "Back"), true),
-        ] {
+                mode.action_label(),
+                browser.is_some_and(SavedSeedBrowserState::action_enabled),
+            )),
+            convert,
+            Some((BACK, layout.back, ("GUI:Back", "Back"), true)),
+        ]
+        .into_iter()
+        .flatten()
+        {
             // A confirmation drops the browser's press while open; its buttons
             // are painted by the common prompt renderer, not the underlying column.
-            let pressed = browser.prompt.is_none() && browser.pressed(id);
+            let pressed =
+                browser.is_some_and(|browser| browser.prompt.is_none() && browser.pressed(id));
             let caption = paint.label(label);
             paint.owner_button(
                 rect,
@@ -222,14 +244,16 @@ pub(crate) fn render_saved_game_shell(
         }
         // The box's clipping excludes all underlying text, the active-game
         // title and column labels included.
-        push_saved_browser_box(
-            state,
-            state.frontend.skirmish_shell_chrome.as_ref(),
-            &layout,
-            browser,
-            &mut paint.controls,
-            &mut paint.texts,
-        );
+        if let Some(browser) = browser {
+            push_saved_browser_box(
+                state,
+                state.frontend.skirmish_shell_chrome.as_ref(),
+                &layout,
+                browser,
+                &mut paint.controls,
+                &mut paint.texts,
+            );
+        }
         paint.finish("Active Saved Game Browser")
     };
     render_in_game_shell_frame(state, encoder, destination, frame)

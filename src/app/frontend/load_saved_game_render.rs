@@ -13,7 +13,6 @@ use crate::app::frontend::menu_page_render::{
 use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::app::frontend::skirmish_shell_render::gui_paint::ButtonArt;
 use crate::app::frontend::skirmish_shell_render::{paint_saved_browser, push_saved_browser_box};
-use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
 use crate::ui::skirmish_shell::saved_seed_browser::BROWSER_DIALOG;
 use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
@@ -40,7 +39,7 @@ pub(crate) fn render_load_saved_game_page(
     };
     // The browser's own Load and Back are the column's buttons; a message
     // box drops their press, so they paint released under it.
-    let title = LOAD_SAVED_GAME_PAGE.title_key;
+    let title = browser.game_title_label().0;
     let mut frame = FamilyFrame::new("Load Saved Game Shell", &layout.page, panel, title);
     let ui = &browser.ui;
     frame.buttons = ui.root_in(BROWSER_DIALOG).map(|root| (ui.gui(), root));

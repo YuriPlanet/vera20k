@@ -827,11 +827,9 @@ impl App {
             ScreenPage::Wol => {
                 return Self::handle_wol_key(state, Some(code), pressed, event.text.as_deref());
             }
-            // The message box takes Enter/Escape; the page ignores
-            // IDOK/IDCANCEL (0x00558A30).
             ScreenPage::LoadSavedGame => {
                 if pressed {
-                    Self::handle_load_saved_game_key(state, code);
+                    Self::handle_load_saved_game_key(state, Some(code), event.text.as_deref());
                 }
                 return;
             }

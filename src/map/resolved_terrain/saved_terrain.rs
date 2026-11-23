@@ -185,6 +185,10 @@ impl SavedTerrainTemplate {
         (self.width, self.height)
     }
 
+    pub(crate) fn tube(&self, id: TubeId) -> Option<&TubeFact> {
+        self.tube_facts.get(id.as_usize())
+    }
+
     pub fn validate(&self) -> Result<(), SavedTerrainError> {
         // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
         // rectangle is not a materialized grid produced by the map owner.
