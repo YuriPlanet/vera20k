@@ -1,9 +1,6 @@
 //! Sidebar text: the side's text colour as a draw tint and as the B0FA1C
-//! users draw it, and the credits counter.
-
-use crate::render::batch::SpriteInstance;
-use crate::render::bit_font::BitFont;
-use crate::ui::sidebar::Rect;
+//! users draw it, and the credits counter's depth and words (placed by
+//! `app::presentation::sidebar_text`).
 
 /// A side text colour as a draw tint.
 pub fn side_text_tint(rgb: [u8; 3]) -> [f32; 3] {
@@ -68,41 +65,6 @@ pub fn format_observer_clock(seconds: i32, format: &str) -> String {
             CsfArg::Int((rest - minutes * 60).into()),
         ],
     )
-}
-
-/// Build the credits counter as GAME.FNT glyph quads.
-///
-/// `panel_rect` is the sidebar surface in screen space — its origin is the
-/// screen-top-left corner of the sidebar column, which is what gamemd measures
-/// `surface_width / 2` and `y = 2` against, in render pixels. `offset` is the
-/// counter's place from the middle of that surface's top edge, in native
-/// (unscaled) pixels: the layout table's, stock `[0, 2]`.
-pub fn build_credits_instances(
-    font: &BitFont,
-    text: &str,
-    panel_rect: Rect,
-    offset: [f32; 2],
-    tint: [f32; 3],
-    camera_offset: [f32; 2],
-) -> Vec<SpriteInstance> {
-    // Horizontal centre: gamemd's anchor is the surface midpoint and the
-    // h-centre flag pulls the *measured* string half its width to the left.
-    // `BitFont::text_width` is that same measurement (trailing inter-character
-    // spacing on every glyph), so the half-width offset lands where retail's
-    // does rather than on the visual ink centre.
-    //
-    // Both halvings are integer divisions, as in the native rect helper. In
-    // float they would land on a half-pixel for any odd surface width or odd
-    // measured width, and the counter would resolve to either of two columns
-    // as the fractional camera moved — a visible 1 px shimmer on a number that
-    // is on screen the whole match. The camera offset is added *after* the
-    // rounding, so panning never feeds back into the fixed UI geometry (the
-    // same convention `place_canvas_crop_in_slot` uses for cameo art).
-    let text_w = font.text_width(text) as i32;
-    let surface_w = panel_rect.w.round() as i32;
-    let x = panel_rect.x.round() + (surface_w / 2 - text_w / 2) as f32 + offset[0];
-    let y = panel_rect.y.round() + offset[1];
-    font.build_text(text, x, y, 1.0, CREDITS_DEPTH, tint, camera_offset)
 }
 
 #[cfg(all(test, tests_render_s_z))]

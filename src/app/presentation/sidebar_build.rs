@@ -952,6 +952,14 @@ fn observer_strip_text(
 // Text label instances
 // ---------------------------------------------------------------------------
 
+/// The sidebar's pieces besides its chrome as drawing trees, kept from frame
+/// to frame, one for each lane they draw in.
+#[derive(Default)]
+pub(crate) struct SidebarHuds {
+    /// The texts drawn after the clock: the money counter.
+    pub(crate) status: crate::app::presentation::text_hud::TextHud,
+}
+
 #[derive(Default)]
 pub(crate) struct SidebarTextInstances {
     /// The production Hold label, drawn after the clock.

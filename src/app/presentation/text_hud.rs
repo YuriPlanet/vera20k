@@ -15,7 +15,7 @@ use vera20k_gui::hud::{Layer, Origin};
 use vera20k_gui::{Rect, Rgba};
 
 use crate::render::batch::SpriteInstance;
-use crate::render::bit_font::BitFont;
+use crate::render::bit_font::{BitFont, Fit};
 use crate::render::hud_paint::{HudSpace, Material, NodeDraw};
 use crate::render::retained_hud::{Rest, RetainedHud};
 pub(crate) use crate::render::retained_hud::{rgb, rounded};
@@ -61,6 +61,14 @@ impl TextHud {
         if let Some(name) = self.name {
             self.nodes.part(Some(name));
         }
+    }
+
+    /// Start the part `name` (a `veraui.ini` key, the node's `Name`): the
+    /// pieces added from here until the next part are its children, so the
+    /// part can be found by its name and hidden or restyled as one. A part
+    /// draws nothing itself; its pieces keep their places and order.
+    pub(crate) fn part(&mut self, name: &'static str) {
+        self.nodes.part(Some(name));
     }
 
     /// The frame's next box: `rect` in the overlay's pixels, filled with
@@ -131,6 +139,28 @@ impl TextHud {
             ..Default::default()
         };
         self.nodes.text(rect, text, color, draw);
+    }
+
+    /// The frame's next text of the game font: `rect` in the overlay's
+    /// pixels, `text` printed from `position` on the target in the host's
+    /// exact `tint` at `depth`, squeezed as `fit` says ([`BitFont::fitted`]).
+    pub(crate) fn fitted_text(
+        &mut self,
+        rect: Rect,
+        text: &str,
+        position: [f32; 2],
+        tint: [f32; 3],
+        depth: f32,
+        fit: Fit,
+    ) {
+        let draw = NodeDraw {
+            fit,
+            position: Some(position),
+            depth,
+            tint: Some(tint),
+            ..Default::default()
+        };
+        self.nodes.text(rect, text, rounded(tint), draw);
     }
 
     /// End the frame: drop the pieces it no longer has and draw the rest

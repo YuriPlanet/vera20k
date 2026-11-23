@@ -286,6 +286,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) minimap_hud: crate::app::presentation::picture_hud::AreaHud,
     /// The sidebar column's chrome as a drawing tree.
     pub(crate) sidebar_chrome_hud: crate::app::presentation::picture_hud::PictureHud,
+    /// The sidebar's texts and the observer's strip as drawing trees.
+    pub(crate) sidebar_huds: crate::app::presentation::sidebar_build::SidebarHuds,
     /// The bottom command bar's drawing tree.
     pub(crate) command_bar_hud: crate::app::presentation::sidebar_build::command_bar::CommandBarHud,
     /// The row each grid of build pictures the layout adds is scrolled to,

@@ -1157,6 +1157,7 @@ impl App {
                     added_part_huds: Default::default(),
                     command_bar_hud: Default::default(),
                     sidebar_chrome_hud: Default::default(),
+                    sidebar_huds: Default::default(),
                     minimap_hud: Default::default(),
                     added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,

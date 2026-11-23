@@ -1615,6 +1615,8 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         })
         .unwrap_or_default();
     state.match_state.match_presentation.sidebar_chrome_hud = chrome_hud;
+    // Taken before the frame's view, which borrows the state.
+    let mut huds = std::mem::take(&mut state.match_state.match_presentation.sidebar_huds);
     // The column's text, at the window's pixels wherever it is drawn.
     let frame_raster = state.renderer.bit_font.set_raster(
         crate::app::presentation::sidebar_surface::column_text(state)
@@ -1625,6 +1627,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
     let mut text_layers = view
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
         .unwrap_or_default();
+    huds.status.begin();
     // Credits counter shares the GAME.FNT sidebar-text layer: gamemd draws it
     // with the same BitFont on the sidebar surface, in the same packed side
     // text colour as the cameo labels.
@@ -1633,27 +1636,28 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         // The layout's `[Money] Value=` and `Align=`, read when it was loaded.
         let money = state.match_state.match_presentation.stock_parts.money;
         let shown = crate::app::presentation::layout_parts::money_value_text(state);
-        text_layers.status.extend(
-            crate::app::presentation::sidebar_text::build_sidebar_credits_instances(
-                &state.renderer.bit_font,
-                v,
-                layout_spec,
-                // The plate is as wide as its picture.
-                crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-                    .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
-                    .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
-                &state.csf_text("TXT_TIME_FORMAT_HOURS"),
-                shown.as_deref(),
-                money.align,
-                // The layout's `[Money] Color=`.
-                crate::render::sidebar_text::native_outline_from(layout_spec.side_text),
-                [
-                    state.match_state.input.camera_x,
-                    state.match_state.input.camera_y,
-                ],
-            ),
+        crate::app::presentation::sidebar_text::draw_credits(
+            &mut huds.status,
+            &state.renderer.bit_font,
+            v,
+            layout_spec,
+            // The plate is as wide as its picture.
+            crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
+                .and_then(|atlas| atlas.art(crate::ui::sidebar::SidebarPart::Credits, crate::ui::sidebar::ArtKey::Art, 0))
+                .map_or(layout_spec.sidebar_width, |plate| plate.pixel_size[0]),
+            &state.csf_text("TXT_TIME_FORMAT_HOURS"),
+            shown.as_deref(),
+            money.align,
+            // The layout's `[Money] Color=`.
+            crate::render::sidebar_text::native_outline_from(layout_spec.side_text),
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
         );
     }
+    huds.status.finish(&state.renderer.bit_font);
+    text_layers.status.extend(huds.status.glyphs().copied());
     // The buttons and texts the side's layout adds to the sidebar. A
     // button's box rides the white lane of the cameo's hover outline: over
     // the chrome and the cameos, under the text.
@@ -1678,6 +1682,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             crate::app::presentation::sidebar_build::build_observer_strip_instances(state, v),
         );
     }
+    state.match_state.match_presentation.sidebar_huds = huds;
     let smooth_chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .is_some_and(|atlas| atlas.retarget_to_smooth(&mut chrome));
 
