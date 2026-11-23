@@ -106,7 +106,7 @@ pub(crate) fn paint_wol_lobby_children(
     let rect_of = |id| layout.control_rect(id).unwrap_or_default();
     // The image buttons show their faces on the page art; the native
     // lobby's observer image shows its eye.
-    let image = |id: i32| IMAGE_BUTTONS.iter().find(|(image, ..)| i32::from(*image) == id);
+    let image = |id: i32| IMAGE_BUTTONS.into_iter().find(|(image, ..)| i32::from(*image) == id);
     let art_of = |id: i32| image(id).map(|_| ButtonArt::Image);
     let observer = ui.observer();
     let picture_of = |id: i32| match image(id) {

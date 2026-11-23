@@ -332,7 +332,8 @@ pub(crate) enum Picture {
     Observer { on: bool },
     /// A kind-2 icon static's PCX on the page art ([`GuiStyle::art`]),
     /// centred in the node, or at its left or top on an axis it outgrows
-    /// ([`centred_in_window`]), at its size grown with the page, on
+    /// ([`crate::ui::shell::geom::centred_in_window`]), at its size grown
+    /// with the page, on
     /// [`GuiPaint::icons`] (WOL welcome's glossary).
     Glyph(&'static str),
 }
