@@ -550,9 +550,22 @@ impl Simulation {
         if let Some(host) = self.substrate.entities.get_mut(host_id) {
             host.commit_building_upgrade_type(type_id);
         }
-        // Ares4409F4 ->10014490/100144CD uses the installed host's retained
+        // Ares4409F4 ->10014490 starts the upgrade's own cash timer,
+        // CashUpgradeTimers[UpgradeLevel - 1], for a nonzero
+        // `ProduceCashDelay` (a stock Start, no extra frame), then
+        // 100144CD hands out the plans with the installed host's retained
         // Country, after the new upgrade pointer has been committed.
         if rules.ares_form() {
+            let delay = upgrade.produce_cash_delay;
+            let frame = self.session.binary_frame() as i32;
+            if delay != 0
+                && let Some(host) = self.substrate.entities.get_mut(host_id)
+                && let Some(timer) = usize::try_from(host.building_upgrades().count() - 1)
+                    .ok()
+                    .and_then(|slot| host.seldom.ares.cash_upgrade_timers.get_mut(slot))
+            {
+                *timer = crate::sim::timer::CdTimer::started(frame, delay);
+            }
             self.grant_factory_plans(host_id, rules);
         }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);

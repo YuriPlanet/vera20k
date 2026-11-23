@@ -185,9 +185,9 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
   other games keep them unplayed.
 - `ProduceCashDisplay` (`100117C0`) rides Ares' replaced ProduceCash payout
   (`100146E0`, `10013D40`: hooks `0x43FD2C`, `0x4482BD`, with the upgrades'
-  cash timers), ported in `sim::credit_income`. The upgrade's timer start at
-  Put (`10014490`, hook `0x4409F4`) is not
-  ([ares-building-house-hooks.md](ares-building-house-hooks.md)).
+  cash timers), ported in `sim::credit_income`. An upgrade starts its own
+  timer for its `ProduceCashDelay` when put on its host (`10014490`, hook
+  `0x4409F4`), so it first pays `ProduceCashDelay - 1` frames later.
 - `AIInnerBase` (`10023860`, hook `0x506306`) is consumed: it picks the
   inner-base key of `FindBaseBuildingSite` (`sim::ai_base_site`).
 - `IsBaseNormal`'s per-building `NoBaseNormal` (a `Deliver.BaseNormal=no`

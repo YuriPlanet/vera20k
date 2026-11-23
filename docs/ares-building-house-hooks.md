@@ -104,9 +104,6 @@ cites each hook.
 
 - The storage pips (0x44D755, 0x709B4E; ares-tiberium.md). The storage
   itself is ported in `sim::ares_tiberium_storage`.
-- An upgrade's ProduceCash timer is not started at Put (0x4409F4); the
-  Update hook starts it one frame longer. The payout and
-  `ProduceCashDisplay` are ported in `sim::credit_income`.
 - Doggie (0x51F628, 0x518CB3, 0x51ABD7,
   0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
@@ -132,7 +129,7 @@ DLL removed are not listed.
 | `43CA80` | BuildingClass_ReceivedRadioCommand_DockUnloadCell | `10014540` | ported earlier |
 | `43FD2C` | BuildingClass_Update_ProduceCash | `100146E0` | ported: `credit_income::produce_cash_step` |
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
-| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported in part: the upgrade's factory plans (`building_upgrades`); residual: the upgrade's cash timer is not started at Put (`delay`), so the Update hook starts it (`delay + 1`) |
+| `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | ported: the upgrade's cash timer starts at Put for its `ProduceCashDelay`, then its factory plans (`try_install_building_upgrade`) |
 | `440C08` | BuildingClass_Put_AIBaseNormal | `10014460` | ported earlier |
 | `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | ported: a damage-killed building runs `building_death_announcement` after DestructionEffects ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `444D26` | BuildingClass_KickOutUnit_ArmoryExitBug | `10014100` | ported: an Armory's exit takes the Hospital post (`production_queue::ExitProducer`) |
