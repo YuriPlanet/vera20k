@@ -21,7 +21,8 @@ pub(crate) use codec::{
     read_u32, read_u64,
 };
 pub(crate) use measure::{
-    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, link_state, pto, reader_rtt,
+    JitterMeter, LossCursor, LossStats, RttEstimator, StateClock, ack_interval, link_state, pto,
+    reader_rtt,
 };
 
 use crate::{
@@ -1024,10 +1025,8 @@ impl ClientSession {
         let Some(ordering) = self.ordering.as_mut() else {
             return;
         };
-        let rtt = &ordering.link.rtt;
-        let wait = rtt
-            .srtt
-            .map_or(300, |srtt| u64::from(srtt) + 4 * u64::from(rtt.rttvar));
+        let (srtt, rttvar) = ordering.link.rtt.rtt_or_default();
+        let wait = srtt + 4 * rttvar;
         let hop = &mut self.hop;
         let log = &hop.log;
         let sent = |sequence: u64| {
