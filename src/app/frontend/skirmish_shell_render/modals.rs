@@ -329,8 +329,8 @@ pub(super) fn push_generic_shell_background_instances(
 }
 
 /// The random-map dialog `0x105`'s own art beside its widgets
-/// ([`super::text::random_map_paint`]): VERA's Advanced scrollbar, Ares'
-/// Urban Areas box and the progress bar while a map generates.
+/// ([`super::text::random_map_paint`]): VERA's Advanced scrollbar and the
+/// progress bar while a map generates.
 pub(super) fn push_random_map_setup_modal_control_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
@@ -353,20 +353,6 @@ pub(super) fn push_random_map_setup_modal_control_instances(
                 scrollbar: bar.bar,
                 thumb: bar.thumb,
                 pressed_part: None,
-            },
-            layout.scale,
-        );
-    }
-    // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
-    // shell's own checkbox when Ares.dll is loaded; the Advanced view's
-    // seventh slider takes its place.
-    if modal.ares && !modal.advanced {
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::Checkbox {
-                checked: modal.options.urban_areas,
-                rect: layout.rect(5000),
             },
             layout.scale,
         );

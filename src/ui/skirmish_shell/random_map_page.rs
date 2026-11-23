@@ -244,6 +244,10 @@ pub fn sync_page(
         };
         let mut set = |prop, value| page::set(gui, root, id, prop, value);
         set(Prop::Enabled, Value::Bool(modal.is_enabled(control)));
+        // Ares' Urban Areas button shows as its box, checked by the option.
+        if control == C::UrbanAreas5000 {
+            set(Prop::Toggled, Value::Bool(modal.options.urban_areas));
+        }
         set(Prop::Tooltip, Value::Text(help(modal, control).to_owned()));
         let (range, pos) = match control {
             C::Players0x3eb => (modal.players_range, modal.options.num_players),

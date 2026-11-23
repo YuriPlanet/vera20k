@@ -469,10 +469,10 @@ pub(super) fn random_map_paint(
     };
     // Surprise Me and Generate are owner-draw type 3 (MNBTTN), captions
     // centred on the whole button; VERA's Extras
-    // rows are framed plates; Ares' Urban Areas box paints as a checkbox.
+    // rows are framed plates; Ares' Urban Areas button shows as its box.
     let art_of = |id: i32| match id {
         0x621 | 0x620 => Some(ButtonArt::ModalCentred),
-        5000 => Some(ButtonArt::Host),
+        5000 => Some(ButtonArt::CheckboxFace),
         0x7420..0x7427 => Some(match modal.extras_row((id - 0x7420) as usize) {
             Some(_) => ButtonArt::Plate,
             None => ButtonArt::Host,

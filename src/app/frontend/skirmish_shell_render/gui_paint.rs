@@ -135,6 +135,10 @@ pub(crate) enum ButtonArt {
     /// dialogs' MNBTTN buttons: centred in [`button_text_rect`]
     /// (pressed +2/+4, not owner-draw's +2/+5).
     ModalType2,
+    /// The shell's checkbox face on the rect, checked while `Toggled`, no
+    /// pushed look: a button that keeps a button's presses and events but
+    /// shows as a box (Ares' Urban Areas, whose caption is its own static).
+    CheckboxFace,
 }
 
 impl ButtonArt {
@@ -710,6 +714,11 @@ pub(crate) fn paint_gui_into(
                     }
                     // The rest are the shell control art's.
                     (_, None) => continue,
+                    (ButtonArt::CheckboxFace, Some(_)) => {
+                        let checked = flag(gui, node, Prop::Toggled, false);
+                        let control = ControlPaint::Checkbox { checked, rect };
+                        paint_control(&mut paint.controls, &chrome, control, scale);
+                    }
                     (
                         ButtonArt::Panel | ButtonArt::PanelCentred | ButtonArt::PanelType2,
                         Some(atlas),
